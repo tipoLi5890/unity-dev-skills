@@ -1,0 +1,6 @@
+interface:
+  display_name: "ComfyUI Asset Generation"
+  short_description: "Generate audio and MiniMax H3 video on ComfyUI"
+  default_prompt: "Use $comfyui-asset-generation to generate and validate an asset through my ComfyUI server."
+policy:
+  allow_implicit_invocation: true

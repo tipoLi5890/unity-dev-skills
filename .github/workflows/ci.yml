@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+
+      - name: Lint skills
+        run: python3 tools/lint-skills.py
+
+      # The Codex manifests are generated. If regenerating them changes anything,
+      # someone hand-edited a generated file or forgot to run the sync.
+      - name: Codex manifests are in sync
+        run: |
+          python3 tools/sync-codex-manifests.py
+          git diff --exit-code -- .codex-plugin .agents
+
+      # Two facts this repo writes down twice: the plugin's identity (both
+      # manifests carry it) and which sibling plugins a skill may route to.
+      # Nothing else notices when only one copy moves.
+      - name: Manifests and companions are consistent
+        run: python3 tools/check-consistency.py
+
+      - name: Manifests are valid JSON
+        run: |
+          python3 - <<'PY'
+          import json
+          for p in ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json',
+                    '.codex-plugin/plugin.json', '.agents/plugins/marketplace.json']:
+              json.load(open(p))
+          print('all manifests parse')
+          PY
+
+      # A translation that has drifted from the source is worse than no translation:
+      # it states, in a language the reader trusts, something that is no longer true.
+      # Cheapest reliable signal — every README must describe the same set of skills.
+      - name: Translated READMEs cover the same skills
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          files = {'README.md': pathlib.Path('README.md')}
+          for f in sorted(pathlib.Path('.github').glob('README.*.md')):
+              files[str(f)] = f
+          names = {d.name for d in pathlib.Path('skills').iterdir() if d.is_dir()}
+          bad = False
+          for label, f in files.items():
+              txt = f.read_text(encoding='utf-8')
+              found = {m for m in re.findall(r'`([a-z][a-z0-9-]+)`', txt) if m in names}
+              missing, extra = names - found, found - names
+              if missing or extra:
+                  bad = True
+                  print(f'{label}: missing={sorted(missing)} unknown={sorted(extra)}')
+              else:
+                  print(f'{label}: all {len(names)} skills present')
+          sys.exit(1 if bad else 0)
+          PY
+
+      # Every skill a SKILL.md names must exist, and the name must match its directory.
+      - name: No dangling reference links
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          root = pathlib.Path('skills')
+          names = {d.name for d in root.iterdir() if d.is_dir()}
+          missing = []
+          for sk in root.iterdir():
+              if not sk.is_dir(): continue
+              for f in sk.rglob('*.md'):
+                  txt = f.read_text(encoding='utf-8')
+                  for r in set(re.findall(r'`(reference/[a-z0-9-]+\.md)`', txt)):
+                      if re.search(r'`unity-[a-z0-9-]+`\s*(?:→|->)\s*`' + re.escape(r) + '`', txt):
+                          continue
+                      if not (sk / r).exists():
+                          missing.append(f'{f} -> {r}')
+          if missing:
+              print('\n'.join(missing)); sys.exit(1)
+          print(f'{len(names)} skills, no dangling reference links')
+          PY

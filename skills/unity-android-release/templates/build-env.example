@@ -1,0 +1,31 @@
+# Copy to .build-env beside build-android.sh, fill in, chmod 600.
+#
+# ── .gitignore MUST cover this file ───────────────────────────────────────────
+#     Tools/.build-env
+#     *.apk
+#     *.aab
+# Then PROVE it, rather than trusting the pattern matched:
+#     git check-ignore -v Tools/.build-env
+#     git status --short | grep -i build-env      # must print nothing
+#
+# ── The keystore IS the app's identity on the store ───────────────────────────
+# Lose the file OR the password and you can never update that listing again. The
+# only way back is a new package name: new listing, zero installs, zero reviews.
+# Back BOTH up, outside this machine, in at least two independent places.
+#
+#     keytool -genkeypair -v -keystore ~/keys/<app>.keystore \
+#             -alias <app> -keyalg RSA -keysize 2048 -validity 10000 \
+#             -dname "CN=<App>, O=<Org>, C=<CC>"
+#
+# Generate the password rather than inventing one, and never type it on a command
+# line — it lands in shell history and in the process table:
+#
+#     LC_ALL=C tr -dc 'A-Za-z0-9!@#%^_+=' < /dev/urandom | head -c 28
+#
+# Run that in a plain shell, not inside a script with `set -o pipefail`: head
+# closes the pipe, tr dies of SIGPIPE, and the pipeline returns 141.
+
+UNITY_KEYSTORE=/absolute/path/to/app.keystore
+UNITY_KEYSTORE_PASS=
+UNITY_KEY_ALIAS=app
+UNITY_KEY_ALIAS_PASS=
