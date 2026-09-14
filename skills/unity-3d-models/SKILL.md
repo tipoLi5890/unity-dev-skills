@@ -36,7 +36,7 @@ Two hard truths this skill exists for:
 | 4 · Wire into a prefab | An Editor script, so it is re-runnable and layer-aware | `reference/import-and-decimate.md` |
 | 5 · It's invisible in Game view | Almost always layer/culling, not the mesh | `reference/culling-and-layers.md` |
 | 6 · It looks cheap at distance | Filtering defaults, not model quality | `reference/texture-filtering.md` |
-| 7 · It runs badly | Budget, and the order to attack it in | `reference/performance-budget.md` |
+| 7 · It runs badly | Measure it first (`unity-profiling`), then budget and the order to attack it in | `reference/performance-budget.md` |
 
 ## Load what the situation needs
 
@@ -46,6 +46,7 @@ Two hard truths this skill exists for:
 | "Shows in Scene, invisible in Game"; culling masks; layers | `reference/culling-and-layers.md` |
 | Distant surfaces shimmer or look blurry; aniso; MSAA | `reference/texture-filtering.md` |
 | The game lags/stutters with 3D assets; triangle budget; draw calls | `reference/performance-budget.md` |
+| Numbers for the lag before touching a mesh: triangle and draw-call counters, a before/after window | skill `unity-profiling` |
 | Textures and meshes are bloating memory or the build | skill `unity-android-release` → `reference/size-and-stripping.md` |
 | A **rigged, animated character** rather than a prop | skill `unity-rigged-character` |
 | 2D sprite sheets, slicing, pivots, 9-slice borders | skill `unity-2d-sprites` |

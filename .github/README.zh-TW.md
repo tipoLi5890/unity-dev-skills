@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。二十九個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。三十二個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -33,7 +33,10 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 |---|---|---|
 | **終端機與驗證** | `unity-cli` | 從終端機驅動 Unity：editor、授權、template、CI、MCP，以及能告訴你「重試是否誠實」的 exit code |
 | | `unity-debug` | 你需要驗證一個看不見的改動 —— 並且在相信量測工具之前，先證明它說的是真話 |
+| | `unity-play-harness` | 把遊戲做成 agent 能驅動、能讀懂的樣子：一行 probe 快照、直接開進某個時刻並等待「就緒集合」的具名 situation、取樣成時間線並斷言不變量的 journey test，以及把一句手感抱怨變成可重現的測試 |
+| | `unity-profiling` | 慢幀或不穩定的幀背後到底在做什麼工作：不開 Profiler 視窗的 counter、90 幀視窗的 median/p95/worst、工作量計數，以及一張前後對照表 |
 | **第一天** | `unity-new-project` | 事後補救很貴的決策：editor 版本釘死、`.meta`/LFS、UPM 釘 tag、IL2CPP/ARM64、asmdef 邊界 |
+| | `unity-game-brief` | 動 Unity 之前的第一個小時：一行想法變成一頁體驗簡報、用圖鎖定視覺、由限制推導出架構提案、寫成可測試的不變量，以及一個人可以真的玩到的互動 |
 | **UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什麼都畫不出來的六種原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 會靜默忽略的那些屬性 |

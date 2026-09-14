@@ -139,6 +139,8 @@ with — with nothing left to ask, just wait.
   dictionaries, unknown fields dropped). Adding an HTTP API, for example, means hand-writing a
   small JSON writer + parser inside that assembly while the `UnityWebRequest` client stays in the
   engine-referencing one. Decide the boundary knowing serialization sits on the wrong side of it.
+  A ready-to-copy simulation / presenter / test skeleton already shaped this way — three asmdefs and
+  the tests that run without a scene — lives in `unity-game-brief` resources.
 - Write rule/decision classes as **plain C# with the clock and RNG seed injected** by the
   constructor, even when they live in an engine-referencing assembly. Then the only tests that
   cannot run under `dotnet test` are the ones touching `ScriptableObject`, `AssetDatabase`,
@@ -164,6 +166,9 @@ with — with nothing left to ask, just wait.
 **No gameplay scaffolding.** A generic genre skeleton produces throwaway mock primitives that
 have to be deleted before real work starts, so this skill stops at a clean, correctly-configured
 project. Building the actual game is every other skill in this plugin.
+
+What the game *is* — the brief, the constraints, the architecture proposal, the first interaction —
+is `unity-game-brief`; this skill starts when that proposal names the assemblies.
 
 Also not here: which packages a given genre needs beyond the note in §4b (that follows from the
 concept, not from a table), and anything about shipping — `unity-android-release`,

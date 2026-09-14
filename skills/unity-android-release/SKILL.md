@@ -100,6 +100,7 @@ Two things the flags do not change:
 | An artifact exists — is it signed, what does it declare, what ABIs? | `reference/artifact-verification.md` |
 | Keystore, credentials, versionCode, build history, package name | `reference/signing-and-versioning.md` |
 | **Works in the editor, wrong on the device** | `reference/device-triage.md` |
+| Runs fine in the editor and badly on the device — take the frame-time window in the player build first | skill `unity-profiling` |
 | APK vs AAB, symbols, Data Safety, the new-app testing gate | `reference/store-submission.md` |
 | The artifact is too large; "works in the editor, missing on device" after stripping | `reference/size-and-stripping.md` |
 | Shipping to the web instead of Android | skill `unity-web-release` |

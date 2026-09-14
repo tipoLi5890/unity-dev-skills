@@ -3,7 +3,7 @@
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
 AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。空のプロジェクトから検証済みの
-成果物までを一巡りカバーする 29 個の skill で、Claude Code と OpenAI Codex のどちらにも
+成果物までを一巡りカバーする 32 個の skill で、Claude Code と OpenAI Codex のどちらにも
 インストールできます。
 
 単なる Unity のメモの寄せ集めと違う点が三つあります。
@@ -38,7 +38,10 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 |---|---|---|
 | **ターミナルと検証** | `unity-cli` | ターミナルから Unity を動かす：editor、ライセンス、template、CI、MCP、そして「リトライして良いのか」を示す exit code |
 | | `unity-debug` | 目に見えない変更を検証したいとき —— そして計測結果を信じる前に、計測する側が本当のことを言っていると確かめたいとき |
+| | `unity-play-harness` | エージェントが自分で動かして読み取れるゲームにする：一行の probe スナップショット、目的の瞬間から直接始めて「準備完了の集合」を待つ名前付き situation、タイムラインに記録して不変条件を検証する journey test、そして手触りの不満を再現可能なテストに変える方法 |
+| | `unity-profiling` | 遅いフレーム・揺れるフレームの裏で何が動いているのか：Profiler ウィンドウを開かない counter、90 フレーム窓の median/p95/worst、作業量カウンタ、そして前後の比較表 |
 | **初日** | `unity-new-project` | 後から直すと高くつく決定：editor バージョンの固定、`.meta`/LFS、UPM の tag 固定、IL2CPP/ARM64、asmdef の境界 |
+| | `unity-game-brief` | Unity を触る前の最初の一時間：一行のアイデアを一枚の体験ブリーフにし、画像で見た目を固定し、制約からアーキテクチャ案を導き、テスト可能な不変条件として書き、人間が実際に遊べる一つのインタラクションを作る |
 | **UI** | `unity-game-ui` | **UI の依頼はまずここから。** プロジェクトがどの UI システムを使っているか判定して振り分け、誰も書いていない領域 —— runtime の `OnGUI` HUD —— を自分で受け持ちます |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— そして uGUI が何も描かなくなる六つの原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— そして USS が黙って無視するプロパティ |

@@ -62,6 +62,8 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 | "It shakes / flickers / shimmers"; anything temporal | `reference/motion-and-timing.md` |
 | Runtime misbehaviour with a human pressing Play; device triage | `reference/log-triage.md` |
 | Phantom collisions, invisible objects, hitboxes, import weirdness | `reference/unity-gotchas.md` |
+| The game cannot boot into the moment under test; nothing readable says what state it is in; a feel report with nothing to measure | skill `unity-play-harness` |
+| "It is slow", hitches, draw calls or GC — numbers you can compare across a change | skill `unity-profiling` |
 | A collision or trigger that never fires, tunnelling, a raycast that misses | skill `unity-physics-3d` |
 | Post-processing set but not visible; reviewing a renderer feature | skill `unity-render-urp` |
 | Installing editors, licences, templates, MCP wiring, CI invocation | skill `unity-cli` |
@@ -69,7 +71,8 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 | Building the game's UI rather than debugging it | skill `unity-game-ui` |
 
 `resources/DevDebug.cs` is a project-agnostic drop-in probe. Copy into `Assets/`, attach,
-**delete when finished.**
+**delete when finished.** A permanent, contract-shaped probe that ships with the game and every run
+can read is a different thing — that one is `unity-play-harness`.
 
 ---
 
@@ -108,6 +111,9 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 | An agent that will not move | `unity-navigation` |
 | Post-processing that will not appear | `unity-render-urp` |
 | Designing the UI rather than verifying it | `unity-game-ui` |
+| Building the game so an agent can drive and read it: probes, named situations, journey tests | `unity-play-harness` |
+| Frame-time windows, profiler counters, a before/after table | `unity-profiling` |
+| Deciding what to build first: the brief, the constraints, the first interaction | `unity-game-brief` |
 
 ## Running PlayMode tests edits your project
 

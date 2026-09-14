@@ -252,6 +252,7 @@ the web build".
 | Mesh and texture optimisation at the asset level | `unity-3d-models` |
 | Which render pipeline is actually in force | `unity-render-urp` |
 | Sprite packing, and atlas variants for the web | `unity-sprite-atlas` |
+| In-game frame windows and counters | `unity-profiling` |
 
 ## Related files
 

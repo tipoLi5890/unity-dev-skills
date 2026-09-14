@@ -31,6 +31,7 @@ description: >-
 | Scripting a profile, a Global Volume or a runtime grade tween | [`reference/volume-templates.md`](reference/volume-templates.md) |
 | Want a grade to start from rather than a blank profile | [`reference/volume-templates.md`](reference/volume-templates.md) — four presets |
 | Effect appears, costs too much on device | §3 |
+| Effect is suspected of costing too much, and no number says so | §3, then a before/after frame-time window — `unity-profiling` |
 | Reviewing a `ScriptableRendererFeature` | §4 |
 | Turning an HLSL function into a Shader Graph node | §5 |
 
@@ -175,7 +176,8 @@ step of §1 fails silently.
   [`reference/volume-templates.md`](reference/volume-templates.md): which pipeline asset resolved
   as active, which Volume, profile and overrides, the camera's `renderPostProcessing`. "Added
   bloom" is not a result.
-- On mobile, take a frame-time number before and after. Post-processing is full-screen work and
+- On mobile, take a frame-time number before and after — the same situation, the same run mode,
+  windows either side of the change (`unity-profiling`). Post-processing is full-screen work and
   the cost is not proportional to how much you can see.
 
 ## Scope — what this skill does NOT do
@@ -193,4 +195,6 @@ stay out** as well — light modes, probes, bake settings.
 Whether the pipeline in force is even URP is §1 and
 [`reference/resolve-active-pipeline.md`](reference/resolve-active-pipeline.md); a project that
 came from a URP template can be rendering built-in. Confirming that a change is visible on screen
-is `unity-debug`.
+is `unity-debug`. **Measuring what an effect costs stays out too** — counters, frame-time windows
+and the before/after table are `unity-profiling`; §3 tells you what to suspect, that skill tells
+you what it actually cost.

@@ -2,11 +2,25 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
-## 0.13.0
+## 0.14.0
 
-Twenty-nine load-by-situation skills, each teaching the same three things: what to check, the call
+Thirty-two load-by-situation skills, each teaching the same three things: what to check, the call
 that checks it, and the script that does it for you.
 
+- **Three new skills for the loop a human cannot run by hand.**
+  - `unity-play-harness` — build the game so an agent can drive it and read it: a one-line probe
+    snapshot readable from a live Editor, `Editor.log` or a PlayMode test; named situations that
+    boot straight into a moment and wait on a **readiness set** rather than a sleep; journey tests
+    that sample the probe into a timeline and assert invariants over it; and the method that turns
+    a feel complaint into a repeatable test.
+  - `unity-profiling` — the work behind a slow or uneven frame, as numbers you can compare:
+    ProfilerRecorder counters without the Profiler window, 90-frame windows with median/p95/worst,
+    scheduled / completed / discarded work counters for streaming and pooling, and a before/after
+    table that says whether a change helped.
+  - `unity-game-brief` — the first hour, before any Unity work: one line of idea into a one-page
+    experience brief, the look locked with images, an architecture proposal **derived** from the
+    stated constraints, readiness written as testable invariants, and one interaction the human
+    can play and react to.
 - **One layout for every skill.** `SKILL.md` is a router with a symptom table; `reference/` holds
   the depth it names; `resources/`, `scripts/` and `templates/` hold what you run or copy. No skill
   keeps content at its own root.

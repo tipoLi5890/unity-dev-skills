@@ -84,6 +84,7 @@ smooth scrolling motion produces smooth gradients in a diff.
 | ≈0 | high | A one-off event inside the region — a counter ticking, a pickup. Not a defect. |
 | high | high | Genuinely moving every frame. |
 | high | high, **and the diff shows dense speckle** | Not UI at all — texture minification aliasing. |
+| high | high, **and the diff shows no speckle** | Everything moves, nothing aliases: the fault is temporal, not visual. Take a frame-time window and read the counters — `unity-profiling`. |
 
 ## If it is aliasing, the fix is filtering, not code
 

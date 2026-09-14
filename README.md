@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Twenty-nine skills covering the loop from an
+Unity 6 game-development skills for AI coding agents. Thirty-two skills covering the loop from an
 empty project to a verified artifact — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -36,7 +36,10 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 |---|---|---|
 | **Terminal & verification** | `unity-cli` | Driving Unity from a terminal: editors, licences, templates, CI, MCP, and exit codes that say whether a retry is honest |
 | | `unity-debug` | You need to verify a change you cannot see — and to prove the harness is telling the truth before believing it |
+| | `unity-play-harness` | Making the game drivable and readable: a one-line probe snapshot, named situations that boot straight into a moment and wait on a readiness set, journey tests that assert invariants, a feel complaint turned into a repeatable test |
+| | `unity-profiling` | What a slow or uneven frame is actually doing: counters without the Profiler window, 90-frame windows with median/p95/worst, work counters, a before/after table |
 | **Day one** | `unity-new-project` | Decisions that are expensive to retrofit: editor pinning, `.meta`/LFS, UPM tag pinning, IL2CPP/ARM64, asmdef boundaries |
+| | `unity-game-brief` | The first hour, before any Unity work: one line of idea into a one-page experience brief, the look locked with images, an architecture proposal derived from the constraints, invariants, and one interaction a human can play |
 | **UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
 | | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
 | | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |
