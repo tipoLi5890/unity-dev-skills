@@ -67,6 +67,7 @@ guess** — `SpriteRect` and `SpriteNameFileIdPair` sit in `UnityEditor`, `GUID`
 |---|---|
 | Sheet imported as a single sprite | §1 — `spriteImportMode` |
 | Need to cut a sheet into frames | §3 |
+| Irregular frames, or a grid with padding between cells | §3 — `resources/AutomaticSliceSheet.cs` |
 | Frames are right, pivots are wrong | §3 pivots |
 | A UI panel stretches its corners | §3 borders |
 | Slicing "worked" but the names are `sprite_0` | §3 naming |
@@ -170,11 +171,10 @@ whole texture, **named after the file stem** — the asset's API surface (§1).
 
 ## 4. Outlines
 
-`ISpriteOutlineDataProvider` holds the render outline and `ISpritePhysicsOutlineDataProvider` the
-collider one, both `List<Vector2[]>` per sprite GUID plus a tessellation detail in the `0`–`1`
-range. They are **separate on purpose**: one trims overdraw, the other is a collider, and a physics
-outline tessellated as finely as a render outline is an expensive `PolygonCollider2D` for no
-gameplay benefit — coarse is correct there.
+The render outline and the collider outline are **two providers, not one setting**, and the
+tessellation that suits one wastes the other: a physics outline cut as finely as a render outline
+is an expensive `PolygonCollider2D` for no gameplay benefit. Both, the `0`–`1` detail range and the
+other providers: `reference/data-provider.md` §1.
 
 ## 5. Style rules for generated scripts
 
@@ -185,9 +185,8 @@ gameplay benefit — coarse is correct there.
   import**, and it takes `Single` vs `Multiple` from one helper shared with the slicer.
 - **Enums cast to their numeric type, never magic numbers.** `(int)SpriteAlignment.Center`, not
   `1`. The numbering is not stable across versions and a raw number is unreadable at review.
-- **Verify afterwards.** Reopen the provider and read the rects back, or look at the Project
-  window. `Apply()` then `SaveAndReimport()` is where it becomes real; skip the reimport and the
-  in-memory change evaporates.
+- **Verify afterwards** — read the rects back through a fresh provider (§6, and
+  `reference/data-provider.md` §2); skip the reimport and the in-memory change evaporates.
 
 **Ordering, when this is a project pipeline rather than one edit:** the metadata pass (reimport →
 mode → pivots, borders, slices) finishes before any generator writes `Sprite` references into
@@ -196,7 +195,8 @@ other order serialises `null` with no error. Each pass is a separate headless in
 **either can exit 0 having wired nothing**: assert on the artifacts, not the exit code.
 `reference/import-pipeline.md` §5.
 
-Scripts — adapt rather than rewrite. The slicers `resources/SliceSheet.cs` (grid) and
+Scripts — adapt rather than rewrite. The slicers `resources/SliceSheet.cs` (grid),
+`resources/AutomaticSliceSheet.cs` (islands, or a padded grid) and
 `resources/IsometricSliceSheet.cs` run the checks above; `resources/SpriteToPng.cs` (pixels out)
 and `resources/SheetToAnimationClip.cs` (§7) open no provider at all. What each adds is in
 `reference/data-provider.md` §4.

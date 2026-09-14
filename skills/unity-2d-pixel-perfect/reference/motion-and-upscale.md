@@ -28,8 +28,13 @@ after that scale-up — or gets caught inside it — is working at the wrong res
 whole frame goes soft. Leaving `gridSnapping = PixelSnapping` puts post-processing back at native
 resolution. Keeping the upscale means injecting a 2D renderer feature after post-processing rather
 than a 3D one — a plain `ScriptableRendererFeature` added to a URP 2D renderer is **ignored without
-an error**, which is the trap. Render Graph review for that work is `unity-render-urp` →
-`reference/render-graph-review.md`.
+an error**, which is the trap. On Unity 6 the 2D-side pair is `ScriptableRendererFeature2D` with
+`ScriptableRenderPass2D`, injected at `RenderPassEvent2D.AfterRenderingPostProcessing` and
+recording work through `AddRasterRenderPass`; confirm those four names against the URP version the
+project resolved before writing the feature, because a wrong base class is the failure that
+produces no message at all. The `OnRenderImage` plus `Graphics.Blit` shape does not belong in any
+of it — that pair is incompatible with the render graph. Render Graph review for that work is
+`unity-render-urp` → `reference/render-graph-review.md`.
 
 **UI text.** A Screen Space – Camera canvas renders into the low-resolution buffer and is scaled
 up with the scene, so text softens while the art stays crisp. Confirm the behaviour on your Unity
@@ -38,8 +43,10 @@ version in a windowed run before committing a canvas architecture to it. In reli
 1. Set the canvas to **Screen Space – Overlay**. It bypasses the camera entirely and draws at
    native resolution. This is the route that holds.
 2. A separate UI camera with no pixel camera component on it, canvas in Screen Space – Camera.
-3. Raise the font material's sharpness. It addresses SDF threshold calibration at low reference
-   resolutions and nothing about the buffer — a partial mitigation.
+3. Raise the font material's sharpness — on the material's Inspector, **Font Material → Debug
+   Settings → Sharpness**, moved towards `1`. It addresses SDF threshold calibration at low
+   reference resolutions and nothing about the buffer, so it is a partial mitigation: the text
+   is still being scaled up with the scene.
 
 Canvas render modes and scaler behaviour are `unity-ui-ugui`; CJK and SDF font atlases are
 `unity-game-ui` → `reference/text-and-cjk.md`.

@@ -167,6 +167,29 @@ Angles are a struct, not a float: `Angle.Degrees()`, `Angle.Radians()`, `Angle.T
 `Angle.Gradians()` also exists. `ArcDirection` is `Clockwise` or `CounterClockwise`. `FillRule` is
 `NonZero` (default) or `OddEven`; `OddEven` is how a shape gets a hole.
 
+### Translating from a Canvas 2D sketch
+
+The API is shaped like the HTML Canvas 2D context, so a drawing prototyped in a browser ports
+almost mechanically. Almost — the rows in bold are where the translation stops being mechanical:
+
+| Canvas 2D | Here | Note |
+|---|---|---|
+| `beginPath()` | `BeginPath()` | required before **every** path, not just the first |
+| `moveTo(x, y)` / `lineTo(x, y)` | `MoveTo(new Vector2(x, y))` / `LineTo(…)` | coordinates are content-rect local |
+| `closePath()` | `ClosePath()` | |
+| `arc(cx, cy, r, a0, a1)` | `Arc(center, radius, Angle, Angle, ArcDirection)` | **angles are `Angle`, direction is an enum** |
+| `arcTo(x1, y1, x2, y2, r)` | `ArcTo(p1, p2, radius)` | the fillet used for rounded corners |
+| `bezierCurveTo(…)` / `quadraticCurveTo(…)` | `BezierCurveTo(c1, c2, end)` / `QuadraticCurveTo(c, end)` | |
+| `rect(x, y, w, h)` | **nothing** | trace it yourself — see below |
+| `fill()` / `stroke()` | `Fill(FillRule)` / `Stroke()` | both may run on one path |
+| `fillStyle` | `fillColor` · `fillGradient` · `fillTexture` | three properties, not one |
+| `strokeStyle` | `strokeColor` · `strokeGradient` · `strokeFillGradient` | |
+| `lineWidth` / `lineJoin` | `lineWidth` / `lineJoin` | `LineJoin` is `Miter` (default), `Bevel`, `Round` |
+| `lineCap` | `lineCap` | **`Butt` or `Round` only — there is no square cap** |
+| `setLineDash([…])` / `lineDashOffset` | `SetDashPattern(…)` / `dashOffset` | |
+| `fillText(…)` | `ctx.DrawText(…)` | **on the context, not on the painter** |
+| `drawImage(…)` | `fillTexture`, or a child element with a USS `background-image` | no direct call |
+
 **There is no rectangle call.** No `Rect()`, no `RoundRect()` — trace it with
 `MoveTo`/`LineTo`/`ClosePath`, and use `ArcTo` for the corners of a rounded one. Every rounded-rect
 helper you see in UI Toolkit code is somebody's own function for exactly this reason.
@@ -249,6 +272,168 @@ different types on two different properties, which is easy to get wrong once and
 - **Antialiasing is in the mesh.** A shape with hundreds of segments is hundreds of segments;
   approximate an arc with as few as the size justifies.
 
+### The rounded rectangle you have to write
+
+Since there is no `Rect()`, every plate, card and badge starts from the same helper: four straight
+runs, four fillets, and the radius clamped inside the helper so no caller can invert a short box.
+Take the box as a `Rect` — the element hands you one already.
+
+```csharp
+static void TraceRoundedRect(Painter2D p, Rect box, float radius)
+{
+    var r = Mathf.Min(radius, Mathf.Min(box.width, box.height) * 0.5f);
+    float left = box.xMin, top = box.yMin, right = box.xMax, bottom = box.yMax;
+
+    p.MoveTo(new Vector2(left + r, top));
+    p.LineTo(new Vector2(right - r, top));
+    p.ArcTo(new Vector2(right, top), new Vector2(right, top + r), r);          // top-right
+    p.LineTo(new Vector2(right, bottom - r));
+    p.ArcTo(new Vector2(right, bottom), new Vector2(right - r, bottom), r);    // bottom-right
+    p.LineTo(new Vector2(left + r, bottom));
+    p.ArcTo(new Vector2(left, bottom), new Vector2(left, bottom - r), r);      // bottom-left
+    p.LineTo(new Vector2(left, top + r));
+    p.ArcTo(new Vector2(left, top), new Vector2(left + r, top), r);            // top-left
+    p.ClosePath();
+}
+```
+
+Each `ArcTo` takes the corner point and the point the path continues to, which is why the two
+arguments read as "the corner" and "just past the corner". `y` grows downward here, so `yMin` is
+the top edge — the same convention as every other UI Toolkit coordinate.
+
+### A whole element, end to end
+
+A plate the courier HUD uses behind a lane callout: vertical gradient, rounded corners, optional
+border, every knob authorable from UXML.
+
+```csharp
+using UnityEngine;
+using UnityEngine.UIElements;
+
+[UxmlElement]
+public partial class LanePlate : VisualElement
+{
+    Color m_Top = new Color(0.13f, 0.16f, 0.22f);
+    Color m_Bottom = new Color(0.07f, 0.08f, 0.11f);
+    Color m_Edge = Color.white;
+    float m_EdgeWidth = 1f;
+    float m_Radius = 8f;
+    float m_Opacity = 1f;
+
+    [UxmlAttribute] public Color top       { get => m_Top;       set { m_Top = value;       MarkDirtyRepaint(); } }
+    [UxmlAttribute] public Color bottom    { get => m_Bottom;    set { m_Bottom = value;    MarkDirtyRepaint(); } }
+    [UxmlAttribute] public Color edge      { get => m_Edge;      set { m_Edge = value;      MarkDirtyRepaint(); } }
+    [UxmlAttribute] public float edgeWidth { get => m_EdgeWidth; set { m_EdgeWidth = value; MarkDirtyRepaint(); } }
+    [UxmlAttribute] public float radius    { get => m_Radius;    set { m_Radius = value;    MarkDirtyRepaint(); } }
+    [UxmlAttribute] public float opacity   { get => m_Opacity;   set { m_Opacity = Mathf.Clamp01(value); MarkDirtyRepaint(); } }
+
+    public LanePlate() => generateVisualContent += Draw;
+
+    void Draw(MeshGenerationContext ctx)
+    {
+        var w = contentRect.width;
+        var h = contentRect.height;
+        if (w < 1f || h < 1f) return;                       // not laid out yet
+
+        var top = m_Top;    top.a *= m_Opacity;
+        var bot = m_Bottom; bot.a *= m_Opacity;
+
+        var p = ctx.painter2D;
+        p.fillGradient = FillGradient.MakeLinearGradient(
+            top, bot, new Vector2(0f, 0f), new Vector2(0f, h), AddressMode.Clamp);
+        p.BeginPath();
+        TraceRoundedRect(p, new Rect(0f, 0f, w, h), m_Radius);
+        p.Fill();
+
+        if (m_EdgeWidth <= 0f) return;
+
+        var inset = m_EdgeWidth * 0.5f;                     // a stroke straddles its path
+        p.strokeColor = m_Edge;
+        p.lineWidth = m_EdgeWidth;
+        p.lineJoin = LineJoin.Round;
+        p.BeginPath();
+        TraceRoundedRect(p, new Rect(inset, inset, w - m_EdgeWidth, h - m_EdgeWidth),
+                         Mathf.Max(0f, m_Radius - inset));
+        p.Stroke();
+    }
+}
+```
+
+```xml
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:hud="Project.UI.Hud">
+  <hud:LanePlate class="lane-callout" top="#222A38" bottom="#11141B"
+                 radius="12" edge-width="1" edge="#FFFFFF" opacity="0.9">
+    <ui:Label text="Lane 2 — hazard" class="callout-title" />
+  </hud:LanePlate>
+</ui:UXML>
+```
+
+Three things that example is carrying:
+
+- **The gradient is filled first, the border stroked second, on two separate paths.** One path
+  cannot be both — `BeginPath()` between them is what keeps the fill from swallowing the stroke.
+- **A stroke straddles the path it follows**, so a 1 px border traced on the element's exact
+  bounds loses half of itself off the edge. Inset by half the line width, and shrink the radius
+  by the same amount or the corner thickens.
+- **The element still behaves like any other.** It sits in flex, takes children (they draw over
+  the gradient), and its size, padding and margin come from USS — the C# owns the pixels inside
+  the box and nothing about the box.
+
+## Editing an attribute with something other than a text field
+
+A `[UxmlAttribute]` gets a default editor in the visual authoring tool based on its type. When a
+number wants a slider instead of a field, the lever is a `PropertyDrawer` returning a
+`VisualElement` — the same `CreatePropertyGUI` shape as any inspector drawer, applied to a marker
+attribute:
+
+```csharp
+// Runtime assembly, beside the element.
+using UnityEngine;
+using UnityEngine.UIElements;
+
+public class LaneIndexAttribute : PropertyAttribute { }
+
+[UxmlElement]
+public partial class LaneBadge : VisualElement
+{
+    [UxmlAttribute, LaneIndex] public int lane { get; set; } = 1;
+}
+```
+
+```csharp
+// Editor assembly.
+using UnityEditor;
+using UnityEditor.UIElements;   // BindProperty lives here, not in UnityEngine.UIElements
+using UnityEngine.UIElements;
+
+[CustomPropertyDrawer(typeof(LaneIndexAttribute))]
+public class LaneIndexDrawer : PropertyDrawer
+{
+    public override VisualElement CreatePropertyGUI(SerializedProperty property)
+    {
+        var slider = new SliderInt(1, 3) { label = property.displayName };
+        slider.BindProperty(property);
+        return slider;
+    }
+}
+```
+
+The same lever re-skins an attribute a **base class** already declares: derive from the control,
+declare your own property under the base attribute's UXML name, and forward to `value`.
+
+```csharp
+[UxmlElement]
+public partial class LaneField : IntegerField
+{
+    [UxmlAttribute("value"), LaneIndex]
+    internal int laneValue { get => this.value; set => this.value = value; }
+}
+```
+
+This changes only how the attribute is *authored*; the element's runtime behaviour is untouched.
+Confirm the re-declaration resolves on your Editor version before building a set of elements on
+it — a name collision with a base attribute is the kind of thing that changes between versions.
+
 ## Manipulators
 
 Interaction logic belongs on the element, in a `PointerManipulator` subclass with mirrored
@@ -273,7 +458,7 @@ them for icons.
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <path d="M8 4l8 8-8 8" stroke="currentColor" stroke-width="2" fill="none"
+  <path d="M9 5 L17 12 L9 19" stroke="currentColor" stroke-width="2" fill="none"
         stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 ```
@@ -288,6 +473,53 @@ them for icons.
 
 A shared `viewBox` across an icon set is what makes the set line up at one USS size. `fill="none"`
 with a stroke gives an outline family; `currentColor` keeps the icon tintable.
+
+### A starter set, all on one 24-unit box
+
+Drop each into the same wrapper as the chevron above — `viewBox="0 0 24 24"`,
+`stroke="currentColor"`, `stroke-width="2"`, `fill="none"`, `stroke-linecap="round"` — and the
+whole set shares one optical weight. Adjust the inset (these sit 5 units from the edge) once,
+across all of them, rather than per icon.
+
+| Icon | `d` |
+|---|---|
+| Chevron left | `M15 5 L7 12 L15 19` |
+| Chevron down | `M5 9 L12 16 L19 9` |
+| Chevron up | `M5 15 L12 8 L19 15` |
+| Check | `M5 13 L10 18 L19 6` |
+| Close | `M6 6 L18 18 M18 6 L6 18` |
+| Plus | `M12 5 V19 M5 12 H19` |
+| Minus | `M5 12 H19` |
+| Menu | `M4 7 H20 M4 12 H20 M4 17 H20` |
+| Pause | `M9 5 V19 M15 5 V19` |
+
+Two need a second element beside the path:
+
+```svg
+<!-- settings -->
+<circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="2" fill="none"/>
+<path d="M12 2 V5 M12 19 V22 M2 12 H5 M19 12 H22 M5.2 5.2 L7.3 7.3
+         M16.7 16.7 L18.8 18.8 M18.8 5.2 L16.7 7.3 M7.3 16.7 L5.2 18.8"
+      stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+<!-- search -->
+<circle cx="10.5" cy="10.5" r="5.5" stroke="currentColor" stroke-width="2" fill="none"/>
+<path d="M14.4 14.4 L19.4 19.4" stroke="currentColor" stroke-width="2" fill="none"
+      stroke-linecap="round"/>
+```
+
+Keep paths this simple. A detailed illustration is an image generator's job, not a path's — and
+a path with hundreds of segments defeats the reason to use a vector in the first place.
+
+### The import setting that decides whether it draws at all
+
+A `.svg` dropped into `Assets/` imports, shows a preview, and still resolves to nothing from USS
+if it was imported as a sprite. In the Inspector for the asset, the generated asset type has to
+be set to the UI Toolkit vector image rather than a texture or sprite, then applied. The failure
+mode is the one §0 of the skill warns about: a clean Console, a valid-looking `url()`, and an
+empty box on screen. **Confirm the exact field label and options on your Editor version** — this
+importer's inspector has changed shape before — but the check is the same either way: reimport,
+then look at the element.
 
 Two costs to keep in view: the import is a **tessellation**, so a detailed SVG becomes a lot of
 triangles — simplify at the source, the same argument as `unity-3d-models`. And the imported asset

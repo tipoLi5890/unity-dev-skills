@@ -3,6 +3,16 @@
 Part of the `unity-physics-3d` skill. SKILL.md §3 states each rule in a line; this file holds it in
 full, with the values and the A/B probe.
 
+- **Outside play mode a query needs a sync first.** `Physics.autoSyncTransforms` is **`false`** by
+  default, so a collider created or moved this frame is not yet where PhysX believes it is and
+  every ray against it returns `false` — which reads as a broken collider. One call before the
+  first query is the whole fix:
+
+  ```csharp
+  // without the sync, every one of these returns false
+  UnityEngine.Physics.SyncTransforms();
+  UnityEngine.Physics.Raycast(origin, dir, out hit, 100f);
+  ```
 - **Origin inside the target collider returns false** (backface culling).
   **`Queries Hit Backfaces` only rescues a `MeshCollider`.** From inside a `BoxCollider`,
   the raycast stays `false` whether the flag is on or off; from inside a non-convex `MeshCollider`
@@ -36,6 +46,13 @@ full, with the values and the A/B probe.
   `UnityEngine.UI.GraphicRaycaster` derives from `UnityEngine.EventSystems.BaseRaycaster`, with
   nothing from the physics module in its ancestry. To hit a world collider from a screen point, the
   call is `Physics.Raycast(Camera.main.ScreenPointToRay(screenPos), out hit)`.
+- **Queries keep answering while the game is frozen.** `Raycast` and `OverlapSphere` read collider
+  geometry directly, so they are unaffected by `Time.timeScale == 0` — which makes them the tell
+  for it: rays hit, nothing moves, and the physics setup is innocent.
+- **A projectile is better swept than stepped.** `Physics.SphereCast` along the frame's trajectory,
+  taking the first hit, removes tunnelling entirely and does not care what the physics step is —
+  where a projectile "fixed" by halving the timestep is still tunnelling, just at a higher speed.
+  The cast is a query, so it also answers outside play mode once transforms are synced.
 - **After writing `transform.position`, the same frame's queries still see the old position** until
   `Physics.SyncTransforms()`. Call it once, deliberately — **never every frame**. A physics-driven
   object should be using `Rigidbody.MovePosition` instead.

@@ -62,6 +62,10 @@ not defaults**, and baking with the wrong ones produces a mesh that is subtly to
 
 ## 2. The agent moves, or it does not
 
+> **Two layers steer, and they fail differently.** A\* over the baked polygons picks the *route*;
+> RVO local avoidance picks the *next step*. A wrong route is §5–§6, a crowd that shoves or stalls
+> is §4.
+
 ```csharp
 agent.destination = target.position;   // or agent.SetDestination(pos), which returns
                                        // whether the request was accepted
@@ -169,6 +173,10 @@ limiter.
 The rule underneath: **carving changes the map; avoidance changes the walk.** If the agent needs
 to find a different route, it must be a carve. If it just needs to step aside, it must not be.
 
+Avoidance has two dials: **`avoidancePriority` is 0–99 and the lower number wins** — the agent
+that must not be shoved off its lane gets the low one — and **Quality**, the first thing to drop
+when a crowd costs frames (`None` switches avoidance off).
+
 **An agent walking through a wall** is almost always that the wall was not in the bake — it was
 added later, is on a layer the surface does not collect, or has no collider at all. Navigation does
 not consult PhysX at runtime; a collider that was absent at bake time does not exist for pathing.
@@ -182,10 +190,10 @@ a doorway between two separately-baked areas. Width `0` makes it a point-to-poin
 gives it a span. It can be one-way (`Bidirectional` off), and it can carry a cost modifier so agents
 treat it as a last resort — **`costModifier`**; `costOverride` is deprecated in its favour.
 
-When `autoTraverseOffMeshLink` is off, you own the crossing: detect `agent.isOnOffMeshLink`,
-read `agent.currentOffMeshLinkData` for `startPos` / `endPos`, play or lerp the traversal, then
-call `agent.CompleteOffMeshLink()`. **Forgetting that final call leaves the agent stuck on the
-link forever** — a very common hang.
+With `autoTraverseOffMeshLink` off you own the crossing, and **forgetting the final
+`agent.CompleteOffMeshLink()` leaves the agent stuck on the link forever** — a very common hang.
+The sequence, and why `OffMeshLink` is the legacy component:
+[`reference/agent-api.md`](reference/agent-api.md) §4.
 
 **Areas and costs** express preference, not possibility. A high-cost "Water" area is still
 walkable; agents route around it when a cheaper path exists and through it when one does not.
@@ -194,6 +202,9 @@ Per-agent overrides let one character type ignore what another avoids:
 ```csharp
 agent.SetAreaCost(3, 5.0f);     // area index 3 costs 5× for this agent only
 ```
+
+The built-in area indices, the `distance × cost` arithmetic, `areaMask` and `agent.Raycast`:
+[`reference/recipes.md`](reference/recipes.md) §8.
 
 `NavMeshModifier` overrides area or walkability per GameObject; `NavMeshModifierVolume` does it for
 a region of space regardless of what is in it — the one for "this doorway is off-limits" where no
@@ -234,17 +245,10 @@ and assert `agent.isOnNavMesh` on spawn — **in play mode only**, per §2.
 completes in milliseconds from a batch-mode Editor and produces a live `navMeshData`, with
 `NavMesh.SamplePosition` and `NavMesh.CalculatePath` answering correctly against it immediately
 afterwards. So bake-and-query is a real automated test you can write, even though agent
-*movement* is not. Time your own scene before treating any bake as free — the cost climbs with
-scene size and voxel size (§6):
-
-```csharp
-var surf = root.AddComponent<Unity.AI.Navigation.NavMeshSurface>();
-surf.collectObjects = Unity.AI.Navigation.CollectObjects.Children;
-surf.BuildNavMesh();
-var p = new UnityEngine.AI.NavMeshPath();
-UnityEngine.AI.NavMesh.CalculatePath(from, to, UnityEngine.AI.NavMesh.AllAreas, p);
-return p.status;              // assert on status, NOT on CalculatePath's bool
-```
+*movement* is not — build the surface from `CollectObjects.Children`, bake, call
+`NavMesh.CalculatePath`, and **assert on `path.status`, never on the bool**. The snippet:
+[`reference/recipes.md`](reference/recipes.md) §6. Time your own scene before treating any bake as
+free — the cost climbs with scene size and voxel size (§6).
 
 Driving the Editor to run it: `unity-debug` → `reference/editor-control.md`.
 

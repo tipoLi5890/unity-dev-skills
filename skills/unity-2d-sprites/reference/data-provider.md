@@ -22,6 +22,37 @@ On a project without `com.unity.2d.sprite` — a URP 3D project, say — every o
 resolves to nothing. With the package installed they all live in the **`Unity.2D.Sprite.Editor`**
 assembly — the name an asmdef has to reference (`reference/import-pipeline.md` §1).
 
+### Everything else `GetDataProvider<T>()` hands back
+
+The rects are one provider among several on the same object. `GetDataProvider<T>()` returns
+`null` where the importer does not offer that kind of data, so null-check every one of them
+rather than assuming a PNG behaves like a PSB. `HasDataProvider(System.Type)` asks the same
+question without materialising anything, which is the cheap way to write a report line about an
+asset you are not going to edit.
+
+| Provider | Members | What it holds |
+|---|---|---|
+| `ISpriteOutlineDataProvider` | `GetOutlines(GUID)` / `SetOutlines(GUID, List<Vector2[]>)`, `GetTessellationDetail(GUID)` / `SetTessellationDetail(GUID, float)` | The **render** outline — the mesh the sprite draws with, which is where overdraw is trimmed |
+| `ISpritePhysicsOutlineDataProvider` | the same four, per sprite GUID | The **collider** outline, read by `PolygonCollider2D` |
+| `ISpriteMeshDataProvider` | `GetVertices(GUID)` → `Vertex2DMetaData[]`, `GetIndices(GUID)` → `int[]`, `GetEdges(GUID)` → `Vector2Int[]`, plus `SetVertices` / `SetIndices` / `SetEdges` | A custom sprite mesh, vertices and triangles rather than a closed outline |
+| `ISecondaryTextureDataProvider` | `textures`, a `SecondarySpriteTexture[]` property, get and set | The extra maps a Sprite-Lit material samples — a normal map or a mask packed alongside the albedo |
+| `ITextureDataProvider` | `texture`, `previewTexture`, `GetReadableTexture2D()`, `GetTextureActualWidthAndHeight(out int, out int)` | The pixels. `previewTexture` is what the Sprite Editor draws, `GetReadableTexture2D()` is the one to sample from, and the two sizes differ once Max Size applies |
+| `ISpriteBoneDataProvider` | `GetBones(GUID)` / `SetBones(GUID, List<SpriteBone>)` | 2D skeletal rigging. `SKILL.md`'s Scope says why nothing here drives it |
+
+**Tessellation detail is a `0`–`1` value on both outline providers, and the right number is not
+the same on each.** Finer is more triangles: worth it on a render outline that trims a lot of
+transparent area, wasteful on a physics outline, where it buys an expensive `PolygonCollider2D`
+and no gameplay. Coarse is correct there. The two are separate providers precisely because one
+answer does not serve both.
+
+**`SpriteRect.spriteID` is the runtime `Sprite.GetSpriteID()`.** That is the join between
+importer-side configuration and a sprite the game holds at runtime, and it is why §3 guards the id
+so carefully: change it and the join breaks everywhere at once, silently.
+
+`RegisterDataChangeCallback(Action<ISpriteEditorDataProvider>)` and its `Unregister` twin exist for
+an Editor window that has to react while a human edits. A one-shot script does not want them —
+register in a script that then finishes, and the callback outlives the work it was for.
+
 ## 2. The capability gate, member by member
 
 Both gates in order — the null provider, then the capability — and the write that makes it real:
@@ -48,6 +79,11 @@ dp.SetSpriteRects(rects);
 dp.Apply();
 importer.SaveAndReimport();          // nothing persists without this
 ```
+
+Verifying afterwards is the same call in reverse: reopen the provider on a fresh
+`SpriteDataProviderFactories` and read the rects back, or look at the Project window. `Apply()`
+followed by `SaveAndReimport()` is where an edit becomes real — the in-memory change evaporates
+without the reimport, and the count that settles it is `SKILL.md` §6's.
 
 `EEditCapability`, enumerated from the assembly rather than recalled:
 `None, EditSpriteName, EditSpriteRect, EditBorder, EditPivot, CreateAndDeleteSprite,
@@ -134,13 +170,26 @@ used in its report rather than leaving it implied.
   against the source image's dimensions**, which that call gives you: a Max Size of 2048 on a
   4096 sheet halves every coordinate the importer reports, and the cells come out at half the
   size the artist authored.
+- `resources/AutomaticSliceSheet.cs` — the same two gates, with the Sprite Editor's own rect
+  generators doing the cutting: `UnityEditorInternal.InternalSpriteUtility`'s
+  `GenerateAutomaticSpriteRectangles(Texture2D, int minRectSize, int extrudeSize)` for islands of
+  opaque pixels, and `GenerateGridSpriteRectangles(Texture2D, Vector2 offset, Vector2 size,
+  Vector2 padding, bool keepEmptyRects)` for the padded, offset grid the arithmetic in
+  `SliceSheet.cs` does not cover. Both return `Rect[]` in the space of the texture handed to them,
+  so it generates against the source-size copy. **`UnityEditorInternal` is not documented scripting
+  API** — the file opens with a reflection check to confirm the type and both methods on your
+  version, and the fallback is `SliceSheet.cs`; island detection has no substitute worth
+  approximating. Detected frames arrive in no promised order, so it sorts them into reading order
+  with a row tolerance **before** naming: names are the sheet's API surface (`SKILL.md` §3), and
+  naming in the generator's order renames the whole sheet on the next run.
 - `resources/SpriteToPng.cs` — one sprite's own pixels as PNG bytes. `GetPixels` on
   `sprite.texture` returns the whole page, so the sprite's triangles are drawn into a temporary
   `RenderTexture` the size of its `textureRect` first.
 - `resources/SheetToAnimationClip.cs` — a folder of frame PNGs or one sliced sheet into a clip,
   plus an optional one-state controller (`reference/sprite-animation.md`).
 
-`IsometricSliceSheet.cs` compiles against the Editor assemblies plus `Unity.2D.Sprite.Editor`, and
+`IsometricSliceSheet.cs` and `AutomaticSliceSheet.cs` compile against the Editor assemblies plus
+`Unity.2D.Sprite.Editor`, and
 `SheetToAnimationClip.cs` against the Editor assemblies alone. `SpriteToPng.cs` uses only
 `UnityEngine` types and needs no sprite-package reference, though `Shader.Find("UI/Default")` keeps
 it an Editor-side tool. A compile is not a slice: treat `SKILL.md` §6's acceptance test as the bar

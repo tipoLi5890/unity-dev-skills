@@ -136,6 +136,7 @@ the default renderer index per-camera.
 ## What this does not cover
 
 Whether URP is the *right* choice for the project, migrating a built-in project to URP
-(materials, shaders and lighting all move), and HDRP. Assigning the asset is a project-settings
+(materials, shaders and lighting all move — that one is `unity-urp-migration`), and HDRP.
+Assigning the asset is a project-settings
 change with real consequences for every existing material — resolve first, report what you
 found, and let the owner decide before you assign anything.

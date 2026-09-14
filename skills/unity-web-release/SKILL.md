@@ -39,8 +39,8 @@ description: >-
 Drive a live Editor (`unity-debug` → `reference/editor-control.md`) rather than hand-editing
 `ProjectSettings.asset` — the file you edit is often not the file in force (`unity-debug` →
 `reference/harness-trust.md`). Apply the ten release settings as one reviewable batch,
-[`templates/WebOptimizer.cs`](templates/WebOptimizer.cs) — a `[MenuItem]` file, because a class
-declaration cannot be flattened into the statement block `eval` compiles. Drop it under
+[`templates/WebOptimizer.cs`](templates/WebOptimizer.cs) — a `[MenuItem]` **file**, not `eval`
+input, because a class declaration cannot live in a statement block. Drop it under
 `Assets/Scripts/Editor/`, then fire it with
 `EditorApplication.ExecuteMenuItem("Tools/Unity Dev/Apply Web Release Settings")`.
 
@@ -59,14 +59,13 @@ declaration cannot be flattened into the statement block `eval` compiles. Drop i
 | Wasm code optimization | `UnityEditor.WebGL.UserBuildSettings.codeOptimization` | `PlayerSettings.WebGL.codeOptimization`, `…optimizationLevel` |
 | IL2CPP code generation | `PlayerSettings.GetIl2CppCodeGeneration(NamedBuildTarget.WebGL)` | a bare property |
 
-`UserBuildSettings` ships inside the **WebGL build-support module**. Read it in a separate call
-from everything else, and treat a resolution failure as *"the Web module is not installed"* —
-not as a bad snippet. Getting this backwards sends you rewriting correct code.
+`UserBuildSettings` ships inside the **WebGL build-support module**. Read it in a call of its own,
+and treat a resolution failure as *"the Web module is not installed"* rather than as a bad
+snippet — getting that backwards sends you rewriting correct code.
 
-- **`codeOptimization` is the one value here that does not travel with the repository.** It
-  persists to `Library/EditorUserBuildSettings.asset`, which every standard Unity `.gitignore`
-  excludes: its absence from `ProjectSettings.asset` proves nothing, and in CI applying it is a
-  pipeline step.
+- **`codeOptimization` is the one value here that does not travel with the repository** — it lives
+  under ignored `Library/`, so its absence from `ProjectSettings.asset` proves nothing and in CI
+  applying it is a pipeline step. The two checklist consequences are in the reference below.
 - **`wasmStreaming` is obsolete as an error.** Touching it does not compile — and Editor scripts
   compile as one assembly, so it takes every other Editor script down and aborts any
   `-executeMethod` in the project.
@@ -165,11 +164,15 @@ the others first.
 4. **Move assets out of the `.data` file** into Addressables or AssetBundles, so the first load
    fetches only what the first screen needs. Textures loaded that way should be **KTX2/Basis** —
    the target GPU is unknown at build time on the web, so one file that transcodes at load is the
-   only way to ship a native format to every device. The mechanism and the encode-vs-baked rule are
-   in `unity-3d-models` (SKILL, the KTX2/Basis paragraph); the `toktx` invocations are in
+   only way to ship a native format to every device. Mechanism and the encode-vs-baked rule:
+   `unity-3d-models` (SKILL, the KTX2/Basis paragraph); `toktx` and the runtime load calls:
    [`reference/settings-and-verification.md`](reference/settings-and-verification.md#ktx2-encoding-with-toktx).
 5. **Read/Write Enabled off** on textures and meshes: on the web it duplicates the data straight
    into the Wasm heap, so it costs download *and* memory.
+
+Budget first: **under 30 MB to first playable**, bundles under 51 MB, canvas resolution clamped in
+the template →
+[`reference/settings-and-verification.md`](reference/settings-and-verification.md#the-download-budget-and-two-cache-ceilings).
 
 ## 4. Memory, and iOS Safari in particular
 
@@ -203,16 +206,14 @@ Two platform facts that surprise people:
   device.
 - **Editor Play Mode does not represent a browser at all.** Measure in the browser, and in more
   than one: Chrome and Safari differ in both GC and JIT behaviour.
-- Firefox caches individual files only up to roughly 50 MB, so a single larger chunk is
-  re-downloaded on every visit there — watch the Network panel on a repeat visit before sizing
-  chunks around that number.
+- Firefox caches individual files only up to roughly 50 MB, so a larger chunk is re-downloaded on
+  every visit and Chrome shows nothing — the `about:config` key and safe bundle size are below.
 
-Where to profile, symptom by symptom, plus getting readable C# names out of a Wasm flamegraph and
-the emscripten overlays:
-[`reference/settings-and-verification.md`](reference/settings-and-verification.md#profiling-in-the-browser).
 The short version: Chrome DevTools **Performance** for hitching, **Memory** for a climbing heap,
-**Network** for slow first load; Safari Web Inspector for Safari-only rendering, compared against
-Chrome; Unity's own profiler over WebSocket for a development build.
+**Network** for slow first load; Safari Web Inspector for Safari-only rendering; Unity's own
+profiler over WebSocket for a development build. Symptom by symptom, and readable C# names in a
+Wasm flamegraph:
+[`reference/settings-and-verification.md`](reference/settings-and-verification.md#profiling-in-the-browser).
 
 ## 6. Verify — before and after, or it did not happen
 
@@ -231,10 +232,8 @@ Record size and cold-load time before and after, on the same connection. **Three
 adjust-and-verify rounds, then report** rather than continuing to turn knobs — past that the
 remaining wins are architectural (what loads first) rather than settings.
 
-Firefox's `about:memory` breaks a tab down into Wasm code, Wasm heap, `.data` and web audio: read
-the heap against §4's ceilings, and web audio over ~100 MB means the clips are uncompressed. A
-build served from
-`python3 -m http.server` will never show you a Brotli win, because the browser wants HTTPS for it:
+Firefox's `about:memory` breaks a tab into Wasm code, heap, `.data` and web audio — read the heap
+against §4's ceilings. That, and why `python3 -m http.server` can never show a Brotli win:
 [`reference/settings-and-verification.md`](reference/settings-and-verification.md#serving-a-build-locally).
 
 **Report, then wait** before the next round. Say the size delta per file, which settings changed

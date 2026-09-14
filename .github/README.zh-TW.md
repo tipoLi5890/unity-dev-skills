@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。三十二個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。三十四個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -35,6 +35,7 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | | `unity-debug` | 你需要驗證一個看不見的改動 —— 並且在相信量測工具之前，先證明它說的是真話 |
 | | `unity-play-harness` | 把遊戲做成 agent 能驅動、能讀懂的樣子：一行 probe 快照、直接開進某個時刻並等待「就緒集合」的具名 situation、取樣成時間線並斷言不變量的 journey test，以及把一句手感抱怨變成可重現的測試 |
 | | `unity-profiling` | 慢幀或不穩定的幀背後到底在做什麼工作：不開 Profiler 視窗的 counter、90 幀視窗的 median/p95/worst、工作量計數，以及一張前後對照表 |
+| | `unity-search` | 把「找一下／在哪裡／誰引用了它」變成一條 Unity Search 查詢：型別 filter、資料夾、label、`ref=` 關係、場景元件查詢 —— 先把查詢寫給你看，Editor 還活著時順手幫你開視窗 |
 | **第一天** | `unity-new-project` | 事後補救很貴的決策：editor 版本釘死、`.meta`/LFS、UPM 釘 tag、IL2CPP/ARM64、asmdef 邊界 |
 | | `unity-game-brief` | 動 Unity 之前的第一個小時：一行想法變成一頁體驗簡報、用圖鎖定視覺、由限制推導出架構提案、寫成可測試的不變量，以及一個人可以真的玩到的互動 |
 | **UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
@@ -51,6 +52,7 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | **執行期領域** | `unity-physics-3d` | 永遠不觸發的碰撞或 trigger、高速穿透、明明在正前方卻打不到的 raycast |
 | | `unity-navigation` | NavMesh、agent、障礙物、link —— 以及決定誰擁有 transform |
 | | `unity-render-urp` | 設了卻不出現的後製、行動裝置負擔得起的子集、Render Graph 審查 |
+| | `unity-urp-migration` | 把 Built-in 專案分五個帶閘的階段搬到 URP，每一階段都從存檔後的專案讀回來驗證；也用來診斷搬到一半的專案：整片洋紅、PPv2 轉成 Volume、從來沒重烤的 lightmap、`GrabPass`／`OnRenderImage` |
 | | `unity-audio` | 記憶體、load type、取樣率、mixer 成本 —— 它會先報告再重新匯入 |
 | | `unity-localization` | 用一種以上的語言出貨，以及真正會出錯的 CJK 字型管線 |
 | **出貨** | `unity-android-release` | 建置完之後**證明**它：把產物讀回來、keystore 與 versionCode 紀律 |

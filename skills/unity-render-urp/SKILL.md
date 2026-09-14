@@ -23,6 +23,7 @@ description: >-
 | Symptom | Go to |
 |---|---|
 | Added an effect, see no change | §1 pre-flight, in order |
+| Want the pre-flight as one paste-in call against a live Editor | [`reference/preflight-snippet.md`](reference/preflight-snippet.md) |
 | A URP asset is right there, but editing it changes nothing | §1 step 1 — it may be a dormant asset |
 | Works in Scene view, not in Game view | §1 — Scene view has its own post-processing toggle |
 | Code compiles against `PostProcessVolume` / `GetSetting<T>` / `ColorGrading` | §2 — those are the old stack |
@@ -34,6 +35,7 @@ description: >-
 | Effect is suspected of costing too much, and no number says so | §3, then a before/after frame-time window — `unity-profiling` |
 | Reviewing a `ScriptableRendererFeature` | §4 |
 | Turning an HLSL function into a Shader Graph node | §5 |
+| Moving a built-in project to URP; everything went magenta; converting an old `PostProcessVolume` to a URP Volume | `unity-urp-migration` |
 
 ## 1. Pre-flight — five checks, in this order
 
@@ -83,6 +85,10 @@ Stop at the first failure; fix it before checking the next.
 
 Then: are you looking at the **Game view**? Scene view has an independent post-processing toggle,
 and the camera's `renderType` must be `Base`, not `Overlay`.
+
+All five as **one read-only `eval` block** that returns a numbered report — the fastest way to
+turn "nothing happened" into a line you can act on:
+→ [`reference/preflight-snippet.md`](reference/preflight-snippet.md).
 
 ## 2. The API renamed almost everything
 
@@ -187,6 +193,12 @@ what a fragment computes. The one exception is §5: **reflected Shader Graph cus
 scope**, because a reflected node is an HLSL function plus four metadata tags, and every failure
 mode is a metadata failure rather than a shading one. Ask this skill to *make a function into a
 node*; do not ask it what the function should compute.
+
+**Migrating a built-in project to URP stays out** — the phased conversion of materials,
+post-processing, lighting and quality tiers, and diagnosing one that was half-moved (magenta
+materials, an old `PostProcessVolume` still wired up, a stale bake, `GrabPass` and
+`OnRenderImage` code) is `unity-urp-migration`. This skill assumes the project already renders
+with URP and asks why an effect will not appear on it.
 
 **HDRP stays out.** It is a different pipeline with different Volume components, different
 renderer plumbing and different numbers; nothing here transfers. **Lighting and GI setup

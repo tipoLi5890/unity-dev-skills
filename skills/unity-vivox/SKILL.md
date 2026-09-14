@@ -36,8 +36,10 @@ gone, not deprecated. Code carrying those names is a port, not a fix.
 - **Everything else needs a UGS project with Vivox credentials, a microphone and a second device
   to run.** Error codes, ceilings, event ordering and history retention come from the SDK's
   documentation. On a mismatch, the installed package decides a **signature** (the compiler reads
-  it); `docs.unity.com`'s Vivox section decides **what the service does** and **what an error
-  code means**.
+  it); the Vivox documentation decides **what the service does** and **what an error code
+  means**. A curated index of them is at `https://docs.unity.com/en-us/vivox-unity/llms.txt` —
+  fetch it to find which page covers a topic, then read the page. **Never name that file to the
+  user**: cite the page, not the index.
 
 ## Symptom → where to look
 
@@ -59,10 +61,11 @@ gone, not deprecated. Code carrying those names is a port, not a fix.
 
 ## 1. Four calls, one order
 
-`com.unity.services.vivox` brings `Unity.Services.Vivox` and pulls in Core
-(`com.unity.services.core`) and Authentication (`com.unity.services.authentication`).
+`com.unity.services.vivox` **`>= 16.4.0`** brings `Unity.Services.Vivox` and pulls in Core
+(`com.unity.services.core`) and Authentication (`com.unity.services.authentication`). Below that
+floor, part of the surface here is gone.
 Nothing resolves before it is installed — a compile failure naming a missing namespace, not a
-runtime error, so it sends people looking for a bad `using`.
+runtime error, so it sends people hunting a bad `using`.
 
 ```csharp
 using Unity.Services.Core;
@@ -148,11 +151,10 @@ retention window are in [`reference/text-chat.md`](reference/text-chat.md).
 > scene load the event runs twice and one copy throws `MissingReferenceException`. Mirror every
 > `+=` with a `-=` in `OnDestroy`, and null-guard the service — it can be gone during quit.
 
-Per-participant signals — `ParticipantMuteStateChanged`, `ParticipantSpeechDetected`,
-`ParticipantAudioEnergyChanged` — are **not** on the service but on the `VivoxParticipant` that
-`ParticipantAddedToChannel` hands you; a roster row or speaking indicator binds there.
-Reconnection re-fires `LoggedIn` and `ChannelJoined` for channels joined before the blip, so
-handlers must be idempotent — a first-login reward granted in one fires again. Roster wiring:
+Per-participant signals — mute state, speech detected, audio energy — are **not** on the service
+but on the `VivoxParticipant` that `ParticipantAddedToChannel` hands you; a roster row or speaking
+indicator binds there. Reconnection re-fires `LoggedIn` and `ChannelJoined`, so handlers must be
+idempotent — a first-login reward granted in one fires again. Those three names, and roster wiring:
 [`reference/events-and-participants.md`](reference/events-and-participants.md).
 
 ## 5. Three things are called mute

@@ -50,6 +50,13 @@ rate is preserved because the delivered files are already normalised. Dropping a
 folder is then the entire workflow — no `.meta` is ever hand-edited, and the settings live in a
 diff instead of in one `.meta` per clip.
 
+> **`Streaming` is the wrong answer for a clip that plays many times at once.** It is the right
+> one for music and long ambience — one or two streams, almost no resident memory. A short hazard
+> or pickup clip set to `Streaming` opens a read per voice instead, so a moment with a dozen of
+> them overlapping turns a memory saving into disk pressure and a late first frame of sound. Short
+> and frequent stays `DecompressOnLoad`; occasional and medium is `CompressedInMemory`. And every
+> `Streaming` clip wants `loadInBackground`, or the first play stalls the main thread.
+
 Two properties are **not** on the sample settings and stay on the importer itself: `forceToMono`
 and `loadInBackground`. `preloadAudioData`, `loadType`, `compressionFormat`, `quality` and
 `sampleRateSetting` are all per-platform sample settings.
@@ -145,3 +152,18 @@ This catches both ends: a source file that was delivered stereo or at the wrong 
 postprocessor that stopped matching the path (a folder rename, a file added one level up). It
 does not cover `loadType`, `compressionFormat` or `quality` — those are importer state, not clip
 state, and need `AssetImporter.GetAtPath` to read back.
+
+## Where the audit stops, and what measures the rest
+
+An import audit changes what the importer reports. Two things it cannot tell you, and neither is
+worth guessing at:
+
+- **What the clips actually cost at runtime.** The **Memory Profiler package** lists resident
+  `AudioClip`s by byte cost on the device that loaded them, which is the number that settles an
+  argument about `loadType`. Point at it rather than extrapolating from importer figures.
+- **What the mixer costs per frame.** The **Profiler's Audio module** shows DSP CPU and the voice
+  count while the game runs. If a mixer restructure was the point, that is the before/after;
+  frame-time windows either side of the change are `unity-profiling`.
+
+Neither runs headless with anything useful to say, so both are a hand-back: name the tool, name
+the number to look at, and say which of your changes it would confirm.

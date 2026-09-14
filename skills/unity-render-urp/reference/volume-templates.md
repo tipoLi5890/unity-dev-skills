@@ -4,7 +4,28 @@
 > compiles a **statement block, not a file**: no `using` directives, and ambiguous types
 > qualified. Hard stops `throw` so the call fails loudly; anything the caller needs is
 > `return`ed. Run §1 of the skill first — a snippet that builds a perfect Volume on a project
-> rendering built-in has changed nothing you can see.
+> rendering built-in has changed nothing you can see. §1 as one paste-in block:
+> [`preflight-snippet.md`](preflight-snippet.md).
+
+**Three compile errors mean "this is a statement block", not "the API is wrong".** Read the code
+before rewriting the call:
+
+| Error | What `eval` is rejecting | Fix |
+|---|---|---|
+| `CS0210` | A `using UnityEngine;` line — the compiler reads it as the *using statement*, which wants a disposable in parentheses | Delete the directives; qualify instead |
+| `CS0246` / `CS0103` | A bare type name (`AssetDatabase`, `Volume`, `Bloom`) with no namespace to resolve it against | Write `UnityEditor.AssetDatabase`, `UnityEngine.Rendering.Volume`, … |
+| `CS0104` | A bare `Object`, ambiguous between `UnityEngine.Object` and `System.Object` | Say which one, every time |
+
+A snippet written as a file — with usings, because it is going into `Assets/` — has to be
+qualified before it is passed to `eval`, not pasted as-is.
+
+**Discover the command's parameter shape rather than assuming it**: `unity command --format json`
+lists what the connected Editor actually registers. The inline form is
+`unity command eval --code '<snippet>'`; some Pipeline package versions also register an
+`eval_file` variant — **more often than not it is simply not there**, so read the catalog before
+designing a workflow around writing the snippet to a file. A command is also given **30 seconds
+by default**, which means a snippet that waits on an import or a bake times out by design rather
+than by failure. The CLI itself is `unity-cli`.
 
 Two API facts the snippets lean on:
 
@@ -40,6 +61,14 @@ bloom.scatter.value   = 0.7f;
 var tone = profile.Add<UnityEngine.Rendering.Universal.Tonemapping>(true);
 tone.mode.value = UnityEngine.Rendering.Universal.TonemappingMode.ACES;
 
+// Add creates the override object; it does NOT make it a sub-asset of the profile. Without
+// these two lines the profile writes and reloads with `components: []` or `{fileID: 0}`
+// entries, and nothing along the way errors.
+UnityEditor.AssetDatabase.AddObjectToAsset(bloom, profile);
+UnityEditor.AssetDatabase.AddObjectToAsset(tone, profile);
+UnityEditor.EditorUtility.SetDirty(bloom);
+UnityEditor.EditorUtility.SetDirty(tone);
+
 var volumeObj = new UnityEngine.GameObject("Global Volume");
 var volume = volumeObj.AddComponent<UnityEngine.Rendering.Volume>();
 volume.isGlobal = true;
@@ -67,6 +96,20 @@ Two things that bite here and nowhere else:
   component needs the scene saved, and `SaveAssets` does nothing for it. Either way the value
   reads back correctly for the rest of the session and is gone at session end, which is the most
   expensive way to be wrong about this.
+- **Reload the profile and count its non-null components before trusting it.** `Add` plus
+  `SaveAssets` alone leaves the overrides outside the asset, and the only check that catches it
+  reads the profile back off disk:
+
+  ```csharp
+  UnityEditor.AssetDatabase.ImportAsset(assetPath);
+  var reloaded = UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.VolumeProfile>(assetPath);
+  var live = 0;
+  foreach (var c in reloaded.components) if (c != null) live++;
+  return "live overrides after reload: " + live + " of " + reloaded.components.Count;
+  ```
+
+  Migrating a whole profile across from the old post-processing stack, where this is the usual
+  failure: `unity-urp-migration`.
 
 ## Turn post-processing on for the camera
 

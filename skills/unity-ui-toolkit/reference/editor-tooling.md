@@ -46,6 +46,7 @@ Two ways to satisfy that, and a project uses one or the other consistently:
 
 | Type | Shape | Example |
 |---|---|---|
+| Any editor script | PascalCase file name matching the type | `LaneTuningWindow.cs` |
 | Window | `<Thing>Window.cs` | `LevelEditorWindow.cs` |
 | Custom inspector | `<Type>Editor.cs` | `EnemyEditor.cs` |
 | Property drawer | `<Type>Drawer.cs` | `HealthRangeDrawer.cs` |
@@ -315,6 +316,86 @@ public class HealthRangeDrawer : PropertyDrawer
   default is one line. A drawer that lays out two rows without overriding it draws the second row
   on top of the next field in the inspector — the classic "my drawer overlaps everything below".
   `CreatePropertyGUI` has no equivalent to get wrong.
+
+### One-shot form — `ScriptableWizard`
+
+A tool that collects a few values, does one thing and closes is not a window. `ScriptableWizard`
+gives you the modal form for free: public fields become the form, and two methods by name do the
+rest.
+
+```csharp
+using UnityEditor;
+using UnityEngine;
+
+public class LaneSeederWizard : ScriptableWizard
+{
+    public string lanePrefix = "Lane";
+    public int laneCount = 3;
+    public float laneWidth = 1.3f;
+
+    [MenuItem("Tools/Unity Dev/Seed Lanes")]
+    static void Open() => DisplayWizard<LaneSeederWizard>("Seed Lanes", "Create", "Cancel");
+
+    void OnWizardUpdate()
+    {
+        errorString = laneCount > 0 && laneWidth > 0f && !string.IsNullOrEmpty(lanePrefix)
+            ? string.Empty
+            : "Give a prefix, a positive lane count and a positive lane width.";
+        isValid = errorString.Length == 0;
+    }
+
+    // Runs once, when Create is clicked; the wizard closes itself afterwards.
+    void OnWizardCreate()
+    {
+        for (var i = 0; i < laneCount; i++)
+        {
+            var lane = new GameObject($"{lanePrefix}_{i}");
+            lane.transform.position = new Vector3(i * laneWidth, 0f, 0f);
+            Undo.RegisterCreatedObjectUndo(lane, "Seed Lanes");
+        }
+    }
+}
+```
+
+- **`OnWizardUpdate` runs whenever a field changes** and is where validation lives. Setting
+  `isValid = false` disables the Create button; putting a sentence in `errorString` tells the
+  user which field is the problem, which a greyed button alone never does.
+- **`OnWizardCreate` is the commit**, and it fires once. Anything expensive or destructive belongs
+  here, not in `OnWizardUpdate`.
+- Like `CreateGUI` and `OnGUI`, these are **called by name** — `override` does not compile, and a
+  misspelling produces a wizard whose Create button does nothing, silently. Same failure shape,
+  same first thing to check.
+- `DisplayWizard<T>(title, createLabel, otherLabel)` gives a second button; the two-argument form
+  gives only Create. A wizard that needs more than a handful of fields has outgrown the form and
+  should be an `EditorWindow`.
+
+### The immediate-mode widget catalogue
+
+Two families, and mixing them is the usual cause of a layout that will not line up.
+`GUILayout` is the engine-side set and works in a runtime overlay as well as the Editor;
+`EditorGUILayout` is editor-only and is the one that understands `SerializedProperty`.
+
+| Want | Call |
+|---|---|
+| Read-only text | `GUILayout.Label(…)`, with an `EditorStyles.*` style for weight |
+| Button | `GUILayout.Button(…)` — returns `true` on the frame it is clicked |
+| Single-line / multi-line text entry | `GUILayout.TextField(…)` / `GUILayout.TextArea(…)` |
+| Checkbox, slider | `GUILayout.Toggle(…)`, `GUILayout.Slider(…)` |
+| A row of mutually exclusive buttons | `GUILayout.Toolbar(…)` · `GUILayout.SelectionGrid(…)` for a grid |
+| A serialised field, drawn the way the inspector would | `EditorGUILayout.PropertyField(…)` |
+| Typed fields | `EditorGUILayout.IntField` · `FloatField` · `Vector3Field` · `ColorField` · `ObjectField` |
+| An `AnimationCurve` | `EditorGUILayout.CurveField(…)` |
+| A dropdown | `EditorGUILayout.EnumPopup(…)` for an enum, `Popup(…)` for a string list |
+| A collapsible section | `EditorGUILayout.Foldout(…)`, with `EditorGUI.indentLevel++` inside |
+| An info / warning / error banner | `EditorGUILayout.HelpBox(text, MessageType.Warning)` |
+| Vertical breathing room | `GUILayout.Space(n)` fixed · `EditorGUILayout.Separator()` · `GUILayout.FlexibleSpace()` to push apart |
+
+Sizing is passed as trailing `GUILayoutOption`s rather than set on the control:
+`GUILayout.Width(n)`, `Height(n)`, `MinWidth(n)`, `MaxWidth(n)`, `ExpandWidth(bool)`. A control
+with none of them takes its natural size and the layout group distributes the rest.
+
+`EditorGUILayout.BeginVertical("box")` is the cheapest way to group a section visually, and — like
+every other `Begin` — it needs its `End`.
 
 ## Immediate-mode rules that are actually about cost
 

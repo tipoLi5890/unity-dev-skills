@@ -193,7 +193,9 @@ reloaded on its own. **Verify by resolving a type you expect**, not by waiting f
 Two practical notes on `screenshot` specifically: it captures the Scene or Game view and returns
 a path, and a **batch-mode Editor starts with an empty scene, so it has no camera** — open a
 scene first, or take screenshots from the windowed loop instead
-(`reference/visual-checks.md`).
+(`reference/visual-checks.md`). For before/after pairs outside a test run — aiming the Scene view
+at a chosen pivot and angle, writing each PNG to its own temp path — there is a drop-in script at
+`unity-urp-migration` → `resources/SceneCapture.cs`.
 
 ## Reading the envelope, not the exit line
 

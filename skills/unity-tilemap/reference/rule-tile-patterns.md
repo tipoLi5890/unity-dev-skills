@@ -186,6 +186,11 @@ A full hexagonal set uses `Fixed` and `MirrorX` transforms; `Rotated` does not a
 rotating a hex by 90° does not land on the grid. Enumerate the rules from the installed package
 rather than carrying a count over from the rectangular set.
 
+One such set — 38 configurations in first-match-wins order — is written out in
+`reference/hexagonal-rule-set.md`. It is **unverified**: none of the correction the rectangular
+table above has had has been done to it, so confirm it against the installed
+`com.unity.2d.tilemap.extras` before a project depends on it.
+
 ## Isometric
 
 `IsometricRuleTile` keeps the eight-neighbour 3 × 3 neighbourhood — the grid is rectangular in

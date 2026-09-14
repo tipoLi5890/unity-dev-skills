@@ -63,4 +63,8 @@ unity bug --title … --steps … --share-project .
 ```
 
 `unity projects verify` is the cheapest gate in the list. Its checks and flags are in
-`reference/ci-surface.md` §10.
+`reference/ci-preflight.md` §4.
+
+> **`unity logs` reads the Hub log.** Not `Editor.log`, not your game's output. Reaching for it to
+> debug a build returns something plausible and irrelevant. Editor logs and how to read them are in
+> `unity-debug` → `reference/cli-harness.md`.

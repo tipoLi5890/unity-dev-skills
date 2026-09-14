@@ -87,12 +87,28 @@ is faster and cannot leave the manifest half-applied if one id is wrong.
 ```bash
 ED=$(unity editors path "$VERSION" --format json \
      | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['path'])")
-# macOS: $ED may be a directory containing Unity.app, or the .app itself — handle both
-UNITY_BIN="$ED/Unity.app/Contents/MacOS/Unity"
-[ -x "$UNITY_BIN" ] || UNITY_BIN="$ED/Contents/MacOS/Unity"
-# Linux: $ED/Editor/Unity     Windows: $ED/Editor/Unity.exe
+
+# Branch on the platform: $ED is a different kind of path on each of them.
+case "$(uname)" in
+  Darwin)
+    # macOS reports EITHER a folder holding Unity.app OR the .app bundle itself — handle both,
+    # and fall back to a bare binary rather than failing with an unreadable "not found".
+    if   [ -d "$ED/Unity.app" ];  then UNITY_BIN="$ED/Unity.app/Contents/MacOS/Unity"
+    elif [ "${ED%.app}" != "$ED" ]; then UNITY_BIN="$ED/Contents/MacOS/Unity"
+    else                               UNITY_BIN="$ED/Unity"
+    fi ;;
+  Linux) UNITY_BIN="$ED/Editor/Unity" ;;
+  *)     UNITY_BIN="$ED/Editor/Unity.exe" ;;   # Windows under Git Bash / MSYS
+esac
+[ -x "$UNITY_BIN" ] || { echo "no editor binary at $UNITY_BIN (from $ED)"; exit 1; }
+
 "$UNITY_BIN" -batchmode -projectPath "$PROJECT" -executeMethod ProjectBootstrap.PackageInstaller.Install -logFile -
 ```
+
+**Check the binary before launching it.** `$ED` comes out of a JSON field whose shape can differ
+between CLI builds; an unresolved path produces a shell "command not found" that reads nothing like
+"the editor layout was not what I expected". If `unity editors path` gives an unexpected shape,
+take the directory from `unity editors --installed --format json` instead.
 
 `-logFile -` streams the Editor log to stdout — without it you cannot see `[PackageInstaller]`
 or the UPM error, and the run is a bare exit code. **`unity logs` will not help here**: it reads
@@ -189,6 +205,36 @@ rewrite the lockfile.
   `unity run` and the injected `-quit` does no harm. This is how you generate `.meta` files
   headlessly after a script has written `.cs` or asset files — and **every `.cs` and asset must
   be committed together with its `.meta`**.
+
+`Assets/Editor/ProjectBootstrap/ProjectSaver.cs`, the whole of it:
+
+```csharp
+using UnityEditor;
+using UnityEngine;
+
+namespace ProjectBootstrap {                 // the namespace -executeMethod names
+    public static class ProjectSaver {
+        // -executeMethod ProjectBootstrap.ProjectSaver.SaveAll   — safe under `unity run`
+        public static void SaveAll() {
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);   // import what a script wrote
+            AssetDatabase.SaveAssets();                              // flush what is dirty in memory
+            Debug.Log("[ProjectSaver] imported and saved");
+            EditorApplication.Exit(0);                               // explicit code, not -quit's
+        }
+    }
+}
+```
+
+```bash
+unity run "$PROJECT" --editor-version "$VERSION" \
+  -- -executeMethod ProjectBootstrap.ProjectSaver.SaveAll
+```
+
+Both calls run to completion before the method returns, which is exactly what the installer cannot
+do — that is the whole difference, and it is why one of these two scripts may use `unity run` and
+the other may not. Opening the project once by hand does the same job; this is the headless form,
+for CI and for a scaffolder that has just written files nobody has imported. Verify it by the
+`.meta` files that now exist beside the new assets, not by the exit code.
 
 ## Never edit `manifest.json` by hand
 

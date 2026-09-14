@@ -238,6 +238,18 @@ value; `data.result.diagnostics` carries compile diagnostics when the command is
 value and `data.reusedRunningEditor` saying whether an open Editor was reused; confirm it on your
 CLI version before gating a pipeline on it.
 
+**A failure is still a complete document on stdout**, so there is no reason to scrape stderr — and
+`data` can be present and well-formed while `success` is false:
+
+```json
+{ "success": false, "command": "status",
+  "data": { "count": 0, "instances": [] },
+  "errors": [ { "code": "STATUS_NO_INSTANCES", "message": "…" } ], "warnings": [] }
+```
+
+> **Branch on `success`, never on the presence of `data`.** `errors[0].code` is the stable
+> identifier; the message is not.
+
 `unity status` is the cheap availability gate before any of it:
 
 ```json
@@ -303,25 +315,8 @@ unity pipeline upgrade                               # only when the registry ac
 > question. Same trap as `--filter` vs `--testFilter`: the flag that "should" exist is the one that
 > silently means something else.
 
-## 10. A pipeline skeleton
+## 10. The preflight, the workflow file, and the cache key
 
-Nothing exotic — the ordering is the point. Provision, prove the environment, then run.
-
-```bash
-set -euo pipefail
-unity doctor --ci                      # environment gate; adds 7 = service unreachable
-unity license status --format json     # branch on data.active, not on $?
-unity projects require . --yes         # install the project's Editor version if absent
-unity projects verify . --strict       # META_MISSING, GUID_DUPLICATE, CONFLICT_MARKERS, …
-unity cache key --target Android       # deterministic key for the runner's cache step
-unity test . --mode EditMode --report-format nunit,junit \
-            --output ./results/nunit.xml --junit-output ./results/junit.xml --timeout 900
-unity build . --profile "Android Release" -o ./out/app.aab --timeout 3600
-```
-
-`unity projects verify` checks a project without launching the Editor and takes
-`--check META_MISSING,META_ORPHAN,GUID_DUPLICATE,CONFLICT_MARKERS,MANIFEST_INVALID,EDITOR_VERSION_DRIFT`,
-`--strict` (warnings become errors) and `--expect-editor <version>` for the drift check. It is the
-fastest gate in the list and the only one that catches a merge-conflict marker inside a `.unity`
-file before a build spends twenty minutes finding it. `unity projects clean --dry-run` reports the
-regenerable folders (`Library`, `Temp`, `Logs`, …) with sizes and deletes nothing.
+The three commands that run *before* everything on this page — `unity ci init`, `unity doctor --ci`
+and `unity cache key` — plus the pipeline skeleton and the `unity projects verify` check codes have
+moved to `reference/ci-preflight.md`.

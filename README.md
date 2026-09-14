@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Thirty-two skills covering the loop from an
+Unity 6 game-development skills for AI coding agents. Thirty-four skills covering the loop from an
 empty project to a verified artifact — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -38,6 +38,7 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | | `unity-debug` | You need to verify a change you cannot see — and to prove the harness is telling the truth before believing it |
 | | `unity-play-harness` | Making the game drivable and readable: a one-line probe snapshot, named situations that boot straight into a moment and wait on a readiness set, journey tests that assert invariants, a feel complaint turned into a repeatable test |
 | | `unity-profiling` | What a slow or uneven frame is actually doing: counters without the Profiler window, 90-frame windows with median/p95/worst, work counters, a before/after table |
+| | `unity-search` | "Find it / where is it / what references it" as one Unity Search query — type filters, folders, labels, `ref=` relationships, scene component queries — shown before it runs, and opened in a live Editor when there is one |
 | **Day one** | `unity-new-project` | Decisions that are expensive to retrofit: editor pinning, `.meta`/LFS, UPM tag pinning, IL2CPP/ARM64, asmdef boundaries |
 | | `unity-game-brief` | The first hour, before any Unity work: one line of idea into a one-page experience brief, the look locked with images, an architecture proposal derived from the constraints, invariants, and one interaction a human can play |
 | **UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
@@ -54,6 +55,7 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | **Runtime domains** | `unity-physics-3d` | A collision or trigger that never fires, tunnelling, a raycast that misses |
 | | `unity-navigation` | NavMesh, agents, obstacles, links — and deciding who owns the transform |
 | | `unity-render-urp` | Post-processing that will not appear, the mobile subset, Render Graph review |
+| | `unity-urp-migration` | Moving a Built-in project to URP in five gated phases read back from the saved project, and diagnosing one that was half-moved: magenta materials, PPv2 into a Volume, lightmaps that never rebaked, `GrabPass`/`OnRenderImage` |
 | | `unity-audio` | Memory, load types, sample rates, mixer cost — reports before it reimports |
 | | `unity-localization` | Shipping in more than one language, and the CJK font pipeline where it goes wrong |
 | **Shipping** | `unity-android-release` | Build it, then *prove* it: read the artifact back, keystore and versionCode discipline |

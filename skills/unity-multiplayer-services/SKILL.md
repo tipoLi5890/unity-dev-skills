@@ -22,7 +22,17 @@ description: >-
 > that were doing that work for it stop being usable.
 
 Authoritative source when specifics differ from recall: the Multiplayer Services SDK pages on
-[docs.unity.com](https://docs.unity.com/). When those are unreachable, the copy of the package
+[docs.unity.com](https://docs.unity.com/). There is a curated index of those pages at
+`https://docs.unity.com/en-us/mps-sdk/llms.txt` — fetch it first when you need to know **what is
+documented** and where it lives, then read the page it points at. This skill stays the authority on
+**how** to apply the SDK; the index is the authority on what exists.
+
+> **The index is a tool, not a citation.** Never put that filename in front of the user — not in a
+> plan, a summary, or an explanation of where an answer came from. Cite the documentation page, or
+> say "the Multiplayer Services documentation". A reader handed a machine-readable index file has
+> been given a dead end dressed up as a source.
+
+When both are unreachable, the copy of the package
 resolved into the project decides — read the assemblies under `Library/PackageCache/` or open the
 package in Package Manager. Do not invent a signature from either. Check type names, signatures,
 defaults and limits against the resolved package; when

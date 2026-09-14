@@ -349,6 +349,14 @@ public static class IsometricSliceSheet
         if (readable == null || (readable.width == width && readable.height == height))
             return readable;
 
+        // The blit needs rectangular render-texture support. Where it is missing the copy
+        // cannot be made at all, and silently carrying on would cut the sheet at the
+        // imported size — half-size cells that look like a bad cell argument.
+        if (!ShaderUtil.hardwareSupportsRectRenderTexture)
+            throw new System.Exception(
+                "Cannot blit this sheet back up to its source size on this Editor. Raise the " +
+                "texture's Max Size to the source resolution and re-run.");
+
         var previous = RenderTexture.active;
         var rt = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32);
         Graphics.Blit(readable, rt);
@@ -360,6 +368,9 @@ public static class IsometricSliceSheet
         };
         scaled.ReadPixels(new Rect(0f, 0f, width, height), 0, 0);
         scaled.Apply();
+        // The empty-cell test reads alpha, so carry the source flag onto the copy: one that
+        // lost it publishes cells the artist left blank.
+        scaled.alphaIsTransparency = readable.alphaIsTransparency;
 
         RenderTexture.active = previous;
         RenderTexture.ReleaseTemporary(rt);

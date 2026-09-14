@@ -33,14 +33,50 @@ Importing them headlessly is its own `-executeMethod`, because `AssetDatabase.Im
 **asynchronous**: finish from `AssetDatabase.importPackageCompleted`, and let the Editor reach an
 update tick.
 
+> **The `.unitypackage` has no path you can write down — find it.** TextMesh Pro ships inside
+> `com.unity.ugui`, and a registry package unpacks into
+> `Library/PackageCache/<id>@<version-or-hash>/`, so the folder name changes with every resolve.
+> A literal `Packages/com.unity.ugui/Package Resources/…` holds only while that package is
+> embedded or local. `ImportPackage` against a path that is not there **imports nothing and fails
+> no step**: no exception, no log line, and the next builder call dies on the NRE above.
+
+Scan for it, and say what you scanned when it is missing:
+
 ```csharp
+const string Tail = "Package Resources/TMP Essential Resources.unitypackage";
+
+static string FindTmpEssentials() {
+    var roots = new List<string> { "Packages/com.unity.ugui" };          // embedded or local
+    if (Directory.Exists("Library/PackageCache"))
+        roots.AddRange(Directory.GetDirectories("Library/PackageCache"));  // registry, versioned name
+    foreach (var root in roots) {
+        var candidate = Path.Combine(root, Tail).Replace('\\', '/');
+        if (File.Exists(candidate)) return candidate;
+    }
+    Debug.LogError($"TMP Essential Resources not found under any of {roots.Count} roots: " +
+                   string.Join(", ", roots));                             // name what was searched
+    return null;
+}
+
+var pkg = FindTmpEssentials();
+if (pkg == null) { EditorApplication.Exit(1); return; }                   // fail loudly, not silently
 AssetDatabase.importPackageCompleted += _ => { /* done — now the settings asset exists */ };
-AssetDatabase.ImportPackage("Packages/com.unity.ugui/Package Resources/TMP Essential Resources.unitypackage", false);
+AssetDatabase.ImportPackage(pkg, false);
 ```
 
-Confirm that path resolves in your project before relying on it — TextMesh Pro's package home has
-moved between Unity versions, and `ImportPackage` against a path that is not there imports nothing
-and fails no step.
+Printing the scanned roots is the whole value of the guard: a run that found nothing then says
+whether the package is absent, embedded somewhere unexpected, or not resolved yet.
+
+> **Never reach for the menu item.**
+> `EditorApplication.ExecuteMenuItem("Window/TextMeshPro/Import TMP Essential Resources")` returns
+> `true` and then opens a **modal dialog** waiting for a human to click it. Nothing after it runs,
+> the Editor never reaches an update tick, and a headless run hangs there until some timeout kills
+> it — reported as "the import step timed out" rather than as a dialog nobody could see. The
+> return value says the menu path existed, not that anything imported.
+
+`TMP_PackageResourceImporter.ImportResources()` needs no path and opens no dialog —
+`unity-ui-ugui` → `reference/code-built-ui.md`. Use the scan above when the import has to be an
+auditable step with a named file and a completion callback.
 
 > **Neither invocation may carry `-quit`.** The Editor exits the moment your method returns, which
 > is before the import callback ever fires — exit code 0, no resources, no error. Same mechanism as

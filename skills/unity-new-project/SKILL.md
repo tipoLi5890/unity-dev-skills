@@ -28,9 +28,11 @@ description: >-
 - Decide the render pipeline (URP for mobile/2.5D) at creation — swapping
   pipelines later touches every material.
 - **Once the target platforms are known, put the editor install in the background and keep asking**
-  — `unity install <version> --module <modules>` runs for minutes, none of the remaining decisions
-  depend on it, and `unity editors --installed` is the confirmation that it landed before you
-  create the project. An install that died halfway looks exactly like one still running.
+  — `unity install <version> --module <modules> --yes --accept-eula` runs for minutes, none of the
+  remaining decisions depend on it, and `unity editors --installed` is the confirmation that it
+  landed before you create the project. An install that died halfway looks exactly like one still
+  running. **Both flags are what makes it backgroundable**: without them the install stops on a
+  prompt nobody is watching, and a job blocked on stdin is indistinguishable from a slow download.
 - **A template is not a working configuration.** Creating from `universal-2d` on Unity 6000.4
   gives project-wide compile errors from the template's own stale package locks. When a *fresh*
   project will not compile, suspect `Packages/manifest.json` before the code —
@@ -53,7 +55,11 @@ description: >-
   **UVCS**, which handles large binaries natively and needs no LFS at all; or plain local `git`.
 - Push the first commit **after** packages are installed and the Editor has generated `.meta`
   files — an initial commit of an empty project is a commit you will have to amend. If you are
-  scripting creation, that is what `--no-initial-commit` is for.
+  scripting creation, that is what `--no-initial-commit` is for. **If creation already committed**
+  — a `--vcs` run without that flag publishes the bare project as commit one — add a follow-up
+  commit for the packages and `.meta` files rather than amending or re-committing the same tree
+  twice; the history is already public by then, and two initial commits are worse than one empty
+  one.
 - **Credentials go in on stdin, never in `argv`** (`--git-token-stdin`). A token expanded from an
   environment variable is still visible in the process list and in shell history; CI must mask it
   in logs too.
@@ -112,7 +118,9 @@ and both vanish when someone recreates the project from a template.
 
 Install only what the concept actually needs, prefer what the template already ships (a URP
 template already has the render pipeline and Input System), and **do not pin a version** unless
-there is a stated minimum. Two rules that decide whether it works at all:
+there is a stated minimum. Concept → need → id, and the subtraction step that shrinks the list:
+[`reference/package-selection.md`](reference/package-selection.md). Two rules that decide whether
+it works at all:
 
 - **Never edit `Packages/manifest.json` by hand**, and never guess an id. List it with
   `Client.SearchAll()` — one call is cheaper than one wrong guess. The single exception is the
@@ -125,6 +133,13 @@ If you are driving this as a guided flow, **start the editor install in the back
 are still asking the concept questions**, then join on `unity editors --installed --format json`
 before doing anything downstream. Parallelism only pays when there is conversation to overlap it
 with — with nothing left to ask, just wait.
+
+> **Ask one step at a time, and the concept interview is not this skill's.** What the game is
+> belongs to `unity-game-brief`; what arrives here is a settled proposal. Even for the questions
+> this skill does own — target platforms, hosting shape, editor version — put one on the table,
+> wait for the answer, then move: platform and monetisation answers change which modules install
+> and which packages go in the list, so a batch of questions collected up front produces a setup
+> that has to be redone. Nothing is scaffolded before those answers exist.
 
 ## 5. Structure that survives growth
 
@@ -170,8 +185,9 @@ project. Building the actual game is every other skill in this plugin.
 What the game *is* — the brief, the constraints, the architecture proposal, the first interaction —
 is `unity-game-brief`; this skill starts when that proposal names the assemblies.
 
-Also not here: which packages a given genre needs beyond the note in §4b (that follows from the
-concept, not from a table), and anything about shipping — `unity-android-release`,
+Also not here: which packages a given genre needs beyond the starting point in §4b and
+`reference/package-selection.md` — that table is something to subtract from once the concept is
+known, never a list to install whole. Nor anything about shipping — `unity-android-release`,
 `unity-web-release`.
 
 Nor the font pipeline: this skill owns only the version-control consequence that TMP font assets

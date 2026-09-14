@@ -21,7 +21,8 @@ description: >-
 
 ## Symptom → where to look
 
-First match wins. **Stop at the first cause you confirm** — do not run the whole ladder.
+First match wins. **Stop at the first cause you confirm** — do not run the whole ladder. A matched
+row is the answer, not a lead: write the diagnosis and stop calling tools.
 
 | Symptom | Go to |
 |---|---|
@@ -43,27 +44,27 @@ First match wins. **Stop at the first cause you confirm** — do not run the who
 ## 0. Before diagnosing
 
 Connect to the Editor rather than reading files — `unity-debug` → `reference/editor-control.md`.
-Three rules specific to physics:
+Three rules specific to physics, then two about how the turn ends:
 
 - **Never verify with `Physics.Simulate()` outside play mode.** Editor-mode simulation does not
   dispatch MonoBehaviour callbacks, so a working setup reports as broken. It is a guaranteed false
   negative and it will send you down the wrong branch.
 - **Geometry queries DO work outside play mode — but only after a sync.** `Physics.autoSyncTransforms`
-  is **`false`** by default, so a collider you just created or moved is not where
-  PhysX thinks it is, and every raycast against it returns false. Call
-  `Physics.SyncTransforms()` once before querying, or you will diagnose a perfectly good
-  collider as broken:
-
-  ```csharp
-  // without the sync, every one of these returns false
-  UnityEngine.Physics.SyncTransforms();
-  UnityEngine.Physics.Raycast(origin, dir, out hit, 100f);
-  ```
+  is **`false`** by default, so a collider you just created or moved is not where PhysX thinks it
+  is, and every raycast against it returns false. Call `Physics.SyncTransforms()` once before
+  querying, or you will diagnose a perfectly good collider as broken — the call, and where it
+  goes: [`reference/queries.md`](reference/queries.md).
 - **Record the original value of any Project Setting you change** (Queries Hit Triggers, the
   Layer Collision Matrix, Contact Offset) and restore it. A diagnosis that leaves the project
   altered is not a diagnosis.
-- Reach a conclusion. If the evidence is not enough for one, say what is missing — do not end by
-  asking whether to continue.
+- **Five tool calls, then answer.** After five of any kind, stop calling and write the most likely
+  diagnosis off the ladder, labelled unconfirmed, with the one check that would settle it. Tool
+  output alone is the one outcome worth nothing, however much of it there is.
+- **Never close by asking permission.** "Would you like me to proceed?", "Should I continue?",
+  "Do you want me to investigate further?", "I will do X — continue?" are one move, and it costs a
+  round trip to say nothing. Make the change yourself where you can reach it — a script, or the
+  live scene over an Editor connection — otherwise hand over an explanation complete enough to
+  apply without you. Ask only for information you cannot get yourself, and name it.
 
 ## 1. No callback fires
 
@@ -126,37 +127,36 @@ Write the mode out in full every time. The enum is
 three distinct continuous behaviours, and the bare word "continuous" in a bug report has meant
 each of them.
 
-> **For a bullet or any projectile, raise `Physics.SphereCast` as well.** Sweeping a sphere along
-> the frame's trajectory and taking the first hit removes tunnelling entirely and is independent
-> of the physics step. A projectile "fixed" by raising the timestep is still tunnelling at a
-> higher speed.
+> **For a bullet or any projectile, raise `Physics.SphereCast` as well** — sweeping rather than
+> stepping removes tunnelling entirely, independently of the physics step:
+> [`reference/queries.md`](reference/queries.md).
 
 ## 3. Raycast misses
 
-- **An origin inside the target collider returns false** (backface culling). Queries Hit
-  Backfaces rescues only a `MeshCollider`; for a primitive, move the origin outside the bounds.
+- **An origin inside the target collider returns false** — backface culling; Queries Hit Backfaces
+  rescues only a `MeshCollider`.
 - **Triggers are hit by default.** `Physics.queriesHitTriggers` is `true` and `UseGlobal` defers
-  to it — pass `QueryTriggerInteraction.Ignore` or `Collide` explicitly, never rely on a default.
-- **Check the mask you passed is the mask you meant**, and prove a suspected miss with an A/B
-  against `Physics.DefaultRaycastLayers` — which excludes `Ignore Raycast`; `Physics.AllLayers`
-  does not.
+  to it — pass `Ignore` or `Collide` explicitly, never rely on a default.
+- **Check the mask you passed is the mask you meant** — A/B it against
+  `Physics.DefaultRaycastLayers`, which excludes `Ignore Raycast`; `Physics.AllLayers` does not.
 - **A disabled `Collider` or an inactive GameObject is invisible to queries too.**
   `Physics.OverlapSphere` asks what PhysX actually has at a position.
-- **`GraphicRaycaster` finds UI, `Physics.Raycast` finds colliders**, never each other's; a World
-  Space Canvas is still UI (`unity-ui-ugui`). From a screen point:
-  `Physics.Raycast(Camera.main.ScreenPointToRay(screenPos), out hit)`.
+- **`GraphicRaycaster` finds UI, `Physics.Raycast` finds colliders**, never each other's
+  (`unity-ui-ugui`).
 - **After writing `transform.position`, queries see the old position** until
-  `Physics.SyncTransforms()` — once, never every frame; a physics-driven object uses
-  `Rigidbody.MovePosition`.
+  `Physics.SyncTransforms()` — once, never every frame.
 
-Each rule in full, with the values and the A/B probe:
+Each rule in full — the primitive-versus-mesh split, the three trigger results, the A/B probe, the
+screen-point call and the `MovePosition` alternative:
 [`reference/queries.md`](reference/queries.md).
 
 ## 4. It moved, then it stopped
 
 - **The Rigidbody fell asleep.** Below `Physics.sleepThreshold` (**default `0.005`**)
   the body deactivates and `OnCollisionStay` / `OnTriggerStay` stop firing.
-  `Rigidbody.sleepThreshold` also exists per body if one object needs a different rule.
+  `Rigidbody.sleepThreshold` also exists per body, and **`0` stops that body sleeping at all** —
+  affordable for one object under test, expensive as a habit. `Project Settings → Physics → Sleep
+  Threshold` does the same to every resting body in the game.
 
 > **`AddForce` is NOT ignored on a sleeping body — it wakes it.** In a PlayMode test, a body put
 > to sleep with `Sleep()` and then given a force of **0.001** reports `IsSleeping() == false` on
@@ -168,9 +168,8 @@ Each rule in full, with the values and the A/B probe:
 > force is simply too small to be visible (force `0.001` produces a velocity of `0.00002` — awake,
 > and going nowhere); it is being applied in `Update` rather than `FixedUpdate`, so most calls are
 > discarded; the body turned `isKinematic`; or `constraints` froze the axis.
-- **`Time.timeScale == 0`.** Diagnostic tell: geometry queries (`Raycast`, `OverlapSphere`) read
-  collider geometry directly and keep working while everything else is frozen. If raycasts work
-  and nothing moves, it is timeScale — not the physics setup.
+- **`Time.timeScale == 0`.** Diagnostic tell: raycasts still hit while nothing moves — that is
+  timeScale, not the physics setup ([`reference/queries.md`](reference/queries.md)).
 
 ## 5. Shapes that are not what they look like
 
@@ -196,6 +195,9 @@ Each rule in full, with the values and the A/B probe:
 - **Ragdoll explosion = colliders overlapping in the start pose.** One frame of depenetration
   becomes velocity. **Shrink the colliders.** Joint limits, projection, mass ratios and Enable
   Collision are the standard misdiagnoses. Confirm with `Window > Analysis > Physics Debugger`.
+  **`Rigidbody.detectCollisions = false` in `Start()`, back on a frame later, is a holding
+  measure and is reported as one** — it postpones the spike while the colliders are re-fitted;
+  the overlap returns with the collisions.
 - **A visible gap when objects rest is Contact Offset.** `Physics.defaultContactOffset` is
   **`0.01`** by default. **Never set it to 0** — PhysX requires a positive value and 0 is unstable.
   Inset the visual mesh instead.
@@ -204,23 +206,16 @@ Each rule in full, with the values and the A/B probe:
 
 - IL2CPP stripped the `MonoBehaviour` — `[Preserve]` or `link.xml`
   (`unity-android-release` → `reference/size-and-stripping.md`).
-- **A layer name resolving to `-1` is not a build problem.** Layer names ship in
-  `TagManager.asset`, so `LayerMask.NameToLayer` answers the same in a player as in the Editor;
-  `-1` means the layer is not defined in `Project Settings → Tags and Layers`. `1 << -1` is not
-  the mask you meant — resolve the index once at startup and assert it is not `-1`.
-- **The first frames of a player are not the first Editor frames.** Something spawned in `Awake`
-  that expects a resolved contact before the first `FixedUpdate` can differ in a build: hold the
-  collider disabled for one frame, or own the step with `SimulationMode.Script`. Treat the
-  ordering as a hypothesis to test with the one-frame delay, not a diagnosis.
-- **Fixed Timestep is a per-platform decision.** A project that never set it ships
-  `Time.fixedDeltaTime = 0.02` (50 Hz), and a build stepping differently from the Editor gets
-  different tunnelling and contacts from the identical scene.
-- **`Physics.IgnoreCollision` binds to collider *instances*.** It is lost when the object is
-  destroyed or returned to a pool — re-apply in `OnEnable`. **`Physics.IgnoreLayerCollision` is
-  global and persists across scenes**; it is the wrong tool for suppressing one pair. Use the
-  Layer Collision Matrix.
+- **A layer name resolving to `-1` is not a build problem** — it means the layer is not defined at
+  all, and `1 << -1` is not the mask you meant.
+- **The first frames of a player are not the first Editor frames**, and **Fixed Timestep is a
+  per-platform decision** a project that never set it inherits.
+- **`Physics.IgnoreCollision` binds to collider *instances*** and is lost on a respawn or a return
+  to the pool; **`Physics.IgnoreLayerCollision` is global and persists across scenes.**
 
-Both workarounds step by step, `Physics.autoSimulation`, and what halving the step costs:
+Each of those three in full — where layer names actually ship and the startup assertion, the
+one-frame delay and owning the step with `SimulationMode.Script`, and which of the two ignore
+calls to reach for:
 [`reference/editor-vs-build.md`](reference/editor-vs-build.md).
 
 ## The probe

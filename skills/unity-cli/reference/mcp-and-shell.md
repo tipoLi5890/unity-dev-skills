@@ -35,6 +35,56 @@ Three properties that change how you use it:
   per-instance token that a bare host:port cannot carry, so discovery is the CLI's job — point
   it at a project with `--project-path`, or at a Player with `--runtime` / `--runtime-path`.
 
+### An Editor can be open and still unreachable from inside a sandbox
+
+Run your shell commands inside a restrictive sandbox and `unity status`, `unity command` and
+`unity list` may all answer that no Editor is reachable **while one is in fact open on this machine,
+on this project**. Nothing in the CLI separates the two situations today: the wording is identical.
+Two mechanisms are known, each tied to one platform — do not carry either across to the other, and
+do not assume that every sandbox behaves this way at all:
+
+- **Windows** — a sandbox may run shell commands as a different, restricted account. The Editor's
+  discovery file is written under the Editor's own account with an owner-only ACL, so reading it
+  fails on permissions, and that surfaces as "no Editor found".
+- **macOS** — a sandbox may leave that discovery file perfectly readable yet refuse the outbound
+  loopback connection to the Editor's local server. The refusal or timeout looks exactly like a
+  server that was never listening.
+
+What follows from this: **ask whether an Editor is open** before you conclude that none is — whoever
+set up the sandbox can normally just look. Told that one is open, name your own sandbox as the
+suspect, rather than inventing a stale lockfile or a mistyped project path. **Never propose
+switching the sandbox off.** Propose instead running that one command outside it, or widening the
+sandbox's file-system or network allowance. Nor should you reroute in silence: spinning up a
+separate headless Editor to stand in for the live connection yields a different and sometimes
+partial answer while nobody is told the task changed shape. Away from a sandbox, "no Editor"
+ordinarily means what it says. Treat this as interim guidance rather than something the CLI prints;
+should a later version report the case itself, that message wins.
+
+### Which Editor a command lands on
+
+`unity command` and its subcommands, `unity list`, `unity job` and `unity mcp` share one target
+resolver, read in this order:
+
+1. `--runtime <pattern>`, and after it `--runtime-path <path>`. Both aim at a running **Player
+   build** rather than an Editor, and both are consulted **ahead of** `--project-path` — supply a
+   runtime alongside a project path and the runtime takes it, so supply only the one you mean.
+2. `--project-path <path>`, which is the Editor selector.
+3. Failing those, whichever running Editor owns a project directory that **encloses the current
+   working directory**; where one project sits inside another, the deepest enclosing one takes it.
+
+**Name `--project-path` any time a second Editor could be running.** Relying on step 3 hands the
+choice to the shell's cwd — seldom what an agent means, and invisible in the command it ran. When step 3 selects nothing, or two candidates tie, the CLI does not guess: it fails with
+`AMBIGUOUS_EDITOR` (**exit 6**), lists the candidates and names the flag. Ask for `--format json`
+and that same list travels inside the failure envelope as `data.candidates[]`, each entry carrying `project`,
+`projectPath`, `port` and `pid`, so a script picks one without parsing human text — and
+`unity status --format json` reports the same paths as `data.instances[].project`. Either source
+gives a value to hand straight back as `--project-path`.
+
+> `unity pipeline install` and `unity pipeline upgrade` also take `--project-path` but do **not**
+> use this resolver: they choose among the Editors that actually need the operation, with an
+> interactive selector on a terminal and a candidate-listing error — without `data.candidates` —
+> otherwise.
+
 ### What `configure` will actually write
 
 `--list` is worth running before you name a client, because it prints the resolved path per client
@@ -107,6 +157,14 @@ global one and a `--local`-only note for the rest; `--local` writes the project-
 install. **That path is a skill directory named `unity-cli`** — the same
 name as the `unity-cli` skill. Two skills with one name is a silent shadowing bug, not an error,
 so know which one is loaded before you let anything write there.
+
+A `--local` install does one more thing: alongside the CLI's own skill it **mirrors whatever agent
+skill the project's `com.unity.pipeline` package carries**. Once resolved, that package sits in
+`Library/PackageCache`, a location no client scans for skills, so without the mirror the package's
+skill could not be loaded at all; a project that lacks the package simply gets the CLI's skill on
+its own. `unity skill refresh` reads the project's package copy again, and where the package has
+since disappeared it says so instead of deleting anything. **That skill is never written
+user-globally** — its version follows the project.
 
 **`unity collaboration`** (alias `collab`) manages Unity Collaboration annotations, their
 attachments and thumbnails, Jira links, emoji reactions, and read/subscribe state on an annotation

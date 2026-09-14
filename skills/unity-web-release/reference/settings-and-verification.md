@@ -179,6 +179,39 @@ Two consequences worth writing on the release checklist:
   release build runs in CI, applying it has to be a step in the pipeline, not an assumption about
   what the repository carries.
 
+## The download budget and two cache ceilings
+
+**Budget the first download at under 30 MB**, and let everything else arrive after the player is
+already moving. That is the number that separates a build people wait for from one they close, and
+it is a *budget*, not a measurement: decide it before the content exists, then hold the split to
+it. The mechanism is Addressables remote groups on a CDN that serves Brotli or Gzip — the first
+screen's assets in the player, every later level fetched on demand. A build that puts the whole
+game in the `.data` file has no way to hit that number however many settings are tuned.
+
+Two ceilings decide how the remainder is chunked:
+
+- **Firefox refuses to cache an individual file above roughly 50 MB.** The limit is
+  `browser.cache.disk.max_entry_size` in `about:config`. Anything over it is re-downloaded on
+  every visit, so a repeat visit in Firefox is as slow as the first — and it is invisible in
+  Chrome, which is where it usually gets missed. **Keep each Addressables bundle under 51 MB** and
+  the question never arises; the alternative, telling players to edit `about:config`, is not a
+  shipping plan. Confirm the current default on the Firefox version you care about before sizing
+  chunks to the edge of it: load the build twice in Firefox and watch the Network panel on the
+  second visit — a chunk that was cached is served from cache, and a chunk over the limit is
+  fetched again in full.
+- **A transcoded texture costs its target format in the heap**, not its `.ktx2` size, so shrinking
+  the download does not by itself move the memory ceilings above.
+
+## The canvas takes whatever resolution it is given
+
+Scale the canvas up and the build renders at that new resolution — so on a high-DPI display a
+full-width canvas can be asked for several times the pixels the page actually shows, at several
+times the cost, for no visible gain. **Read `devicePixelRatio` in the web template and scale the
+canvas backing store deliberately** rather than letting it follow the CSS size. Clamping it (to
+1, or to 2 on a phone) is the cheapest frame-time win available on the web, and it is a template
+edit, not a Player Setting — which is why it survives no `ProjectSettings.asset` read-back and has
+to be checked in the template file itself.
+
 ## Profiling in the browser
 
 The Editor's Play Mode is not a browser and never was. Measure in the browser — in at least two of
@@ -294,3 +327,16 @@ Three flags carry most of the mistakes:
 
 Transcoded textures are ordinary GPU textures: memory cost follows the **target format**, not the
 size of the `.ktx2` file. A small download is not a small texture in the heap.
+
+Two load paths on the runtime side, both on `KtxTexture` and both asynchronous, because transcoding
+happens at load:
+
+- `LoadFromStreamingAssets(<relative path>)` — the file shipped in `StreamingAssets/`, which is the
+  simplest form and needs no download code.
+- `LoadFromBytes(<byte[]>)` — for a file you fetched yourself, over `UnityWebRequest` or out of an
+  Addressables bundle. This is the path a streamed build actually uses.
+
+Confirm both signatures against the `com.unity.cloud.ktx` version that resolved into the project —
+read it off `Packages/packages-lock.json` — before writing the calling code around them. Neither
+path exists for a texture baked into the player: Unity has already chosen a format for those at
+build time, and re-encoding them as KTX2 buys nothing.

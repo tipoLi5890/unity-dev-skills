@@ -136,14 +136,12 @@ importer.includeInBuild = true;
 importer.SaveAndReimport();              // nothing persists without this
 ```
 
-- **`textureSettings` and `packingSettings` are struct properties.** Mutating a member through the
-  property is a change to a temporary. Take a local, edit it, assign it back. Their members, with
-  `maxTextureSize` read-only: `reference/v2-api.md`.
+- **`textureSettings` and `packingSettings` are struct properties** — take a local, edit it,
+  assign it back, as above. Members, with `maxTextureSize` read-only: `reference/v2-api.md`.
 - **`TextureImporterPlatformSettings.format` is a property typed `TextureImporterFormat`**, not
-  an `int` field: `format = (int)TextureImporterFormat.ASTC_6x6` is a compile error, and the fix is
-  to delete the cast rather than to widen it.
-- **Pack only sprites under `Assets/`.** Textures inside packages and Editor built-in assets are
-  read-only imports that nothing downstream can reimport — filter on the asset path.
+  an `int` field — delete the cast, never widen it: `reference/common-errors.md` §1.
+- **Pack only sprites under `Assets/`** — package and built-in textures are read-only imports
+  nothing downstream can reimport, so filter on the path: `reference/common-errors.md` §5.
 - **The file extension is `.spriteatlasv2`**, per the package documentation — confirm it on the
   first asset you create.
 
@@ -216,20 +214,27 @@ from its master is not a variant of it, and the mismatch shows up as missing spr
 
 ## 7. Custom packing
 
-`ScriptablePacker` is a `ScriptableObject` subclass with one abstract member, `Pack`, and one
-virtual member, `Fit` — and **`Pack` is public and `Fit` is protected**. An override
-cannot widen access, so `public override bool Fit` is a compile error where
-`public override bool Pack` is required. Assign an instance with
-`SpriteAtlasAsset.SetScriptablePacker`, which takes a `ScriptablePacker` — not a plain `Object`.
+`ScriptablePacker` is a `ScriptableObject` with one abstract member, `Pack` (**public**), and one
+virtual member, `Fit` (**protected** — an override cannot widen access, so `public override bool
+Fit` will not compile). Attach an instance with `SpriteAtlasAsset.SetScriptablePacker`, which takes
+a `ScriptablePacker`, not a plain `Object`.
 
 Its input and output types are **nested inside `ScriptablePacker`** — `PackerData`, `SpriteData`,
 `SpritePack`, `TextureData` and `PackTransform` are all `ScriptablePacker.<Name>`, not free types
 in `UnityEditor.U2D`; a mis-qualified reference is the usual reason a packer will not compile.
-Field lists, two of them easy to get wrong from memory: `reference/v2-api.md`;
-the runnable example: `resources/ScriptablePackerExample.cs`.
+Field lists, two of them easy to get wrong from memory: `reference/v2-api.md`.
 
 Write to `sprite.output` and write the struct back into the array — `NativeArray<T>` hands out
 copies. Never dispose the arrays inside `PackerData`; the importer owns them.
+
+> **`Pack` returning `true` is the only report anyone downstream gets**, so check the output before
+> returning it: `resources/PackerValidation.cs` rejects a negative position, an unopened page and
+> an overlap, and says what landed on each page.
+
+Three layouts: `resources/ScriptablePackerExample.cs` (a fixed grid),
+`resources/MultiPagePacker.cs` (shelves, spilling onto a new page) and
+`resources/SizeOptimizedPacker.cs` (one page, tallest first). Padding is yours to apply — whatever
+`Pack` writes is the final position.
 
 ## Scope — what this skill does NOT do
 
@@ -257,4 +262,6 @@ Generating the artwork itself is outside this library.
   end.
 - `resources/`: `AtlasBuildGenerator.cs` (build-time generation, both delivery modes),
   `AtlasContentBuild.cs` (the content build that pairs with it), `AtlasSupplier.cs` (the runtime
-  supplier), `ScriptablePackerExample.cs` (a grid packer and the shape of a custom one).
+  supplier), `ScriptablePackerExample.cs` (a grid packer and the shape of a custom one),
+  `MultiPagePacker.cs`, `SizeOptimizedPacker.cs` (two more layouts) and `PackerValidation.cs`
+  (a packer checking its own output).

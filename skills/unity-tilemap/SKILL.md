@@ -54,6 +54,7 @@ description: >-
 | A specific rule never fires although its pattern is present | §6 — a less specific rule is above it |
 | Gaps between painted tiles you did not author | Scope — `unity-2d-pixel-perfect` |
 | Full pattern tables, neighbour coordinates | `reference/rule-tile-patterns.md` |
+| A hexagonal set to start from, and why it is unverified | `reference/hexagonal-rule-set.md` |
 | Cell sizing, swizzle and sort-mode values | `reference/palette-and-grid.md` |
 | How a sprite becomes a pattern string | `reference/sprite-3x3-analysis.md` |
 
@@ -218,6 +219,8 @@ a `TilemapCollider2D`: this skill only sets a tile's collider type and stops the
   layouts, enums, verifying a palette.
 - [`reference/rule-tile-patterns.md`](reference/rule-tile-patterns.md) — fixed and rotated tables,
   the cell-index-to-`Vector3Int` map, hexagonal directions.
+- [`reference/hexagonal-rule-set.md`](reference/hexagonal-rule-set.md) — 38 pointy-top
+  configurations with their transforms, marked unverified and how to confirm them.
 - [`reference/sprite-3x3-analysis.md`](reference/sprite-3x3-analysis.md) — sprite to pattern, the
   Y flip, the two knobs, a bad run.
 - Code: [`CreatePaletteTemplate.cs`](resources/CreatePaletteTemplate.cs) (four layouts, read-back

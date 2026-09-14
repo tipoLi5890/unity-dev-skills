@@ -86,9 +86,20 @@ Max texture size being read-only here is worth noticing: the per-platform cap is
 
 Platform names for `GetPlatformSettings` and for the `name` field are the Editor's build-group
 strings: `Standalone`, `Android`, `iOS`, `WebGL`, `WSA`, `tvOS`, with Windows, macOS and Linux all
-answering to `Standalone` rather than to one name each. Round-trip a name before trusting it —
-set it, read it back with `GetPlatformSettings` and check `overridden` — above all on a platform
-this list does not cover.
+answering to `Standalone` rather than to one name each. Console targets answer to their own
+strings, `PS4` and `XboxOne` among the ones in circulation — a project that ships to one has the
+name in its own build scripts already.
+
+**One more name is not a platform at all: `DefaultTexturePlatform`.** It addresses the entry every
+other platform falls back to, so `GetPlatformSettings("DefaultTexturePlatform")` is how you read
+what the atlas does where nothing is overridden, and setting `name` to it changes that default
+instead of one platform. Reading it is also the honest way to report an atlas's max texture size,
+since the property on `SpriteAtlasTextureSettings` is get-only.
+
+Round-trip a name before trusting it — set it, read it back with `GetPlatformSettings` and check
+`overridden` — above all on a platform this list does not cover. Confirm on your version what an
+unknown name does before relying on an error to catch a typo: a platform entry that never matches
+a build target is not a failure anything reports, it is an atlas that ships at its defaults.
 
 ## SpriteAtlasUtility — `UnityEditor.U2D`
 

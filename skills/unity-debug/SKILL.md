@@ -66,6 +66,8 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 | "It is slow", hitches, draw calls or GC — numbers you can compare across a change | skill `unity-profiling` |
 | A collision or trigger that never fires, tunnelling, a raycast that misses | skill `unity-physics-3d` |
 | Post-processing set but not visible; reviewing a renderer feature | skill `unity-render-urp` |
+| A Scene-view or camera PNG for a before/after comparison, outside a test run | skill `unity-urp-migration` → `resources/SceneCapture.cs` |
+| "Find / where is / what references X" — one query over project assets or the loaded scenes, rather than a script | skill `unity-search` |
 | Installing editors, licences, templates, MCP wiring, CI invocation | skill `unity-cli` |
 | An agent that will not move or path around something | skill `unity-navigation` |
 | Building the game's UI rather than debugging it | skill `unity-game-ui` |
@@ -114,6 +116,7 @@ can read is a different thing — that one is `unity-play-harness`.
 | Building the game so an agent can drive and read it: probes, named situations, journey tests | `unity-play-harness` |
 | Frame-time windows, profiler counters, a before/after table | `unity-profiling` |
 | Deciding what to build first: the brief, the constraints, the first interaction | `unity-game-brief` |
+| "Find / where is / what references X" answered as a Unity Search query rather than a scripted audit | `unity-search` |
 
 ## Running PlayMode tests edits your project
 

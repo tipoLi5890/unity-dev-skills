@@ -51,3 +51,23 @@ Worth knowing before you "tune" anything:
 
 A `stoppingDistance` of zero is why "jitter at the destination" is the common case, not the
 unusual one (SKILL.md §3).
+
+## 4. Links: the component to author with, and crossing one by hand
+
+**`OffMeshLink` is the legacy component.** It still exists and still works, which is why it keeps
+turning up in older scenes and in older sample code — but the one to author with is
+**`NavMeshLink`** from `com.unity.ai.navigation`, which adds width, transform-relative endpoints
+and runtime updates. Migrate an `OffMeshLink` you find rather than adding a second one beside it.
+
+The runtime API kept the old name either way: the agent members are `isOnOffMeshLink`,
+`currentOffMeshLinkData` and `CompleteOffMeshLink()` regardless of which component created the
+link, so `OffMeshLink` in code is not evidence that the scene uses the legacy component.
+
+With `autoTraverseOffMeshLink` off, the crossing is four steps and the last one is the one people
+drop:
+
+1. Detect `agent.isOnOffMeshLink`.
+2. Read `agent.currentOffMeshLinkData` for `startPos` and `endPos`.
+3. Play or lerp the traversal yourself — the jump, the ladder climb, the vault over a gate.
+4. Call `agent.CompleteOffMeshLink()`. Without it the agent never leaves the link, and the report
+   arrives as "it freezes at the gate", not as a link problem.

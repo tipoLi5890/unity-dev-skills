@@ -467,6 +467,18 @@ test: SKILL.md §7 has the headless bake and the shape of the assertion.
 A rebake does not repair agents that were left standing on nothing. Sequence it: bake, then
 `NavMesh.SamplePosition` + `agent.Warp` for anything that needs re-seating.
 
+**The headless bake-and-query test** SKILL.md §7 describes, written out. It runs in a batch-mode
+Editor in milliseconds over a couple of primitives, and the assertion is on the status:
+
+```csharp
+var surf = root.AddComponent<Unity.AI.Navigation.NavMeshSurface>();
+surf.collectObjects = Unity.AI.Navigation.CollectObjects.Children;
+surf.BuildNavMesh();
+var p = new UnityEngine.AI.NavMeshPath();
+UnityEngine.AI.NavMesh.CalculatePath(from, to, UnityEngine.AI.NavMesh.AllAreas, p);
+return p.status;              // assert on status, NOT on CalculatePath's bool
+```
+
 ## 7. The bake knobs
 
 `NavMeshSurface` advanced settings, all from the `com.unity.ai.navigation` package. The Inspector
@@ -523,6 +535,65 @@ to mark. Where two volumes overlap, the **highest area index wins**, with one ex
 overrides everything: **Not Walkable (index 1) always takes precedence**, regardless of index or
 ordering. That asymmetry is deliberate and it is what makes a blocking volume dependable — you
 can drop one over a hazard without auditing every custom area a designer added since.
+
+## 8. Areas, costs and masks
+
+SKILL.md §5 says areas express preference rather than possibility. This section is the arithmetic
+and the bitmask behind that sentence.
+
+**The three built-in areas have fixed indices**, and code that assumes otherwise breaks on the
+first project that added its own:
+
+| Area | Index | What it is |
+|---|---|---|
+| Walkable | 0 | Everything a surface bakes by default |
+| Not Walkable | 1 | Blocks pathing, and wins every overlap (§7) |
+| Jump | 2 | What **Generate Links** stamps on the links it creates |
+
+Indices **3–31** are yours, named in `Window → AI → Navigation → Areas`. Twenty-nine of them,
+which is far more than a level needs — name them for what the agent thinks about them (`Hazard`,
+`GateLane`), not for what the art is.
+
+**Cost is a distance multiplier.** The path cost of a stretch is `distance × area cost`, so A\*
+treats a costly area as a longer one. Costs are above `1.0`; below that the pathfinder can
+prefer a detour to a shortcut and the routes stop making sense. A hazard lane at cost `3.0`
+prices 10 units of hazard the same as 30 units of clear lane — so a runner with a clear lane
+within 30 units goes around, and **a runner with no clear lane still runs straight through it**.
+Cost never forbids. If the hazard must be impassable, it is `Not Walkable` or a modifier volume,
+not a large number.
+
+Per-agent overrides live on the agent (`agent.SetAreaCost(3, 5.0f)`, SKILL.md §5) and leave every
+other agent's view of the level alone — one timid courier without a second bake.
+
+**A mask forbids.** `areaMask` is a bitfield of area indices, and an agent plans only inside it:
+
+```csharp
+// This runner may use plain ground and the gate lane (custom area 3), nothing else.
+agent.areaMask = (1 << 0) | (1 << 3);
+
+// A sentry gets the same level without the gate lane, so it patrols around the gate
+// rather than through it — no second NavMesh, no extra collider, no scripting at the door.
+sentry.areaMask = 1 << 0;
+```
+
+Two traps: **leave area 0 out and the agent has almost nothing to stand on**, which reads exactly
+like a failed bake; and the mask is planning-only, so an agent already standing inside an excluded
+area finds no path out of it — put the spawn on a permitted area.
+
+**`agent.Raycast` is a line-of-walk test, not a physics query.** It walks the NavMesh from the
+agent to a point and reports the first edge it runs into:
+
+```csharp
+if (agent.Raycast(pickup.position, out var hit))
+{
+    // Blocked: hit.position is where the walkable surface ends, hit.distance how far that is.
+    // A gap with no link reads as blocked here, which is the point.
+}
+```
+
+It costs a fraction of a full path request, so it is the cheap pre-check before a chase commits —
+and it answers about the *mesh*, so a collider added after the bake is invisible to it, exactly as
+it is to pathing (SKILL.md §4). Colliders are `unity-physics-3d`.
 
 ## Related
 

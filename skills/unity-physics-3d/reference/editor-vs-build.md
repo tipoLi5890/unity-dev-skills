@@ -1,8 +1,13 @@
 # Editor yes, build no: the first frames and the physics step
 
-Part of the `unity-physics-3d` skill. SKILL.md §6 states the rules; this file holds the two that
-need the detail.
+Part of the `unity-physics-3d` skill. SKILL.md §6 states each rule in a line; this file holds them
+in full.
 
+- **A layer name resolving to `-1` is not a build problem.** Layer names ship in
+  `TagManager.asset`, so `LayerMask.NameToLayer` answers the same in a player as it does in the
+  Editor; `-1` means the layer is not defined in `Project Settings → Tags and Layers` at all.
+  `1 << -1` is not the mask you meant, and nothing warns — resolve the index once at startup and
+  assert it is not `-1` there, where the failure names itself.
 - **The first frames of a player are not the first frames of the Editor.** The Editor has been
   stepping PhysX since the domain reloaded; a fresh player has not, so anything that spawns in
   `Awake` and expects a resolved contact before the first `FixedUpdate` can behave differently in a
@@ -23,3 +28,10 @@ need the detail.
   scene, which is exactly the shape of "it works in the editor". Write the number down in the
   project settings rather than inheriting it, and change it knowingly: halving the step doubles the
   physics cost.
+- **`Physics.IgnoreCollision` binds to collider *instances*, not to prefabs or layers.** The pair
+  it suppresses is forgotten when either object is destroyed or returned to a pool, so a respawned
+  object collides with what it used to ignore — re-apply it in `OnEnable` rather than once at
+  spawn. **`Physics.IgnoreLayerCollision` is the opposite mistake**: it is global, it persists
+  across scene loads, and it suppresses every pair on those two layers rather than the one pair
+  you meant. For a permanent layer-wide rule, set it in the Layer Collision Matrix, where it is
+  visible to whoever reads the project next.

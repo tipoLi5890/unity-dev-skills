@@ -75,7 +75,8 @@ Two rules that decide the argument you will have:
 // Scope the search to Assets. Unscoped, FindAssets also walks read-only package assets, and the
 // inventory then lists mixers the user did not author and cannot edit. The only two overloads
 // are (string) and (string, string[] searchInFolders); there is no search-mode parameter to
-// reach for instead.
+// reach for instead. An interactive form of the same question is `unity-search`, which turns
+// "which mixers are in this project" into a Unity Search query instead of a script.
 var guids = UnityEditor.AssetDatabase.FindAssets("t:AudioMixer", new[] { "Assets" });
 if (guids.Length == 0) { return "no AudioMixer asset under Assets/"; }
 
@@ -97,6 +98,13 @@ the parent/child shape, and there is no public way to ask for that shape. If the
 matters to the conversation, have the user read it off the Audio Mixer window instead of
 reaching for the non-public tree API.
 
+**The count the snippet prints is worth reading as a signal.** A mixer much past **~8 groups** is
+usually one that grew a group per sound rather than a group per decision, and it costs on every
+one of them, muted or not — the same cost §4 of the skill charges for depth. Say so once, with
+the count, and let the user decide: collapsing groups is a restructure only they can do in the
+Audio Mixer window, and it invalidates every routing decision made before it. An effect sitting
+on the Master group is the other thing worth naming from the inventory alone.
+
 ## Read where the scene's sources currently point
 
 ```csharp
@@ -115,6 +123,23 @@ return rows.Count == 0 ? "no Audio Source in the open scene" : string.Join("\n",
 
 `FindObjectsInactive.Include` is deliberate: a disabled Audio Source still ships with the scene
 and still needs a group.
+
+**When the source is meant to be positional, read its falloff in the same pass.** Routing does not
+make a sound 3D, and a source that was never spatialised sounds wrong however tidily it is routed:
+
+```csharp
+rows.Add($"{source.gameObject.name}: spatialBlend={source.spatialBlend} "
+       + $"rolloff={source.rolloffMode} min={source.minDistance} max={source.maxDistance}");
+```
+
+`spatialBlend` at `1` is full 3D and `0` is fully 2D — the check the skill's §3 opens with.
+`rolloffMode` then decides how the level falls off with distance, and the two failure shapes are
+easy to tell apart once the value is in front of you: **`Logarithmic`** (the default) drops
+steeply near the source, so a hazard is inaudible a lane away unless `minDistance` is widened;
+**`Linear`** fades evenly to nothing at `maxDistance`, which is the predictable choice for a
+pickup that should be heard across three 1.3-unit lanes and silent beyond them. **`Custom`** means
+an authored curve decides the shape, so the two distances alone do not tell you what the player
+hears — read the curve in the Inspector before changing either.
 
 ## Assign the groups
 

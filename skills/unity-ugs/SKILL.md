@@ -59,6 +59,17 @@ Ids and floors: [`reference/packages.md`](reference/packages.md).
 
 ## 2. The order everything else depends on
 
+```
+Init ─▶ Auth ─┬─▶ Remote Config · definitions, read-only
+              ├─▶ Cloud Save · Default / Public
+              ├─▶ Economy · read
+              └─▶ Cloud Code ─┬─▶ Cloud Save · Protected / Custom
+                              ├─▶ Economy · write
+                              └─▶ Leaderboards · submitted score
+```
+
+Left of that last fork the client is believed; right of it the server decides (§3, §4).
+
 ```csharp
 using Unity.Services.Core;
 using Unity.Services.Authentication;

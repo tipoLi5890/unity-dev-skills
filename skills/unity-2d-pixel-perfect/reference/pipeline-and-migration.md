@@ -65,9 +65,21 @@ check the component survived before migrating the rest.
 **No 2D renderer under URP.** `PixelPerfectCamera` needs the 2D renderer to be the one in use.
 Create a 2D Renderer Data asset, assign it in the URP asset's renderer list, and confirm the
 result: `((UniversalRenderPipelineAsset)GraphicsSettings.currentRenderPipeline).scriptableRenderer`
-must read `UnityEngine.Rendering.Universal.Renderer2D`.
+must read `UnityEngine.Rendering.Universal.Renderer2D`. The 2D renderer arrives with
+`com.unity.render-pipelines.universal` itself and needs **12.0 or newer**; read the version that
+resolved off `Packages/packages-lock.json` rather than the manifest's range, and on anything older
+say the renderer is unavailable instead of hunting for the missing menu entry.
 
 **HDRP.** Pixel Perfect Camera is not supported. There is no component to add and no setting to
 find; a project that needs pixel-perfect 2D on HDRP needs a render texture at reference
 resolution with `FilterMode.Point` and a custom blit, which is a rendering project rather than a
 settings change.
+
+The shape that custom blit takes depends on the Unity version, and the two are not
+interchangeable. `OnRenderImage` with `Graphics.Blit` is the built-in form, and it is
+**incompatible with the render graph** — on Unity 6 the work is a `ScriptableRendererFeature2D`
+and a `ScriptableRenderPass2D` injected through a `RenderPassEvent2D` value, recording into the
+graph with `AddRasterRenderPass`. Confirm those names against the pipeline package the project
+resolved before writing any of it, and quote the version you confirmed against in the report: a
+feature built on the wrong base class is dropped from a 2D renderer without an error. Reviewing a
+render-graph pass is `unity-render-urp` → `reference/render-graph-review.md`.

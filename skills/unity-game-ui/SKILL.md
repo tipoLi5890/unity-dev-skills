@@ -1,16 +1,16 @@
 ---
 name: unity-game-ui
 description: >-
-  START HERE for any UI request that does not name a UI system: detects uGUI,
-  UI Toolkit or IMGUI and routes to unity-ui-ugui or unity-ui-toolkit. Owns the
-  runtime IMGUI (OnGUI) HUD with no scene Canvas, and whatever makes a game's
-  UI survive real viewing conditions: colour, contrast, type sized from
-  viewing distance, HUD placement, transitions. Use for "design the HUD", "the
-  UI looks wrong / cheap / misaligned", "the text is too small", "the panels
-  are the wrong colour", "the highlighted item does not stand out", "the glow
-  is a grey smudge", "the art looks tiny in its box", "adding a fade broke the
-  logic", "the buttons shimmer", "where should the timer go", or a multi-agent
-  UI/UX review.
+  START HERE for a UI request naming no UI system: detects uGUI, UI Toolkit or
+  IMGUI, routes to unity-ui-ugui or unity-ui-toolkit. Owns the runtime IMGUI
+  (OnGUI) HUD with no Canvas, and what makes a UI survive real viewing
+  conditions: colour, contrast, type sized by viewing distance, TextMeshPro
+  font assets, SDF atlases, HUD placement, transitions. Use for "design the
+  HUD", "the UI looks wrong / cheap / misaligned", "the text is too small",
+  "the panels are the wrong colour", "the highlighted item does not stand
+  out", "the glow is a grey smudge", "the art looks tiny in its box", "adding
+  a fade broke the logic", "the buttons shimmer", "where should the timer go",
+  or a multi-agent UI/UX review.
 ---
 
 # unity-game-ui — a runtime UI that holds up in the room it is played in
@@ -55,7 +55,9 @@ Read the result as a whole: all four empty on a project that clearly has UI mean
 looking at the wrong directory, not that the project has no UI system.
 
 **There is no automated Figma import in this toolchain** — no importer, no service call, nothing
-to enable — so a design link is a reading task: ask for a description or a screenshot of the
+to enable. The conversion people have seen exists only inside Unity's own in-Editor assistant, and
+there is no client-side equivalent to call, so promising one costs a round trip and produces
+nothing. A design link is therefore a reading task: ask for a description or a screenshot of the
 screen and build it with the system §0 lands on.
 
 **Still ambiguous — the default ladder:**
@@ -68,6 +70,30 @@ screen and build it with the system §0 lands on.
 
 **Then hand off.** uGUI → `unity-ui-ugui`. UI Toolkit → `unity-ui-toolkit`. Runtime `OnGUI`
 stays here. This skill does not duplicate the other two.
+
+### And decide what kind of answer the request wants
+
+Routing says *which* skill. This says *how much*. Three request shapes, and the output of each is
+different:
+
+| Shape | The request sounds like | What comes back |
+|---|---|---|
+| Understand | "what does this button do", "how is this screen laid out", "how many panels are in here" | An explanation of the components, the hierarchy and the events. **No file changes at all.** |
+| Edit | "make the gate label amber", "move the hazard pip left", "this panel is too tall" | A change to exactly what was named, and nothing adjacent. |
+| Generate | "build a pause screen", "make a lane-select menu" | Only the files that screen needs. |
+
+Three phrasings read as more than they are, and all three mean *visuals*:
+
+- **"proper buttons"** — styled buttons, not a button controller.
+- **"working UI"** — markup and layout that render correctly, not wired behaviour.
+- **"a menu screen"** — the arrangement of the screen, not the navigation between screens.
+
+> **Do not add scripts unless the request asks for behaviour.** A `MonoBehaviour` nobody asked for
+> is a file to review, a reference to wire, and a second owner of the layout. The signal is
+> explicit — "with code", "make it functional", "hook up the logic", a named callback — and in its
+> absence the honest move is to build the visuals and say plainly that nothing is wired yet.
+
+Both system skills inherit this rather than restating it.
 
 ## Scope — what this skill does NOT do
 

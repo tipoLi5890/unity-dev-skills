@@ -2,25 +2,33 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
-## 0.14.0
+## 0.15.0
 
-Thirty-two load-by-situation skills, each teaching the same three things: what to check, the call
+Thirty-four load-by-situation skills, each teaching the same three things: what to check, the call
 that checks it, and the script that does it for you.
 
-- **Three new skills for the loop a human cannot run by hand.**
-  - `unity-play-harness` — build the game so an agent can drive it and read it: a one-line probe
-    snapshot readable from a live Editor, `Editor.log` or a PlayMode test; named situations that
-    boot straight into a moment and wait on a **readiness set** rather than a sleep; journey tests
-    that sample the probe into a timeline and assert invariants over it; and the method that turns
-    a feel complaint into a repeatable test.
-  - `unity-profiling` — the work behind a slow or uneven frame, as numbers you can compare:
-    ProfilerRecorder counters without the Profiler window, 90-frame windows with median/p95/worst,
-    scheduled / completed / discarded work counters for streaming and pooling, and a before/after
-    table that says whether a change helped.
-  - `unity-game-brief` — the first hour, before any Unity work: one line of idea into a one-page
-    experience brief, the look locked with images, an architecture proposal **derived** from the
-    stated constraints, readiness written as testable invariants, and one interaction the human
-    can play and react to.
+- **`unity-urp-migration`** — a Built-in Render Pipeline project moved to URP in five gated phases,
+  every gate read back from the **saved** project rather than from the converter log, plus the four
+  traps that let a half-moved project report success: an assignment that sits in Graphics settings
+  but not in the quality tiers, 3D materials claimed by the 2D shader provider, a Volume profile
+  that reloads empty because its overrides were never added as sub-assets, and lighting that is
+  still Built-in baked data.
+- **`unity-search`** — a *find / where is / which prefabs use / what references X* question turned
+  into one Unity Search query: asset type filters, folders, labels, `ref=` relationships and scene
+  component queries, written out before it runs and opened in a live Editor when one is reachable.
+  Read-only — it never selects, moves or edits a result.
+- **`unity-cli` grows the two surfaces a repo hits first.** `reference/version-control.md` covers
+  the verbs that know what a scene is — `vcs diff` and `blame` by object and field with their
+  identity-confidence levels, `merge-setup` and its `--check` exit, `sync`/`switch` refusing while
+  an Editor holds the project, `affected`/`summarize` and why their answer is a lower bound, and
+  the three different meanings of `--since`. `reference/ci-preflight.md` covers `unity ci init`,
+  the `doctor --ci` exit codes that say whether a retry is honest, and `cache key`.
+- **The TMP Essentials import no longer hard-codes a package path.** `unity-localization` scans
+  `Library/PackageCache` for the resource package instead, and names the menu item that returns
+  `true` and then blocks a headless run on a modal dialog.
+- **Smaller additions across the UI, 2D, runtime and backend skills** — USS patterns, sprite and
+  atlas scripts, NavMesh areas and costs, a URP pre-flight snippet, package selection, and the
+  documentation maps the services SDKs publish.
 - **One layout for every skill.** `SKILL.md` is a router with a symptom table; `reference/` holds
   the depth it names; `resources/`, `scripts/` and `templates/` hold what you run or copy. No skill
   keeps content at its own root.

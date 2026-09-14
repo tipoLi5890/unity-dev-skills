@@ -162,4 +162,7 @@ Before adding a member to a programmatic-UI host, check for a same-named type or
 Use `TMP_PackageResourceImporter.ImportResources()`. **Do not** call
 `EditorApplication.ExecuteMenuItem("Window/TextMeshPro/Import TMP Essential Resources")` — it opens
 a modal dialog and blocks whatever invoked it until a human dismisses it, which in an automated run
-is an indefinite hang. `AssetDatabase.ImportPackage()` is also the wrong API here.
+is an indefinite hang. `AssetDatabase.ImportPackage()` against a guessed path is the other trap: the
+`.unitypackage` sits under a versioned `Library/PackageCache/` folder, and a wrong path imports
+nothing and fails no step — if `ImportResources()` does not resolve, find the file first
+(`unity-localization` → `reference/font-pipeline.md`).

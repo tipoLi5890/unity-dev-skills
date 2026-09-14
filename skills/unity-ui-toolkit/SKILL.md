@@ -31,6 +31,7 @@ conversion, then ask for a description or a screenshot and build the screen the 
 |---|---|
 | Nothing renders at all, and the Console is clean | §3 — a `UIDocument` with no `PanelSettings` |
 | A style property has no effect | §1 — it probably does not exist |
+| A rule loses to another rule; tokens, hover states, 9-slice | `reference/uss-patterns.md` |
 | Hover animates in but snaps back out | §2 |
 | Elements ignore the width/height you set | §3 |
 | The layout is right but nothing responds to clicks | §4 |
@@ -50,6 +51,8 @@ through a human or a live Editor. Two consequences:
 - **Write complete files, never partial ones.** A half-written UXML file is a parse error the
   instant the Editor picks it up — and if the Editor is watching, it picks it up mid-save.
 - **Finish every file before asking for a check**, so one reimport covers the whole change.
+- **Build only what was asked.** "Proper buttons" and "a menu screen" are styling and layout, not
+  behaviour — add scripts only when the request does. Full rule: `unity-game-ui` §0.
 
 Best case, drive a live Editor and trigger the reimport yourself —
 `unity-debug` → `reference/editor-control.md`. Failing that, ask the user to focus the Editor
@@ -75,12 +78,9 @@ Enumerating `UnityEngine.UIElements.IStyle` shows `gap`, `zIndex`, `boxShadow`, 
 `pointerEvents` and the shorthand `borderWidth` all **absent**, while `borderTopWidth`,
 `backgroundImage` and `flexGrow` are present. `picking-mode` takes exactly `Position` or `Ignore`.
 
-> **`filter` does exist.** A common belief is that USS lacks it; it is wrong. Check what it
-> actually does on your version before using it; "it exists" is not "it behaves like the CSS one".
-
-**`transition-property` also exists**, so it is not in the table above. The restriction is on its
-**values**: naming a specific property is ignored. Use `none` / `initial` / `inherit`, or leave it
-out and let the other `transition-*` properties do the work.
+Two near-misses that belong in neither column — `filter`, which does exist, and
+`transition-property`, which exists but ignores a named property value — are in
+[`reference/uss-patterns.md`](reference/uss-patterns.md).
 
 Three more absolutes:
 
@@ -206,10 +206,9 @@ narrow: **anything new defaults to UI Toolkit** — `CreateGUI` on an `EditorWin
 only when maintaining code that already has `OnGUI` in it, when every editor tool in the project
 is immediate-mode, or when the request names `OnGUI` directly.
 
-A script touching `UnityEditor` must sit in an `Editor` folder or an editor-only assembly, or it
-breaks the **player** build rather than the Editor. Neither `CreateGUI` nor `OnGUI` is declared on
-`EditorWindow` at all — they are called by name, so `override` will not compile and a misspelling
-opens an empty window with a clean Console. Templates for all three, the undo contract
+Two things bite before the first line of layout: editor code must live in an `Editor` folder or an
+editor-only assembly, and `CreateGUI` / `OnGUI` are called by name rather than declared. Both, with
+their failure shapes, plus templates for all three entry points, the undo contract
 (`serializedObject.Update()` … `ApplyModifiedProperties()`), and the immediate-mode cost rules:
 [`reference/editor-tooling.md`](reference/editor-tooling.md).
 
@@ -262,3 +261,5 @@ live Editor to reimport what you wrote is `unity-debug`.
   property drawers
 - [`reference/panel-settings-and-text.md`](reference/panel-settings-and-text.md) — `PanelSettings`
   and TextCore font assets
+- [`reference/uss-patterns.md`](reference/uss-patterns.md) — tokens, state tints, wrapping,
+  9-slice, selector cost, specificity

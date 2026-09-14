@@ -56,6 +56,8 @@ These are not style preferences; each one prevents a specific cascade.
   sum of your attempts.
 - **One change, then verify.**
 - **Apply the user's numbers exactly.** No rounding, no adjusting properties nobody asked about.
+- **Build only what was asked.** "Working UI" / "proper buttons" mean visuals; scripts only when
+  the request names behaviour (`unity-game-ui` §0).
 
 Edit the hierarchy through a live Editor, not `.prefab` / `.unity` YAML — `unity-debug` →
 `reference/editor-control.md`; the reasons are in `unity-cli`.
