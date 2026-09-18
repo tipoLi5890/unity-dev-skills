@@ -51,6 +51,7 @@ infer permission to upload private inputs unless the user authorizes those actio
 | Stable Audio 3 music or SFX | `reference/stable-audio3.md`, `templates/stable_audio3_medium_api.json` |
 | Any MiniMax H3 video mode | `reference/minimax-h3.md` and the matching H3 template |
 | H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
+| H3 character motion transfer, pace matching, or side-by-side QA | Also read `reference/h3-motion-transfer.md`; normalize non-24 fps sources with `scripts/prepare_h3_motion_reference.py` |
 
 Read only the references relevant to the current request.
 

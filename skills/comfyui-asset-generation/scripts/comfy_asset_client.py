@@ -89,7 +89,18 @@ def queue_empty(base: str) -> bool:
     return not queue.get("queue_running") and not queue.get("queue_pending")
 
 
-def upload_image(base: str, source: Path, *, overwrite: bool = False) -> dict[str, Any]:
+def device_summary(stats: dict[str, Any]) -> list[dict[str, Any]]:
+    devices = stats.get("devices")
+    if not isinstance(devices, list):
+        return []
+    return [
+        {key: device.get(key) for key in ("name", "vram_free", "vram_total")}
+        for device in devices
+        if isinstance(device, dict)
+    ]
+
+
+def upload_asset(base: str, source: Path, *, overwrite: bool = False) -> dict[str, Any]:
     if not source.is_file():
         raise ComfyError(f"Upload source is not a file: {source}")
     boundary = f"----CodexComfyAsset{uuid.uuid4().hex}"
@@ -198,7 +209,7 @@ def main() -> int:
         action="append",
         type=Path,
         default=[],
-        help="Authorized local image to upload before submission; repeat as needed",
+        help="Authorized local image, video, or audio input; repeat as needed",
     )
     parser.add_argument("--overwrite-uploads", action="store_true")
     parser.add_argument("--poll-seconds", type=float, default=3.0)
@@ -221,7 +232,7 @@ def main() -> int:
         raise ComfyError("Refusing to submit: ComfyUI has a running or pending job")
 
     uploads = [
-        upload_image(base, source, overwrite=args.overwrite_uploads)
+        upload_asset(base, source, overwrite=args.overwrite_uploads)
         for source in args.upload
     ]
     payload = json.loads(args.workflow.read_text(encoding="utf-8"))
@@ -242,12 +253,22 @@ def main() -> int:
 
     downloaded = download_outputs(base, result.get("outputs", {}), args.output_dir)
     unload_when_idle = bool(config.get("unload_when_idle", True))
+    vram: list[dict[str, Any]] = []
     if not args.keep_loaded and unload_when_idle and queue_empty(base):
         request(base, "/free", {"unload_models": True, "free_memory": True})
+        try:
+            vram = device_summary(request_json(base, "/system_stats"))
+        except ComfyError:
+            vram = []
 
     print(
         json.dumps(
-            {"prompt_id": prompt_id, "uploads": uploads, "outputs": downloaded},
+            {
+                "prompt_id": prompt_id,
+                "uploads": uploads,
+                "outputs": downloaded,
+                "vram_after_unload": vram,
+            },
             indent=2,
             ensure_ascii=False,
         )

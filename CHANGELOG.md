@@ -2,6 +2,26 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.17.0
+
+`comfyui-asset-generation` grows the MiniMax H3 path that transfers motion from a reference clip
+onto a character, and hardens the two scripts around it.
+
+- **`reference/h3-motion-transfer.md`** — one input owns identity and wardrobe, the other owns
+  motion, cadence and framing, and the prompt says which is which. Why a 60 fps reference passed
+  through unchanged softens the cadence, what to write instead of "fast" when timing matters, and
+  a QA pass that compares motion phase at matching timestamps in a synchronized side-by-side
+  rather than trusting a successful `/prompt`.
+- **`scripts/prepare_h3_motion_reference.py`** — a motion reference normalized to 24 fps and an
+  exact 17k+5 frame count, then read back with `ffprobe` and refused unless the frame count, rate
+  and codecs are what was asked for. Audio is dropped by default; `--keep-audio` keeps it and
+  verifies the track covers the whole timeline. A source too short to fill the requested frames is
+  rejected before ffmpeg runs, naming the duration it would need.
+- **`scripts/comfy_asset_client.py`** — `upload_image` is now `upload_asset`, because video and
+  audio inputs go through the same endpoint and field name. The run reports `vram_after_unload`
+  from `/system_stats`; a failure to read it no longer discards the outputs of a job that
+  succeeded.
+
 ## 0.16.0
 
 Thirty-six skills. Two new ones cover the part of the loop that happens **on a phone on your

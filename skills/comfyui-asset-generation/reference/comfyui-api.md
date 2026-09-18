@@ -32,7 +32,7 @@ repo, a doc, a script default or a commit message.
 | Submit an API-format graph | `POST /prompt` |
 | Read job state and outputs | `GET /history/{prompt_id}` |
 | Download output | `GET /view?filename=...&subfolder=...&type=output` |
-| Upload an input | `POST /upload/image` with multipart `image`, `type=input`, and optional `overwrite` |
+| Upload an input | `POST /upload/image` with multipart `image`, `type=input`, and optional `overwrite`; video and audio inputs use this same endpoint and field name |
 | Unload models and clear cached memory | `POST /free` |
 
 Submission body:

@@ -20,6 +20,9 @@ the available inputs and the control wanted:
 - Known fast paths are the installed FL2V 8-step LoRA and REF2V 4-step LoRA.
 - Match the LoRA to the diffusion family. Never apply the REF2V LoRA to FL2VA or
   the FL2V LoRA to REF2VA.
+- A semantic reference video is expected at 24 fps. For motion or pace transfer,
+  do not pass a higher-frame-rate source through unchanged: normalize it to 24
+  fps and the intended H3 frame count first. Read `h3-motion-transfer.md`.
 
 ## Native audio/video path
 
@@ -45,4 +48,7 @@ omit or discard audio downstream.
   the intended motion and camera behavior.
 - R2V: tag semantic inputs exactly as `<Picture 1>`, `<Video 1>`, or
   `<Audio 1>` in connection order.
+- R2V character motion transfer: assign identity and wardrobe authority to the
+  picture, and motion, timing, framing, and interaction authority to the video.
+  Read `h3-motion-transfer.md` for preprocessing, prompting, and QA.
 - Multi-frame: also read `multiframe-reference.md`.
