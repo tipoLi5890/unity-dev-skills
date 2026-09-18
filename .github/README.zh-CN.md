@@ -2,7 +2,7 @@
 
 [繁體中文](README.zh-TW.md) · **简体中文** · [日本語](README.ja.md) · [English](../README.md)
 
-面向 AI 编码代理的 Unity 6 游戏开发 skills。三十四个 skill，覆盖从空项目到可验证产物的完整闭环，
+面向 AI 编码代理的 Unity 6 游戏开发 skills。三十六个 skill，覆盖从空项目到可验证产物的完整闭环，
 可安装到 Claude Code 或 OpenAI Codex。
 
 有三点让它不只是一堆 Unity 笔记：
@@ -35,6 +35,7 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | | `unity-debug` | 你需要验证一个看不见的改动 —— 并且在相信测量工具之前，先证明它说的是真话 |
 | | `unity-play-harness` | 把游戏做成 agent 能驱动、能读懂的样子：一行 probe 快照、直接开进某个时刻并等待"就绪集合"的具名 situation、采样成时间线并断言不变量的 journey test，以及把一句手感抱怨变成可复现的测试 |
 | | `unity-profiling` | 慢帧或不稳定的帧背后到底在做什么工作：不开 Profiler 窗口的 counter、90 帧窗口的 median/p95/worst、工作量计数，以及一张前后对照表 |
+| | `unity-device-testing` | 在**真机**上做验收（Android／iOS）：探针场景每次状态变化打印一行带标签的 log、驱动脚本对 log 断言并替你点系统对话框、真人一次只做一个物理动作且由设备端验证、用 exit code 区分"真的失败"和"测试工具坏了" |
 | | `unity-search` | 把"找一下／在哪里／谁引用了它"变成一条 Unity Search 查询：类型 filter、文件夹、label、`ref=` 关系、场景组件查询 —— 先把查询写给你看，Editor 还活着时顺手帮你打开窗口 |
 | **第一天** | `unity-new-project` | 事后补救代价很高的决策：editor 版本锁定、`.meta`/LFS、UPM 锁 tag、IL2CPP/ARM64、asmdef 边界 |
 | | `unity-game-brief` | 动 Unity 之前的第一个小时：一行想法变成一页体验简报、用图锁定视觉、由约束推导出架构提案、写成可测试的不变量，以及一个人能真的玩到的交互 |
@@ -56,6 +57,7 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | | `unity-audio` | 内存、load type、采样率、mixer 开销 —— 它会先报告再重新导入 |
 | | `unity-localization` | 用一种以上的语言发布，以及真正会出问题的 CJK 字体管线 |
 | **发布** | `unity-android-release` | 构建完之后**证明**它：把产物读回来、keystore 与 versionCode 纪律 |
+| | `unity-ios-build` | 不打开 Xcode，把 Unity 项目变成 iPhone 上运行的进程：headless build、免签名的编译关卡、用这台 Mac 真正拥有的东西签名、`devicectl` 安装、console 是唯一的 log 通道、native `.mm` plugin 30 秒迭代 |
 | | `unity-web-release` | WebGL/WebGPU 的下载体积、服务器响应头、浏览器内存上限 |
 | **后端与商业化** | `unity-live-services` | 这个 build 在跟哪个环境通信、密钥该放哪、先设计离线路径 |
 | | `unity-ugs` | Gaming Services 的 API 表面：哪个包提供什么、其他一切都依赖的初始化顺序、Cloud Save 的访问类别、Cloud Code、Remote Config |

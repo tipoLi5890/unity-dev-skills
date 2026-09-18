@@ -135,3 +135,4 @@ something is broken.
 | Assembly definitions, folder layout, which Editor version the project is pinned to | `unity-new-project` |
 | A collision or trigger that never fires, a raycast that misses | `unity-physics-3d` |
 | Building the UI rather than reaching a screen of it | `unity-game-ui` |
+| The same observability on a real phone: a probe scene read through logcat or the iOS console | `unity-device-testing` |

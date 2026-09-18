@@ -83,7 +83,7 @@ a project with a 4 KB-aligned plugin it prints:
 ```
 ▸ Native plugins
   ✓ <plugin>.aar carries arm64-v8a
-  ! libusb1.0.so is 4 KB aligned (LOAD 0x1000) — needs 0x4000 for 16 KB-page devices
+  ! libnative_plugin.so is 4 KB aligned (LOAD 0x1000) — needs 0x4000 for 16 KB-page devices
   ! libvendor_engine.so is 4 KB aligned (LOAD 0x1000) — needs 0x4000 for 16 KB-page devices
 ```
 

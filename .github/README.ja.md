@@ -3,7 +3,7 @@
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
 AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。空のプロジェクトから検証済みの
-成果物までを一巡りカバーする 34 個の skill で、Claude Code と OpenAI Codex のどちらにも
+成果物までを一巡りカバーする 36 個の skill で、Claude Code と OpenAI Codex のどちらにも
 インストールできます。
 
 単なる Unity のメモの寄せ集めと違う点が三つあります。
@@ -40,6 +40,7 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | | `unity-debug` | 目に見えない変更を検証したいとき —— そして計測結果を信じる前に、計測する側が本当のことを言っていると確かめたいとき |
 | | `unity-play-harness` | エージェントが自分で動かして読み取れるゲームにする：一行の probe スナップショット、目的の瞬間から直接始めて「準備完了の集合」を待つ名前付き situation、タイムラインに記録して不変条件を検証する journey test、そして手触りの不満を再現可能なテストに変える方法 |
 | | `unity-profiling` | 遅いフレーム・揺れるフレームの裏で何が動いているのか：Profiler ウィンドウを開かない counter、90 フレーム窓の median/p95/worst、作業量カウンタ、そして前後の比較表 |
+| | `unity-device-testing` | **実機**（Android／iOS）での受け入れテスト：状態が変わるたびにタグ付きの 1 行を出すプローブシーン、そのログに対してアサートしシステムダイアログも押してくれるドライバ、人間には物理操作を 1 回に 1 つだけ頼んで端末側で確認、本当の失敗とハーネスの故障を分ける exit code |
 | | `unity-search` | 「探したい／どこにある／何が参照している」を一本の Unity Search クエリにする：型フィルタ、フォルダ、label、`ref=` の関係、シーンのコンポーネント検索 —— 実行する前にクエリを見せ、生きた Editor があれば検索ウィンドウも開きます |
 | **初日** | `unity-new-project` | 後から直すと高くつく決定：editor バージョンの固定、`.meta`/LFS、UPM の tag 固定、IL2CPP/ARM64、asmdef の境界 |
 | | `unity-game-brief` | Unity を触る前の最初の一時間：一行のアイデアを一枚の体験ブリーフにし、画像で見た目を固定し、制約からアーキテクチャ案を導き、テスト可能な不変条件として書き、人間が実際に遊べる一つのインタラクションを作る |
@@ -61,6 +62,7 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | | `unity-audio` | メモリ、load type、サンプリングレート、mixer のコスト —— 再インポートの前に必ず報告します |
 | | `unity-localization` | 複数言語での出荷と、実際に破綻する CJK フォントのパイプライン |
 | **出荷** | `unity-android-release` | ビルドしたあとに**証明する**：成果物を読み返す、keystore と versionCode の規律 |
+| | `unity-ios-build` | Xcode を開かずに Unity プロジェクトを iPhone 上のプロセスにする：headless ビルド、署名不要のコンパイルゲート、この Mac が実際に持っているもので署名、`devicectl` でインストール、コンソールが唯一のログ経路、native `.mm` プラグインを 30 秒で反復 |
 | | `unity-web-release` | WebGL/WebGPU のダウンロードサイズ、サーバのヘッダ、ブラウザのメモリ上限 |
 | **バックエンドと収益化** | `unity-live-services` | そのビルドがどの環境と話しているか、鍵をどこに置くか、オフライン経路を先に設計する |
 | | `unity-ugs` | Gaming Services の API 面：どのパッケージが何を提供するか、ほかのすべてが前提にする初期化順、Cloud Save のアクセスクラス、Cloud Code、Remote Config |

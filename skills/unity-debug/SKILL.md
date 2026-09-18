@@ -117,6 +117,7 @@ can read is a different thing — that one is `unity-play-harness`.
 | Frame-time windows, profiler counters, a before/after table | `unity-profiling` |
 | Deciding what to build first: the brief, the constraints, the first interaction | `unity-game-brief` |
 | "Find / where is / what references X" answered as a Unity Search query rather than a scripted audit | `unity-search` |
+| Verifying on a real phone rather than in the editor: adb / devicectl drivers, a probe scene, a human in the loop | `unity-device-testing` |
 
 ## Running PlayMode tests edits your project
 

@@ -2,6 +2,30 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.16.0
+
+Thirty-six skills. Two new ones cover the part of the loop that happens **on a phone on your
+desk** — the part an editor-side harness cannot reach.
+
+- **`unity-device-testing`** — acceptance on a real Android or iOS device from a terminal. A probe
+  scene that logs one tagged line per state change and one `k=v` line per second; an `adb` driver
+  and a `devicectl` driver that assert on those lines with a timeout per step; system dialogs found
+  by window focus and tapped by coordinates that respect rotation; physical steps (unplug, replug,
+  background) detected **from the device** so a latency assertion starts at the real event; files
+  pulled back from `persistentDataPath` on both platforms; and three exit codes — pass, a verdict
+  about the app, a broken harness. Its pre-flight names the five things that look like bugs and are
+  not: a dozing screen, a stale install, another app holding the hardware, an adb server restarted
+  by a headless build, and a presence check that reads history instead of the present.
+- **`unity-ios-build`** — from a Unity project to a process on an iPhone without opening Xcode:
+  the headless build that produces an Xcode project and nothing else, an unsigned compile gate that
+  needs no device, signing decided by the intersection of certificate, profile and device on this
+  Mac (`doctor` prints it; the id in a certificate's name is a person, not a team), `devicectl`
+  install, and `--console` as the only log channel. Native `.mm` plugins: the `.meta`, the
+  `__Internal` import with stubs elsewhere, Objective-C exceptions being off, and iterating native
+  code in 30 seconds by syncing into the generated project. App Store submission is out of scope.
+- **Neighbours route to them.** `unity-android-release`, `unity-debug`, `unity-play-harness` and
+  `unity-cli` each gained the row that hands you over.
+
 ## 0.15.0
 
 Thirty-four load-by-situation skills, each teaching the same three things: what to check, the call

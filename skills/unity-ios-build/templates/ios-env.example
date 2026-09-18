@@ -1,0 +1,22 @@
+# Copy to `.ios-env` beside ios-run.sh and gitignore it. Nothing here belongs in the repo.
+#
+# IOS_TEAM_ID is the TEAM: a provisioning profile's TeamIdentifier, the certificate subject's OU.
+# It is NOT the id in parentheses in "Apple Development: Name (XXXXXXXXXX)" — that is a person,
+# and using it gives "No Account for Team". `ios-run.sh doctor` prints the right one.
+IOS_TEAM_ID=
+# Any id the chosen profile covers. A wildcard profile (TEAM.*) covers every id.
+IOS_BUNDLE_ID=com.example.game
+# devicectl's Identifier column (`xcrun devicectl list devices`). Empty = the only connected device.
+IOS_DEVICE=
+# Where Unity writes the Xcode project, and where xcodebuild keeps its products (both gitignored).
+IOS_BUILD_OUT=Builds/ios
+IOS_DERIVED_DATA=Builds/ios-dd
+IOS_CONFIGURATION=Debug
+IOS_MIN_VERSION=15.0
+# -executeMethod target (templates/IosBuildScript.cs).
+IOS_BUILD_METHOD=IosBuildScript.Build
+# Space-separated roots to scan for native plugin sources (native-sync). Packages referenced with
+# `file:` live outside the project — list them here or native-sync finds nothing and says so.
+IOS_PLUGIN_ROOTS="Assets Packages"
+# Set to 1 ONLY on a Mac where Xcode has the team's account logged in.
+IOS_ALLOW_PROVISIONING_UPDATES=0

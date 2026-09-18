@@ -51,6 +51,7 @@ that, `--help` outranks this file.**
 | Which packages a project needs; headless package installs | `unity-new-project` |
 | `.gitattributes` content, LFS pattern lists, `.meta` commit policy | `unity-new-project` → `reference/version-control-setup.md` |
 | Turning "find / where is / what references X" into a Unity Search query | `unity-search` |
+| An iOS build into an app running on a device | `unity-ios-build` |
 
 ## Install, and the one that catches everyone
 

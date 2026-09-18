@@ -148,6 +148,8 @@ over hand-editing the export — exports are regenerated, templates persist.
 | Why the game misbehaves in the editor too | `unity-debug` |
 | Store listing copy, pricing, screenshots | Not a build problem |
 | IAP and ad SDKs, and what they add to the manifest | `unity-monetization` |
+| Driving the installed build on the phone: asserting on its log, tapping system dialogs, physical steps with a human | `unity-device-testing` |
+| The same project on an iPhone or iPad | `unity-ios-build` |
 
 ## Related skills
 
