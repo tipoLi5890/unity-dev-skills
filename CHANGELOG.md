@@ -2,6 +2,101 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.18.0
+
+`codex-visual` learns that position and size are never the model's job — and gets the scripts
+that make the promise hold, plus the gate that reads it back from the files that shipped.
+
+- **The stray-pixel finding.** A keyed render keeps one or two pixels at alpha ~20 in a canvas
+  corner. `slice_grid.py` and `normalize_set.py` measured a plain `alpha > 16` bounding box, so
+  that pixel dragged the box to the canvas edge: a set asked at 78% of the canvas shipped at 58–68%,
+  pushed up to 14% of the canvas off-centre, per asset by a different amount — and read as "the
+  model draws some sprites off-centre". A set shrunk the same way in every cell was even internally
+  consistent (identical bboxes, 0% spread), so the old CV line passed it. Both scripts now isolate
+  the **subject** (pixels at alpha ≥ 96 grown through their connected soft pixels; a speck never
+  joins and is cleared), place the subject's **core** (alpha > 40, so a glow's haze does not steer
+  it), and paste mask-free — a masked paste onto transparency had been squaring the alpha of every
+  soft rim. `--raw-bbox` keeps the old behaviour for a diff against an old delivery.
+- **`scripts/audit_set.py`** — the geometry gate on shipped files: per asset the core, the centre
+  offset, the fill against `--expect-frac`, the strays; the set's width/height spread; with
+  `--symmetry` mirror IoU, tilt and rim level for upright objects. Exit 1 on a centre over 2 px or
+  a fill more than 0.02 off. It is the step between "normalised" and "registered".
+- **`slice_grid.py`** cuts on the found gutters (the emptiest row/column within a third of a cell
+  of each equal split) instead of the exact split, reports a haze-only cell as EMPTY instead of
+  scaling the haze up, warns when a subject — not its haze — touches the cell edge, and takes
+  `--canvas-h` for a non-square asset. **`normalize_set.py --recenter`** repairs a shipped set by
+  translation only, no rescale, for the files whose keyed source is gone.
+- **`sheet_to_frames.py --drop-strays`** — the same speck, in an animation sheet, gives one cell
+  `edge yes`, a bottom at the cell edge and a baseline of 0; the flag clears it before measuring
+  and prints what it dropped, leaving the alpha ≤ 16 haze to `--clear-below-thr`.
+- **`SKILL.md`** gains the symptom table for this — including the question "can I hand the model a
+  1x1 / 2x2 / 4x4 template with crosshairs so it draws in the right place?" (no: it paints the
+  guides and still places approximately; the grid belongs on the output side, one sheet per
+  family), and why a single member regenerated alone drifts from its siblings while the same three
+  on one sheet come back identical to the pixel. `reference/codex-runtime.md` §5 records it as
+  keying Trap 3; §8 and `reference/image-model.md` §6 carry the new flags and the gate step.
+
+The same rule, for **animation**: where a frame sits is never the model's job either, and neither
+is its edge. Both findings come from one shipped set of 25 animation sheets whose characters
+"jittered wildly" and whose cut-outs had a pink rim — re-measured from the raw sheets, old pipeline
+against new.
+
+- **The jitter finding.** `sheet_to_frames.py` kept each cell's in-cell position, on the belief that
+  in a sheet of frames the arc *is* the cell-to-cell offset. On a generated sheet it is the model's
+  grid: over 21 character sheets the body wandered 17–119 px inside its cell (3–24% of it), the
+  grid **column** explained 81–100% of the sideways spread on 18 of them and the **row** 90–100% of
+  the vertical spread on 19 — the two exceptions were a jump and a leap. Written that way, one idle
+  pose sat 65–120 px apart on alternate frames and feet lines 16–57 px apart; `--align both`, the
+  repair the skill offered, still left 8–45 px on 14 of 21, because a centroid is steered by a bat.
+  A contact sheet tiling one frame per cell shows none of it. `--register ground | free` now seats
+  every frame on one reference by its **core silhouette** (the solid shape opened by 4 px, by FFT
+  overlap; feet locked to one line for a grounded action): 0 px out of register on all 21 and feet
+  within 2 px on the 19 grounded ones, on the same sheets, with no regeneration — the eleven takes
+  a regeneration had replaced pass too. **`--register` is required to write** (`ground` · `free` · `centroid` · `keep`);
+  `keep` is the old behaviour and is gated when the kept wander follows the grid.
+- **The cut finding.** The model does not draw its rows at thirds: the equal split cut the subject
+  in 34 of 85 frames on one take and 21 of 85 on its regeneration with a stricter prompt (asked for
+  75% of the cell height, drew 86–98%). `sheet_to_frames.py` now cuts on the found gutters, columns
+  per row — 0 of 85 on both takes — and a cut already on an empty line does not move, so
+  `--gutters nominal --register keep` reproduces an old set byte for byte.
+- **The fringe finding.** A binary key leaves the anti-aliased rim opaque and half key: 25–40% of
+  the rim within 150 RGB of the key (`fringe`) and 43–60% measurably mixed with it (`tint`);
+  `remove_chroma_key.py --despill` left 5–52% / 26–84% per static asset. *Alpha Is Transparency*
+  repairs transparent pixels, and these are opaque — the claim in `sheet_to_frames.py` that it
+  covered this was wrong. **`scripts/key_unmix.py`** un-mixes the 2 px boundary band only (alpha
+  along key→outline; `--edge fill` projects an effect's rim onto the fill beside it): 0.0–0.2% /
+  0.0–0.3%, interior untouched. `--defringe` repairs sprites already shipped (49 assets to
+  0.0–0.7% / 0.0–0.4%, bounding boxes within 1 px). Two simpler keys are documented as wrong, with
+  numbers: alpha from RGB distance everywhere (36–83% of the interior translucent, or the rim left
+  33–41% mixed), and an effect keyed by spill (a pink rim on 29% of a yellow spark) — `tint` exists
+  because `fringe` reads 0.00% on both.
+- **Gates instead of numbers.** `sheet_to_frames.py` ends on `verdict OK | FAIL` and **exits 3** on
+  a fault with one repair: a subject cut by the sheet edge or a cell line, foreign pixels on the
+  cut, frames clipped by the canvas, a feet line or a slip over its limit, grid wander under
+  `keep`, key colour on the rim. The first pipeline had printed `bleed`, `content will be cropped`
+  and a 22 px residual on that set and exited 0. `--no-gate` restores exit 0; `--report` can now
+  fail. **`scripts/audit_frames.py`** re-reads the written PNGs (feet, slip, fringe, tint, cut;
+  `--hold` classifies a one-pose loop `hold` / `BOIL`; `--onion` writes one onion skin per
+  sequence), `audit_set.py --key-color` does the rim for static sets, and `frames_to_anim.py`
+  gains `--onion` and `--bg`. **`scripts/sprite_ops.py`** holds the definitions all of them share,
+  and is the first script here that the others import.
+- **`unity-2d-sprites`** reads the new sidecar: the pivot is `pivot_norm` (the feet line, which is
+  not the canvas floor once a foot margin sits under it), the canvas is whatever was fitted rather
+  than 512, and a one-pose loop whose frames are different drawings (`iou_to_ref_min` 0.76–0.80
+  against 0.96 for a true hold) plays ONE frame with engine motion instead of a clip.
+  **`resources/Tests/SpriteFramesAudit.cs`** re-measures shipped frames in the Editor from their
+  own bytes, because the slicer's verdict is the slicer's.
+- **What this does not do.** It does not rescale a frame to fit: `--scale-search` exists, is off,
+  and warns — on 21 sheets it gained at most 0.04 IoU and on a crouch-to-rise it shrank the
+  character 4–8% with the head unchanged. It does not fix a boiling idle, only names it. It does
+  not recover a jump's rise or a lunge's advance from a generated sheet (`free` holds the body
+  still; travel goes on the transform) and warns when the offsets it removed did not follow the
+  grid. `slice_grid.py` and `normalize_set.py` still end a resample in an alpha 1–3 ring of noise
+  colour (6–9 px per 256 px icon) — `--defringe` clears it, the scripts do not yet. And
+  `SpriteFramesAudit.cs` has run only in halves: its measuring kernel matched the Python gate on
+  210 frames outside Unity, and its NUnit half compiles against 6000.3 and 6000.4 but has not been
+  run in an Editor.
+
 ## 0.17.0
 
 `comfyui-asset-generation` grows the MiniMax H3 path that transfers motion from a reference clip

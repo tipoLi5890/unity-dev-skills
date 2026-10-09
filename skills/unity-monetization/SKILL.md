@@ -106,7 +106,7 @@ Gate these in the release script rather than in a checklist —
 
 | Validated | Good enough when | Not good enough when |
 |---|---|---|
-| On the client | Purchases unlock local content only, and a cheater only cheats themselves | Anything else |
+| On the client (Google Play only — on Apple the client check does nothing, `unity-iap` §5) | Purchases unlock local content only, and a cheater only cheats themselves | Anything else, and anything on Apple |
 | On a server | Currency, anything tradeable, anything competitive, anything a support agent may have to reverse | — |
 
 > **A client-validated receipt is an unsigned assertion by an untrusted process.** If the grant

@@ -48,7 +48,7 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | | `unity-sprite-atlas` | 该共用一次 draw call 的 sprite：用脚本产 V2 atlas、打包与平台设置，以及打包好的贴图怎么到玩家手上 |
 | | `unity-tilemap` | 矩形、六角与等角网格的 Tile Palette，以及用手上现成的地形图产出 RuleTile |
 | | `unity-rigged-character` | 可操作的角色：原画 → image-to-3D → Mixamo → Avatar → Animator → gameplay rig |
-| **AI 素材生成** | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化 |
+| **AI 素材生成** | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸 |
 | | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效与 MiniMax H3 视频：一次一件、只信 `/history`、切模型前先 `/free` |
 | **运行时领域** | `unity-physics-3d` | 永远不触发的碰撞或 trigger、高速穿透、明明就在正前方却打不到的 raycast |
 | | `unity-navigation` | NavMesh、agent、障碍物、link —— 以及决定谁拥有 transform |

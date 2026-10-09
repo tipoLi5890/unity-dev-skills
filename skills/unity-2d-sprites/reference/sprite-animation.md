@@ -18,23 +18,31 @@ sidecar is the handoff. The fields this side reads:
 | Field | Use here |
 |---|---|
 | `frames[].file` / `frames[].name` | import order and sprite names — `idle_000`, `idle_001`, … |
-| `canvas` `[W, H]` | every frame is the same pixel size, so one rect size fits all |
-| `pivot` (`bottom-center`) | the pivot to write on every rect: `(0.5, 0)` |
+| `canvas` `[W, H]` | every frame is the same pixel size, so one rect size fits all. **Not 512, and not square** — a registered set's canvas is fitted to its frames (`352x500`, `720x499`); read it, never assume it |
+| `pivot_norm` `[x, y]` | **the pivot to write on every rect**, as a fraction of the canvas from its bottom-left. For a seated set it is the reference frame's feet line, which is *not* the canvas floor: a foot margin sits under it (`[0.5, 0.048]` on a 500 px canvas with a 24 px margin) |
+| `pivot` (`bottom-center` / `center`) | the older, coarser statement of the same thing; use it only when `pivot_norm` is absent — then `(0.5, 0)` / `(0.5, 0.5)` |
 | `fps_hint` | the clip's `frameRate`; the preview GIF used the same number |
-| `set_metrics.baseline_drift_max_px` | the bob, in pixels, before you build anything |
+| `register.mode` | how the frames were seated: `ground` / `free` (by silhouette, on one reference), `centroid` (effects), `keep` (at the position the cell held). Absent = an older slicer that kept in-cell position without saying so |
+| `register.reference_core_height_px` | the height the reference frame was placed at; every sheet of one character must carry the same number, or one PPU draws it at two sizes |
+| `set_metrics.slip_max_px` / `feet_drift_px` | how far a frame sits from register, and the feet-line spread, on the written frames — the jump and the bob, in pixels, before you build anything |
+| `set_metrics.iou_to_ref_min` | how alike the frames are; see §5 before cycling a one-pose loop |
+| `verdict.ok` | the slicer's own gate. `false` is a reason to send the set back; `true` is the slicer's opinion of its own work (§7, the fifth read) |
 | `set_metrics.empty_count` / `near_duplicate_count` / `bleed_count` | reasons to send the set back, not to import it — the `empty_cells`, `near_duplicate_pairs` and `bleed_cells` lists beside them name which cells |
 
-> **Equal canvas is not the same as a shared ground line, and only one of them is free.** Frames
-> can all be 512×512 and still put the soles at a different height in each one. A generated
-> 16-frame sheet can arrive with a baseline drift of several pixels, which
-> `sheet_to_frames.py --align both` takes to zero. Un-repaired, 6 px of drift at 100 PPU is a
-> 0.06-unit vertical twitch every frame — the character *bobs*, and it looks like a pivot bug
-> because that is exactly what it is: a per-frame pivot instead of a shared one.
+> **Equal canvas is not the same as frames in register, and only one of them is free.** Frames can
+> all be one size and still put the body somewhere else in each one. On a generated sheet they do:
+> the model draws each cell where its own grid falls, not where the action is, and frames sliced at
+> that position put one idle pose 65–120 px apart sideways and its feet on lines 16–57 px apart.
+> At 6 fps that is a character that teleports and hops, and it looks like a pivot bug because it is
+> one: a per-frame pivot instead of a shared one. `sheet_to_frames.py --register ground` seats every
+> frame on one reference by its silhouette — 0 px and 0–2 px on the same sheets. (`--align both`,
+> which this section used to name, leaves 8–45 px: a centroid is steered by a bat.)
 
-Fix it upstream, in the frames, not downstream in the pivots. A bottom-centre pivot on frames whose
-ink sits at different heights is still a bob; a bottom-centre pivot on registered frames is a
-ground line. Read `baseline_drift_max_px` from `frames.json` before importing and re-run the
-alignment if it is not near zero.
+Fix it upstream, in the frames, not downstream in the pivots. One pivot on frames whose ink sits
+in different places is still a jump; one pivot on registered frames is a ground line. Read
+`slip_max_px` and `feet_drift_px` from `frames.json` before importing, send the set back to the
+slicer if they are not near zero — and never ask for a new sheet for it: the next one has the same
+grid wander (`codex-visual`'s `animation-sheets.md` §4a).
 
 > **A disagreement about the metrics is usually a disagreement about the alpha cutoff, and the
 > sidecar tells you which one it used.** `frames.json` records `alpha_threshold` at the top level
@@ -70,7 +78,7 @@ All of these have public setters on `UnityEditor.TextureImporter`: `textureType`
 | `textureCompression` | `TextureImporterCompression.Uncompressed` for pixel art | Members are `Uncompressed, Compressed, CompressedHQ, CompressedLQ`. Block compression puts its artifacts in different places per frame — a static area shimmers. |
 | `mipmapEnabled` | `false` | A 2D frame never samples a mip; enabling it wastes memory and can pick a blurrier level per frame. |
 | `maxTextureSize` | at or above the real frame size | A Max Size below the source halves every coordinate the importer reports, and the frames come out half the authored size (parent skill §5). |
-| pivot | `alignment = SpriteAlignment.Custom`, `pivot = (0.5f, 0f)` | The shared ground line. `SpriteAlignment.BottomCenter` exists and is equivalent, but Custom keeps the number visible at review. |
+| pivot | `alignment = SpriteAlignment.Custom`, `pivot = pivot_norm` from `frames.json` | The shared ground line, on the feet. `SpriteAlignment.BottomCenter` is `(0.5, 0)` — the canvas floor — and floats a seated set by its foot margin; consumers then start carrying that margin as a constant of their own, the slicer's number copied by hand into gameplay code. Take the pivot from the sidecar and the feet are at `transform.position`. |
 
 `SpriteAlignment` members, enumerated rather than recalled:
 `Center, TopLeft, TopCenter, TopRight, LeftCenter, RightCenter, BottomLeft, BottomCenter,
@@ -187,6 +195,22 @@ keepOriginalPositionXZ, heightFromFeet, mirror`. Only
 `loopTime` concerns a sprite clip — `loopBlend` and the rest are Humanoid root-motion controls, and
 setting them on a sprite clip achieves nothing.
 
+> **A loop of ONE pose is the case to distrust.** An idle, a stance, a "ready" pose commissioned as
+> four or eight frames comes back as that many separate drawings of the pose. Seated perfectly they
+> still differ in shape — a sleeve, the cap's edge, the bat's angle — and cycling them reads as the
+> character *boiling*. `frames.json` says which kind you have: `set_metrics.iou_to_ref_min` is the
+> overlap of the frames' silhouettes with the reference. A true hold reads 0.96; three generated
+> batting stances read 0.76–0.80. Under about 0.90 (`audit_frames.py --hold` prints `BOIL`), do not
+> build a clip at all: **show the reference frame and move it in code**, and keep frame animation
+> for the one-shot actions, where the pose is supposed to change.
+
+```csharp
+// One frame, breathed. The pivot is on the feet (pivot_norm), so a scale about it lifts the
+// shoulders and leaves the soles where they are. Start near 1% of the height and tune by eye.
+float t = Mathf.Sin(Time.time * (2f * Mathf.PI / periodSeconds));          // ~3 s reads as breathing
+transform.localScale = new Vector3(1f - 0.006f * t, 1f + 0.010f * t, 1f);
+```
+
 **One-shot performances** — a transformation, a hit reaction, a UI flourish — want `loopTime =
 false` plus a way for gameplay to know it ended. `clip.events` is a settable `AnimationEvent[]`, and
 `AnimationEvent` is a class with settable `time`, `functionName`, `stringParameter`,
@@ -279,6 +303,18 @@ foreach (var k in keys) if (k.value == null) throw new System.Exception("null sp
 Then the fourth: **scrub the clip in the Editor's own Animation window preview.** It is the only
 check that catches a curve bound to the wrong `path` — the numbers above all pass on an inert clip.
 
+And a fifth, on the frames themselves: **re-measure the shipped PNGs in the engine.** The slicer
+wrote `verdict.ok` about its own output, and a number produced by the tool that made the file has a
+conflict of interest. `resources/Tests/SpriteFramesAudit.cs` is an EditMode fixture that decodes
+every frame of every `frames.json` under a root and measures again, with the definitions the
+slicer's gate uses — the scan found sequences at all; each says how it was seated; one canvas and
+nothing cut by it; the key's colour off the rim (fringe ≤ 0.5%, tint ≤ 2%); one feet line for a
+grounded action (≤ 3 px); no frame sitting away from its reference (slip); one size per character;
+and the importer's pivot equal to `pivot_norm`. Its measuring half was run outside Unity against
+the Python gate on 210 frames and matched it on every number; the NUnit half is compiled, so read
+what it prints the first time it runs on your art. A contact sheet cannot replace it: a sheet with
+one frame per cell proves each frame was drawn, and jitter lives between them.
+
 A `null` in the keyframe values is the ordering failure below, arriving one indirection late.
 
 ## 8. The two ordering traps
@@ -313,4 +349,6 @@ Same binding name, different component and a different sizing model.
 
 `resources/SheetToAnimationClip.cs` implements all of the above end to end — a folder of frame PNGs
 or one sliced texture, an output clip, fps, loop flag, target type, optional controller and optional
-end event.
+end event. It reads one thing from `frames.json` (`fps_hint`) and takes the sprites as the importer
+publishes them, so a canvas that is not 512 and a sidecar with the newer fields change nothing in
+it: the pivot is import metadata (§2), not the clip's.

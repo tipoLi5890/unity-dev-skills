@@ -79,7 +79,7 @@ guess** — `SpriteRect` and `SpriteNameFileIdPair` sit in `UnityEditor`, `GUID`
 | Import settings skip files that were already there | §5 — a postprocessor only fires on import |
 | A stretched effect sprite stops short of its target | `reference/sprite-geometry.md` §1 |
 | Turn these frames into an animation | §7 — the clip, then the controller |
-| The animation plays but the character bobs | §7 — one ground line, not sixteen pivots |
+| The character bobs or jumps between frames; an idle shimmers | §7 — the frames, not pivots |
 | The clip plays and nothing moves | §7 — the curve is bound to the wrong `path` |
 
 ## 1. The importer must be a Sprite, in Multiple mode, first
@@ -229,12 +229,12 @@ return n;                                  // must equal the frame count you ask
 Four facts decide whether it works: **`m_Sprite`** on both `SpriteRenderer` and
 `UnityEngine.UI.Image`; `binding.path` relative to the `Animator`'s GameObject (wrong, and the clip
 plays while nothing moves); a new clip's **`frameRate = 60`**, so set it;
-`AnimationClipSettings.loopTime` lands only through `SetAnimationClipSettings`. **A bob is a pivot
-problem, and it is fixed in the frames.** Register them to one ground line, then give every rect one
-bottom-centre pivot. **Slice, `Apply()`, `SaveAndReimport()`, then build the clip** (§5), or the
-curve is full of nulls. The whole path — `frames.json`, `length == N / fps`, one-shots, the
-controller, UI `Image`, the acceptance reads — is `reference/sprite-animation.md`;
-`resources/SheetToAnimationClip.cs` runs it.
+`AnimationClipSettings.loopTime` lands only through `SetAnimationClipSettings`. **A bob or a jump
+between frames is fixed in the frames** (`codex-visual`), not in sixteen pivots; every
+rect takes ONE pivot, the sidecar's `pivot_norm`. **An idle that boils** plays one frame,
+moved in code. **Slice, `Apply()`, `SaveAndReimport()`, then build the clip** (§5), or the curve is
+full of nulls. The whole path is `reference/sprite-animation.md`; `resources/SheetToAnimationClip.cs`
+runs it; `resources/Tests/SpriteFramesAudit.cs` re-measures the frames.
 
 ## Scope — what this skill does NOT do
 

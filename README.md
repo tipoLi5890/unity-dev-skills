@@ -51,7 +51,7 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | | `unity-sprite-atlas` | Sprites that should share a draw call: V2 atlases from script, packing and platform settings, and how the packed texture reaches the player |
 | | `unity-tilemap` | Tile Palettes for rectangular, hexagonal and isometric grids, and RuleTiles built from a terrain sheet you already have |
 | | `unity-rigged-character` | A playable character: art → image-to-3D → Mixamo → Avatar → Animator → gameplay rig |
-| **AI asset generation** | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes |
+| **AI asset generation** | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files |
 | | `comfyui-asset-generation` | Music, SFX and MiniMax H3 video through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch |
 | **Runtime domains** | `unity-physics-3d` | A collision or trigger that never fires, tunnelling, a raycast that misses |
 | | `unity-navigation` | NavMesh, agents, obstacles, links — and deciding who owns the transform |

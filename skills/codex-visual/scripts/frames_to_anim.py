@@ -5,6 +5,20 @@ These are PREVIEW and review formats. Unity cannot play any of them: the game
 wants the PNG frames plus an `AnimationClip` (`unity-2d-sprites`). Build these to
 show a human the loop, to paste in a review, and to prove the frame order is right.
 
+A preview is for EYES, and it has to be a preview of the thing being judged. A
+contact sheet that tiles one frame per cell proves each frame was drawn; it
+cannot show what happens BETWEEN frames, so a character that jumps 100 px
+sideways on every frame change photographs perfectly in it. Two outputs here do
+show it, and they belong beside the numbers `audit_frames.py` prints:
+
+- **`--onion`** — every frame as a flat tint, stacked on one dark ground. A
+  sequence in register reads as ONE silhouette with coloured fans where a limb
+  moves; one that is not reads as two or more whole bodies side by side.
+- **`--bg`** — the frames composited on an opaque ground before encoding. A key
+  fringe is invisible over a checkerboard or over white and obvious over a
+  mid-tone, so review on `--bg '#808080'` or on the colour the game will put
+  behind the sprite, at the real fps.
+
 Three traps decide what you hand over:
 
 - **A preview written next to the frames becomes a frame.** An APNG is a `.png`,
@@ -65,9 +79,15 @@ Examples:
   # lossy WebP when the lossless file is too big for a chat window
   frames_to_anim.py out/idle/*.png --out out/idle/idle.webp --webp-quality 80
 
+  # the review pair: the loop on a mid-tone ground at its real fps, and the onion skin
+  frames_to_anim.py --frames-json out/idle/frames.json --bg '#808080' \
+      --out review/idle.gif --onion review/idle_onion.png
+
 Exit codes: 0 ok · 1 no usable frames, a missing frame file, frames of unequal
 size, an unknown `--out` extension, a bare format flag with no `--out`, two paths
-for one format, or a non-positive `--fps` / `--duration-ms`.
+for one format, a non-positive `--fps` / `--duration-ms`, a bad `--bg` colour, or
+an `--onion` path inside the frame directory (it is a PNG: the next glob would
+take it for a frame, and an importer for a sprite).
 
 Requires Pillow (use codex's imagegen venv: ~/.codex/imagegen-venv/bin/python).
 """
@@ -83,6 +103,42 @@ from PIL import Image
 
 THR = 16  # alpha above this counts as content (binary GIF matte cut)
 EXT = {"gif": ".gif", "apng": "_apng.png", "webp": ".webp"}
+ONION_TINTS = [(230, 60, 60), (60, 200, 60), (60, 110, 240), (240, 210, 40), (220, 80, 220), (60, 210, 210)]
+ONION_GROUND = (30, 40, 60)
+
+
+def parse_hex(s):
+    s = s.strip().lstrip("#")
+    if len(s) == 3:
+        s = "".join(c * 2 for c in s)
+    if len(s) != 6:
+        raise ValueError(f"not a hex colour: {s!r}")
+    return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def onion_skin(ims, pad=12):
+    """Every frame as a flat tint at ~37% opacity on one dark ground, cropped to their union.
+
+    In register, the bodies coincide: one silhouette, with coloured fans only where
+    something moves. Out of register, whole bodies sit side by side — which no
+    single frame, and no sheet of single frames, can show."""
+    W, H = ims[0].size
+    acc = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    box = None
+    for i, im in enumerate(ims):
+        a = im.getchannel("A")
+        bb = a.point(lambda v: 255 if v > THR else 0).getbbox()
+        if bb:
+            box = bb if box is None else (min(box[0], bb[0]), min(box[1], bb[1]),
+                                          max(box[2], bb[2]), max(box[3], bb[3]))
+        layer = Image.new("RGBA", (W, H), ONION_TINTS[i % len(ONION_TINTS)] + (0,))
+        layer.putalpha(a.point(lambda v: 95 if v > 40 else 0))
+        acc.alpha_composite(layer)
+    out = Image.new("RGBA", (W, H), ONION_GROUND + (255,))
+    out.alpha_composite(acc)
+    box = box or (0, 0, W, H)
+    box = (max(0, box[0] - pad), max(0, box[1] - pad), min(W, box[2] + pad), min(H, box[3] + pad))
+    return out.crop(box).convert("RGB")
 
 
 def load_json_frames(path):
@@ -221,7 +277,21 @@ def main():
     ap.add_argument("--gif-optimize", action="store_true", help="Pillow GIF optimize (off by default)")
     ap.add_argument("--ffmpeg", help="path to ffmpeg; builds the GIF via palettegen/paletteuse instead "
                                      "— one global palette and inter-frame diffing, for a better, smaller file")
+    ap.add_argument("--bg", metavar="HEX",
+                    help="composite every frame on this opaque colour before encoding — review a cut-out on a "
+                         "mid-tone ('#808080') or on the game's own ground, where a key fringe shows")
+    ap.add_argument("--onion", nargs="?", const=True, metavar="PATH",
+                    help="also write an onion skin: every frame as a flat tint, stacked (bare flag = --out's "
+                         "stem + _onion.png). Must not land in the frame directory")
     a = ap.parse_args()
+
+    bg = None
+    if a.bg:
+        try:
+            bg = parse_hex(a.bg)
+        except ValueError as e:
+            print(f"ERROR: --bg: {e}", file=sys.stderr)
+            return 1
 
     # 0 and a negative rate are arguments, not omissions: `if a.fps` read both as
     # "not supplied" and fell back to 10 fps, and a negative --fps reached the
@@ -275,6 +345,30 @@ def main():
               f"re-slice with sheet_to_frames.py --canvas W H", file=sys.stderr)
         return 1
 
+    onion_path = None
+    if a.onion:
+        if a.onion is True and not a.out:
+            print("ERROR: bare --onion needs --out to derive a path from", file=sys.stderr)
+            return 1
+        onion_path = os.path.splitext(a.out)[0] + "_onion.png" if a.onion is True else a.onion
+        frame_dirs = {os.path.dirname(os.path.abspath(p)) for p in paths}
+        if os.path.dirname(os.path.abspath(onion_path)) in frame_dirs:
+            print(f"ERROR: --onion {onion_path} would land in the frame directory. It is a PNG: the next "
+                  f"frame glob takes it for a frame and an engine importer for a sprite. Write it elsewhere.",
+                  file=sys.stderr)
+            return 1
+    onion = onion_skin(ims) if onion_path else None     # from the frames as delivered, before --bg
+
+    if bg is not None:
+        flat = []
+        for im in ims:
+            ground = Image.new("RGBA", im.size, bg + (255,))
+            ground.alpha_composite(im)
+            flat.append(ground)
+        ims = flat
+        if a.ffmpeg:
+            print("note --bg composites in Pillow, so --ffmpeg is not used for the GIF")
+
     seq, seq_paths = list(ims), list(paths)
     if a.reverse_loop and len(seq) > 2:
         seq += seq[-2:0:-1]
@@ -311,8 +405,9 @@ def main():
                       f"format — pass one of them", file=sys.stderr)
                 return 1
             targets[fmt] = v
-    if not targets:
-        print("ERROR: nothing to write — pass --out and/or --gif/--apng/--webp", file=sys.stderr)
+    if not targets and not onion_path:
+        print("ERROR: nothing to write — pass --out and/or --gif/--apng/--webp (or --onion PATH)",
+              file=sys.stderr)
         return 1
 
     for p in targets.values():
@@ -323,11 +418,17 @@ def main():
     print(f"frames {len(paths)} size {W}x{H} sequence {len(seq)} "
           f"reverse_loop {'yes' if a.reverse_loop else 'no'} hold_last {a.hold_last}")
     print(f"timing fps {fps:g} per_frame_ms {dur:.2f} loop {a.loop} "
-          f"({'forever' if a.loop == 0 else 'times'})")
+          f"({'forever' if a.loop == 0 else 'times'})"
+          + (f" bg #{bg[0]:02x}{bg[1]:02x}{bg[2]:02x}" if bg is not None else ""))
+    if onion_path:
+        os.makedirs(os.path.dirname(os.path.abspath(onion_path)), exist_ok=True)
+        onion.save(onion_path)
+        print(f"wrote {onion_path} onion frames {len(paths)} size {onion.width}x{onion.height} — one "
+              f"silhouette = in register; doubled bodies = the frames jump")
 
     if "gif" in targets:
         out = targets["gif"]
-        done = build_ffmpeg_gif(a.ffmpeg, seq_paths, out, fps, a.loop) if a.ffmpeg else False
+        done = build_ffmpeg_gif(a.ffmpeg, seq_paths, out, fps, a.loop) if (a.ffmpeg and bg is None) else False
         if not done:
             gseq = [to_gif_frame(im) for im in seq]
             gseq[0].save(out, save_all=True, append_images=gseq[1:], duration=dur,

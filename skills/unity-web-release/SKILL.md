@@ -228,15 +228,15 @@ ls -l Build/*.wasm* Build/*.data*                # transferred size, per file
 curl -sI https://host/Build/app.wasm.br | head   # is compression actually delivered?
 ```
 
-Record size and cold-load time before and after, on the same connection. **Three
-adjust-and-verify rounds, then report** rather than continuing to turn knobs — past that the
-remaining wins are architectural (what loads first) rather than settings.
+Record size and cold-load time before and after, on the same connection. **At most
+three adjust-and-verify rounds** — past that the remaining wins are architectural (what loads
+first) rather than settings.
 
 Firefox's `about:memory` breaks a tab into Wasm code, heap, `.data` and web audio — read the heap
 against §4's ceilings. That, and why `python3 -m http.server` can never show a Brotli win:
 [`reference/settings-and-verification.md`](reference/settings-and-verification.md#serving-a-build-locally).
 
-**Report, then wait** before the next round. Say the size delta per file, which settings changed
+**Report after each round, then wait** before the next. Say the size delta per file, which settings changed
 with their before and after values, and what the server headers actually returned — not "optimised
 the web build".
 

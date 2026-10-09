@@ -21,8 +21,8 @@ description: >-
 
 ## Symptom → where to look
 
-First match wins. **Stop at the first cause you confirm** — do not run the whole ladder. A matched
-row is the answer, not a lead: write the diagnosis and stop calling tools.
+First match wins. **Stop at the first cause you confirm** and write the diagnosis; the rest of the
+ladder is for when that check comes back clean.
 
 | Symptom | Go to |
 |---|---|
@@ -57,14 +57,12 @@ Three rules specific to physics, then two about how the turn ends:
 - **Record the original value of any Project Setting you change** (Queries Hit Triggers, the
   Layer Collision Matrix, Contact Offset) and restore it. A diagnosis that leaves the project
   altered is not a diagnosis.
-- **Five tool calls, then answer.** After five of any kind, stop calling and write the most likely
-  diagnosis off the ladder, labelled unconfirmed, with the one check that would settle it. Tool
-  output alone is the one outcome worth nothing, however much of it there is.
-- **Never close by asking permission.** "Would you like me to proceed?", "Should I continue?",
-  "Do you want me to investigate further?", "I will do X — continue?" are one move, and it costs a
-  round trip to say nothing. Make the change yourself where you can reach it — a script, or the
-  live scene over an Editor connection — otherwise hand over an explanation complete enough to
-  apply without you. Ask only for information you cannot get yourself, and name it.
+- **Answer with what the ladder confirmed.** When the checks you can reach are exhausted without a
+  confirmed cause, write the most likely diagnosis off the ladder, labelled unconfirmed, with the
+  one check that would settle it.
+- **End with the fix or the diagnosis.** Make the change yourself where you can reach it — a
+  script, or the live scene over an Editor connection — otherwise hand over an explanation complete
+  enough to apply without you. Ask only for information you cannot get yourself, and name it.
 
 ## 1. No callback fires
 

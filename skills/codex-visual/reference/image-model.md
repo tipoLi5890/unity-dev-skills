@@ -84,9 +84,11 @@ Record the adoption in `ART_DIRECTION.md`.
 
 Asked for "a real alpha channel… do not paint a checkerboard", the tool returns `mode RGB` — no
 alpha channel at all — and paints a grey checkerboard. Generate on a flat key field instead and key
-it out. The hard key is binary — every pixel fully transparent or fully opaque — so rims are aliased,
-which is right for GIF frames, whose alpha is one bit anyway. The keying recipe and its two traps:
-`reference/codex-runtime.md` §5. `gpt-image-1.5 --background transparent` through the CLI fallback
+it out — as an **opaque** image: a sheet that comes back RGBA was keyed by the agent, badly; reject
+it. A binary key (alpha 0 or 255 by tolerance) is the wrong tool for anti-aliased art even when
+the output is a GIF: the rim pixel is half key, stays opaque, and keeps its tint (25–40% of the rim
+on 25 sheets). `key_unmix.py` un-mixes the 2 px boundary band and leaves the interior alone; the
+recipe and its four traps: `reference/codex-runtime.md` §5. `gpt-image-1.5 --background transparent` through the CLI fallback
 is the documented native route; it needs a key — check the alpha channel of its first output before
 building on it.
 
@@ -125,19 +127,30 @@ far wider. Grid holds a set together, chaining holds sets together over time, an
    IDENTICAL in size, corner radius, outline weight, highlight and palette; one centered per
    cell (~65% of the cell), even gutters. Only <the symbol> differs — TL:..., TR:..., BL:...,
    BR:....' -i "$MASTER" -i "$FAMILY" < /dev/null
-  # capture the original as "$OUT/grid.png" (codex-runtime.md §2), key it (§5), verify transparent_pct
+  # capture the original as "$OUT/grid.png" (codex-runtime.md §2), then key it (§5)
   PY=$HOME/.codex/imagegen-venv/bin/python
+  "$PY" <skill>/scripts/key_unmix.py "$OUT/grid.png" --out "$OUT/grid_keyed.png" --key-color '#ff00ff'
   "$PY" <skill>/scripts/slice_grid.py "$OUT/grid_keyed.png" --rows 2 --cols 2 --report
   "$PY" <skill>/scripts/slice_grid.py "$OUT/grid_keyed.png" --rows 2 --cols 2 \
     --names a,b,c,d --canvas 512 --content-frac 0.72 --outdir <project asset dir>
   ```
 
-  `--report` runs first: it warns when a cell's content touches its edge
-  (`reference/codex-runtime.md` §8).
+  `--report` runs first: it warns when a cell's subject touches its edge, names the haze-only
+  cells as EMPTY, and counts the stray pixels it will clear (`reference/codex-runtime.md` §8).
+  After the write, `audit_set.py <outdir>/*.png --expect-frac 0.72 --key-color '#ff00ff'` is the
+  gate on what shipped: centre, fill, and what the key left on each rim.
 - **Extending a family in place.** An existing member can be made one of the cells — "keep image #2
   as the top-left cell unchanged; fill the rest to match" — and only the NEW cells sliced out. The
   repair limit applies: a cell the prompt says to leave alone does not come back untouched
   (`reference/animation-sheets.md` §8).
+- **A template is not a placement guarantee.** A reference image drawn as a 1x1 / 2x2 / 4x4 grid
+  with crosshairs or slot outlines, passed via `-i` so the model "draws in the right place", buys
+  nothing the slice does not already do — and the model tends to paint the guides into the output.
+  What survives an edit is *registration* (centre and baseline within a pixel), never pixels, so
+  the only template worth passing is the ghost-cell variant above: the approved member in cell 1
+  on the key colour, the other cells empty, and only the new cells sliced out. Exact position and
+  size are the slice's job (`slice_grid.py` places the subject's core; `audit_set.py` reads it
+  back), not the prompt's.
 
 ### The recipe in four steps (PHASE 3S)
 
@@ -150,9 +163,10 @@ far wider. Grid holds a set together, chaining holds sets together over time, an
 3. **Capture the original → chroma-key → `slice_grid.py --report` → slice and normalize** to the
    asset class's project-wide `--canvas` / `--content-frac` — the call above (keying:
    `reference/codex-runtime.md` §5; slice flags: §8).
-4. **Promote + register:** approve the sheet, copy it (or a representative cell) to
-   `anchors/sets/<family>.png` so the NEXT set chains to it, and log each asset in `manifest.md`
-   ("from sheet <name>").
+4. **Gate, promote, register:** `audit_set.py --key-color` on the written files (centre ≤ 2 px,
+   fill within 0.02 of `--content-frac`, rim fringe ≤ 0.5% and tint ≤ 2%, exit 1 otherwise); approve the sheet, copy it (or a representative
+   cell) to `anchors/sets/<family>.png` so the NEXT set chains to it, and log each asset in
+   `manifest.md` ("from sheet <name>").
 
 ## 7. Choosing an engine per style — and what this skill implements
 

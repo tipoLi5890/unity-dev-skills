@@ -4,11 +4,11 @@ description: >-
   Generate 2D game art with the `codex` CLI image model in one project art
   style: an art bible (ART_DIRECTION.md) plus an anchor image, icon and sprite
   sets as one grid sheet normalised to one size, short animations generated as
-  one sprite sheet and sliced into frames with a GIF / APNG / WebP preview,
-  transparency via chroma key; also reads screenshots. Load for: "generate /
-  edit a sprite, icon, tileset or key art", "lock the art style", "the assets
-  don't match / the style drifted", "make a transparent PNG", "make a GIF / an
-  idle loop", "the frames don't line up", or any `codex exec` image work (bare
+  one sprite sheet and sliced into registered frames, transparency via chroma
+  key; also reads screenshots. Load for: "generate / edit a sprite, icon,
+  tileset or key art", "lock the art style", "the assets don't match / the
+  style drifted", "make a transparent PNG", "a fringed cut-out", "make a GIF /
+  an idle loop", "the animation jitters", or any `codex exec` image work (bare
   `codex` hangs). Unity import: `unity-2d-sprites`; audio and video:
   `comfyui-asset-generation`.
 ---
@@ -32,7 +32,7 @@ visual work through **one canonical project spec**.
 | `/ArtDirection/candidates/` | Bootstrap explorations. |
 | `/ArtDirection/anchors/` · `anchors/sets/` | Locked reference image(s) fed via `-i`; `sets/` = per-set anchors (an approved first member). |
 | `/ArtDirection/manifest.md` | Registry of every generated asset. |
-| skill `scripts/` | **Sets:** `slice_grid.py` · `normalize_set.py`. **Animation:** `sheet_to_frames.py` · `frames_to_anim.py`. |
+| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py` |
 | project asset dir | Shippable art, at the path the spec defines (e.g. `Assets/…` for Unity). |
 
 `<repo>` = the project root, as an **absolute path**.
@@ -81,8 +81,8 @@ Three shapes, three priorities; the wrong one is why a sheet comes back unusable
 | Shape | Priority | Path |
 |---|---|---|
 | **Static single** — key art, hero, boss, background | **quality** | one generation at the full pixel budget, style anchor via `-i`, plus the family anchor if one exists → PHASE 3 |
-| **Static set** — icons, pickups, avatars, variants | **quality, then consistency** | 2x2 or 3x3 per sheet (627 / 418 px cells); more members → more sheets chained to the first, or one chained generation per member that needs the whole budget; then `slice_grid.py` + normalize → PHASE 3S |
-| **Animation** — loop, one-shot, transformation, UI feedback | **stability** | frames → grid → cell px → style floor → split; `sheet_to_frames.py` (**never** `slice_grid.py`) → align → GIF/APNG/WebP → Unity handoff → PHASE 3A |
+| **Static set** — icons, pickups, avatars, variants | **quality, then consistency** | 2x2 or 3x3 per sheet (627 / 418 px cells); more members → more sheets chained to the first; then `slice_grid.py` + normalize → PHASE 3S |
+| **Animation** — loop, one-shot, transformation, UI feedback | **stability** | frames → grid → cell px → style floor → split; key → `sheet_to_frames.py --register` (**never** `slice_grid.py`) → gate → onion skin + GIF → Unity handoff → PHASE 3A |
 
 ### The four locks — every grid prompt opens with them
 
@@ -120,19 +120,17 @@ via `-i` to the FIRST sheet (drift compounds down a chain): `reference/animation
 ### The CLI-fallback path — where the rule does hold
 
 `gpt-image-2` through the bundled `image_gen.py` takes a real `size` argument, so the canvas scales
-with the grid — by the arithmetic of `image_gen.py`'s limits, 2880x2880 gives 4x4 720 · 6x6 480 ·
-8x8 360 px cells; confirm with one generation before planning a set. It costs an
-`OPENAI_API_KEY` and a user decision; when it earns them: `reference/image-model.md` §3.
+with the grid (2880x2880: 4x4 720 px cells). It costs an `OPENAI_API_KEY` and a user decision; when
+it earns them: `reference/image-model.md` §3.
 
 ### Style floors — the smallest cell each style survives
 
-- **Pixel style:** working floor **128 px** per cell for a big-head character, so 5x5 (250 px),
-  6x6 (209 px) and even 7x7 (179 px) work on one built-in sheet; **8x8 (157 px) is the edge.** The
-  floor is a starting point: confirm legibility on one test sheet before committing a set
-  (`reference/animation-sheets.md` §9).
+- **Pixel style:** working floor **128 px** per cell for a big-head character, so 5x5, 6x6 and
+  even 7x7 work on one built-in sheet; **8x8 (157 px) is the edge.** Confirm it on one test sheet
+  first (`reference/animation-sheets.md` §9).
 - **Normal style** (flat / cartoon / painterly): **≤ 4x4 per sheet** (313 px), **≤ 3x3** (418 px)
   for a detailed character.
-- **Static sets:** 2x2 (627 px) or 3x3 (418 px); 4x4 (313 px per item) only for small icons that
+- **Static sets:** 2x2 (627 px) or 3x3 (418 px); 4x4 (313 px) only for small icons that
   ship at ≤ 128 px.
 
 ## PHASE 1 — Bootstrap a direction
@@ -166,8 +164,8 @@ with the grid — by the arithmetic of `image_gen.py`'s limits, 2880x2880 gives 
 2. **Follow the recorded engine/approach:** *codex `$imagegen`* — `STYLE PREAMBLE` verbatim ＋ the
    asset request on a flat key colour, anchor via `-i`, original copied to `DEST`
    (`reference/codex-runtime.md` §9); *pixel via post-process* — downscale NEAREST to the spec's
-   grid, quantise to its palette size, snap to grid, validate; *transparency* — chroma-key it out
-   and verify the transparent fraction (`reference/codex-runtime.md` §5); *another engine* — the
+   grid, quantise to its palette size, snap to grid, validate; *transparency* — `key_unmix.py`,
+   never a binary key (`reference/codex-runtime.md` §5); *another engine* — the
    spec's recipe.
 3. **Verify + register:** `ls -la "$DEST" && file "$DEST"`, then a `manifest.md` row (date, path,
    type, size, spec version, one-line prompt); an animation is one row for the set
@@ -182,7 +180,7 @@ Three SCOPES of consistency, each owned by one mechanism; they **stack** in one 
 | **Global style** (the project) | style anchor | `-i anchors/master.png` on EVERY gen |
 | **Within a set** (its siblings) | **grid one-shot** | the whole set as ONE gridded image → one context, no drift |
 | **Across sets / over time** (shipped work) | **reference-chaining** | ALSO `-i` the prior approved sheet — a FIXED promoted anchor, never the previous output |
-| *guarantee* (exact pixel size) | **normalize** | `slice_grid.py` / `normalize_set.py`, after gen |
+| *guarantee* (size and centre) | **normalize + gate** | `slice_grid.py` / `normalize_set.py`, then `audit_set.py` |
 
 So the canonical call is **style anchor + family anchor (chain) + grid layout, in ONE generation**,
 then slice + normalize (`reference/image-model.md` §6).
@@ -195,8 +193,9 @@ then slice + normalize (`reference/image-model.md` §6).
 
 ### Recipe — grid + chain in one call
 
-Style anchor, then family anchor; locks 1–3; capture → key → slice → promote. Step by step, with
-the call: `reference/image-model.md` §6.
+Style anchor, then family anchor; locks 1–3; capture → key → slice → **gate** → promote. The call:
+`reference/image-model.md` §6. Off-centre or shrunken sprites, crosshair templates:
+`reference/geometry-gate.md`.
 
 > One cell wrong? **Re-gen the whole sheet** — never patch one cell: a repair request re-renders the
 > whole canvas, so no untouched cell comes back unchanged (`reference/animation-sheets.md` §8, with
@@ -204,26 +203,29 @@ the call: `reference/image-model.md` §6.
 
 ## PHASE 3A — Animation sheets (one short motion as ONE gridded sheet)
 
-PHASE 3S's stack, but the cells are **moments of one character**: the arc *is* the cell-to-cell
-offset, so nothing may be re-centred or rescaled per cell and `slice_grid.py` must never touch the
-sheet, and nothing that wants a skeleton belongs here. § = `reference/animation-sheets.md`.
+PHASE 3S's stack, but the cells are **moments of one character**. The sheet decides the drawings,
+**not where they sit**: in-cell position follows the model's grid, not the action, so frames are
+seated by silhouette afterwards, never centred per cell (`slice_grid.py` never touches the sheet).
+No skeletons here. § = `reference/animation-sheets.md`.
 
 1. **Shape the job** (above): idle 3–8, walk 6–12, attack 4–12 frames; 8 on a 3x3 as a half cycle
    plus `--reverse-loop` beat 16 half-dead cells (§3d, §3a).
 2. **Write the prompt:** `STYLE PREAMBLE` → the four locks (§1) → identity lock (colours as words
    *and* hexes) → time structure; a one-shot over 12+ frames is **staged** (§3, §4).
 3. **Anchors: order fixed, roles named in prose** — style, identity, family (§2).
-4. **Generate, then measure before you write anything.** Take the `generated_images` original
-   (`reference/codex-runtime.md` §2, §4); gate on `sheet_to_frames.py <sheet> --rows R --cols C
-   --bg-color '#ff00ff' --report`, reading empty cells → near-duplicates → bleed (re-generate) →
-   baseline drift → centroid drift (what `--align` repairs) (§7).
-5. **Then write the frames** (`--align baseline --max-shift 24 --outdir … --canvas 512 512 --pivot
-   bottom-center --fps-hint 10`) and the preview (`frames_to_anim.py`); after a moving `--align`,
-   **gate on the `post_align metric` block** (§5–§7).
-6. **One cell wrong** → a new sheet or a local splice (§8). **Pixel style** → post-process the
-   whole sheet at once, then align (§9).
-7. **Outputs and the handoff:** frames + `frames.json` + the keyed sheet (→
-   `anchors/sets/<action>.png` if the next animation must match) + previews (§10).
+4. **Generate, key, then measure before you write anything.** Take the `generated_images`
+   original (`reference/codex-runtime.md` §2, §4), key it (`key_unmix.py`), gate on
+   `sheet_to_frames.py <keyed> … --report`: empty cells, near-duplicates or a subject cut by the
+   sheet edge → re-generate (§7).
+5. **Write the frames — `--register` is required** (`ground` · `free` · `centroid` · `keep`, §6;
+   exit 3 = a failed gate), then `audit_frames.py` and the previews that show motion
+   (`frames_to_anim.py --onion --bg`): **one frame per cell on a contact sheet is not evidence
+   about an animation** (§5–§7).
+6. **One cell wrong** → a new sheet or a local splice (§8). **Jitter, cut feet, a fringe, a boiling
+   idle** → not a re-generation (§4a). **Pixel style** → post-process the whole sheet, then
+   register (§9).
+7. **Outputs and the handoff:** frames + `frames.json` (`pivot_norm` = the pivot) + the keyed
+   sheet (→ `anchors/sets/<action>.png` if the next animation must match) + previews (§10).
 
 ## PHASE 4 — Audit & evolve
 

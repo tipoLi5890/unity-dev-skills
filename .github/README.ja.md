@@ -53,7 +53,7 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | | `unity-sprite-atlas` | 同じ draw call に載せたいスプライト：スクリプトからの V2 アトラス、パッキングとプラットフォーム設定、そして焼いたテクスチャがプレイヤーに届くまで |
 | | `unity-tilemap` | 矩形・ヘックス・アイソメトリックの Tile Palette と、手持ちの地形シートから作る RuleTile |
 | | `unity-rigged-character` | 操作できるキャラクター：原画 → image-to-3D → Mixamo → Avatar → Animator → ゲームプレイ用リグ |
-| **AI アセット生成** | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化 |
+| **AI アセット生成** | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化、そして納品ファイルから中心とサイズを読み戻す幾何ゲート |
 | | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画を生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free` |
 | **ランタイム領域** | `unity-physics-3d` | 決して発火しない衝突や trigger、高速すり抜け、目の前にあるのに当たらない raycast |
 | | `unity-navigation` | NavMesh、agent、障害物、link —— そして transform を誰が所有するかの決定 |

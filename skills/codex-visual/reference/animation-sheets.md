@@ -9,6 +9,15 @@ Use a sheet for a short loop (idle, breathe, hover, blink, walk), a one-shot per
 cast, pick up, celebrate), a transformation or reveal, and UI feedback (a button's
 press-and-settle).
 
+> **The sheet decides the drawings. It does not decide where they sit.** The model does not put its
+> cells on the grid it was asked for: over 21 character sheets the body's in-cell position wandered
+> 17–119 px (3–24% of the cell), the grid **column** a frame sat in explained 81–100% of that
+> sideways spread on 18 of them, and the **row** explained 90–100% of the vertical spread on 19 —
+> the two exceptions being a jump and a leap. Sliced at that position, one idle pose sits 65 px
+> apart on alternate frames and the character teleports at 6 fps. Position is the slicer's job
+> (§6, `--register`), the key is the keyer's (`key_unmix.py`), and neither fault is repaired by
+> generating again (§4a).
+
 ## 1. The template
 
 Seven blocks, in this order, in English, one prompt string: the style preamble, the **four locks**
@@ -62,6 +71,13 @@ neighbouring frames.
 
 A static set uses locks 1-3 with "each cell holds a different item, at the same scale and framing"
 in place of lock 4 (`SKILL.md`, PHASE 3S).
+
+**Locks 2 and 3 are asked, not obeyed — keep them, and do not rely on them.** With lock 2 in the
+prompt the in-cell position still followed the model's own grid (above). A stricter lock 3 — "the
+whole subject within 60% of the cell width and 75% of its height" — came back at 64–81% of the
+width and 86–98% of the height, and regenerating eleven sheets with it took the frames a subject
+was cut in by the equal split from 34 of 85 to 21 of 85; cutting on the found gutters took both
+takes to 0 of 85. More empty key colour helps the gutter search; it does not replace it.
 
 ### Then the two job-specific blocks
 
@@ -131,16 +147,25 @@ Then slice 3x3 and read `metric empty_cells idle_008` — the script names the c
 as the expected result. Build the preview from the eight real frames:
 
 ```bash
-"$PY" "$S/sheet_to_frames.py" /abs/idle.png --rows 3 --cols 3 --bg-color '#ff00ff' \
-  --outdir /abs/out/idle --names idle --canvas 512 512 --pivot bottom-center --fps-hint 10
+"$PY" "$S/key_unmix.py" /abs/idle.png --out /abs/idle_keyed.png --key-color '#ff00ff'
+"$PY" "$S/sheet_to_frames.py" /abs/idle_keyed.png --rows 3 --cols 3 --key-color '#ff00ff' \
+  --register ground --outdir /abs/out/idle --names idle --fps-hint 10
 rm /abs/out/idle/idle_008.png     # the deliberately empty cell
 "$PY" "$S/frames_to_anim.py" /abs/out/idle/idle_00[0-7].png --fps 10 --reverse-loop \
-  --out /abs/out/idle/idle.gif --apng --webp
+  --bg '#808080' --out /abs/review/idle.gif --apng --webp --onion /abs/review/idle_onion.png
 ```
 
 `--reverse-loop` is right **only because the sheet is a half cycle**. Record "loop, half cycle" in
 `ART_DIRECTION.md`'s animation row — the flag and the prompt have to agree, and the sheet alone
 cannot say which was commissioned.
+
+**A drawn idle may not be cyclable at all, and no slicing changes that.** Each frame of a hold is a
+separate drawing of the pose. Of ten one-pose 2x2 sheets, registered, one overlapped its reference
+at 0.96 (a true hold); the three batting stances read 0.76–0.80 — four slightly different
+drawings — and cycling them *boils* however well they are seated. `audit_frames.py --hold` reads
+`hold` at a minimum IoU of 0.90 and `BOIL` below it. A `BOIL` ships as **one frame**, and the
+breathing is the engine's (`unity-2d-sprites` → `reference/sprite-animation.md` §5); frame
+animation is for the one-shot actions.
 
 ### 3b. 16-frame attack, 4 columns x 4 rows
 
@@ -234,15 +259,52 @@ Splitting is not free, so it has rules:
 | Each row is its own little cycle | Row wrap read as a new movement | Give every row a named job and state that the row seam is an ordinary step (§3b) |
 | Left and right limbs swap between frames | Screen-left read as the character's left | Say "his own left arm (the one on the right side of the picture)" once, then only ever refer to picture sides |
 | The costume changes before its stage | No forbidden-event clause in the earlier stages | Write "absolutely no <part> appears anywhere in frames a-b" into every stage before the change (§3c) |
-| The character grows across the sheet (bbox width 173 → 189 px) | Camera creep | Re-roll. No script may rescale a frame |
+| The character grows across the sheet (bbox width 173 → 189 px) | Camera creep | Re-roll. No script rescales a frame by default: a per-frame scale search (`--scale-search`) gained at most 0.04 IoU on 21 sheets and its scales did not follow head width — on a crouch-to-rise it shrank the character 4–8% while the head stayed the same size. It fits a pose change with a size change |
 | A colour left the palette (a green uniform turned navy) | The agent's rewrite dropped the palette hexes | Identity colours as words **and** hexes inside the identity lock; check the delivered sheet's dominant colours |
 | Soles 1 px above the cell bottom although the prompt asked for a margin, and `bleed: none` | The margin clause is still ignored at the ground line; bleed only fires on contact | Read the reported `baseline y` minimum, not just `bleed` |
-| Frames are individually fine but the character hops | Registration, not motion — drift is structured by grid position (per-column creep, per-row baseline steps) | `--align baseline` (or `both`) with `--max-shift` — e.g. a baseline drift of 6.5 px of a 314 px cell (2.07 %) goes to 0.00 px |
-| After `--align`, every frame looks the same and the duplicate count explodes | The only difference between the frames **was** the translation | Read it as the diagnosis and re-roll; always re-read the duplicate count after aligning |
-| Frames look re-centred and the arc is gone | `slice_grid.py` was used — it re-centres each cell | Re-slice with `sheet_to_frames.py`, which keeps each cell's internal position |
-| The GIF has a green or grey halo | A soft matte: GIF alpha is one bit, so half-keyed edges snap to opaque | Key hard (drop `--soft-matte`, or let `--bg-color` do the binary key); ship APNG/WebP for a soft edge |
+| Frames are individually fine but the character hops, or jumps sideways on every frame change ("it jitters wildly") | Registration, not motion — the in-cell position follows the model's grid (per-column creep, per-row baseline steps): `seat metric slip_max_px` 23–119 px on 20 of 21 sheets | `--register ground` (or `free`): slip 0 px on all 21. `--align both` is not enough — a centroid is steered by a bat, and 14 of 21 stayed 8–45 px out; `--align baseline` only moves the bbox bottom |
+| Feet or a bat tip are cut off, and the next frame shows a sliver of its neighbour | The equal split: the model's rows are not at exact thirds (3–5 of 9 frames cut on six 3x3 sheets) | `--gutters search`, the default: 0 cut. Only a subject cut by the **sheet** edge needs a new sheet |
+| A pink / green hairline round every cut-out, in the engine and in the GIF | A binary key (or `--despill`) leaves the anti-aliased rim opaque and key-tinted: fringe 25–40%, tint 43–60% of the rim | `key_unmix.py` (0.0–0.2% / 0.0–0.3%); shipped sprites: `key_unmix.py --defringe` |
+| An idle shimmers although every number is green | The frames are different drawings of one pose (`BOIL`, §3a) | One frame + engine motion; never regenerate for it |
+| An effect's last frames lost most of their shards | A slicer that keeps "the largest piece and what is near it" — right for a character, fatal for a burst (19–45% of the pixels kept in 11 frames of two effect sheets) | `--register centroid` drops nothing; `ground` / `free` drop only what touches the cut and is not the subject, and gate on losing over 5% |
+| After `--register` / `--align`, every frame looks the same and the duplicate count explodes | The only difference between the frames **was** the translation — or the travel was authored in the cell (the run prints `WARN: … do NOT follow the grid`) | No animation: re-roll. Authored travel: put it on the transform in the engine, or `--register keep` |
+| The body lurches whenever a prop or an arm moves | `slice_grid.py` was used — it centres each cell on its own bounding box, so a bat moves the box and the body goes the other way | Re-slice with `sheet_to_frames.py --register …`, which seats every frame on one reference by its core silhouette |
+| The GIF has a green or grey halo | A soft matte: GIF alpha is one bit, so half-keyed edges — still the key's colour — snap to opaque | `key_unmix.py`: its rim alpha is soft (0.35–1) but its colour is un-mixed, so the 1-bit cut lands on clean pixels. Never `--soft-matte` |
 | The subject's own fills came back half-transparent | `--soft-matte` against a key sharing the subject's dominant channel | Key a hue the palette lacks (`#FF00FF`) and drop `--soft-matte` (`reference/codex-runtime.md` §5) |
 | A frame is missing (`metric empty_cells frame_011`) | The model skipped a cell — or you commissioned an empty one (§3a) | Re-roll unless it was deliberate; the cell is excluded from every statistic either way |
+
+### 4a. Regenerate, re-slice, re-key — which fault is whose
+
+"Regenerate it" is the reflex, it costs a generation, and for most of what a player complains
+about it changes nothing: the next sheet has the same grid wander and the same anti-aliased rim.
+Read the fault, then pick the one tool that owns it.
+
+| Fault (and where it is printed) | Owner | Repair |
+|---|---|---|
+| Empty cell, repeated pose, a costume that changes early, a character that grows (`metric empty_cells`, `near_duplicate_pairs`, `width_cv_pct`) | the **generation** | re-roll |
+| Subject cut by the **sheet** edge (`GATE cut_by_sheet_edge`) | the generation | re-roll — the only cut that needs one |
+| Subject reaching a cell line with no empty gutter (`GATE cut_by_cell_line` under `--gutters search`) | the generation | re-roll with more space round the subject |
+| Subject cut by the equal split (`cut_by_cell_line` under `--gutters nominal`) | the **slicer** | `--gutters search` |
+| Jitter, hop, "teleports" (`seat metric slip_max_px`, `GATE grid_wander` / `out_of_register`) | the slicer | `--register ground \| free` |
+| Feet on different lines (`seat metric feet_drift_px`) | the slicer | `--register ground`; a jump wants `free` |
+| Frames clipped (`GATE clipped_by_canvas`) | the slicer | omit `--canvas` (it is fitted), or the size the WARN prints |
+| Pink / green rim (`rim metric fringe_pct` / `tint_pct`, `GATE key_fringe`) | the **keyer** | `key_unmix.py`; already shipped: `--defringe` |
+| Idle boils (`audit_frames.py --hold` → `BOIL`) | the **engine** | one frame + procedural motion |
+| A jump has no rise, a lunge does not advance | the engine | travel belongs on the transform: `--register free` holds the body still and keeps what the limbs do |
+
+An automatic retry belongs only on the rows owned by the generation. A driver that regenerates on a
+gate the generation cannot fix spends its budget and ships the same fault.
+
+Two keys that look simpler than `key_unmix.py`, and are wrong (measured on the same sheets; the
+numbers are `fringe` / `tint` / interior made translucent):
+
+| Key | Result |
+|---|---|
+| Binary, tolerance 40 | 25–40% / 43–60% / 0% — the rim stays key-coloured |
+| Alpha from RGB distance **everywhere**, ramp to 330 | 0% / 0% / **36–83%** — every fill nearer the key than the outline goes translucent, white included |
+| The same, ramp to 150 | 0% / **33–41%** / 0–27% — the half-mixed rim is past the ramp and stays opaque; `fringe` alone calls this clean |
+| Effects: alpha from the key's spill (`min(R,B) − G`) | 0.03% / **29%** on a yellow spark — a pink rim; blue and tan effects pass |
+| **Boundary band only**, un-mixed (`key_unmix.py`) | 0.0–0.2% / 0.0–0.3% / 0% (`--edge fill`: up to 1.6%, the blended pockets it is told to treat as mix) |
 
 ## 5. Preview formats
 
@@ -254,6 +316,15 @@ Splitting is not free, so it has rules:
 
 All three keep the source PNGs' bounding boxes frame for frame — GIF disposal is right and nothing
 ghosts. `--ffmpeg <path>` routes the GIF through palettegen/paletteuse for a better, smaller file.
+
+> **A contact sheet that tiles one frame per cell is not evidence about an animation.** It proves
+> each frame was drawn; what goes wrong goes wrong *between* frames, so a character that jumps
+> 65 px on every frame change photographs perfectly in it. Review an animation with three things:
+> the **onion skin** (`frames_to_anim.py --onion`, or one sheet of them from
+> `audit_frames.py --onion`: one silhouette = in register, doubled bodies = it jumps), the **loop at
+> its real fps on a mid-tone ground** (`--bg '#808080'`, or the game's own ground colour — a fringe
+> is invisible over a checkerboard), and the **numbers** (`audit_frames.py`: feet, slip, fringe,
+> tint, cut). Then once more in the engine, from the shipped bytes (§10).
 
 Sequence order is frames → `--reverse-loop` (ping-pong, endpoints not repeated) → `--hold-last N`. A
 loop gets `--reverse-loop` only if it was authored as a half cycle; a loop that already returns to
@@ -271,71 +342,163 @@ PY=$HOME/.codex/imagegen-venv/bin/python
 S=<repo>/skills/codex-visual/scripts
 ```
 
+### key_unmix.py — before anything is cut
+
+```bash
+# a character sheet: un-mix the 2 px boundary band along key -> outline
+"$PY" "$S/key_unmix.py" /abs/sheet.png --out /abs/sheet_keyed.png --key-color '#ff00ff'
+# an effect sheet (no outline): project the rim onto the fill beside it
+"$PY" "$S/key_unmix.py" /abs/fx.png --out /abs/fx_keyed.png --edge fill
+# an outline that is not near-black: derive the ramp from its colour
+"$PY" "$S/key_unmix.py" /abs/ui.png --out /abs/ui_keyed.png --outline-color '#081930'
+# sprites already keyed and shipped: measure, then repair in place
+"$PY" "$S/key_unmix.py" --defringe /abs/Assets/Art/UI --dry-run
+"$PY" "$S/key_unmix.py" --defringe /abs/Assets/Art/UI --in-place
+```
+
+Full flag set: `inputs… [--out PATH | --outdir DIR] [--key-color '#ff00ff'|auto]
+[--edge outline|fill] [--lo 60] [--hi 330 | --outline-color HEX] [--band 2] [--choke 0.35]
+[--fringe-max 0.5] [--tint-max 2] [--defringe [--in-place]] [--dry-run]`. It prints
+`fringe_pct` and `tint_pct` for a binary key and for its own result, and exits 1 when either is
+still over its limit, 2 when under 1% of the sheet was keyed (the field is not that colour).
+**A sheet that arrives RGBA was keyed by the agent** — such a key has no opaque rim left to un-mix:
+it is refused; reject the sheet and ask for an opaque image on the flat key colour.
+`--edge fill` is for effects only: on art that itself carries the key's hue (a purple emblem on
+magenta) it reads 4–6% fringe and fails its own gate. The two definitions, and why there are two:
+`scripts/sprite_ops.py`.
+
 ### sheet_to_frames.py
 
 ```bash
-# 1. the acceptance gate: measure the delivered sheet, key it in place, write nothing
-"$PY" "$S/sheet_to_frames.py" /abs/sheet.png --rows 4 --cols 4 --bg-color '#ff00ff' --report
+# 1. the acceptance gate: measure the keyed sheet, write nothing
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --key-color '#ff00ff' --report
 
-# 2. the same measurement on an already-keyed RGBA sheet
-"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --report
+# 2. an action that stays on the floor: every frame seated on frame 0 by its core silhouette,
+#    feet on one line, the canvas fitted, the character 470 px tall in every sheet of it
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 3 --cols 3 --key-color '#ff00ff' \
+  --register ground --subject-px 470 --outdir /abs/out/swing --names swing --fps-hint 18
 
-# 3. canonical write: 16 equal frames + the frames.json sidecar
-"$PY" "$S/sheet_to_frames.py" /abs/sheet.png --rows 4 --cols 4 --bg-color '#ff00ff' \
-  --outdir /abs/out/idle --names idle --canvas 512 512 --pivot bottom-center --fps-hint 10
+# 3. a jump or a flyer: seated in x and y, feet free to leave the line
+"$PY" "$S/sheet_to_frames.py" /abs/jump_keyed.png --rows 3 --cols 3 --key-color '#ff00ff' \
+  --register free --subject-px 470 --outdir /abs/out/jump --names jump
 
-# 4. repair a bobbing ground line (whole-frame vertical translation), refusing a broken sheet
+# 4. an effect: centred by its alpha centroid, one scale for the set, nothing dropped
+"$PY" "$S/sheet_to_frames.py" /abs/fx_keyed.png --rows 3 --cols 3 --key-color '#ff00ff' \
+  --register centroid --outdir /abs/out/spark --names spark
+
+# 5. motion AUTHORED inside the cell: keep the in-cell position (and, optionally, pin the set to
+#    its median ground line by whole-set translation)
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --register keep --outdir /abs/out/hop
 "$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 \
-  --align baseline --max-shift 24 --outdir /abs/out/idle
-
-# 5. repair a sideways slide as well
-"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 \
-  --align both --max-shift 24 --outdir /abs/out/idle
+  --align baseline --max-shift 24 --outdir /abs/out/hop
 
 # 6. pixel-art post-process: one shared palette for the whole sheet, 64 px cells back up at 4x
 "$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 5 --cols 6 \
-  --palette 24 --pixelate 64 --upscale 4 --outdir /abs/out/morph --names morph
+  --palette 24 --pixelate 64 --upscale 4 --register ground --outdir /abs/out/morph --names morph
 
 # 7. the strict duplicate test, and no sub-threshold tail left behind for a trimmer
 "$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 5 --cols 6 \
   --dup-metric pixel --dup-threshold 22 --clear-below-thr --report
 ```
 
-Full flag set: `sheet --rows --cols [--bg-color HEX] [--bg-tol 40] [--force-key]
-[--alpha-thr 16] [--clear-below-thr] [--inset-frac 0] [--names frame]
+Full flag set: `sheet --rows --cols [--register ground|free|centroid|keep] [--ref 0]
+[--subject-px PX] [--scale-search LO HI] [--foot-margin PX] [--gutters search|nominal]
+[--key-color HEX] [--bg-color HEX] [--bg-tol 40] [--force-key] [--alpha-thr 16]
+[--clear-below-thr] [--drop-strays] [--inset-frac 0] [--names frame]
 [--align none|baseline|centroid|both] [--max-shift PX] [--outdir DIR] [--canvas W H]
 [--pivot bottom-center|center] [--fps-hint 10] [--pixelate N] [--palette K]
 [--dither none|floydsteinberg] [--upscale F] [--dup-metric signature|pixel]
-[--dup-threshold 2.0] [--json PATH] [--report]`.
-Exit codes: 0 ok · 1 the cells cannot be formed / bad args / missing `--outdir` / `--bg-color` on
-an input that already carries alpha · 2 `--align` needed a shift larger than `--max-shift`, and
-nothing was written.
+[--dup-threshold 2.0] [--feet-max 3] [--fringe-max 0.5] [--tint-max 2] [--no-gate]
+[--json PATH] [--report]`.
+Exit codes: 0 ok · 1 the cells cannot be formed / bad args / missing `--outdir` / **writing without
+`--register`** / `--bg-color` on an input that already carries alpha · 2 `--align` needed a shift
+larger than `--max-shift`, and nothing was written · **3 a gate failed** — the frames *are* written
+and `frames.json` carries the faults under `verdict`; `--no-gate` exits 0 instead.
+
+**`--register` is the decision, and there is no default.** Pick it from the action, not from the
+sheet:
+
+| The action | `--register` | What it does |
+|---|---|---|
+| stays on the floor — idle, attack, swing, cast, a walk or run in place | `ground` | seats every frame on the reference (`--ref`, frame 0) by its **core silhouette** — the solid shape opened by 4 px, so a bat or a waving arm does not steer it: feet (the core's lowest row) on one line, x by maximum overlap |
+| leaves the floor — a jump, a hop, a flyer | `free` | the same, searching x and y. The body holds still and the legs tuck; the body's own rise is not in the frames — put it on the transform |
+| is an effect — a burst, dust, a spark | `centroid` | alpha centroid on the canvas centre; never rescaled frame to frame (an effect is meant to grow); nothing dropped |
+| travels inside its cell **by design** (hand-authored, or a sheet you composed) | `keep` | the in-cell position survives; `--align` is its whole-set translation |
+
+On a generated sheet `keep` keeps the model's grid, not the action, and the run says so: `metric
+incell_x_grid_r2` is the share of the sideways spread the grid column explains (0.64–1.00 on 20 of
+21 sheets; travel authored across a cell reads 0.10), `seat metric slip_max_px` is how far a
+written frame sits from register, and the two together are `GATE grid_wander`. The reverse case is
+printed too: when `ground` / `free` remove offsets that do **not** follow the grid, a `WARN` says
+they may have been authored travel.
+
+`--subject-px N` resamples the **whole set** by one factor so the reference's core is N px tall —
+one number per character, in every sheet of it, so the engine draws its idle and its swing at one
+size from one PPU. The reference must therefore be the same neutral stand in every sheet (lock 4
+already asks a one-shot to start there). Without `--canvas` the canvas is **fitted** to the
+registered frames and nothing can be clipped; the sidecar records `canvas` and **`pivot_norm`** —
+the reference's feet line as a fraction of the canvas, which is *not* the canvas floor (a foot
+margin is kept under it) and is what the importer's pivot must be (§10).
 
 **`--bg-color` on an already-keyed RGBA sheet is refused** (exit 1; `--force-key` overrides): it
 would re-key a finished matte and report a sheet that reads flawless and broken at once
-(`transparent_pct 0.0`, bleed on 16 of 16 cells). Recipe 2 — no `--bg-color` — is the only correct
-call for a keyed sheet.
+(`transparent_pct 0.0`, bleed on 16 of 16 cells). On an opaque sheet `--bg-color` still makes its
+binary key, and the result then fails `GATE key_fringe` on any anti-aliased art — key with
+`key_unmix.py` and pass the RGBA with `--key-color`.
 
 Traps worth knowing before you argue with a number:
 
+- **A corner speck is a bbox, too.** A soft matte leaves one or two pixels at alpha ~20 in a
+  sheet corner; the cell that owns that corner then reads `edge yes`, `bottom` at the cell edge and
+  a `baseline` of 0 while its drawing is fine, and the sheet's baseline drift is that one cell.
+  `--drop-strays` clears every content pixel not connected to a pixel at alpha ≥ 96 before
+  measuring and prints `dropped_strays N px`; the alpha ≤ 16 haze under it stays and is reported
+  as the `alpha0` tail (next bullet), which `--clear-below-thr` removes. **A binary key leaves the
+  same speck at alpha 255**, where `--drop-strays` cannot see it: the painted field strays from the
+  key at the sheet's corners (44.6 RGB off at one corner, past a tolerance of 40), one opaque pixel
+  survives, and the corner cell's bbox bottom moves a baseline shift by 12 px. `ground` / `free`
+  drop it (`isolated … dropped_bleed_px`), `keep` reports it (`GATE foreign_pixels`), and
+  `key_unmix.py` (field distance 60) never leaves it.
 - **Two alpha cutoffs, both reported.** Content is measured at `alpha > --alpha-thr` (default 16).
   A soft matte leaves a faint haze invisible at 16 and real to anything using a lower cutoff (e.g.
   one frame's bbox `(151,216,340,504)` at > 16 against `(99,216,340,512)` at > 8). So every frame
   line carries `bbox_alpha0` beside `bbox`, the metric block carries `alpha0_tail_count` /
   `alpha0_tail_max_px` / `baseline_drift_max_px_alpha0`, and `--clear-below-thr` removes the haze at
-  the source.
+  the source. A resample (`--subject-px`) makes a tail of its own, and its colour is noise — an
+  alpha-1 pixel un-premultiplies to full saturation, `(255,0,255)` off a near-black outline — so
+  the run gives that ring its neighbour's colour (`resample_tail N px`), or clears it under
+  `--clear-below-thr`.
 - **`--align` shifts whole pixels to a whole-pixel target** and prints the residual instead of
   assuming it: a sheet with median bottom 311.5 aligns to 312 and reports `align residual
   baseline_drift_max_px 0.000`. A centroid target cannot be snapped (e.g. 0.549 px after
   `--align both`).
-- **When `--align` moves anything, the metrics are measured twice** — the `metric` lines describe
-  the delivered sheet, a `post_align metric` block the frames written; `frames.json` carries the
-  written set in `set_metrics` and the delivered one in `set_metrics_pre_align`.
+- **When anything moved, the metrics are measured twice** — the `metric` lines describe the
+  delivered sheet, a `post_register metric` (or `post_align metric`) block the frames written;
+  `frames.json` carries the written set in `set_metrics` and the delivered one in
+  `set_metrics_pre_align`, with `set_metrics_stage` naming which is which.
 - **`--dup-threshold` belongs to one metric.** On the default `signature` metric 2.0 flags only a
   true stall (a 1 px shift reads ≈ 1.12, 2 px ≈ 2.24) and 4.0 a suspicious pair; `--dup-metric
   pixel` is the strict per-pixel test and its numbers are levels, not signature units. Read either
   against the printed `dup_step_median`. The signature is scale-sensitive: the same aligned sheet
   reads 61 pairs on a 512 px canvas and 4 on its 314 px cells.
+
+### audit_frames.py — the gate on what shipped
+
+```bash
+# every sequence under a folder: one line each, exit 1 on a hard fault, one onion skin per sequence
+"$PY" "$S/audit_frames.py" /abs/Assets/Art/Characters/*/ --key-color '#ff00ff' \
+  --csv /abs/review/audit.csv --onion /abs/review/onion.png
+# an idle that will be cycled: also classify it hold / BOIL
+"$PY" "$S/audit_frames.py" /abs/out/idle --key-color '#ff00ff' --hold
+```
+
+Full flag set: `sequences… [--key-color HEX] [--mode ground|free|centroid|keep] [--ref N] [--hold]
+[--fringe-max 0.5] [--tint-max 2] [--feet-max 3] [--slip-max 1] [--hold-iou 0.90] [--csv PATH]
+[--onion PATH] [--no-gate]`. Exit 0 pass · 1 a hard gate failed · 2 nothing was read. It re-opens
+the PNGs — it does not read the numbers `frames.json` carries — and a sidecar with no
+`register.mode` (an older slicer's) is judged as an in-place action, which is the fault it exists
+for; `--mode keep` is the caller saying the travel is authored. `head_x` (the head's sideways
+spread) and `iou` are printed and never gated: both move when the pose does.
 
 ### frames_to_anim.py
 
@@ -360,13 +523,19 @@ Traps worth knowing before you argue with a number:
 # 6. named per-format paths, and lossy WebP
 "$PY" "$S/frames_to_anim.py" /abs/frames/*.png --fps 20 --gif /abs/a.gif --webp /abs/a.webp
 "$PY" "$S/frames_to_anim.py" /abs/frames/*.png --out /abs/a.webp --webp-quality 80
+
+# 7. the review pair: the loop on a mid-tone ground, and the onion skin (§5)
+"$PY" "$S/frames_to_anim.py" --frames-json /abs/out/idle/frames.json --bg '#808080' \
+  --out /abs/review/idle.gif --onion /abs/review/idle_onion.png
 ```
 
 Full flag set: `[frames…] [--frames-json PATH] [--out PATH] [--gif [PATH]] [--apng [PATH]]
 [--webp [PATH]] [--fps 10] [--duration-ms MS] [--loop 0] [--hold-last N] [--reverse-loop]
-[--webp-quality Q] [--gif-optimize] [--ffmpeg PATH]`. A bare `--gif`/`--apng`/`--webp` derives its
-path from `--out`'s stem. Exit 1 on: no frames, a missing frame file, frames of unequal size, an
-unknown `--out` extension, or a bare format flag with no `--out`.
+[--webp-quality Q] [--gif-optimize] [--ffmpeg PATH] [--bg HEX] [--onion [PATH]]`. A bare
+`--gif`/`--apng`/`--webp`/`--onion` derives its path from `--out`'s stem. Exit 1 on: no frames, a
+missing frame file, frames of unequal size, an unknown `--out` extension, a bare format flag with
+no `--out`, or an `--onion` path inside the frame directory (it is a PNG — the next glob's extra
+frame, and a sprite to an importer).
 
 The `wrote` line is arithmetic — `sequence N = stored_frames X + merged_into_delays Y` — because the
 encoder folds a frame identical to its predecessor into a longer delay; that is not a lost frame. A
@@ -376,28 +545,35 @@ records, so the preview and the report agree about where a sprite ends.
 
 ## 7. Acceptance thresholds — read the report in this order
 
-`--report` writes nothing, so it is the gate: run it on the delivered sheet before anything is
-written. Keying moves drift and CV by hundredths, so a raw-sheet reading is trustworthy — except
-baseline, which can move by half a pixel because the key decides where the sole stops; re-measure
-it on the keyed sheet before quoting it to the tenth. When `--align` moved anything, **gate on the
-`post_align metric` block** and quote the pre-align numbers when describing the generation.
+`--report` writes nothing, so it is the gate: run it on the **keyed** sheet before anything is
+written. It ends on `verdict OK | FAIL` and exits 3 on a hard fault, so a driver cannot read past
+it; the soft findings above the verdict still need a reader, because whether they are faults
+depends on what was commissioned. When frames were moved, **gate on the `post_register metric` /
+`post_align metric` block and the `seat metric` lines**, and quote the pre-move numbers when
+describing the generation.
 
 | Reported | Accept | Why |
 |---|---|---|
 | `empty cells` | none, unless you commissioned one | a skipped cell is dropped from every other statistic, so the rest of the report flatters the sheet |
 | `near-duplicate pairs` (signature, threshold 2.0) | ≤2 on a 16-frame loop; on a one-shot, only in the last 3–4 frames | the same prompt can swing from 2 pairs to 13; the scale is the script's own `--dup-threshold` help |
-| `bleed` | none — read it on the **keyed** sheet | a raw sheet can show bleed that keying removes |
-| `baseline y` drift | ≤3% of cell height before `--align`; **0 px** after, unless a frame clipped | a baseline align lands on a whole pixel, so a non-zero `align residual` is a finding |
-| `centroid x` drift | ≤3% of cell width before `--align` | on 229 px cells a sheet at the 3% limit still has 17 px of headroom under `--max-shift 24` |
-| `content width CV` | ≤1% for a loop | a character that grows across the sheet shows here first — re-roll, no script may rescale |
+| `bleed` / `GATE cut_by_…` | none | under `--gutters search` a subject that still reaches its cut has no gutter; at the sheet edge it was drawn off the image (§4a) |
+| `rim metric fringe_pct` / `tint_pct` | ≤ 0.5% / ≤ 2% | a binary key reads 25–40% / 43–60%; `key_unmix.py` 0.0–0.2% / 0.0–0.3% |
+| `baseline y` drift, `centroid x` drift, `incell_*_grid_r2` | **not gated — read them as a diagnosis** | on a generated sheet they are large (3–24% of the cell) and follow the grid; they say which `--register` the sheet needs, not whether it is broken |
+| `seat metric slip_max_px` (written frames) | ≤ 1% of the reference height, at least 3 px | registered frames read 0–2; the same sheets kept in-cell read 23–119 |
+| `seat metric feet_drift_px` (`ground`) | ≤ 3 px | on a 470 px character that is 0.6%: resampling, not a hop. More means the lowest part of the body is not the feet in some frame — `free` |
+| `seat metric iou_to_ref_min` | **not gated**; with `audit_frames.py --hold`, ≥ 0.90 to cycle a one-pose loop | below it the frames are different drawings of the pose (§3a) |
+| `content width CV` | ≤1% for a loop | a character that grows across the sheet shows here first — re-roll, no script rescales by default |
 | `content height CV` | ≤2% for a loop; per stage for a transformation | a transformation legitimately gains parts (§3c) |
-| `--align` exit 2 | a refusal, not a tuning problem | the needed shift exceeded `--max-shift`; nothing was written |
+| `--align` exit 2 | a refusal of that tool, not of the sheet | a bbox bottom or a centroid is steered by whatever sticks out, so a larger `--max-shift` only moves the fault: seat the frames with `--register ground \| free`, which is gated on what it wrote instead of on how far it moved a frame |
 
-**`--align` repairs registration, not motion.** A sheet whose frames differ *only* by a translation
+**Registration repairs position, not motion.** A sheet whose frames differ *only* by a translation
 collapses under it: drift goes to near zero and the duplicate count jumps (e.g. 0 → 120 pairs on a
 synthetic 3 px-per-frame sheet) — there was no animation in the sheet. A real idle can jump too
 (e.g. 2 → 61 pairs) when most of what separates the frames is the bob. Re-read the duplicate count
-after aligning, every time.
+in the post-move block, every time. A sheet with travel authored in the cell collapses the same
+way under `ground` / `free` — a synthetic hop and a synthetic lunge both come out as nine
+identical frames, with the `WARN` that the removed offsets did not follow the grid — and survives
+`keep` to the pixel.
 
 ## 8. One cell is wrong
 
@@ -441,9 +617,12 @@ in `sheet_to_frames.py` so the quantisation happens once, on the whole sheet, an
 one palette — quantising frame by frame is how a pixel loop starts to shimmer.
 
 Two consequences. Pixelating snaps the ground line to the block lattice (e.g. baseline drift
-1.5 → 4.0 px, exactly one 4 px block): **align after pixelating**, with `--max-shift` a multiple of
-the block. And it invents no motion: a nearly static sheet flags the same duplicate pairs before and
-after. Post-processing cannot rescue a dead sheet.
+1.5 → 4.0 px, exactly one 4 px block): **register or align after pixelating** — the script's order —
+and with `--align`, give `--max-shift` a multiple of the block. `--register` under `--upscale F`
+places every frame a whole number of F-px blocks from the reference, so the set keeps one lattice;
+`--subject-px` and `--scale-search` resample and are refused with `--pixelate`. And it invents no
+motion: a nearly static sheet flags the same duplicate pairs before and after. Post-processing
+cannot rescue a dead sheet.
 
 **The pixel-style cell floor.** Take **128 px** per cell as the working floor for a big-head
 character — a starting point, the size the post-process above reduces a 314 px cell *to*: confirm
@@ -454,23 +633,37 @@ Normal styles need far more: ≤ 4x4 (313 px) per sheet, ≤ 3x3 (418 px) for a 
 ## 10. Outputs, and the handoff to `unity-2d-sprites`
 
 A passing sheet produces four things: **equal-canvas RGBA frames** (`<name>_000.png` …), the
-**`frames.json` sidecar** (order, cell size, canvas, pivot, fps hint and every metric above), the
-**keyed sheet** — promote it to `anchors/sets/<action>.png` if the next animation must match it —
-and the **GIF / APNG / WebP previews**, which are review artefacts only.
+**`frames.json` sidecar** (order, canvas, pivot, fps hint, how the frames were seated, every metric
+above and the verdict), the **keyed sheet** — promote it to `anchors/sets/<action>.png` if the next
+animation must match it — and the **previews** (GIF / APNG / WebP and the onion skin), which are
+review artefacts only and never live in the frame directory.
 
 The handoff contract, which `unity-2d-sprites` relies on to build an `AnimationClip`:
 
 | | |
 |---|---|
-| Equal canvas | every frame the same `W x H` (`--canvas`), no per-frame trim, no per-frame rescale |
-| One ground line | `--pivot bottom-center` recorded in `frames.json`, `align residual baseline_drift_max_px` 0.000 (a non-zero residual means a frame clipped) |
+| Equal canvas | every frame the same `W x H` — fitted to the registered set, or `--canvas`; **not** assumed to be 512 or square. No per-frame trim, no per-frame rescale |
+| One ground line | `register.mode` `ground` with `seat metric feet_drift_px` ≤ 3, or `keep` with `align residual baseline_drift_max_px` 0.000 |
+| The pivot | **`pivot_norm`** `[x, y]`, a fraction of the canvas from its bottom-left — the reference's feet line under `ground` / `free` (a foot margin sits under it, so `(0.5, 0)` would float the character), `[0.5, 0.5]` under `centroid`, `[0.5, 0]` for a `keep` set on `--pivot bottom-center` |
+| One size per character | every sheet of a character sliced with the same `--subject-px`; `register.reference_core_height_px` is that number, and one PPU then draws them at one size |
 | Naming | `<name>_000`, `_001`, … zero-padded to three digits, row-major — the sort order is the play order |
 | Timing | fps lives in `frames.json` (`fps_hint`), never in a filename |
-| Alpha | hard-keyed, no soft matte, so the importer's alpha and the GIF preview agree. `frames.json` records the `alpha_threshold` and each frame's bare `alpha > 0` bbox beside its thresholded one, so a Unity auto-trim and the report can be reconciled — `--clear-below-thr` removes the difference at the source |
+| Alpha | keyed by `key_unmix.py`: the 2 px rim carries real alpha (0.35–1) over un-mixed colour and the interior is opaque, so the importer's alpha and the GIF's 1-bit cut land on clean pixels. A resampled set (`--subject-px`) ends in a 1–5 px tail at alpha 1–16 that carries its neighbour's colour; `frames.json` records the `alpha_threshold` and each frame's bare `alpha > 0` bbox beside its thresholded one, and `--clear-below-thr` removes the tail when a trimmer has to agree with the report |
+| Cycle or hold | a one-pose loop that `audit_frames.py --hold` calls `BOIL` ships as its reference frame; the motion is the engine's (§3a) |
+| Verdict | `verdict.ok` true. The engine side re-measures the shipped PNGs anyway (`unity-2d-sprites` → `resources/Tests/SpriteFramesAudit.cs`): the slicer's numbers are the slicer's |
+
+`frames.json` is additive: every key a reader of the older sidecar used is still there with the
+same meaning (`frames[].file`, `canvas`, `pivot`, `fps_hint`, `set_metrics.*`, `shift`,
+`canvas_offset`, `written`). New: `pivot_norm`, `register {mode, ref, set_scale, subject_px,
+foot_margin_px, reference_core_height_px}`, `gutters`, `cell_pad`, `verdict {ok, faults[]}`, per
+frame `register {scale, dx, dy, iou}`, `cut_rect`, `cut_sides`, `bleed_dropped_px`, and in
+`set_metrics` the `seat` numbers (`feet_drift_px`, `slip_max_px`, `head_x_drift_px`,
+`iou_to_ref_min` / `_mean`), the `rim` numbers (`fringe_pct`, `tint_pct`) and
+`incell_x_grid_r2` / `incell_baseline_grid_r2`.
 
 Unity plays no GIF, APNG or WebP. The game wants the frames plus a clip, and that is where
 `codex-visual` stops.
 
 Register the whole animation as one `manifest.md` row, its notes column carrying the shape the
 next re-generation needs:
-`| <date> | Assets/…/hero_idle_000.png…_007.png | animation | 512x512 | v1 | animation: frames=8 fps=10 loop=yes grid=3x3 sheet=<keyed sheet path> report=pass |`
+`| <date> | Assets/…/hero_idle_000.png…_007.png | animation | 352x500 | v1 | animation: frames=8 fps=10 loop=yes grid=3x3 register=ground subject_px=470 sheet=<keyed sheet path> report=pass |`

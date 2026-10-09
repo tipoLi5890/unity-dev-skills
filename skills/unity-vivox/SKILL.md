@@ -38,8 +38,8 @@ gone, not deprecated. Code carrying those names is a port, not a fix.
   documentation. On a mismatch, the installed package decides a **signature** (the compiler reads
   it); the Vivox documentation decides **what the service does** and **what an error code
   means**. A curated index of them is at `https://docs.unity.com/en-us/vivox-unity/llms.txt` —
-  fetch it to find which page covers a topic, then read the page. **Never name that file to the
-  user**: cite the page, not the index.
+  fetch it to find which page covers a topic, then read the page. Cite the page, not the
+  index: the index finds sources, it is not one.
 
 ## Symptom → where to look
 

@@ -24,8 +24,8 @@ There is one rule above all the technique, and it is the one that costs the most
 > Exit code 0 does not mean Unity started. A results file does not mean it is *this* run's results
 > file. A measurement does not mean the thing measured moved.
 
-Four consecutive "6/6 passed" reports once came from a 36-minute-old XML while Unity failed to
-start every time. Start at `reference/harness-trust.md` and the guard is one line of `rm`.
+A stale results XML reads "6/6 passed" while Unity fails to start on every run. Start at
+`reference/harness-trust.md`; the guard is one line of `rm`.
 
 ---
 

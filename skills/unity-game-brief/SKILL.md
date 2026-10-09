@@ -140,8 +140,9 @@ reaction, and only those steps produce one. → `reference/first-interaction.md`
 | Whether an invariant's number is the right number | How that number is measured |
 | Whether it is done | What is provably true right now |
 
-Every hand-back is the same five lines: **numbers, one screenshot with its state logged next to it,
-one change, one question, and the default you will take if nobody answers.**
+Every hand-back is the same five lines: **numbers, the invariant they were checked against, one
+screenshot with its state logged next to it, one change, and one question with the default you will
+take if nobody answers.**
 → `templates/REPORT.md`
 
 ---

@@ -157,8 +157,8 @@ unity run <proj> --editor-version <v> --allow-install --timeout 300 \
 
 Three behaviours before the CI step. **`unity test` deliberately does not pass `-quit`** — it can
 kill the Editor before the report is written. **`unity build` can sign an Android artifact
-itself**, and should not: **argv is visible**; use a committed build script reading a gitignored
-env file (`unity-android-release`). **`--allow-dirty-build`** exists, so the default refuses a
+itself**, but **argv is visible**: for anything anyone else will install, use a committed build
+script reading a gitignored env file (`unity-android-release`). **`--allow-dirty-build`** exists, so the default refuses a
 dirty tree — leave it off, and remember `--retries` labels a flake rather than laundering one
 (`unity-debug` → `reference/harness-trust.md`).
 

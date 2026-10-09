@@ -50,11 +50,9 @@ These are not style preferences; each one prevents a specific cascade.
   `UnityEngine.UI`** — `UnityEngine.UI.Canvas` does not exist. `Canvas` is in `UnityEngine`
   (assembly `UnityEngine.UIModule`); `Image`, `Button`, `CanvasScaler`, the Layout Groups and
   `EventSystem` are in `UnityEngine.UI` (assembly `UnityEngine.UI`).
-- **Query before you modify.** Confirm the parent exists and the component is present.
 - **Fix incrementally; never destroy and rebuild to repair.** Destroyed GameObjects take every
   inspector reference with them. **If a fix fails, revert it before the next one**, or you debug the
   sum of your attempts.
-- **One change, then verify.**
 - **Apply the user's numbers exactly.** No rounding, no adjusting properties nobody asked about.
 - **Build only what was asked.** "Working UI" / "proper buttons" mean visuals; scripts only when
   the request names behaviour (`unity-game-ui` §0).
@@ -221,7 +219,6 @@ and drop `blocksRaycasts` on a view fading out so a fast second tap is not swall
 
 ## 7. When something goes wrong
 
-Diagnose before changing: name the symptom, find the cause, make one targeted fix, verify.
 **"Start fresh" destroys the working parts along with the broken one** — in a prefab hierarchy,
 every reference into it. After two failed attempts, re-verify the current state: usually an
 earlier change never applied, and everything since has reasoned about a hierarchy that does not
