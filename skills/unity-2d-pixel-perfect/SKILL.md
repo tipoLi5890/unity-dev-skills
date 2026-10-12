@@ -195,7 +195,8 @@ A sprite driven by `Rigidbody2D` stutters while everything else is smooth: physi
 fixed timestep and rendering does not, and snapping makes the sub-pixel error visible. The fix is
 `Rigidbody2D.interpolation = RigidbodyInterpolation2D.Interpolate` on every physics-driven sprite;
 a matched fixed timestep and camera follow in `LateUpdate` tighten it —
-`reference/motion-and-upscale.md` §3. Confirm it in play mode with a moving rigidbody.
+`reference/motion-and-upscale.md` §3. Confirm it in play mode with a moving rigidbody. The
+movement code itself is `unity-2d-controller`.
 
 ## 9. Migration
 
@@ -214,7 +215,8 @@ bool → enum mapping, via `reference/pipeline-and-migration.md` §3.
 Slicing sheets, pivots, rects, 9-slice borders and outlines are `unity-2d-sprites` — this skill
 only says which pivot values keep a sprite on the grid. Atlas packing, padding, packer mode and
 atlas memory are `unity-sprite-atlas`, which rows 1 and 2 of §5 hand off to. Tilemaps, palettes
-and rule tiles are `unity-tilemap`; §5 ends at "the seam is not the tilemap's fault".
+and rule tiles are `unity-tilemap`; §5 ends at "the seam is not the tilemap's fault". Parallax
+and sorting are `unity-2d-rendering`.
 
 Resolving the active render pipeline, URP asset and renderer configuration, Volumes and Render
 Graph passes are `unity-render-urp` — §1 reads the pipeline, it does not set it. The canvas itself

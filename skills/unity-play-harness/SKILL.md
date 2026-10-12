@@ -135,7 +135,7 @@ something is broken.
 | The brief, the constraints, which interaction to build first | `unity-game-brief` |
 | Installing editors, licences, templates, the CLI's own surface | `unity-cli` |
 | Assembly definitions, folder layout, which Editor version the project is pinned to | `unity-new-project` |
-| A collision or trigger that never fires, a raycast that misses | `unity-physics-3d` |
+| A collision or trigger that never fires, a raycast that misses | `unity-physics-3d` · `unity-physics-2d` |
 | Building the UI rather than reaching a screen of it | `unity-game-ui` |
 | Which controller, camera or movement model a game needs, by perspective | `unity-gameplay` |
 | Reading input through one funnel a journey can drive | `unity-input` |

@@ -177,8 +177,9 @@ shadergraph) are stale for that editor and its `com.unity.modules.*` list is inc
 
 The fix is to replace `Packages/manifest.json` wholesale with a set known to compile on the
 *same* editor version, and to keep only the 2D packages the brief calls for rather than leave the
-rest to resolve: `2d.animation` and `psdimporter` when the art is skeletal, `spriteshape` for
-spline terrain, `aseprite` when that is the source format — otherwise remove them. A package set
+rest to resolve: `2d.animation` and `psdimporter` when the art is skeletal (`unity-2d-animation`),
+`spriteshape` for spline terrain (`unity-2d-level` → `reference/sprite-shape.md`), `aseprite`
+when that is the source format — otherwise remove them. A package set
 known to compile on Unity 6000.4:
 
 | Package | Version |

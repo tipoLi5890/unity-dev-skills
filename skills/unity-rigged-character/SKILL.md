@@ -85,7 +85,7 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 | Pathfinding, and who owns the transform when an agent drives it | `unity-navigation` |
 | Generating the reference art | `codex-visual` |
 | Rigging, skinning and keying an action in Blender, for a character Mixamo cannot rig | `blender-character-rig` |
-| 2D sprite characters | `unity-2d-sprites` |
+| 2D sprite characters | `unity-2d-sprites` · skeletal: `unity-2d-animation` |
 | Animation events, attack windows, IK, override controllers, 2D blend trees, Timeline | `unity-animation` |
 
 ## Related skills

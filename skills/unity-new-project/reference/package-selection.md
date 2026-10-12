@@ -57,7 +57,7 @@ decision rather than a package-list one.
 
 | Look | Id |
 |---|---|
-| 2D of any kind | `com.unity.feature.2d` — the bundle: sprites, tilemap, animation, pixel-perfect — `unity-2d-sprites`, `unity-tilemap` |
+| 2D of any kind | `com.unity.feature.2d` — the bundle: sprites, tilemap, animation, pixel-perfect — `unity-2d-sprites`, `unity-tilemap`. The runtime needs no further package: `unity-2d-controller`, `unity-physics-2d`, `unity-2d-rendering` |
 | Pixel art specifically | `com.unity.2d.pixel-perfect`, already inside the bundle above — `unity-2d-pixel-perfect` |
 | Anything that has to walk around a 3D level | `com.unity.ai.navigation` — `unity-navigation` |
 | Cutscenes, scripted sequences, timed juice | `com.unity.timeline` — the Animator hand-off is `unity-animation` |
@@ -66,14 +66,14 @@ decision rather than a package-list one.
 ## What the game does
 
 Read down the left column for the closest description, then **add** the foundation rows above.
-These rows are packages only: which controller, camera and movement skills each one needs is the
-recipe in `unity-gameplay`.
+These rows are packages, with the skill that owns the 2D runtime where one applies; the full
+recipe of controller, camera and movement skills is `unity-gameplay`.
 
 | The game is | Add |
 |---|---|
-| Endless or level-based running, jumping, dodging | Render pipeline, Input System, Cinemachine, plus the 2D bundle if it is 2D and AI Navigation if the hazards chase |
-| Cards, tiles, matching, a board | Render pipeline or the 2D bundle, Input System, uGUI/TextMeshPro, Timeline for the reveal animations |
-| Seen from above, moving and aiming at once | Render pipeline, Input System, Cinemachine, AI Navigation |
+| Endless or level-based running, jumping, dodging | Render pipeline, Input System, Cinemachine, plus the 2D bundle if it is 2D (`unity-2d-controller`, `unity-physics-2d`, `unity-2d-rendering`) and AI Navigation if the hazards chase in 3D |
+| Cards, tiles, matching, a board | Render pipeline or the 2D bundle, Input System, uGUI/TextMeshPro, Timeline for the reveal animations. Cells, neighbours, occupancy and turns are code, not a package — `unity-2d-grid` |
+| Seen from above, moving and aiming at once | Render pipeline, Input System, Cinemachine, AI Navigation. In 2D, leave AI Navigation out — it bakes from 3D geometry — and path over cells with `unity-2d-grid` |
 | Long-form, with inventories, quests and areas | All of the above plus Addressables and Timeline — this is the list that grows fastest |
 | Vehicles and contact | Render pipeline, Input System, Cinemachine. Physics is in the engine; there is no package |
 | Tapping, waiting, numbers going up | The 2D bundle or a render pipeline, Input System, uGUI/TextMeshPro — and stop there. Lean is the feature |

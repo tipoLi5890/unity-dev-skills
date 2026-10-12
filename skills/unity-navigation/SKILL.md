@@ -255,4 +255,4 @@ Driving the Editor to run it: `unity-debug` → `reference/editor-control.md`.
 ## Scope — what this skill does NOT do
 
 Rigs, Avatars and Animator layers (`unity-rigged-character`), PhysX collision and triggers
-(`unity-physics-3d`), and 2D navigation — which is a different package with different rules.
+(`unity-physics-3d`), and 2D grid pathfinding (`unity-2d-grid`).

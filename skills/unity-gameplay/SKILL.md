@@ -105,30 +105,35 @@ row per need — open the genre file named above and build in its order.
 | Actions, a struct gameplay reads, touch, rebinding, pointer aim | `unity-input` |
 | Follow, confiner, look-ahead, jitter, shake, Cinemachine names per major | `unity-camera` |
 | Animator parameters, blend trees, sprite state graphs, events, IK, root motion | `unity-animation` |
+| 2D character: platformer motor, motor seen from above, cell step, the Animator bridge | `unity-2d-controller` |
+| 2D bodies, casts, tilemap colliders, one-way platforms, the 2D layer matrix | `unity-physics-2d` |
+| 2D draw order, sorting by Y, 2D lights and shadows, parallax | `unity-2d-rendering` |
+| 2D levels as data: layer stacks, runtime tiles, rooms, chunks, LDtk and Tiled | `unity-2d-level` |
+| Cell coordinates, range, pathfinding, line of sight, occupancy, turns | `unity-2d-grid` |
+| Bones and weights on a sprite, PSB rigs, Sprite Library | `unity-2d-animation` |
 | Situations, journeys, timelines; a feel report with no number in it | `unity-play-harness` |
 | The brief, its perspective and movement block, simulation/presentation split | `unity-game-brief` |
 | Project creation, which packages, version pinning | `unity-new-project` |
 | Tile Palettes, rule tiles, grid layouts | `unity-tilemap` |
 | Slicing sheets, pivots, clips from frames | `unity-2d-sprites` |
 | Pixel art that shimmers or blurs | `unity-2d-pixel-perfect` |
-| A 3D collision or trigger that does not fire | `unity-physics-3d` |
+| A collision or trigger that does not fire, in 3D · in 2D | `unity-physics-3d` · `unity-physics-2d` |
 | NavMesh agents, click-to-move, patrols | `unity-navigation` |
 | Getting a rigged, animated character into the project | `unity-rigged-character` |
 | HUD and menus · frame time and counters | `unity-game-ui` · `unity-profiling` |
 
 ### Given inline here
 
-The genre files carry the essential method for each of these — enough for a 3C
-prototype that passes a journey, not a full treatment:
+Every 2D genre file routes its motor, physics, draw order, level and cell needs to the six
+skills above, by file. What no skill owns, the genre files carry as essential method — enough
+for a 3C prototype that passes a journey:
 
 | Need | Where the method is |
 |---|---|
-| The player motor: grounding, jump, coyote time, buffer, slopes | each genre file, the "in essentials" block and "Traps" |
-| 2D physics set-up: body type, casts, one-way platforms, tilemap colliders | `reference/genre-2d-side.md`, `reference/genre-2d-topdown.md` |
-| Cell coordinates, neighbours, range, pathfinding, occupancy, turns | `reference/genre-2d-grid.md` |
-| Draw order from above: Y-sort, pivots, sort axis | `reference/genre-2d-topdown.md`, `reference/genre-2d-grid.md` |
+| The 3D motor: grounding, jump, slopes, its three variants | `reference/genre-3d.md`, "The motor, in essentials" and "Traps" |
 | Greybox scale in 3D: capsule, door, corridor, step | `reference/level-metrics.md`, `reference/genre-3d.md` |
 | Pickups, switches, hazards, a sentry that sees | the genre file for the view, its last table |
+| Playfield fit, bullets as data, hotspot picking, the launch gesture | `reference/genre-2d-fixed-screen.md` |
 
 ---
 
@@ -172,7 +177,12 @@ prototype that passes a journey, not a full treatment:
 | Camera rigs, confiners, jitter, shake | `unity-camera` |
 | Animator graphs, events, IK, Timeline | `unity-animation` |
 | Building the probe, situations and journeys the checks here rely on | `unity-play-harness` |
-| A collision or trigger that does not fire in 3D | `unity-physics-3d` |
+| The 2D motor, its scripts and its journey templates | `unity-2d-controller` |
+| A collision or trigger that does not fire, in 3D · in 2D | `unity-physics-3d` · `unity-physics-2d` |
+| Draw order, 2D lights, parallax | `unity-2d-rendering` |
+| Level construction and level data in 2D | `unity-2d-level` |
+| Cell maths, pathfinding, turn order | `unity-2d-grid` |
+| Skeletal sprite art | `unity-2d-animation` |
 | Trusting a test run, reading logs, screenshots | `unity-debug` |
 
 What is left is what no single-system skill can hold: **deciding which constraints this game

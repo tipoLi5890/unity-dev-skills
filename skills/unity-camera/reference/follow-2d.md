@@ -74,7 +74,8 @@ to shake when look-ahead is enabled has a target on the wrong clock —
 The bounding shape is a `BoxCollider2D`, a `PolygonCollider2D` or a `CompositeCollider2D`. **Any
 other collider type confines nothing and reports nothing.** Put the shape on its own object, on a
 layer that collides with nothing, or tick Is Trigger; it describes where the *view* may be, so it
-is the room's outline, not the walkable floor.
+is the room's outline, not the walkable floor. Outlines kept as level data, one per room:
+`unity-2d-level` → `reference/rooms-and-chunks.md`.
 
 | Field | Use |
 |---|---|
@@ -228,6 +229,8 @@ it fails at the far wall; a bounds check that cannot fail is not checking the bo
 
 ## Related skills
 
-Tile grids, isometric sorting and palettes: `unity-tilemap`. The pixel-perfect camera component:
-`unity-2d-pixel-perfect`. Which rig a game's constraints imply: `unity-gameplay` →
+Tile grids and palettes: `unity-tilemap`. Isometric sorting: `unity-2d-rendering` →
+`reference/y-sort.md`. Parallax layers behind the follow: `unity-2d-rendering` →
+`reference/parallax.md`. Room bounds as level data, one shape per room: `unity-2d-level` →
+`reference/rooms-and-chunks.md`. The pixel-perfect camera component: `unity-2d-pixel-perfect`. Which rig a game's constraints imply: `unity-gameplay` →
 `reference/perspective-fingerprint.md`.

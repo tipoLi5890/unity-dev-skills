@@ -77,7 +77,8 @@ python3 scripts/level_metrics.py --apex … --time-to-apex … --run-speed … -
 ## Who answers each need
 
 <!-- One row per need this game has. Name the skill and the file; where no skill owns the need,
-     name the genre file section that carries the method. Remove rows that do not apply. -->
+     name the genre file section that carries the method. Remove rows that do not apply, and
+     keep one alternative where a cell offers two. -->
 
 | Need | Answered by | Status |
 |---|---|---|
@@ -85,12 +86,16 @@ python3 scripts/level_metrics.py --apex … --time-to-apex … --run-speed … -
 | Project and packages | `unity-new-project` | |
 | Input: actions, the struct gameplay reads | `unity-input` | |
 | Touch controls | `unity-input` | |
-| Player motor | <!-- genre file, "The motor, in essentials" --> | |
+| Player motor | <!-- 2D: `unity-2d-controller` · 3D: reference/genre-3d.md, "The motor, in essentials" --> | |
+| Bodies, colliders, layer matrix | <!-- `unity-physics-2d` · `unity-physics-3d` --> | |
 | Camera rig | `unity-camera` | |
 | Animator parameters and states | `unity-animation` | |
-| Character art into the project | <!-- `unity-2d-sprites` · `unity-rigged-character` --> | |
-| Level geometry | <!-- `unity-tilemap` · greybox per genre file --> | |
-| Pathing for opponents | <!-- `unity-navigation` · genre file --> | |
+| Animator bridge from the motor | <!-- 2D: `unity-2d-controller` → reference/facing-and-animator-bridge.md · 3D: `unity-animation` → reference/parameter-contract.md --> | |
+| Character art into the project | <!-- frames: `unity-2d-sprites` · bones on a sprite: `unity-2d-animation` · 3D: `unity-rigged-character` --> | |
+| Draw order, 2D lights, parallax | <!-- `unity-2d-rendering` --> | |
+| Level geometry and level data | <!-- 2D: `unity-tilemap` for palettes, `unity-2d-level` for the level · 3D: greybox per reference/genre-3d.md --> | |
+| Cells, range, turns | <!-- `unity-2d-grid` --> | |
+| Pathing for opponents | <!-- cells: `unity-2d-grid` → reference/pathfinding.md · NavMesh: `unity-navigation` --> | |
 | Pickups, switches, hazards | <!-- genre file --> | |
 | HUD and menus | `unity-game-ui` | |
 | Probe, situations, journeys | `unity-play-harness` | |

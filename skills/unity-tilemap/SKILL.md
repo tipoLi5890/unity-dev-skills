@@ -210,8 +210,10 @@ Hairline gaps and bleeding between painted tiles, filtering, and camera-side blu
 no cell size fixes them. Packing the tiles into an atlas, and what that does to their edges, is
 `unity-sprite-atlas`.
 
-Level design itself — where the tiles go — is not a scripting problem. Neither is 2D physics on
-a `TilemapCollider2D`: this skill only sets a tile's collider type and stops there.
+Assembling levels from data, layer stacks, runtime `SetTile`, rooms and external editors are
+`unity-2d-level`. Cell coordinates, hexagonal and isometric maths and pathfinding are
+`unity-2d-grid`. `TilemapCollider2D` and composites are `unity-physics-2d` — this skill only sets
+a tile's collider type. Sorting and the scene-level sort axis are `unity-2d-rendering`.
 
 ## Reference
 

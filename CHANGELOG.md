@@ -2,6 +2,120 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.22.0
+
+Forty-seven skills. Six new ones are the 2D world: `unity-2d-controller`, `unity-physics-2d`,
+`unity-2d-rendering`, `unity-2d-level`, `unity-2d-grid` and `unity-2d-animation`. `unity-gameplay`
+routes its 2D recipes to them by file, and the neighbours that ended in a 2D dead end name an owner.
+
+
+- **`unity-2d-controller` — a platformer character asks physics where the ground is.** A dynamic
+  body left to the solver slides down slopes, sticks to walls and jumps a different height every
+  time, so the character decides its own velocity and uses the engine only to ask what is in the
+  way. Two halves never mix: `resources/PlatformerController2D.cs` holds the rules — coyote time,
+  buffer, the short hop, dash, wall jump — and `resources/PlatformerMotor2D.cs` holds collision —
+  ground, slopes, one-way platforms, the platform under the feet — joined by one `Move(velocity,
+  dt)` call. `resources/MovingPlatform2D.cs` works out its own velocity for a rider,
+  `resources/TopDownMotor2D.cs` is the dynamic body with gravity scale 0 for a game seen from above,
+  `resources/GridStepMover.cs` commits a cell and tweens the transform after it, and
+  `resources/AnimatorBridge2D.cs` is the one writer of the Animator, fed from whichever of the three
+  is on the object. Apex height and time to apex are the tunables; gravity and jump velocity are
+  derived, and the fixed step puts the apex at 2.85 for a designed 3.
+  `templates/PlatformerJourneyTest.cs` asserts that apex, a press 0.08 s after the ledge honoured, a
+  press at 0.16 s refused and a press 0.10 s before landing buffered; `PLATFORMER_JOURNEY_BREAK` set
+  to `coyote`, `buffer` or `tap` turns one test red. `templates/TopDownJourneyTest.cs` covers
+  diagonal speed, wall slide and stopping distance. Six reference files: the model choice, the
+  platformer, jump maths, free top-down movement, the grid step, and facing with the Animator
+  bridge.
+- **`unity-physics-2d` — Box2D answers in its own vocabulary.** A PhysX rule renamed with a `2D`
+  suffix is usually wrong: a kinematic `Rigidbody2D` moves under its velocity, a ray that starts
+  inside a collider hits it, sleep is a timer, there are two collision-detection modes and z
+  separates nothing. A symptom table routes to seven sections, first match wins: no callback fires,
+  tunnelling, a cast that misses or hits itself, a body that stops or jitters, shapes that are not
+  what they look like, effectors and one-way platforms, and editor yes, build no.
+  `resources/CollisionDebugger2D.cs` is the two-sided probe, attached to both objects of a suspected
+  pair and removed afterwards; `resources/Editor/Physics2DAudit.cs` prints the open scene's 2D
+  physics set-up as one JSON object and changes nothing. Five reference files: bodies and
+  simulation, layers and the matrix, queries, tilemap colliders, and effectors and joints.
+- **`unity-2d-rendering` — draw order is four keys in a fixed priority, and z is the last of them.**
+  Sorting layer, Order in Layer, render queue, then distance along the sort axis: the first key that
+  differs decides and the rest are never read. The second half is the light — with no `Light2D` in
+  the scene lit sprites draw at full colour, and the first one turns everything it does not reach
+  black. `resources/Editor/Renderer2DSetup.cs` reports the pipeline asset in force, whether a 2D
+  Renderer is the default and the sort mode and axis on it, which are the only ones read;
+  `resources/Editor/SortingAudit.cs` lists every renderer in the open scenes with its four keys, its
+  `SortingGroup`, whether its material is lit, and the pairs that tie. `resources/ParallaxLayer.cs`
+  follows a fraction of the camera's travel with an optional wrap and pixel snap, and names no
+  Cinemachine type. Six reference files: sort order, Y-sort, 2D lights, shadows and normals, masks
+  and materials, and parallax.
+- **`unity-2d-level` — a level is data with invariants, and the Tilemap is one renderer of it.**
+  `resources/LevelData.cs` is the level — size, layers of tile ids, spawn, gate, pickups, entities
+  with fields — and names no tile asset, prefab or scene. `scripts/level_validate.py` checks
+  reachability from the file and three jump numbers without Unity and exits 1 naming what cannot be
+  reached; `scripts/tiled_to_level.py` converts a Tiled map, flipping the rows once and decoding the
+  flip flags. `resources/TilemapLevelLoader.cs` paints one `SetTilesBlock` per layer into six
+  Tilemaps with fixed names, synchronises the colliders before it returns, and `Verify` counts the
+  cells where the rendering differs from the data. `resources/Editor/TilemapLayerStackBuilder.cs`
+  builds the stack for a side view or a top-down one and reports before it creates;
+  `resources/RoomBounds.cs` is a room as a rectangle with one enter event, and
+  `resources/ChunkStitcher.cs` appends chunks whose entry height equals the last exit height, in an
+  order that is a pure function of the seed. `templates/sample-level.json` is a 40 × 12 side run and
+  `templates/LEVEL_INVARIANTS.md` takes the level's rules, one id each. Seven reference files: the
+  layer stack, level data, runtime tilemaps, rooms and chunks, external editors, SpriteShape, and
+  procedural generation.
+- **`unity-2d-grid` — the cell map is the truth and the transform is an animation of it.** A piece
+  is in its new cell from the instant the rule says so and the sprite arrives later; no rule reads a
+  transform, waits for a tween or asks a collider. Four files of plain C# with no `MonoBehaviour`:
+  `resources/GridCoords.cs` for neighbours, distances, hexagonal offset, axial and cube conversion,
+  rings and lines; `resources/GridPathfinder.cs` for A* and movement range by flood, with the
+  heuristic picked from the neighbour rule; `resources/GridOccupancy.cs` for walls, one occupant per
+  cell, push, reservation and revert; `resources/TurnQueue.cs` for initiative and the round.
+  `resources/Tests/GridCoordsTests.cs` runs them in EditMode with no scene. Isometric is a drawing
+  convention and hexagonal is a neighbour rule, so every lookup goes through `GridCoords.Neighbour`
+  and the project's hexagonal layout is confirmed once on its own `Grid`. Six reference files:
+  coordinates, neighbours and range, pathfinding, line of sight, occupancy and turns, and picking.
+- **`unity-2d-animation` — a skeletal sprite is a mesh, and it costs like one.** Frame animation
+  pays in texture memory and nothing per frame; a rig pays per vertex, per part, per frame, so the
+  choice is made per character and counted before the art is drawn. The route is a `.psb` imported
+  as a rig, then bones, geometry and weights in that order, then *Apply*.
+  `resources/Editor/SkinningAudit.cs` returns one JSON object: unweighted vertices, weights that
+  name a missing bone, a `SpriteSkin` that is not ready, and per character the skins, bone
+  Transforms, vertices and triangles one instance deforms each frame.
+  `resources/Editor/SpriteLibraryBuilder.cs` builds a `.spriteLib` from folders or sprite names and
+  reports before it writes; `resources/SkinSwap.cs` changes a skin or one category of equipment at
+  runtime and refreshes the resolvers. Five reference files: skeletal against frames, PSB to rig,
+  bones and weights, the Sprite Library, and 2D IK.
+- **`unity-gameplay` routes its 2D recipes.** The hub's routing table gains a row for each of the
+  six, and the 2D genre files stop carrying the method in essentials. `reference/genre-2d-side.md`
+  and `genre-2d-topdown.md` send the motor, jump maths and the Animator bridge to
+  `unity-2d-controller`, bodies, casts, tilemap colliders and one-way platforms to
+  `unity-physics-2d`, draw order, lights and, in the side run, parallax to `unity-2d-rendering`, and
+  layer stacks, rooms, chunks and level files to `unity-2d-level`; `genre-2d-grid.md` keeps the rule
+  set as one class and sends coordinates, range, paths, sight, occupancy and picking to
+  `unity-2d-grid`; `genre-2d-fixed-screen.md` keeps playfield fit, bullets as data, hotspot picking
+  and the launch gesture. `templates/GAMEPLAY_RECIPE.md` gains rows for bodies and the layer matrix,
+  the Animator bridge, draw order, and cells, range and turns. What the hub still carries in
+  essentials is the 3D motor, in `reference/genre-3d.md`.
+- **Neighbours route to them.** Two dead ends in `unity-2d-sprites` close: 2D bones, skinning
+  weights, PSB rigs and Sprite Library, which nothing covered, are `unity-2d-animation`, and 2D
+  physics is `unity-physics-2d`. `unity-tilemap` sets a tile's collider type and hands the rest on:
+  levels from data, layer stacks and runtime `SetTile` to `unity-2d-level`, cell maths and
+  pathfinding to `unity-2d-grid`, `TilemapCollider2D` and composites to `unity-physics-2d`, sorting
+  to `unity-2d-rendering`. `unity-physics-3d` drops its best-effort 2D answer —
+  `reference/neighbour-stacks.md` keeps the one report both stacks share, a `2D` suffix in the wrong
+  scene, and hands over. `unity-navigation` sends 2D pathfinding to `unity-2d-grid`; `unity-debug`,
+  `unity-play-harness`, `unity-camera` and `unity-animation` name `unity-physics-2d` beside
+  `unity-physics-3d` on their physics rows. `unity-animation` sends the 2D bridge to
+  `unity-2d-controller` and bones on a sprite to `unity-2d-animation`, and `unity-rigged-character`
+  adds the skeletal route to the same skill; `unity-camera` sends parallax and isometric sorting to
+  `unity-2d-rendering` and room bounds to `unity-2d-level`; `unity-input` names
+  `unity-2d-controller` as the consumer of its struct; `unity-2d-pixel-perfect` sends movement code,
+  parallax and sorting out; and `unity-new-project` lists the six in its skill map and names them on
+  its 2D package rows.
+- **What this does not do.** No skill covers a 3D character controller, 3D level construction,
+  lighting outside the 2D Renderer, scene-level optimisation, interaction, combat, AI behaviour,
+  scene flow and saving, or game feel.
+
 ## 0.21.0
 
 Forty-one skills. Four new ones cover the layer between a brief and a character that can be played:

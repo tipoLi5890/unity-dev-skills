@@ -95,6 +95,7 @@ assembly next to the harness files.
 | Turning a frame set into a clip; pivots and ground line; the one end-of-clip event | `unity-2d-sprites` → `reference/sprite-animation.md` |
 | An agent and an Animator both moving one character; a head tracking the path | `unity-navigation` → `reference/recipes.md` |
 | The probe, the recorder, running the journey headless | `unity-play-harness` → `reference/journeys.md` |
+| The bridge for a 2D character: facing, grounded and speed read from the motor | `unity-2d-controller` → `reference/facing-and-animator-bridge.md` |
 | Where the bridge's inputs come from — the input struct the game reads | `unity-input` |
 | The camera that follows the character, and jitter between its clock and the Animator's | `unity-camera` |
 | Which movement model the game uses, and so which rows above apply | `unity-gameplay` |
@@ -159,12 +160,13 @@ assembly next to the harness files.
 | Importing a model, Avatars, Humanoid versus Generic, Mixamo, the base locomotion controller | `unity-rigged-character` |
 | Rigging and skinning a character that has no skeleton yet | `blender-character-rig` |
 | Slicing sheets, frames into AnimationClips, pivots and the ground line | `unity-2d-sprites` |
+| Bones, skinning weights, PSB rigs, Sprite Library and 2D IK on a sprite | `unity-2d-animation` |
 | Generating the sprite frames or the sheet in the first place | `codex-visual` |
 | A NavMeshAgent sharing the transform with the Animator | `unity-navigation` |
 | Reading devices and actions into the struct the game consumes | `unity-input` |
 | Camera follow, Cinemachine, camera shake on a hit | `unity-camera` |
 | Choosing the movement model, perspective and genre constraints | `unity-gameplay` |
-| A hitbox trigger that never fires once the window is open | `unity-physics-3d` |
+| A hitbox trigger that never fires once the window is open | `unity-physics-3d` · `unity-physics-2d` |
 | Playing the footstep or the swing sound an event asks for | `unity-audio` |
 | The probe, situations, journeys and timelines themselves | `unity-play-harness` |
 | Running tests headless, screenshots, trusting a result file | `unity-debug` |

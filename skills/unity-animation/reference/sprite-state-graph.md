@@ -7,7 +7,8 @@
 
 Clips come first: `unity-2d-sprites` → `reference/sprite-animation.md` builds each one, and its
 single-state controller is the whole graph for an idle or a one-shot. This file starts at the
-second state.
+second state. A sprite deformed by bones instead of swapped frame by frame is
+`unity-2d-animation`; the graph below drives either.
 
 ## 1. The graph
 
@@ -97,7 +98,9 @@ back.hasExitTime = false; back.hasFixedDuration = true; back.duration = 0f;
 Rules for `flipX`:
 
 - **The bridge writes it, from the game's facing — never from the sign of this frame's
-  velocity.** Velocity passes through zero when the runner stops; a facing does not.
+  velocity.** Velocity passes through zero when the runner stops; a facing does not. The bridge
+  for a 2D motor, and where its facing comes from: `unity-2d-controller` →
+  `reference/facing-and-animator-bridge.md`.
 - **Do not key `flipX` in a clip.** That is a second writer, and the clip wins on the frames it
   has a key for.
 - **`flipX` mirrors about the sprite's pivot.** With the pivot at the horizontal centre the

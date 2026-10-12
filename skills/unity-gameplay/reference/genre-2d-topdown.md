@@ -35,95 +35,56 @@ depth is faked entirely by draw order.** Most of what goes wrong here is sorting
 ## Build order for the 3C prototype
 
 1. **Greybox depot.** Two Tilemaps: a floor with no collider, and shelving on an `Obstacles`
-   layer with a merged composite collider. One aisle 2 wide, one 1 wide, one dead end.
+   layer with a merged composite collider — `unity-2d-level` → `reference/layer-stack.md`,
+   `unity-physics-2d` → `reference/tilemap-colliders.md`. One aisle 2 wide, one 1 wide, one dead
+   end.
 2. **Controls.** A struct with `move` (a `Vector2`) and, for the shooter, `aim` (a `Vector2`
    direction) and `fireHeld` — `unity-input`. Aim comes from the right stick **or** from the
    pointer converted to a direction from the player; gameplay sees one field either way.
-3. **Character.** The motor below; register with
+3. **Character.** The motor from `unity-2d-controller`, chosen below; register with
    `GameProbe.SetPlayerVelocity(() => transform, () => (Vector3)_body.linearVelocity);`.
 4. **Journey 1 — the aisle.** Enter the depot-aisle situation, drive along the 1-wide aisle and
    round a corner; assert the runner is never inside `Obstacles` and that speed never exceeds
    the designed top speed (a diagonal that is 41% fast shows up here).
 5. **Camera.** `unity-camera` → `reference/follow-2d.md`; journey 2 asserts the confiner.
-6. **Sorting.** Set the sort axis, put one tall shelf in the scene, walk behind and in front of
-   it. This is a visual check: screenshot both — `unity-debug` → `reference/visual-checks.md`.
-7. **Animation.** A direction parameter pair and a speed — `unity-animation` →
+6. **Sorting.** Set the sort axis — `unity-2d-rendering` → `reference/y-sort.md` — put one tall
+   shelf in the scene, walk behind and in front of it. This is a visual check: screenshot both —
+   `unity-debug` → `reference/visual-checks.md`.
+7. **Animation.** A direction parameter pair and a speed — `unity-2d-controller` →
+   `reference/facing-and-animator-bridge.md`, then `unity-animation` →
    `reference/blend-trees.md`.
 
-### The motor, in essentials
+### The motor — which file
 
-```csharp
-// DepotMotor2D.cs — drop on the runner beside a Rigidbody2D (Dynamic, Gravity Scale 0,
-// Linear Damping 0, Freeze Rotation Z, Interpolate) and a CircleCollider2D at the feet.
-using UnityEngine;
+Decide free or by the cell before opening anything: `unity-2d-controller` →
+`reference/model-choice.md`. A map authored to the cell is moved on by the cell.
 
-[RequireComponent(typeof(Rigidbody2D))]
-public class DepotMotor2D : MonoBehaviour
-{
-    public float speed = 5f, accel = 62.5f, decel = 100f;   // 5 / 0.08 s, 5 / 0.05 s
-    public Vector2 MoveInput;                               // set every frame from the input struct
-    public Vector2 Facing { get; private set; } = Vector2.down;
-
-    Rigidbody2D _body;
-    void Awake() => _body = GetComponent<Rigidbody2D>();
-
-    void FixedUpdate()
-    {
-        // Clamp, do not normalise: a half-pushed stick must stay half speed, and a keyboard
-        // diagonal of (1, 1) must not be 41% faster than a cardinal.
-        Vector2 wish = Vector2.ClampMagnitude(MoveInput, 1f) * speed;
-        float rate = wish.sqrMagnitude > 0.0001f ? accel : decel;
-        _body.linearVelocity = Vector2.MoveTowards(_body.linearVelocity, wish,
-                                                   rate * Time.fixedDeltaTime);
-        if (MoveInput.sqrMagnitude > 0.04f) Facing = Snap4(MoveInput);
-    }
-
-    static Vector2 Snap4(Vector2 v) =>
-        Mathf.Abs(v.x) > Mathf.Abs(v.y) ? new Vector2(Mathf.Sign(v.x), 0f)
-                                        : new Vector2(0f, Mathf.Sign(v.y));
-}
-```
-
-Set gravity to zero **per body** (Gravity Scale 0) rather than in Project Settings: project
-gravity at zero also takes it from every prop that was meant to fall, while a body's own scale is
-visible on the prefab. The fingerprint reads either.
-
-**By the cell instead** (the RPG option): the map owns the position. On input, compute the
-target cell; refuse it if the obstacle Tilemap has a tile there (`Tilemap.HasTile`) or another
-actor occupies it; otherwise mark the target occupied *now* and tween the transform to
-`Grid.GetCellCenterWorld(target)` over the step time. Input during a step is buffered, one deep.
-Nothing in that loop needs a `Rigidbody2D` to move — keep a kinematic one only so triggers fire.
+- **Free movement** — a `Rigidbody2D` with gravity scale 0 on the body, not in Project Settings,
+  a circle at the feet, input clamped rather than normalised:
+  `unity-2d-controller` → `reference/topdown-free.md`.
+- **By the cell** (the RPG option) — the map owns the position and the transform is tweened to
+  it: `unity-2d-controller` → `reference/grid-step.md`; who stands on which cell is
+  `unity-2d-grid` → `reference/occupancy-and-turns.md`.
 
 ### Draw order from above
 
-1. **Sort axis.** In the 2D Renderer Data asset (URP), Transparency Sort Mode `Custom Axis`,
-   axis `(0, 1, 0)`. In the Built-in pipeline the same pair is under Project Settings → Graphics.
-2. **Pivot at the feet.** Every sprite that sorts — characters, shelves, pickups — has its pivot
-   where it touches the floor, and `SpriteRenderer.spriteSortPoint` set to `Pivot`. Centre pivots
-   are why a character's head sorts behind a crate it is standing in front of.
-3. **One sorting layer for everything that Y-sorts**, same order in layer. Floor goes on a layer
-   below, overhead cover on a layer above.
-4. **Tall tiles sort individually.** A Tilemap in `Chunk` mode sorts as one object; shelving the
-   player walks behind needs `TilemapRenderer.mode = TilemapRenderer.Mode.Individual` on its own
-   Tilemap. Keep the floor chunked — it is the cheap one.
-5. **A multi-sprite character sorts as one** through a `SortingGroup` on its root, or its hat
-   sorts independently of its body.
+Depth is draw order and nothing else: a sort axis of `(0, 1, 0)`, pivots at the feet, one sorting
+layer for everything that Y-sorts, tall tiles sorted individually, a multi-sprite character
+grouped. The method and the audit are `unity-2d-rendering` → `reference/y-sort.md`; when two
+things still draw in the wrong order, the precedence is `unity-2d-rendering` →
+`reference/sort-order.md`.
 
 ## Traps
 
-- **A box collider around the sprite** makes a 1-tile aisle impassable and catches on every
-  corner. A circle at the feet, radius about a third of a tile, slides round corners on its own.
-- **Normalising the input vector** makes an analogue stick digital: any deflection is full speed.
-  Clamp the magnitude.
-- **Facing derived from velocity** flickers when the body is pushed or slides along a wall.
-  Derive it from input, and keep the last value when input is zero.
-- **Twin-stick aim from the mouse in screen space.** Convert the pointer to world with
-  `Camera.ScreenToWorldPoint` and subtract the player position; a camera that leads the aim moves
-  the pointer's world position every frame, so smooth the camera, not the aim —
+- **Snagging on corners, an analogue stick that is always full speed, a facing that flickers
+  against a wall** are controller faults with one fix each — `unity-2d-controller` →
+  `reference/topdown-free.md`.
+- **Twin-stick aim from the mouse in screen space.** A camera that leads the aim moves the
+  pointer's world position every frame, so smooth the camera, not the aim —
   `unity-input` → `reference/pointer-and-aim.md`.
 - **Fast projectiles tunnel through thin walls.** A 14 units/s projectile moves 0.28 units per
-  step. Give it a dynamic body (Gravity Scale 0) with Collision Detection set to Continuous, or
-  move it by `Physics2D.Raycast` from the previous position to the next and stop at the hit.
+  step; continuous detection or a cast from the previous position to the next —
+  `unity-physics-2d` → `reference/bodies-and-simulation.md`.
 - **`Instantiate` per shot.** Pool projectiles (`UnityEngine.Pool.ObjectPool<T>`); size from the
   numbers table.
 - **The sentry's cone drawn wider than it tests.** Draw the cone mesh from the same angle and
@@ -144,14 +105,26 @@ Nothing in that loop needs a `Rigidbody2D` to move — keep a kinematic one only
 | Move and aim actions, the input struct, a scripted driver | `unity-input` → `reference/reading-input.md` |
 | Pointer to world, stick aim, aim assist | `unity-input` → `reference/pointer-and-aim.md` |
 | On-screen sticks for touch | `unity-input` → `reference/touch-and-on-screen.md` |
+| The free motor: acceleration, diagonals, corners, facing | `unity-2d-controller` → `reference/topdown-free.md` |
+| One cell per step, buffered input, hold-to-repeat | `unity-2d-controller` → `reference/grid-step.md` |
+| Body type, gravity scale, continuous detection | `unity-physics-2d` → `reference/bodies-and-simulation.md` |
+| Shelving colliders from a Tilemap | `unity-physics-2d` → `reference/tilemap-colliders.md` |
+| Linecasts, overlap queries, a query that misses | `unity-physics-2d` → `reference/queries-2d.md` |
+| Which layers collide: runner, obstacles, projectiles, pickups | `unity-physics-2d` → `reference/layers-and-matrix.md` |
+| Y-sort, feet pivots, tall tiles, sorting groups | `unity-2d-rendering` → `reference/y-sort.md` |
+| 2D lights, a sentry's lit cone, shadows from shelving | `unity-2d-rendering` → `reference/lights-2d.md`, then `unity-2d-rendering` → `reference/shadows-and-normals.md` |
 | Follow, confiner per room, group framing of player and aim | `unity-camera` → `reference/follow-2d.md` |
 | Pixel-perfect follow | `unity-camera` → `reference/pixel-perfect-follow.md` |
+| Facing as Animator parameters | `unity-2d-controller` → `reference/facing-and-animator-bridge.md` |
 | Four- and eight-direction blend trees | `unity-animation` → `reference/blend-trees.md` |
 | A sprite state graph per direction | `unity-animation` → `reference/sprite-state-graph.md` |
 | Slicing directional sheets, feet pivots | `unity-2d-sprites` |
 | Floor and shelving palettes, rule tiles | `unity-tilemap` |
+| Floor, shelving and overhead Tilemaps as one stack | `unity-2d-level` → `reference/layer-stack.md` |
+| Rooms and regions as data; maps from LDtk or Tiled | `unity-2d-level` → `reference/rooms-and-chunks.md`, then `unity-2d-level` → `reference/external-editors.md` |
+| A sentry that paths round shelving | `unity-2d-grid` → `reference/pathfinding.md` |
+| Sight blocked by shelving, cell by cell | `unity-2d-grid` → `reference/line-of-sight.md` |
 | Journeys; the 2D never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
-| The motor, cell stepping, draw order | this file |
 | Sentry: patrol, see, chase | this file, "Traps" for the sight test; the state machine is three states — Patrol (waypoints), Alert (hold and face for the reaction time), Chase (steer at the last seen position) — with the state exposed to the probe through `GameProbe.Register` |
 | Pickups | a trigger on its own layer; the pickup reports once and returns to `PickupPool` |
 | Dialogue boxes, inventory screens, HUD | `unity-game-ui` |

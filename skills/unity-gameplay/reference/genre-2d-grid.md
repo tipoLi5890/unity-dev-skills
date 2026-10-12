@@ -37,16 +37,17 @@ solvers and EditMode tests free.
 ## Build order for the 3C prototype
 
 1. **The board, with no scene.** A plain C# class holding walls, gates, pickups and the runner as
-   cells, with `TryMove(direction)` returning what changed. Test it in EditMode before a single
-   sprite exists.
+   cells, with `Step(direction)` returning what changed. Test it in EditMode before a single
+   sprite exists. Cell types, neighbours and occupancy come from `unity-2d-grid`, below.
 2. **The grid in the scene.** One `Grid` with the chosen layout; a floor Tilemap and a wall
    Tilemap — `unity-tilemap`. Load the board *from* the Tilemaps once at start, or load both from
-   one data file; never let them be edited independently.
+   one data file — `unity-2d-level` → `reference/level-data.md`; never let them be edited
+   independently.
 3. **Controls.** A struct with one `step` direction per press and `undo` — `unity-input`. For a
-   pointer: pick a cell, below.
-4. **Presentation.** On each successful move, tween the affected transforms to
-   `Grid.GetCellCenterWorld(cell)`. Register the *logical* state with the probe:
-   `GameProbe.Register("cell", () => $"{_board.Runner.x},{_board.Runner.y}");` and
+   pointer: `unity-2d-grid` → `reference/picking.md`.
+4. **Presentation.** On each successful move, tween the affected transforms to the cell centre —
+   `unity-2d-controller` → `reference/grid-step.md`. Register the *logical* state with the probe:
+   `GameProbe.Register("cell", () => { var c = _board.Cells.CellOf(YardBoard.RunnerId); return $"{c.x},{c.y}"; });` and
    `GameProbe.Count("pickupsOnGates", () => _board.PickupsOnGates);`
 5. **Journey 1 — the step.** Enter the yard-step situation, feed a scripted move list, and
    assert after each tween settles that the transform is at the centre of the cell the probe
@@ -55,127 +56,43 @@ solvers and EditMode tests free.
 7. **Journey 2 — solve it.** Feed the known solution; assert `pickupsOnGates` reaches the gate
    count and the state becomes `Solved`.
 
-### The board, in essentials
+### The board — which file
 
-```csharp
-// YardBoard.cs — plain C#, no MonoBehaviour, so an EditMode test can run it with no scene.
-// Cells are Vector3Int with z = 0, the type Grid and Tilemap already use; in an assembly with
-// noEngineReferences, swap it for a two-int struct of your own.
-using System.Collections.Generic;
-using UnityEngine;
+The rules engine is plain C# with no `MonoBehaviour`, so an EditMode test runs it with no scene.
+Its parts are `unity-2d-grid`:
 
-public class YardBoard
-{
-    public readonly HashSet<Vector3Int> Walls = new(), Gates = new(), Pickups = new();
-    public Vector3Int Runner;
-    readonly Stack<(Vector3Int dir, bool pushed)> _undo = new();
+| Part | Read |
+|---|---|
+| Rectangular, isometric and hexagonal cells; offset, axial and cube; which rows shift | `unity-2d-grid` → `reference/coordinates.md` |
+| Neighbours per layout, distance, movement range as a flood | `unity-2d-grid` → `reference/neighbours-and-range.md` |
+| A path, the heuristic that matches the neighbour rule, a fixed visiting order | `unity-2d-grid` → `reference/pathfinding.md` |
+| A line between two cells; what a corner blocks | `unity-2d-grid` → `reference/line-of-sight.md` |
+| Who stands where; turn order; actors leaving mid-round | `unity-2d-grid` → `reference/occupancy-and-turns.md` |
+| The cell under the pointer, tall isometric tiles included | `unity-2d-grid` → `reference/picking.md` |
 
-    public int PickupsOnGates { get { int n = 0; foreach (var p in Pickups) if (Gates.Contains(p)) n++; return n; } }
-    public bool Solved => PickupsOnGates == Gates.Count;
-
-    /// <summary>One step. Returns false, changing nothing, when the move is not legal.</summary>
-    public bool TryMove(Vector3Int dir)
-    {
-        Vector3Int to = Runner + dir;
-        if (Walls.Contains(to)) return false;
-        bool pushed = Pickups.Contains(to);
-        if (pushed)
-        {
-            Vector3Int beyond = to + dir;        // one pickup, one cell, never into anything
-            if (Walls.Contains(beyond) || Pickups.Contains(beyond)) return false;
-            Pickups.Remove(to); Pickups.Add(beyond);
-        }
-        _undo.Push((dir, pushed));
-        Runner = to;
-        return true;
-    }
-
-    public bool Undo()
-    {
-        if (_undo.Count == 0) return false;
-        var (dir, pushed) = _undo.Pop();
-        if (pushed) { Pickups.Remove(Runner + dir); Pickups.Add(Runner); }
-        Runner -= dir;
-        return true;
-    }
-}
-```
-
-`Runner + dir` is a neighbour only on a rectangular board. On a hexagonal one the six neighbour
-offsets depend on the row — route every neighbour lookup through one function, below.
-
-### Coordinates
-
-- **Rectangle.** `Grid.WorldToCell`, `Grid.CellToWorld`, `Grid.GetCellCenterWorld`. Neighbours
-  are `(±1, 0)` and `(0, ±1)`. Distance is Manhattan: `|dx| + |dy|`.
-- **Isometric.** The same cell indices and the same neighbours; only the picture is rotated.
-  Rules written for the rectangle run unchanged. What changes is drawing: the `Grid` layout is
-  `Isometric` with cell size `(1, 0.5, 1)`, and screen-up is cell `(+1, +1)`, so map the
-  D-pad deliberately — up as `(0, +1)` (screen up-left) or as `(+1, +1)` (two cells, not a
-  neighbour). Decide and write it in the recipe.
-- **Hexagon.** Unity addresses hexagonal cells by **offset** coordinates: alternate rows are
-  shifted half a cell, so the neighbours of a cell depend on whether its row is odd. Check which
-  rows shift before writing the table: read `GetCellCenterWorld` for `(0, 0)` and `(0, 1)`; if
-  the second is half a cell to the right, odd rows shift right. Then do all arithmetic in cube
-  coordinates and convert at the edges:
-
-  ```csharp
-  // Offset (odd rows shifted right, point-top) → cube. q + r + s == 0 always.
-  static Vector3Int ToCube(Vector3Int c) { int q = c.x - (c.y - (c.y & 1)) / 2; return new(q, c.y, -q - c.y); }
-  static Vector3Int ToOffset(Vector3Int h) => new(h.x + (h.y - (h.y & 1)) / 2, h.y, 0);
-  static int Distance(Vector3Int a, Vector3Int b) =>
-      (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) + Mathf.Abs(a.z - b.z)) / 2;   // cube in, cells out
-  static readonly Vector3Int[] CubeDirs = { new(1,0,-1), new(1,-1,0), new(0,-1,1), new(-1,0,1), new(-1,1,0), new(0,1,-1) };
-  ```
-
-  Neighbours are `ToOffset(ToCube(c) + CubeDirs[i])`. Range is every cell with cube distance
-  within N. A straight line is a linear interpolation between two cube coordinates, rounded.
-
-### Range, paths and sight
-
-- **Movement range** is a breadth-first flood from the unit, stopping at the range or at a
-  blocked cell — not "every cell within distance N", which walks through walls. With terrain
-  costs it becomes Dijkstra with the same stopping rule.
-- **A path** is A*. The heuristic must match the neighbour rule or paths go wrong quietly:
-  Manhattan for 4 neighbours, cube distance for hexagons, octile for 8. Visit neighbours in one
-  fixed order so the same board always yields the same path — a journey depends on it.
-- **Line of sight** on a rectangle is a Bresenham walk between the two cells; on hexagons, the
-  cube interpolation above. Decide whether a line that passes exactly through a corner is
-  blocked, write it down, and test both diagonals.
-- **Occupancy** is one dictionary from cell to occupant, updated in the same call that moves the
-  piece. A unit "moving" for 0.12 s occupies its destination from the first instant.
-- **Solvability** of a puzzle board is a breadth-first search over board states (runner cell
-  plus the sorted pickup cells), run in an EditMode test or an Editor menu, not at runtime.
-
-### Picking a cell with a pointer
-
-```csharp
-Vector3 world = _camera.ScreenToWorldPoint(pointerScreenPosition);
-world.z = 0f;                                  // an orthographic ray is parallel to z
-Vector3Int cell = _grid.WorldToCell(world);
-```
-
-On an isometric board with tall tiles the cell under the pointer is not the tile drawn under
-the pointer — a tall crate covers the cell behind it. Test candidates from the front row back
-and take the first whose sprite bounds contain the pointer.
+What this genre adds on top is the rule set, and it is one class that owns the occupancy map
+and returns what each command changed. The sorting yard's `YardBoard` — step or push, one pickup
+one cell and never into anything, an undo stack of step records, `PickupsOnGates` and `Solved` —
+is written out in `unity-2d-grid`, §3, on `GridOccupancy.StepOrPush` and `Revert`: copy it and
+change the rule, not the plumbing. **Solvability** is a breadth-first search over board states,
+run in an EditMode test or an Editor menu and never at runtime: `unity-2d-grid` →
+`reference/pathfinding.md`.
 
 ## Traps
 
 - **Reading `transform.position` in a rule.** Mid-tween it names a cell the piece is not in. The
   rules read the board; only the presenter reads transforms.
 - **Accepting input during a tween without a buffer** drops moves; accepting it without a limit
-  queues six moves the player cannot see. One deep.
-- **Isometric tiles drawn inside out.** The palette and the scene both need a custom sort axis —
-  `unity-tilemap` → `reference/palette-and-grid.md` for the palette. In the scene, set the
-  renderer's Transparency Sort Mode to `Custom Axis` with `(0, 1, 0)`; with Z as Y, start from
-  `(0, 1, -0.26)`, then walk a sprite behind a raised tile and read the screenshot.
-- **Sprites and tiles sorting separately on an isometric board.** Put the pieces and the tall
-  tiles on one sorting layer, pivots at the base, and the tall-tile Tilemap in `Individual` mode.
-- **Hexagon neighbours hard-coded for even rows.** Every second row then steps sideways. Convert
-  to cube, add, convert back.
-- **Diagonals on a rectangle with Manhattan range.** Either diagonals are not neighbours, or
-  they are and the range shape is a square, not a diamond. Mixing them is how a unit moves
-  further diagonally than straight.
+  queues six moves the player cannot see. One deep — `unity-2d-controller` →
+  `reference/grid-step.md`.
+- **Isometric tiles drawn inside out, or pieces and tall tiles sorting separately.** The palette
+  needs a custom sort axis — `unity-tilemap` → `reference/palette-and-grid.md`; the scene needs
+  its own — `unity-2d-rendering` → `reference/y-sort.md`.
+- **Hexagon neighbours hard-coded for even rows, or diagonals mixed with Manhattan range.** Every
+  neighbour lookup goes through one function — `unity-2d-grid` →
+  `reference/neighbours-and-range.md`.
+- **An isometric D-pad nobody decided.** Screen-up is cell `(+1, +1)`, two cells away and not a
+  neighbour. Map up to one neighbour deliberately and write it in the recipe.
 - **A board edited in the Tilemap and a level file that disagree.** One source: the Tilemap is
   either the authoring tool that exports the data, or a view built from the data. Never both.
 - **Tactics: animating a whole enemy turn in sequence at 0.12 s a cell** makes a ten-unit turn
@@ -188,14 +105,18 @@ and take the first whose sprite bounds contain the pointer.
 |---|---|
 | Step and undo actions, hold-to-repeat, pointer position | `unity-input` → `reference/reading-input.md` |
 | Tap and drag on a phone | `unity-input` → `reference/touch-and-on-screen.md` |
+| Coordinates, neighbours, range, paths, sight, occupancy, turn order, picking | `unity-2d-grid` — the table above |
+| The mover that tweens a transform to the board's cell | `unity-2d-controller` → `reference/grid-step.md` |
 | A fixed or panning camera with bounds | `unity-camera` → `reference/follow-2d.md` |
 | Palettes for rectangular, hexagonal and isometric grids | `unity-tilemap` → `reference/palette-and-grid.md` |
 | Rule tiles on a hexagonal grid | `unity-tilemap` → `reference/hexagonal-rule-set.md` |
+| Boards from a data file; validating a board before it loads | `unity-2d-level` → `reference/level-data.md` |
+| Writing tiles at runtime: highlights, opened gates | `unity-2d-level` → `reference/runtime-tilemap.md` |
+| Generated boards | `unity-2d-level` → `reference/procedural.md` |
+| The scene sort axis on an isometric board; pieces against tall tiles | `unity-2d-rendering` → `reference/y-sort.md` |
 | Isometric sheets, per-cell pivots | `unity-2d-sprites` |
 | A step and a push as animation states | `unity-animation` → `reference/sprite-state-graph.md` |
 | Rules in an engine-free assembly, EditMode tests | `unity-game-brief` → `reference/sim-presentation-split.md` |
 | Journeys over a scripted move list | `unity-play-harness` → `reference/journeys.md` |
-| Coordinates, range, paths, sight, occupancy, picking | this file |
-| Turn order | this file: a list of actors sorted once per round; an index advances; an actor that leaves is removed at the index, not after it. Expose `turn` and `actor` to the probe |
-| Enemy turns | this file: score every reachable cell (distance to target, cover, damage dealt) on the board, pick the best with a fixed tie-break, then animate |
+| Enemy turns | this file: score every reachable cell (distance to target, cover, damage dealt) on the board, pick the best with a fixed tie-break, then animate. Expose `turn` and `actor` to the probe |
 | Move and action menus, range highlights | `unity-game-ui`; highlights are tiles on a third Tilemap, cleared and refilled per selection |

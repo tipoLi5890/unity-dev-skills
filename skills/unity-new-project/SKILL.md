@@ -201,6 +201,8 @@ The terminal: `unity-cli`. Verifying a change: `unity-debug`.
 
 Gameplay: `unity-gameplay` (routes by perspective).
 3C: `unity-input` · `unity-camera` · `unity-animation`.
+2D runtime: `unity-2d-controller` · `unity-physics-2d` · `unity-2d-rendering` ·
+`unity-2d-level` · `unity-2d-grid` · `unity-2d-animation`.
 UI: `unity-game-ui` (routes) → `unity-ui-ugui` · `unity-ui-toolkit`.
 Assets: `unity-3d-models` · `unity-2d-sprites` · `unity-rigged-character`.
 Runtime domains: `unity-physics-3d` · `unity-navigation` · `unity-render-urp` ·

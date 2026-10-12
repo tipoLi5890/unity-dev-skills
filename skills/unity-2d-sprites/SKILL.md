@@ -241,12 +241,10 @@ runs it; `resources/Tests/SpriteFramesAudit.cs` re-measures the frames.
 **Frame animation is in** — a clip whose keyframes swap one sprite for the next is sprite metadata
 one step further on (§7). **Rig animation is out**, and the line is the deformer: a skeleton that
 bends the art, blend trees, masked layers, Avatars and root motion belong to
-`unity-rigged-character`, the 3D character pipeline. **2D bones stay out of the family
-altogether** — bone hierarchies and skinning weights over a sprite live in `com.unity.2d.animation`
-(a dependency of `com.unity.feature.2d`), which nobody here covers.
-Say so; the sprite-metadata API cannot reach any of it.
+`unity-rigged-character`, the 3D character pipeline. **2D bones, skinning weights, PSB rigs and
+Sprite Library** are `unity-2d-animation`.
 
-Also out: 2D physics behaviour (`unity-physics-3d` covers 3D and says so) and generating the
+Also out: 2D physics (`unity-physics-2d`) and generating the
 artwork (`codex-visual`, which produces the equal-canvas frames §7 consumes and the previews Unity
 will not play). **Sprite atlas packing** and the memory it buys → `unity-sprite-atlas`; **tilemap
 authoring** — palettes, Rule Tiles, autotiling from the rects sliced here → `unity-tilemap`;

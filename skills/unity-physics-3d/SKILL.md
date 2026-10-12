@@ -9,8 +9,8 @@ description: >-
   something in front of it, a ragdoll that explodes on activation, AddForce
   doing nothing after the body has come to rest, colliders the wrong shape
   after import, or "it collides in the editor and not in the build".
-  Pathfinding is unity-navigation; 2D physics and DOTS Physics get an answer
-  in their own vocabulary, never a PhysX rule.
+  Pathfinding is unity-navigation; 2D is unity-physics-2d; DOTS Physics is
+  answered in its own vocabulary, never a PhysX rule.
 ---
 
 # unity-physics-3d — a triage ladder, not a list of things to try
@@ -236,7 +236,8 @@ absent at bake time still collides here and is still not pathed around there. Ca
 and the EventSystem are `unity-ui-ugui`. Stripping and `link.xml` are
 `unity-android-release`.
 
-2D physics and DOTS / the Unity Physics package (`com.unity.physics`) are **not** this skill's
-subject. Both get a best-effort answer in their own vocabulary — never a PhysX rule from this page
-under a 2D or DOTS name, never "move the project onto PhysX":
+2D physics — `Rigidbody2D`, `Collider2D`, `Physics2D` — is `unity-physics-2d`. DOTS / the Unity
+Physics package (`com.unity.physics`) is **not** this skill's subject either: it gets a
+best-effort answer in its own vocabulary — never a PhysX rule from this page under a DOTS name,
+never "move the project onto PhysX":
 [`reference/neighbour-stacks.md`](reference/neighbour-stacks.md).

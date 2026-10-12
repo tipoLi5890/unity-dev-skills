@@ -118,9 +118,10 @@ pickups are few: ordinary kinematic bodies with trigger colliders are fine for t
 - **A hit shape the size of the sprite.** The player reads the sprite and plays the hit shape;
   show the hit shape while focus is held.
 - **Bullets sorted under enemies or effects.** Hostile bullets are the top sorting layer, above
-  explosions, always.
+  explosions, always — `unity-2d-rendering` → `reference/sort-order.md`.
 - **Scrolling the world** moves every spawn point and breaks the playfield clamp. Scroll the
-  background only: two tiled sprites leapfrogging, or a material offset.
+  background only: two tiled sprites leapfrogging, or a material offset. Layers at different
+  speeds and their sorting layers — `unity-2d-rendering` → `reference/parallax.md`.
 
 ---
 
@@ -186,7 +187,7 @@ the current one. A second press replaces it — which is what cancels a walk.
   flag table; on load, each one sets its own appearance from the flags.
 - **Acting on press instead of on arrival** lets the player use a switch from across the room.
 - **Depth without sorting.** A character scaled by Y must also sort by Y against props — pivot
-  at the feet and the sort axis from `reference/genre-2d-topdown.md`.
+  at the feet and a sort axis, `unity-2d-rendering` → `reference/y-sort.md`.
 - **A puzzle that can be put into an unwinnable state.** Enumerate the flag table: a breadth-
   first search over flag states from the start must reach the end from every reachable state.
 
@@ -230,7 +231,8 @@ the current one. A second press replaces it — which is what cancels a walk.
   world units or to a fraction of the screen's shorter side first.
 - **A dynamic body waiting at the launch point** sags or rolls before release, so the launch
   starts from somewhere the preview did not. Keep it Kinematic until release, then set
-  `bodyType` to Dynamic and the velocity in the same step.
+  `bodyType` to Dynamic and the velocity in the same step — `unity-physics-2d` →
+  `reference/bodies-and-simulation.md`.
 - **Gameplay under the notch or the home indicator.** Read `Screen.safeArea`.
 - **Difficulty from `Time.time`** carries over a restart. Count from the session start.
 
@@ -245,7 +247,14 @@ the current one. A second press replaces it — which is what cancels a walk.
 | Touch gestures, on-screen controls | `unity-input` → `reference/touch-and-on-screen.md` |
 | Screen shake and impulses | `unity-camera` → `reference/shake-and-blends.md` |
 | A wide room that scrolls on X inside bounds | `unity-camera` → `reference/follow-2d.md` |
+| Background layers at different speeds, one sorting layer each | `unity-2d-rendering` → `reference/parallax.md` |
+| Bullets over effects, a character against props | `unity-2d-rendering` → `reference/sort-order.md`, then `unity-2d-rendering` → `reference/y-sort.md` |
+| Body types, a launched body, gravity scale | `unity-physics-2d` → `reference/bodies-and-simulation.md` |
+| Point and overlap queries; a hotspot the query misses | `unity-physics-2d` → `reference/queries-2d.md` |
+| Small layouts as data; generated layouts | `unity-2d-level` → `reference/level-data.md`, then `unity-2d-level` → `reference/procedural.md` |
+| A casual game played on a board of cells | `reference/genre-2d-grid.md` |
 | Character and prop state graphs | `unity-animation` → `reference/sprite-state-graph.md` |
+| A painted character rigged with bones | `unity-2d-animation` → `reference/psd-to-rig.md` |
 | Sprite import, slicing, pivots | `unity-2d-sprites` |
 | Many sprites, few draw calls | `unity-sprite-atlas` |
 | Pixel art on a fixed screen | `unity-2d-pixel-perfect` |

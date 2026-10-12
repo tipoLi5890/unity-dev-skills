@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。四十一個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。四十七個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -43,6 +43,12 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | **3C —— 輸入、相機、角色** | `unity-input` | 讓 gameplay 只讀一個 struct、永遠不讀裝置的玩家輸入：涵蓋鍵盤、手把與觸控的 actions asset，按下在 `Update` 鎖存、在 `FixedUpdate` 只花用一次——解掉時有時無或連跳兩次的跳躍——再加上輸入緩衝、螢幕搖桿、指標瞄準與重新綁定 |
 | | `unity-camera` | 會抖動、拍到關卡外面或穿牆的相機：抖動背後的那兩個時鐘、Cinemachine 的 2D 跟隨與房間 confiner、pixel-perfect 跟隨、第三人稱環繞與第一人稱 rig、震動與 blend、2.x → 3.x 名稱對照表，以及證明 rig 站得住的 journey |
 | | `unity-animation` | 跟遊戲狀態對不上的 Animator——卡在某個狀態、攻擊自己播出來、hitbox 一直開著：每個參數只有一個寫入者、用腳本建出 blend tree 與 sprite 狀態圖、被打斷也不會漏的事件與攻擊視窗、IK、Timeline 交接、root motion |
+| **2D 世界** | `unity-2d-controller` | 會沿斜坡滑下去、黏在牆上、每次跳的高度都不一樣的 2D 角色：向物理引擎詢問地面在哪裡的 kinematic 平台跳躍 motor——斜坡、單向與移動平台、coyote time、可變跳躍高度、衝刺、蹬牆跳——瞄準與移動分離的俯視自由移動、以 tween 呈現的格子步進、Animator 橋接，以及證明跳躍頂點、coyote 與緩衝的 journey |
+| | `unity-physics-2d` | 永遠不觸發的 `OnCollisionEnter2D` 或 `OnTriggerEnter2D`、穿過 tilemap 牆的子彈、打到玩家自己的地面檢查、卡在 tile 接縫上的角色：用 Box2D 自己的詞彙寫成的分診階梯、雙邊探針，以及唯讀的場景稽核 |
+| | `unity-2d-rendering` | 畫在錯誤前後順序的 sprite、毫無作用或讓整個畫面變黑的 `Light2D`：依優先順序排列的四個排序鍵、`SortingGroup`、俯視、等角與六角場景的 Y 排序、shadow caster、normal map、sprite mask 與視差圖層 |
+| | `unity-2d-level` | 把 2D 關卡當成資料來組裝：可序列化的關卡畫進固定的 Tilemap 圖層堆疊、執行期改 tile、房間與門、接成無盡跑道的 chunk、Tiled 與 LDtk 匯入、SpriteShape 地形，以及逐關檢查可達性的種子生成 |
+| | `unity-2d-grid` | 戰棋與方塊解謎在矩形、等角與六角網格上的棋盤邏輯，純 C#、不需要場景：六角 offset、axial 與 cube 轉換、移動範圍、A* 路徑、視線、單一佔位表、推動規則、回合順序、undo、指標對應到格子 |
+| | `unity-2d-animation` | 用 2D Animation 與 PSD Importer 套件做骨骼式 2D 角色：把 PSB 匯入成 rig、先骨骼再幾何再權重、`SpriteSkin` 與 CPU 或 GPU 變形、執行期切換 Sprite Library 的造型與裝備、2D IK，以及一份 rig 成本的稽核 |
 | **UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什麼都畫不出來的六種原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 會靜默忽略的那些屬性 |

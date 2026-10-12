@@ -169,6 +169,7 @@ to `Unity.InputSystem`), `resources/Editor/CreateRunActions.cs` into an Editor o
 | Canvas, buttons, focus, `EventSystem` set-up, gamepad navigation between UI controls | `unity-ui-ugui` |
 | UI Toolkit events and focus | `unity-ui-toolkit` |
 | Where a prompt or an on-screen control sits in the frame | `unity-game-ui` → `reference/hud-placement.md` |
+| The 2D controller that consumes `RunInput`: motor, grounding, jump, cell step | `unity-2d-controller` |
 | Moving a camera from look input; update order between input, body and camera | `unity-camera` |
 | Feeding Animator parameters from the state input produced | `unity-animation` |
 | Raycasts, layers, a query that misses | `unity-physics-3d` → `reference/queries.md` |

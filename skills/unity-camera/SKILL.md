@@ -236,7 +236,9 @@ Framing, shake feel and pixel shimmer stay a person's judgement, from a windowed
 | Which perspective and movement model the game's constraints imply | `unity-gameplay` |
 | The probe, situations, journeys and the timeline format themselves | `unity-play-harness` |
 | Timeline authoring, Animator states, root motion | `unity-animation` |
-| Why a body does not move, or a cast misses the wall | `unity-physics-3d` |
+| Why a body does not move, or a cast misses the wall | `unity-physics-3d` · `unity-physics-2d` |
+| Parallax layers, sorting layers, draw order | `unity-2d-rendering` |
+| Room bounds as level data, rooms and chunks | `unity-2d-level` |
 | Post-processing, renderer features, the 2D renderer | `unity-render-urp` |
 | Uneven frame time, GC spikes | `unity-profiling` |
 | Adding and pinning packages, asmdef layout | `unity-new-project` |

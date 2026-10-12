@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Forty-one skills covering the loop from an
+Unity 6 game-development skills for AI coding agents. Forty-seven skills covering the loop from an
 empty project to a verified artifact — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -46,6 +46,12 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | **3C — input, camera, character** | `unity-input` | Player input that gameplay reads as one struct, never a device: an actions asset for keyboard, gamepad and touch, presses latched in `Update` and spent once in `FixedUpdate` — the jump that goes missing or fires twice — plus buffering, on-screen sticks, pointer aim and rebinding |
 | | `unity-camera` | A camera that jitters, shows outside the level or clips through walls: the two clocks behind the jitter, Cinemachine rigs for 2D follow with a room confiner, pixel-perfect follow, third-person orbit and first person, shake and blends, the 2.x → 3.x name table, and a journey that proves a rig holds |
 | | `unity-animation` | An Animator that disagrees with the game — stuck in a state, an attack that plays by itself, a hitbox that stays on: one writer per parameter, blend trees and sprite state graphs built from script, events and attack windows that survive interruption, IK, Timeline handover, root motion |
+| **2D world** | `unity-2d-controller` | A 2D character that slides down slopes, sticks to walls or jumps a different height every time: a kinematic platformer motor that asks physics where the ground is — slopes, one-way and moving platforms, coyote time, variable jump, dash, wall jump — free top-down movement with aim split from move, cell steps shown as tweens, the Animator bridge, and journeys that prove apex, coyote and buffer |
+| | `unity-physics-2d` | `OnCollisionEnter2D` or `OnTriggerEnter2D` that never fires, a bullet through a tilemap wall, a ground check that hits the player itself, a runner that snags on tile seams: a triage ladder in Box2D's own vocabulary, a two-sided probe and a read-only scene audit |
+| | `unity-2d-rendering` | A sprite that draws behind the wrong one, a `Light2D` that does nothing or turns everything black: the four sorting keys in priority order, `SortingGroup`, Y-sort for top-down, isometric and hex scenes, shadow casters, normal maps, sprite masks and parallax layers |
+| | `unity-2d-level` | A 2D level put together as data: a serialisable level painted into a fixed stack of Tilemap layers, runtime tile edits, rooms and doors, chunks stitched into an endless run, Tiled and LDtk import, SpriteShape terrain, and seeded generation with reachability checked per level |
+| | `unity-2d-grid` | Board logic for tactics games and tile puzzles on rectangular, isometric and hexagonal grids, as plain C# with no scene: hex offset, axial and cube conversion, movement range, A* paths, lines of sight, one occupancy map, push rules, turn order, undo, pointer to cell |
+| | `unity-2d-animation` | Skeletal 2D characters with the 2D Animation and PSD Importer packages: a PSB imported as a rig, bones then geometry then weights, `SpriteSkin` and CPU or GPU deformation, Sprite Library skins and equipment swapped at runtime, 2D IK, and an audit of what a rig costs |
 | **UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
 | | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
 | | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |

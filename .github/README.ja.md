@@ -3,7 +3,7 @@
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
 AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。空のプロジェクトから検証済みの
-成果物までを一巡りカバーする 41 個の skill で、Claude Code と OpenAI Codex のどちらにも
+成果物までを一巡りカバーする 47 個の skill で、Claude Code と OpenAI Codex のどちらにも
 インストールできます。
 
 単なる Unity のメモの寄せ集めと違う点が三つあります。
@@ -48,6 +48,12 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | **3C —— 入力、カメラ、キャラクター** | `unity-input` | gameplay がデバイスではなく一つの struct だけを読むプレイヤー入力：キーボード・ゲームパッド・タッチ用の actions asset、押下を `Update` でラッチして `FixedUpdate` で一度だけ消費する仕組み——効いたり効かなかったり、二度発火したりするジャンプへの対処——に加え、入力バッファ、画面上スティック、ポインターエイム、リバインド |
 | | `unity-camera` | ガタつく、レベルの外を映す、壁を突き抜けるカメラ：ガタつきの原因である二つのクロック、Cinemachine による 2D 追従とルーム confiner、pixel-perfect 追従、三人称オービットと一人称の rig、シェイクとブレンド、2.x → 3.x の名前対応表、そして rig が保たれることを証明する journey |
 | | `unity-animation` | ゲームの状態と食い違う Animator——ステートから抜けない、攻撃が勝手に再生される、hitbox が開いたまま：パラメーターごとに書き手は一つ、スクリプトから組む blend tree と sprite ステートグラフ、割り込まれても壊れないイベントと攻撃ウィンドウ、IK、Timeline の受け渡し、root motion |
+| **2D ワールド** | `unity-2d-controller` | 坂を滑り落ちる、壁に張り付く、跳ぶたびに高さが変わる 2D キャラクター：地面の位置を物理に問い合わせる kinematic なプラットフォーマー motor——坂、一方通行と動く足場、coyote time、可変ジャンプ、ダッシュ、壁ジャンプ——に加え、エイムと移動を分けた見下ろし自由移動、tween で見せるセル単位の移動、Animator ブリッジ、そして頂点・coyote・バッファを証明する journey |
+| | `unity-physics-2d` | 決して発火しない `OnCollisionEnter2D` や `OnTriggerEnter2D`、tilemap の壁を抜ける弾、プレイヤー自身に当たる接地判定、tile の継ぎ目に引っかかるキャラクター：Box2D 自身の語彙で書かれたトリアージの手順、両側プローブ、読み取り専用のシーン監査 |
+| | `unity-2d-rendering` | 前後が逆に描かれる sprite、何も起きない、あるいは画面全体を黒くする `Light2D`：優先順位どおりの四つのソートキー、`SortingGroup`、見下ろし・アイソメトリック・ヘックスのシーン向け Y ソート、shadow caster、normal map、sprite mask、パララックスレイヤー |
+| | `unity-2d-level` | 2D レベルをデータとして組み立てる：固定の Tilemap レイヤースタックに描き込むシリアライズ可能なレベル、ランタイムでの tile 編集、部屋と扉、エンドレスランにつなぐ chunk、Tiled と LDtk のインポート、SpriteShape の地形、そしてレベルごとに到達可能性を検査するシード生成 |
+| | `unity-2d-grid` | 矩形・アイソメトリック・ヘックスのグリッド上で動くタクティクスやタイルパズルの盤面ロジックを、シーン不要の素の C# で：ヘックスの offset・axial・cube 変換、移動範囲、A* 経路、射線、一つの占有マップ、押し出しルール、ターン順、undo、ポインターからセルへ |
+| | `unity-2d-animation` | 2D Animation と PSD Importer パッケージによるスケルタル 2D キャラクター：rig としてインポートする PSB、ボーン・ジオメトリ・ウェイトの順、`SpriteSkin` と CPU または GPU の変形、ランタイムで切り替える Sprite Library のスキンと装備、2D IK、そして rig のコストを示す監査 |
 | **UI** | `unity-game-ui` | **UI の依頼はまずここから。** プロジェクトがどの UI システムを使っているか判定して振り分け、誰も書いていない領域 —— runtime の `OnGUI` HUD —— を自分で受け持ちます |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— そして uGUI が何も描かなくなる六つの原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— そして USS が黙って無視するプロパティ |

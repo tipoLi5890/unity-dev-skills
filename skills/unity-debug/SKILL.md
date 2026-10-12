@@ -64,7 +64,7 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 | Phantom collisions, invisible objects, hitboxes, import weirdness | `reference/unity-gotchas.md` |
 | The game cannot boot into the moment under test; nothing readable says what state it is in; a feel report with nothing to measure | skill `unity-play-harness` |
 | "It is slow", hitches, draw calls or GC — numbers you can compare across a change | skill `unity-profiling` |
-| A collision or trigger that never fires, tunnelling, a raycast that misses | skill `unity-physics-3d` |
+| A collision or trigger that never fires, tunnelling, a raycast that misses | skill `unity-physics-3d` · `unity-physics-2d` |
 | Post-processing set but not visible; reviewing a renderer feature | skill `unity-render-urp` |
 | A Scene-view or camera PNG for a before/after comparison, outside a test run | skill `unity-urp-migration` → `resources/SceneCapture.cs` |
 | "Find / where is / what references X" — one query over project assets or the loaded scenes, rather than a script | skill `unity-search` |
@@ -109,7 +109,7 @@ can read is a different thing — that one is `unity-play-harness`.
 |---|---|
 | Installing editors, licences, templates, CI invocation | `unity-cli` |
 | Building or signing an artifact | `unity-android-release` · `unity-web-release` |
-| A collision or trigger that never fires | `unity-physics-3d` |
+| A collision or trigger that never fires | `unity-physics-3d` · `unity-physics-2d` |
 | An agent that will not move | `unity-navigation` |
 | Post-processing that will not appear | `unity-render-urp` |
 | Designing the UI rather than verifying it | `unity-game-ui` |
