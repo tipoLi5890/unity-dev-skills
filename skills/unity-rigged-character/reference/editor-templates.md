@@ -447,9 +447,10 @@ public static class BuildCharacterAnimator
 #endif
 ```
 
-**Runtime side (a small bridge MonoBehaviour, not shown):** each frame set `Grounded`,
-set `MoveBlend` to `Mathf.InverseLerp(minSpeed, maxSpeed, currentSpeed)`, and fire the
-`Hurt` trigger on a hit. Keep it a thin adapter — the controller shape is authored here.
+**Runtime side:** `AnimatorBridge3D` writes exactly these four parameters — `Grounded`,
+`MoveBlend` and `MoveSpeed` from the mover each frame, and the `Hurt` trigger when the game
+calls `Hurt()` — and is the only script that writes this Animator: `unity-3d-controller` →
+`reference/animator-bridge.md`. The controller shape is authored here.
 
 ---
 

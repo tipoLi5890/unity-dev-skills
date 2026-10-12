@@ -96,6 +96,7 @@ assembly next to the harness files.
 | An agent and an Animator both moving one character; a head tracking the path | `unity-navigation` → `reference/recipes.md` |
 | The probe, the recorder, running the journey headless | `unity-play-harness` → `reference/journeys.md` |
 | The bridge for a 2D character: facing, grounded and speed read from the motor | `unity-2d-controller` → `reference/facing-and-animator-bridge.md` |
+| The bridge for a 3D character: grounded, gait and speed read from the mover | `unity-3d-controller` → `reference/animator-bridge.md` |
 | Where the bridge's inputs come from — the input struct the game reads | `unity-input` |
 | The camera that follows the character, and jitter between its clock and the Animator's | `unity-camera` |
 | Which movement model the game uses, and so which rows above apply | `unity-gameplay` |

@@ -5,6 +5,9 @@
 > until something clears them. A scene that blows out after the switch is usually being lit by
 > a bake that no longer matches the pipeline rendering it.
 
+Lighting set-up after the migration — light modes, the bake, probes — is `unity-lighting` →
+`reference/bake-setup.md`.
+
 ## Three states, and what each one needs as evidence
 
 | State | What it means | Evidence |

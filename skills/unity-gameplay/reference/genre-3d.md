@@ -46,115 +46,82 @@ and the symptom is always jitter or a character that slides back to where it was
 
 ## Build order for the 3C prototype
 
-1. **Greybox to scale.** Cubes or ProBuilder shapes snapped to 1 unit, on a `World` layer: a
-   room, a door at 1.2 × 2.2, a 0.3 step, a 30° ramp, a 1-unit ledge, and a 1.8-unit capsule
-   left standing in it as a ruler. No art.
+1. **Greybox to scale.** Blocks snapped to 1 unit, on a `World` layer: a room, a door at
+   1.2 × 2.2, a 0.3 step, a 30° ramp, a 1-unit ledge, and a 1.8-unit capsule left standing in
+   it as a ruler. No art. The metrics sheet and the builder that makes the room from it:
+   `unity-3d-level` → `reference/greybox.md` (`resources/Editor/GreyboxBuilder.cs`).
 2. **Controls.** A struct with `move`, `look`, `jumpPressed`, `sprintHeld` — `unity-input`.
-3. **Character.** The motor below. Register with
-   `GameProbe.SetPlayerVelocity(() => transform, () => _controller.velocity);` and
-   `GameProbe.Register("grounded", () => _controller.isGrounded);`
-4. **Journey 1 — the walk.** Enter the gate-room situation; drive up the step, up the ramp, and
-   into a wall. Assert the runner is never inside `World`
-   (`JourneyAsserts.NeverInside`), that `grounded` stays true on the ramp, and that speed never
-   exceeds the designed run speed.
-5. **Journey 2 — the jump.** `scripts/jump_report.py --grounded-key grounded --apex …`.
+3. **Character.** The controller for the column, from `unity-3d-controller` (below). Register
+   it with the probe, where `run` is the `ThirdPersonController` and `chest` an empty child at
+   the capsule's centre:
+
+   ```csharp
+   GameProbe.SetPlayerVelocity(() => chest, () => run.Velocity);   // the centre, not the feet
+   GameProbe.Register("grounded", () => run.Grounded);             // the motor's, never isGrounded
+   GameProbe.SetState(() => run.State);                            // Grounded · Rising · Falling
+   ```
+
+4. **Journey 1 — the walk.** Drive up the step, up the ramp, and into a wall. Assert the runner
+   is never inside `World` (`JourneyAsserts.NeverInside`), that `grounded` stays true on the
+   ramp, and that speed never exceeds the designed run speed. Ready-made on a box room:
+   `unity-3d-controller` → `templates/Controller3DJourneyTest.cs`
+   (`ThirdPerson_Ramp_IsClimbedGroundedAndHeld`, the two step tests); on the real greybox:
+   `unity-3d-level` → `templates/GreyboxJourneyTest.cs`.
+5. **Journey 2 — the jump.** `ThirdPerson_Jump_ReachesTheConfiguredApex` in the same template,
+   then `scripts/jump_report.py --grounded-key grounded --apex …` on the timeline it writes.
 6. **Camera.** `unity-camera` → `reference/follow-3d.md`. Journey 3: the camera never ends a
    frame on the far side of a wall, and its position does not jitter against the character.
-7. **Animation.** Feed the controller's facts to the Animator — `unity-animation` →
-   `reference/parameter-contract.md`.
+7. **Animation.** Feed the controller's facts to the Animator through the bridge —
+   `unity-3d-controller` → `reference/animator-bridge.md`, on the contract in
+   `unity-animation` → `reference/parameter-contract.md`.
 
-### The motor, in essentials
+### The controller, by column
 
-```csharp
-// GateRoomMotor.cs — third-person, camera-relative. Drop on the runner beside a
-// CharacterController; assign the camera transform. No Rigidbody on this object.
-using UnityEngine;
+The motor, its four controllers and their journeys are `unity-3d-controller`. Pick the file by
+column:
 
-[RequireComponent(typeof(CharacterController))]
-public class GateRoomMotor : MonoBehaviour
-{
-    public Transform view;                       // the camera; its yaw defines "forward"
-    public float runSpeed = 5f, accel = 33f, turnRate = 720f;
-    public float gravity = 19.6f, jumpVelocity = 6.86f;
-    public Vector2 MoveInput;                    // set every frame from the input struct
-
-    CharacterController _controller;
-    Vector3 _planar; float _vertical; bool _jumpQueued;
-
-    void Awake() => _controller = GetComponent<CharacterController>();
-    public void PressJump() => _jumpQueued = true;
-
-    void Update()
-    {
-        float dt = Time.deltaTime;
-        Vector3 forward = Vector3.ProjectOnPlane(view.forward, Vector3.up).normalized;
-        Vector3 right = Vector3.Cross(Vector3.up, forward);
-        Vector3 wish = Vector3.ClampMagnitude(forward * MoveInput.y + right * MoveInput.x, 1f) * runSpeed;
-        _planar = Vector3.MoveTowards(_planar, wish, accel * dt);
-
-        if (_controller.isGrounded)
-        {
-            // Not zero: isGrounded is only true on a frame where Move pressed into the floor.
-            _vertical = _jumpQueued ? jumpVelocity : -2f;
-        }
-        else _vertical -= gravity * dt;
-        _jumpQueued = false;
-
-        // One Move per frame. A second call overwrites isGrounded with its own result.
-        _controller.Move((_planar + Vector3.up * _vertical) * dt);
-
-        if (_planar.sqrMagnitude > 0.01f)
-            transform.rotation = Quaternion.RotateTowards(transform.rotation,
-                Quaternion.LookRotation(_planar), turnRate * dt);
-    }
-}
-```
-
-- **First-person** replaces the last block and the basis: `forward` and `right` are the body's
-  own; yaw is `transform.Rotate(0f, look.x, 0f)`; pitch is accumulated, clamped to ±85° and
-  written to the camera's local rotation only.
-- **Overhead** replaces the basis with world axes (or the camera's yaw, fixed once per room) and
-  aims at the ground: `new Plane(Vector3.up, transform.position).Raycast(ray, out float enter)`
-  on `Camera.ScreenPointToRay`, then face `ray.GetPoint(enter)`.
-- **Lane run** has no stick: `targetX = (lane − 1) × 1.3`, `x` moves towards it at
-  `1.3 / 0.15` units/s, `z` advances at forward speed. A swipe changes `lane` by one, clamped to
-  0…2; a swipe during a change is buffered, one deep.
-- **A `CharacterController` moves on the frame**, so its jump is integrated with a variable
-  `dt` and the apex wanders by a few percent with frame rate. If the reach table has to hold
-  exactly, step the vertical motion on a fixed accumulator, or check the journey at 30 and at
-  120 frames per second.
+- **Third-person** → `unity-3d-controller` → `reference/third-person.md`
+  (`ThirdPersonController.cs` on `CharacterMotor3D.cs`).
+- **First-person** → `unity-3d-controller` → `reference/first-person.md`
+  (`FirstPersonController.cs`).
+- **Fixed or overhead camera, lane run** → `unity-3d-controller` →
+  `reference/topdown-and-fixed.md` (`TopDownController3D.cs`, `LaneRunnerController.cs`).
+- **Which component owns the transform**, and the pairs that fight → `unity-3d-controller` →
+  `reference/model-choice.md`.
 
 ## Traps
 
-- **`isGrounded` flickers on flat ground** when the vertical velocity is zero: `Move` did not
-  press down, so it reports false. Hold a small downward velocity while grounded.
-- **Teleporting a `CharacterController` by `transform.position`** is undone by its next `Move`.
-  Disable the controller, set the position, enable it — respawns and situations both need this.
+- **`isGrounded` flickers on flat ground.** Read ground from the motor's cast —
+  `unity-3d-controller` → `reference/grounding-and-slopes.md`.
+- **Teleporting a `CharacterController` by `transform.position`** is undone by its next `Move`;
+  respawns and situations teleport through the motor — `unity-3d-controller` →
+  `reference/model-choice.md`.
 - **`OnCollisionEnter` on a `CharacterController`** never fires; it raises
   `OnControllerColliderHit` — `unity-physics-3d`.
 - **A `Rigidbody` character moved in `Update`**, or by `transform.position`, tunnels and
-  jitters. Read input on the frame, write `linearVelocity` in `FixedUpdate`, set Interpolate,
-  freeze rotation on X and Z.
-- **Camera-relative input while the camera cuts.** On a fixed-camera cut, "forward" flips under
-  a held stick and the character reverses. Keep the previous basis until the stick returns to
-  centre.
-- **Mouse look multiplied by `deltaTime`** makes sensitivity depend on frame rate; the pointer
-  delta is already per-frame. Stick look is a rate and does need it.
-- **The first-person body in its own camera.** Put the body mesh on a layer the first-person
-  camera does not render — `unity-3d-models` → `reference/culling-and-layers.md`.
+  jitters — `unity-3d-controller` → `reference/model-choice.md`.
+- **Camera-relative input while the camera cuts** reverses the character under a held stick —
+  `unity-3d-controller` → `reference/topdown-and-fixed.md`.
+- **Mouse look multiplied by `deltaTime`** makes sensitivity depend on frame rate —
+  `unity-3d-controller` → `reference/first-person.md`.
+- **The first-person body in its own camera** — `unity-3d-controller` →
+  `reference/first-person.md`.
 - **The camera through the wall.** A third-person boom needs collision and a corridor at least
   as wide as the boom is long — `unity-camera` → `reference/follow-3d.md`.
 - **Models imported at the wrong scale** make every number above wrong at once. Stand the
-  1.8-unit capsule next to the character before tuning anything — `unity-3d-models`.
-- **Overhead: `NavMeshAgent` and `CharacterController` on one object** are two owners. For
-  click-to-move let the agent own position — `unity-navigation` → `reference/recipes.md`.
+  1.8-unit capsule next to the character before tuning anything — `unity-3d-level` →
+  `reference/greybox.md`, and `unity-3d-models` for the import.
+- **Overhead: `NavMeshAgent` and `CharacterController` on one object** are two owners —
+  `unity-3d-controller` → `reference/model-choice.md`, then `unity-navigation` →
+  `reference/recipes.md`.
 - **Lane run: hazards as triggers with no `Rigidbody` on either side** never fire. The runner
   carries a kinematic one — `unity-physics-3d`.
-- **Lane run: thousands of units from the origin**, positions lose precision and the runner
-  shimmers. Recentre runner and track together every 1000 units, in one frame, and offset the
-  probe's reported distance so journeys do not see the jump.
-- **Tuning on a 144 Hz monitor for a 30 fps phone.** Run the journeys at the shipping frame rate
-  (`Application.targetFrameRate`) — `unity-device-testing` for the device itself.
+- **Lane run: thousands of units from the origin**, the runner shimmers — `unity-3d-controller`
+  → `reference/topdown-and-fixed.md`.
+- **Tuning on a 144 Hz monitor for a 30 fps phone.** A `CharacterController` moves on the frame,
+  so its apex depends on the frame rate unless the motor integrates for it —
+  `unity-3d-controller` → `reference/jump-and-air.md`. Run the journeys at the shipping frame
+  rate (`Application.targetFrameRate`) — `unity-device-testing` for the device itself.
 
 ## Where each need is answered
 
@@ -166,7 +133,14 @@ public class GateRoomMotor : MonoBehaviour
 | Orbit, first-person, overhead and fixed rigs; boom collision | `unity-camera` → `reference/follow-3d.md` |
 | Camera jitter against the character | `unity-camera` → `reference/update-order-and-jitter.md` |
 | Cinemachine class names for the installed major | `unity-camera` → `reference/version-and-names.md` |
-| Animator parameters fed from the motor | `unity-animation` → `reference/parameter-contract.md` |
+| Who owns the transform; two owners | `unity-3d-controller` → `reference/model-choice.md` |
+| Third-person controller: camera-relative stick, turn rate, lock-on | `unity-3d-controller` → `reference/third-person.md` |
+| First-person controller: yaw on the body, pitch on the head, crouch | `unity-3d-controller` → `reference/first-person.md` |
+| Fixed or overhead camera controller, pointer aim, the lane runner | `unity-3d-controller` → `reference/topdown-and-fixed.md` |
+| Grounding, slopes, steps, moving platforms | `unity-3d-controller` → `reference/grounding-and-slopes.md` |
+| Jump from apex and time, coyote time, buffer, frame-rate independence | `unity-3d-controller` → `reference/jump-and-air.md` |
+| The Animator bridge from the controller | `unity-3d-controller` → `reference/animator-bridge.md` |
+| The parameter contract the bridge follows | `unity-animation` → `reference/parameter-contract.md` |
 | Locomotion blend trees | `unity-animation` → `reference/blend-trees.md` |
 | Root motion | `unity-animation` → `reference/root-motion.md` |
 | Foot IK | `unity-animation` → `reference/ik-and-rigging.md` |
@@ -178,7 +152,23 @@ public class GateRoomMotor : MonoBehaviour
 | Post-processing on a frame budget | `unity-render-urp` |
 | Journeys; the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
 | Jump, step, door and corridor numbers | `reference/level-metrics.md` |
-| The motor and its three variants; greybox scale | this file |
+| Greybox from a metrics sheet; the walk journey | `unity-3d-level` → `reference/greybox.md` |
+| Modular kit: grid, pivots, gaps between pieces | `unity-3d-level` → `reference/modular-kit.md` |
+| Prefabs, variants, overrides; a room as a prefab or a scene | `unity-3d-level` → `reference/prefab-architecture.md` |
+| Collision proxies, stairs as a ramp, the layer scheme | `unity-3d-level` → `reference/collision-proxies.md` |
+| Terrain, holes, a prop scatter | `unity-3d-level` → `reference/terrain.md` |
+| Splines, the lane on a curve, roads, decals | `unity-3d-level` → `reference/splines-and-decals.md` |
+| Light modes: realtime, mixed, baked | `unity-lighting` → `reference/light-modes.md` |
+| Baking the gate room and reading the bake back | `unity-lighting` → `reference/bake-setup.md` |
+| Light probes, probe volumes, reflection probes | `unity-lighting` → `reference/probes.md` |
+| Ambient light, the sun source, fog; a scene that looks unlit | `unity-lighting` → `reference/environment.md` |
+| Shadows: distance, cascades, what each artefact means | `unity-lighting` → `reference/shadows.md` |
+| Lighting on a phone | `unity-lighting` → `reference/mobile-subset.md` |
+| LOD on kit pieces and props | `unity-scene-optimisation` → `reference/lod.md` |
+| Occlusion culling | `unity-scene-optimisation` → `reference/occlusion.md` |
+| Batching: SRP Batcher, instancing, static | `unity-scene-optimisation` → `reference/batching.md` |
+| Per-layer culling distances | `unity-scene-optimisation` → `reference/culling-distances.md` |
+| Texture memory and mipmap streaming | `unity-scene-optimisation` → `reference/texture-streaming.md` |
 | The switch and the gate | this file: the switch is a trigger volume plus a "use" input; the runner asks the nearest interactable in front of it within 2 units (`Physics.OverlapSphere`, then the smallest angle to forward), the switch sets one flag, the gate reads the flag. Expose the flag to the probe |
 | The sentry | patrol and chase on a `NavMeshAgent` — `unity-navigation` → `reference/recipes.md` §3; sight is range, then angle, then one `Physics.Linecast` against `World` |
 | HUD placement around the vanishing point | `unity-game-ui` → `reference/hud-placement.md` |

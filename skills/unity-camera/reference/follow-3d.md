@@ -145,7 +145,8 @@ void Update() { runner.rotation = Quaternion.Euler(0f, panTilt.PanAxis.Value, 0f
 ```
 
 `ReferenceFrame = TrackingTarget` together with that line is a feedback loop: the camera turns
-relative to a body that turns to match the camera, and the view spins.
+relative to a body that turns to match the camera, and the view spins. The body's side — the
+capsule, the head, movement from the yaw — is `unity-3d-controller` → `reference/first-person.md`.
 
 - **No damping on position or rotation.** A first-person view that lags the head reads as input
   lag.
@@ -178,7 +179,8 @@ a number.
 Three rules keep fixed-camera games playable:
 
 - **Movement stays relative to the camera that was live when the stick was pushed.** Re-read the
-  camera's forward only when the stick returns to rest, or every cut reverses the runner.
+  camera's forward only when the stick returns to rest, or every cut reverses the runner. The
+  controller that latches it is `unity-3d-controller` → `reference/topdown-and-fixed.md`.
 - **Trigger volumes overlap by the runner's width and no more**, and the exit handler lowers the
   priority only if this camera is the one live — otherwise the doorway flickers between two
   shots.
@@ -229,6 +231,7 @@ a camera test needs no device.
 
 ## Related skills
 
-Actions, control schemes, pointer and stick aim: `unity-input`. Layers and why a cast misses the
+Actions, control schemes, pointer and stick aim: `unity-input`. The character the rig follows,
+and movement relative to the view: `unity-3d-controller`. Layers and why a cast misses the
 wall: `unity-physics-3d`. Animator states that pick a camera: `unity-animation`. Recording a rig's
 behaviour as a journey: `unity-play-harness`.

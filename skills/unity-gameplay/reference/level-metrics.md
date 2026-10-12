@@ -62,6 +62,8 @@ take-off happen that long after the edge. Three corrections decide whether the n
   `H`. At `v0 = 15`, `dt = 0.02` that is 0.15 units: a ledge at exactly `H` is unreachable. A
   motor that moves and then updates velocity overshoots by the same amount. The script applies
   the correction (`--integrator`, `--fixed-dt`); `jump_report.py` shows which one the game has.
+  A `CharacterController` moved by the mean of the velocities before and after gravity, as
+  `unity-3d-controller` does, lands on `H` exactly: read its table with `--integrator exact`.
 - **Air control below full speed shortens every gap.** `S` is the speed actually held in the
   air. If acceleration in the air is lower than on the ground and the jump starts from rest, use
   the speed reached, not the top speed.
@@ -118,13 +120,16 @@ capsule), `B` its height.
 at 4 units: step 0.3, door 1.2 wide by 2.2 high, corridor 4.0, ceiling 3.0. Real-world
 dimensions (a 0.9 m door, a 1.2 m corridor) are too tight once a camera sits behind the
 character — build to the camera, then check with the numbers.
+The metrics sheet and the room built from these numbers: `unity-3d-level` →
+`reference/greybox.md`. How the capsule meets steps and slopes: `unity-3d-controller` →
+`reference/grounding-and-slopes.md`.
 
 On a `CharacterController`, keep `skinWidth` near 10% of `radius`, and keep `stepOffset` well
 under the jump apex — a step offset taller than the apex makes the jump pointless.
 
 ```bash
 python3 scripts/level_metrics.py --apex 1.2 --time-to-apex 0.35 --run-speed 5 \
-    --body-width 0.8 --body-height 1.8 --step-offset 0.3 \
+    --integrator exact --body-width 0.8 --body-height 1.8 --step-offset 0.3 \
     --step 0.25 --door 1.2 --ceiling 3.0
 ```
 

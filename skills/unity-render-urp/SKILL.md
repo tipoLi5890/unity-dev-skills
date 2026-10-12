@@ -9,7 +9,8 @@ description: >-
   default and range of a Volume parameter, scripting a profile and a Global
   Volume, a grade preset, which effects a mobile build can afford, "review my
   renderer feature", or turning an HLSL function into a reflected Shader Graph
-  custom node. Shader authoring, HDRP and lighting setup stay out.
+  custom node. Shader authoring and HDRP stay out; lighting setup is
+  unity-lighting.
 ---
 
 # unity-render-urp — make it appear, then make it affordable
@@ -201,8 +202,8 @@ materials, an old `PostProcessVolume` still wired up, a stale bake, `GrabPass` a
 with URP and asks why an effect will not appear on it.
 
 **HDRP stays out.** It is a different pipeline with different Volume components, different
-renderer plumbing and different numbers; nothing here transfers. **Lighting and GI setup
-stay out** as well — light modes, probes, bake settings.
+renderer plumbing and different numbers; nothing here transfers. **Lighting and GI set-up**
+— light modes, the bake, probes, shadows, sky and fog — is `unity-lighting`.
 
 Whether the pipeline in force is even URP is §1 and
 [`reference/resolve-active-pipeline.md`](reference/resolve-active-pipeline.md); a project that

@@ -102,17 +102,11 @@ nobody can resolve, at full vertex cost. Count those objects in the situation an
 — a number like "62% of submitted triangles come from objects under 8 px" makes the fix obvious in
 a way that "it's a bit heavy" does not.
 
-**The fixes:**
+**The first test:** halve `QualitySettings.lodBias`, take a window, read the triangle median,
+then put it back. No change means the scene has no levels to fall back to.
 
-- **`LODGroup` with a proxy mesh at the far end.** The last LOD wants to be a genuinely different
-  mesh, not a lightly decimated one.
-- **`screenRelativeTransitionHeight`** on each LOD level decides where the swap happens; the
-  defaults are tuned for large props, not for lane furniture seen from the sofa.
-- **`QualitySettings.lodBias`** scales every transition at once — the fastest way to find out
-  whether LOD is the answer before authoring anything. Halve it, take a window, look at the
-  triangle median. Then put it back and do the work properly.
-
-Generating and decimating the meshes themselves is `unity-3d-models`.
+Building the `LODGroup`, its transition heights and the last level is `unity-scene-optimisation`
+→ `reference/lod.md`; generating and decimating the meshes themselves is `unity-3d-models`.
 
 ---
 
@@ -120,9 +114,9 @@ Generating and decimating the meshes themselves is `unity-3d-models`.
 
 | The window says | Owned by |
 |---|---|
-| Draw calls and SetPass calls high, triangles ordinary | `unity-sprite-atlas` for 2D batching · `unity-render-urp` for batching settings · `unity-game-ui` for a canvas rebuilding every frame |
-| `gpuFrameTime` much larger than the CPU times | `unity-render-urp` — fill rate, post-processing, resolution |
-| `Render/Shadow Casters Count` high | `unity-render-urp` — shadow distance, cascades, which lights cast |
+| Draw calls and SetPass calls high, triangles ordinary | `unity-scene-optimisation` → `reference/batching.md` for batching · `unity-sprite-atlas` for 2D · `unity-game-ui` for a canvas rebuilding every frame |
+| `gpuFrameTime` much larger than the CPU times | `unity-scene-optimisation` → `reference/2d-draw-cost.md` for fill rate, overdraw and resolution · `unity-render-urp` for post-processing |
+| `Render/Shadow Casters Count` high | `unity-lighting` → `reference/shadows.md` — shadow distance, cascades, which lights cast |
 | Pixel art shimmering or soft as well as slow | `unity-2d-pixel-perfect` |
 | Slow only in the browser | `unity-web-release` |
 | Slow only on the device | `unity-android-release`, after a `player-dev` window on the device |

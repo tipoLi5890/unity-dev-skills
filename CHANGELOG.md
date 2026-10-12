@@ -2,6 +2,99 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.23.0
+
+Fifty-one skills. Four new ones are the 3D world: `unity-3d-controller`, `unity-3d-level`,
+`unity-lighting` and `unity-scene-optimisation`. `unity-gameplay` routes its 3D recipe to them by
+file, and the neighbours that sent 3D lighting, scene cost and the character's bridge nowhere name
+an owner.
+
+- **`unity-3d-controller` — choose who owns the transform before writing a line of movement.** Most
+  3D controller bugs are two components moving one object — a `CharacterController` beside a
+  non-kinematic `Rigidbody`, an agent beside a controller, root motion under a script that calls
+  `Move` — so the first decision is the owner, written down per character. Once it is a
+  `CharacterController`, rules and collision are two halves that never mix:
+  `resources/CharacterMotor3D.cs` finds ground by its own cast and handles slopes, steps and the
+  platform under the feet, whose velocity for a rider `resources/MovingPlatform3D.cs` works out, and
+  `ThirdPersonController.cs`, `FirstPersonController.cs` and `TopDownController3D.cs` read one
+  `RunInput` struct and call `Move(velocity, dt)` once per frame.
+  `resources/LaneRunnerController.cs` is a kinematic body moved by `MovePosition`, the lane index
+  being the position, and `resources/AnimatorBridge3D.cs` is the one writer of the Animator. Apex
+  height and time to apex are the tunables; gravity and jump velocity are derived, and moving by the
+  mean of the velocity before and after gravity keeps the apex at every frame rate.
+  `templates/Controller3DJourneyTest.cs` builds its own room and asserts a 30° ramp climbed
+  grounded, a 0.3 step climbed and a 0.6 one refused, the apex at 1.2 within 0.05, the stick
+  relative to a yawed view, pitch clamped at 85° and a lane change landed in 0.15 s;
+  `CONTROLLER3D_JOURNEY_BREAK` set to `slope`, `step`, `tallstep`, `tap`, `pitch` or `lane` turns
+  one test red. Seven reference files: the model choice, grounding and slopes, jump and air, third
+  person, first person, top-down and fixed cameras, and the Animator bridge.
+- **`unity-3d-level` — a greybox is the level with the art missing.** The order is fixed and each
+  step is proven before the next: a metrics sheet derived from the body and the jump — door 1.2 ×
+  2.2, step 0.3, ramp 30° or less, jump gap 3.0 — checked by `unity-gameplay`'s `level_metrics.py`,
+  then blocks on a `World` layer, a walk journey, and only then kit pieces.
+  `resources/Editor/GreyboxBuilder.cs` builds the gate room from the sheet with primitives and
+  reports every number that disagrees with the body before it builds; `GreyboxBuilderProBuilder.cs`
+  builds the same room as editable ProBuilder meshes, in a file of its own so the first compiles
+  without the package. `templates/GreyboxJourneyTest.cs` walks through the door, up the step and the
+  ramp to the ledge and asserts the walker is never inside a block; `GREYBOX_JOURNEY_BREAK` set to
+  `door`, `step` or `ramp` stops the walk and names where. `resources/Editor/KitAudit.cs` reads each
+  kit prefab against the 1/2/4 m grid, the floor-corner pivot, its scale and its colliders, and
+  `PrefabOverrideAudit.cs` lists the open scene's overrides by kind, both read-only;
+  `CollisionProxyBuilder.cs` adds boxes, a capsule or convex hulls on a `Collision` child and
+  reports first. `resources/SplineLane.cs` turns distance and lane into a pose along a spline. Six
+  reference files: the greybox, the modular kit, prefab architecture, collision proxies, Terrain,
+  and splines and decals.
+- **`unity-lighting` — a light's mode decides what it can ever light.** Most lighting reports are
+  not a value to tune: a Baked light does not exist at runtime, a lightmap lights only the surface
+  it is painted on, and nothing warns when either leaves an object dark. A symptom table, first
+  match wins, routes to six sections: the bake that changed nothing, dynamic objects black beside
+  baked ones, reflections, shadows, a scene that is flat or too dark, and the Editor against the
+  phone. `resources/Editor/LightingAudit.cs` prints the open scene's lighting as one JSON object —
+  the URP asset in force and its shadow fields, each light's mode beside what it was baked as,
+  static flags, the bake, probes, the environment — with named findings such as
+  `dynamic-without-probes`, and changes nothing. `resources/Editor/BakeAndReadBack.cs` reports its
+  plan, waits, bakes and prints lightmap and probe counts before and after; `baked-empty` means it
+  ran and wrote nothing. Six reference files: light modes, bake set-up, probes, shadows, the
+  environment, and the mobile subset.
+- **`unity-scene-optimisation` — optimise the counter that moved, not the one you remember.** Every
+  lever moves one counter and leaves the others alone: the SRP Batcher lowers SetPass calls and not
+  draw calls, a `LODGroup` does nothing for a frame waiting on fill, and baked occlusion returns
+  nothing in an open lane. Each section starts from a number `unity-profiling` reports, runs one
+  global switch that shows in a single window whether its lever can move that number at all, and
+  ends with the same number read again: batching, LOD, occlusion, per-layer culling distances,
+  texture memory, and overdraw with 2D draw cost. `resources/Editor/SceneCostAudit.cs` prints the
+  open scene's cost census as one JSON object and changes nothing; `LodGroupBuilder.cs` builds a
+  `LODGroup` from `_LOD0` … `_LODn` children and `OcclusionBake.cs` bakes occlusion and reads the
+  data size back, each reporting before it writes. Six reference files: batching, LOD, occlusion,
+  culling distances, texture streaming, and 2D draw cost.
+- **`unity-gameplay` routes its 3D recipe.** The hub's routing table gains a row for each of the
+  four, and `reference/genre-3d.md` stops carrying the motor in essentials: it sends the controller
+  by column — third person, first person, fixed or overhead camera, lane run — to
+  `unity-3d-controller`, the greybox and the walk journey to `unity-3d-level`, and light modes, the
+  bake, probes and shadows to `unity-lighting`, and its traps name the file that owns each fix.
+  `reference/level-metrics.md` reads a `CharacterController` motor's reach table with `--integrator
+  exact`; `reference/perspective-fingerprint.md` names the controller file on each 3D verdict;
+  `reference/pipeline-stages.md` names the skills for the 3D greybox, the slice's final light and
+  the change after a counter; `templates/GAMEPLAY_RECIPE.md` points the 3D motor, bridge and level
+  rows at the new skills and gains rows for lighting and scene cost.
+- **Neighbours route to them.** `unity-profiling` sent distant triangles to `unity-3d-models` and
+  draw calls, GPU time and shadow casters to `unity-render-urp`; they now go to
+  `unity-scene-optimisation` and `unity-lighting`, and `reference/where-the-time-goes.md` keeps the
+  `lodBias` test and hands the `LODGroup` over. `unity-render-urp` names `unity-lighting` for light
+  modes, the bake, probes, shadows, sky and fog, and `unity-urp-migration` points lighting after the
+  move at it. `unity-rigged-character`'s Animator template no longer leaves its runtime bridge "not
+  shown": `AnimatorBridge3D` writes its four parameters. `unity-3d-models` sends modular-kit
+  conventions to `unity-3d-level` and LOD and scene draw cost to `unity-scene-optimisation`, and
+  `reference/performance-budget.md` no longer tells a URP project to tick GPU Instancing, which
+  changes nothing once the SRP Batcher has taken those renderers. `unity-animation`'s
+  `reference/root-motion.md` no longer bakes Position (XZ) into the pose on every locomotion clip:
+  on a clip that travels it stays unbaked, so the travel is root motion and is discarded with
+  `applyRootMotion` off, and it is baked only on a clip authored in place. `unity-physics-3d`,
+  `unity-input`, `unity-camera`, `unity-animation`, `unity-rigged-character` and
+  `blender-character-rig` name `unity-3d-controller` for the character that moves.
+- **What this does not do.** No skill covers interaction, combat, AI behaviour, scene flow and
+  saving, or game feel.
+
 ## 0.22.0
 
 Forty-seven skills. Six new ones are the 2D world: `unity-2d-controller`, `unity-physics-2d`,

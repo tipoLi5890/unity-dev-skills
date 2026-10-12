@@ -1,0 +1,170 @@
+---
+name: unity-3d-level
+description: >-
+  Build a 3D level to its metrics before art exists: a greybox from a metrics
+  sheet (door, corridor, step, ramp, jump gap) proven by a walk journey, a
+  kit on a 1/2/4 m grid, prefab structure with an override audit,
+  collision proxies on one layer, Terrain, spline roads and lanes, URP decals.
+  Load for: "block out a level", "the runner doesn't fit through the door",
+  "kit pieces don't line up", "gaps between the wall pieces", "the prefab
+  override keeps coming back", "should this room be a prefab or a scene", "put
+  a road along a curve", "the decal doesn't show". Importing props is
+  unity-3d-models; the character is unity-3d-controller; PhysX faults are
+  unity-physics-3d; lights are unity-lighting.
+---
+
+# unity-3d-level — greybox to the metric before any art exists
+
+> **A greybox is not a draft of the level. It is the level — its collision and its
+> measurements, finished — with the art missing.** A door is 1.2 wide because the body is 0.8,
+> not because doors are. Art that arrives later is fitted to the blocks; the blocks are never
+> fitted to the art. A room that is modelled first and measured afterwards is measured by the
+> player, three weeks later, as "I keep getting stuck on that doorway".
+
+So the order is fixed, and each step is proven before the next is paid for:
+
+```
+controller numbers ─► metrics sheet ─► greybox ─► walk journey ─► kit pieces ─► dressing
+unity-3d-controller   door 1.2 × 2.2   blocks on   arrives, never   on the grid,   decals, props,
+apex, speed, capsule  step 0.3 …       World       inside a block   same proxies   lights
+```
+
+| Stage | Is | Proven by |
+|---|---|---|
+| Sheet | One row per level number, each derived from the body or the jump | `level_metrics.py` exits 0 |
+| Greybox | Blocks at the sheet's numbers, coloured by function; their colliders are the level's colliders | The walk journey passes, and its break switches fail it |
+| Kit | Pieces on a 1/2/4 m grid, pivot at a floor corner, one proxy each | `KitAudit` prints `"ok": true` |
+| Assembly | Prefab instances with no stray overrides | `PrefabOverrideAudit` prints `"ok": true`; the same journey still passes |
+
+---
+
+## 1. Start here — the gate room
+
+1. **Write the sheet** from the controller's numbers, not from a building: door 1.2 × 2.2,
+   corridor 2.4 (4.0 behind a third-person camera), step 0.3, ramp 30° or less, ledge 1.0,
+   jump gap 3.0, ceiling 3.0 — for a 1.8 × 0.4 capsule that jumps 1.2 in 0.35 s at 5 units/s.
+2. **Check it**: `unity-gameplay` → `scripts/level_metrics.py` with the controller's numbers
+   and `--integrator exact`, then `--door`, `--step`, `--gap`, `--ceiling`; the ledge's
+   `--height` in a run of its own, since beside `--gap` it means a higher landing. Exit 1 names
+   the row that left reach.
+3. **Add a `World` layer**, then build: `Tools/Unity Dev/3D Level/Build Gate-Room Greybox`
+   reports the blocks and every number that disagrees with the body, and waits.
+
+```csharp
+GreyboxMetrics m = GreyboxMetrics.GateRoom;      // the sheet, as defaults
+Debug.Log(GreyboxBuilder.Plan(m));               // read it
+GameObject room = GreyboxBuilder.Build(m);       // then build
+```
+
+4. **Walk it** with `templates/GreyboxJourneyTest.cs`, which builds its own blocks and a
+   minimal `CharacterController` walker:
+
+| Test | Asserts |
+|---|---|
+| `Walk_PassesTheDoor_ClimbsTheStepAndTheRamp_AndArrives` | Arrival on the ledge; `JourneyAsserts.NeverInside` on the block layer reports nothing; planar speed under the run speed; never off the ground for more than 5 samples |
+| `Door_AdmitsOneAndAHalfBodyWidths` | A capsule 1.5 bodies wide in the doorway overlaps nothing |
+
+5. **Show the gate can fail.** `GREYBOX_JOURNEY_BREAK=door`, `=step` and `=ramp` each stop the
+   walk and name where. A journey nobody has seen fail proves nothing.
+6. **Only then make art.** Replace block by block: a kit piece on the same grid line, its
+   collision proxy on the same layer, in the same change. Re-run the journey after each room.
+
+## Load what the situation needs
+
+| The situation | Read |
+|---|---|
+| The metrics sheet; blocks from primitives or ProBuilder; colour by function; the walk journey; when the greybox is done | `reference/greybox.md` |
+| Grid size; where the pivot and the wall thickness sit; snapping; names; Blender export axes; a piece that leaves a gap | `reference/modular-kit.md` |
+| Prefab, variant or nested; root and child shape; overrides that rot; unpacking; a room as a prefab or as a scene; `PrefabUtility` for audits | `reference/prefab-architecture.md` |
+| Box, capsule, hull or mesh; the `Collision` child; the layer scheme; stairs as a ramp; what the NavMesh bake collects | `reference/collision-proxies.md` |
+| Terrain or mesh; heightmap and control resolutions; layers, grass, trees; holes; a seeded prop scatter | `reference/terrain.md` |
+| Evaluating a spline; the runner's lane on a curve; extruded roads; the Decal Projector, its renderer feature and its cost | `reference/splines-and-decals.md` |
+| Reach formulas, the reach table, the checking script | `unity-gameplay` → `reference/level-metrics.md` |
+| Which view the room is built for; the build order of a 3D prototype | `unity-gameplay` → `reference/genre-3d.md` |
+| The capsule, grounding, step offset and slope limit the sheet is derived from | `unity-3d-controller` → `reference/grounding-and-slopes.md` |
+| The jump that sets the gap and the ledge | `unity-3d-controller` → `reference/jump-and-air.md` |
+| Corridor width against a camera boom; a camera through the wall | `unity-camera` → `reference/follow-3d.md` |
+| Importing and budgeting the model that becomes a kit piece or a prop | `unity-3d-models` → `reference/import-and-decimate.md` |
+| MeshCollider rules, scaled colliders, tunnelling | `unity-physics-3d` |
+| A cast or a ground check that misses the level | `unity-physics-3d` → `reference/queries.md` |
+| Baking the NavMesh from the proxies; runtime baking | `unity-navigation` → `reference/recipes.md` |
+| Light modes for a room of kit pieces; baking it | `unity-lighting` → `reference/bake-setup.md` |
+| Probes for prefab rooms and moving objects | `unity-lighting` → `reference/probes.md` |
+| LOD on kit pieces and props | `unity-scene-optimisation` → `reference/lod.md` |
+| Occlusion, static batching of the assembled room | `unity-scene-optimisation` → `reference/occlusion.md` |
+| Which URP Renderer asset is active, for the decal feature | `unity-render-urp` → `reference/resolve-active-pipeline.md` |
+| Journeys, the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
+| A rig or a character exported from Blender | `blender-character-rig`, its FBX export reference |
+
+**Files.** Everything under `resources/Editor/` goes in an Editor folder; menus sit under
+`Tools/Unity Dev/3D Level/`. No file depends on another skill's C# except the journey.
+
+| File | Does | Needs |
+|---|---|---|
+| `resources/Editor/GreyboxBuilder.cs` | Builds the gate room from `GreyboxMetrics` with primitives; reports first | Nothing |
+| `resources/Editor/GreyboxBuilderProBuilder.cs` | The same room as editable ProBuilder meshes, the ramp a wedge. A separate file, so the first compiles without the package | `com.unity.probuilder` |
+| `resources/Editor/KitAudit.cs` | Read-only JSON per kit prefab: size against the grid, pivot offset from the floor corner, scale, colliders | Nothing |
+| `resources/Editor/PrefabOverrideAudit.cs` | Read-only JSON: instances in the open scene with overrides, by kind | Nothing |
+| `resources/Editor/CollisionProxyBuilder.cs` | Adds a box, a capsule or convex hulls on a `Collision` child; reports first | Nothing |
+| `resources/SplineLane.cs` | Distance and lane → world pose along a `SplineContainer` | `com.unity.splines` |
+| `templates/GreyboxJourneyTest.cs` | The walk journey; PlayMode test assembly with the harness and `RunInput.cs` | `com.unity.test-framework` |
+
+---
+
+## Discipline
+
+- **Numbers before blocks, blocks before art.** A level number with no row on the sheet is a
+  guess that will be re-modelled.
+- **Derive from the body, never from a building.** A real 0.9 m door is too tight for a 0.8
+  capsule with a camera behind it.
+- **Every number is a clear dimension,** measured between collider faces — not between pivots,
+  not by eye, not including the wall.
+- **Change the sheet and rebuild.** A block scaled by hand makes the scene and the sheet
+  disagree, and the next rebuild silently restores the old size.
+- **The greybox's colliders are the level's colliders** until a proxy replaces each one. Never
+  both, never neither; replace block by block and keep the greybox root, disabled, as the
+  reference.
+- **One layer for static solid: `World`.** Greybox blocks, proxies and terrain. Every ground
+  check, camera boom, sight ray and NavMesh bake names it; render meshes carry no collider.
+- **The render mesh is not the collision mesh.** Boxes and capsules on a `Collision` child;
+  stairs collide as a ramp; a `MeshCollider` only for large static ground, on a mesh made for it.
+- **A kit piece obeys four numbers:** the grid (1, 2 or 4 m), the pivot at the footprint's
+  minimum corner at walking level, walls 0.2 thick centred on the line, root scale `(1,1,1)`.
+  Never scale a piece to close a gap — the gap is a piece that broke the contract.
+- **The sheet's numbers are minima; the kit rounds up to the grid** and the rounded value goes
+  back on the sheet.
+- **Gameplay root, `Model` child, `Collision` child.** The root is never scaled; art is swapped
+  by replacing `Model`; a kit piece carries no gameplay.
+- **An override is applied, reverted or made a variant.** Position and rotation are placing;
+  a scaled root, a hand-tinted material or an added child is a second version of the asset
+  that the next fix will miss.
+- **Unpack only what is becoming something else.** Never to silence an override.
+- **Terrain is for big rolling ground.** Flat, small, or with an underside is a mesh.
+- **A spline answers where; one component writes the transform.** Place hazards and pickups by
+  distance and lane, never by world position.
+- **Editor tools report, then wait.** Builders print a plan and ask; audits write nothing.
+- **The journey proves the room is passable; a person decides whether it is good.**
+
+## Scope — what this skill does NOT do
+
+| Not here | Go to |
+|---|---|
+| The capsule, grounding, jumping, third- and first-person controllers | `unity-3d-controller` |
+| Reach formulas, genre recipes, which skills a game needs | `unity-gameplay` |
+| Importing, decimating and budgeting a model; glTFast | `unity-3d-models` |
+| Rigged characters; rigging in Blender | `unity-rigged-character`, `blender-character-rig` |
+| Collisions and triggers that misbehave; query faults | `unity-physics-3d` |
+| NavMesh baking, agents, links | `unity-navigation` |
+| Light modes, baking, probes, shadows, sky and fog | `unity-lighting` |
+| LOD groups, occlusion culling, batching, cull distances | `unity-scene-optimisation` |
+| Post-processing, renderer features, Shader Graph nodes | `unity-render-urp` |
+| Camera rigs and boom collision | `unity-camera` |
+| 2D levels, tilemaps, cell boards | `unity-2d-level`, `unity-tilemap`, `unity-2d-grid` |
+| Recorders, situations, the probe contract | `unity-play-harness` |
+| Frame cost of a dressed room | `unity-profiling` |
+| Finding what uses a prefab | `unity-search` |
+| Running the audits headless | `unity-cli` |
+
+What a switch does when used, how a sentry decides to chase and how rooms are loaded are the
+game's own code: the level gives them a pedestal on the grid, a post, a NavMesh baked from
+`World`, and a room that is either a prefab or a scene.

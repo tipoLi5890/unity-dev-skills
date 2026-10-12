@@ -167,6 +167,7 @@ mallet at the latch of a gate.
 | Generating the GLB and gating its triangle and texture budget | `comfyui-asset-generation` |
 | Mixamo for standard proportions; the Unity FBX importer, Avatar, Animator, PBR maps | `unity-rigged-character` |
 | Static props that need no skeleton | `unity-3d-models` |
+| Moving the character in Unity: controller, grounding, the Animator bridge | `unity-3d-controller` |
 | IK, foot planting, facial rigs, cloth or physics bones, retargeting stock clips | Not covered — this is FK on a hand-specified skeleton |
 | Installing Blender, the add-on or the MCP server | The user's, on request only |
 

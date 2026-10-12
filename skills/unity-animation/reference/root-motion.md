@@ -19,7 +19,7 @@ script is a character that animates on the spot.
 
 The lane run, the side run, the depot and the sorting yard are all row 1: the game's position is
 a lane index, a velocity or a cell, and a clip that carried its own translation would argue with
-it. Keep `applyRootMotion` off and author or bake clips in place (§3).
+it. Keep `applyRootMotion` off; which Bake Into Pose boxes each clip then wants is §3.
 
 Row 3 is for a character whose stride should set its speed — the gate room's third-person
 runner, where feet that slide are visible:
@@ -80,10 +80,16 @@ Debug.Log($"{clip.name} hasRootCurves={clip.hasRootCurves} hasMotionCurves={clip
 | Humanoid | The body's centre of mass, projected | The clip's **Bake Into Pose** boxes: Root Transform Rotation, Position (Y), Position (XZ) |
 | Generic | The bone named as Root Node in the model's Rig tab (`ModelImporter.motionNodeName`) | Leaving Root Node at None, or the same Bake Into Pose boxes |
 
-For a row-1 character, bake **Position (XZ)** and **Rotation** into the pose on every locomotion
-clip, so a stray clip cannot move the transform even if `applyRootMotion` is switched on by
-accident. Bake **Position (Y)** on everything except a clip whose height change the game really
-wants. Import settings and the Avatar are `unity-rigged-character` → `reference/unity-import.md`.
+For a row-1 character, **Position (XZ)** depends on the clip. On a clip that travels, leave it
+unbaked: the travel is stored as root motion, and with `applyRootMotion` off it is discarded, so
+the body stays over the mover. Baked, the travel is in the bones — the model walks away from its
+mover and snaps back each loop, whatever `applyRootMotion` says. Bake XZ only on a clip authored
+in place. Bake **Rotation** on every locomotion clip, and **Position (Y)** on everything except a
+clip whose height change the game really wants. Check it: play the run with the mover held still
+and watch the model — it stays over the mover, or the clip's travel is in its pose.
+
+The same rule from the bridge's side is `unity-3d-controller` → `reference/animator-bridge.md`
+§4. Import settings and the Avatar are `unity-rigged-character` → `reference/unity-import.md`.
 
 ## 4. Sprites
 
@@ -104,7 +110,7 @@ and the agent's defaults are in `unity-navigation` → `reference/agent-api.md`.
 | Seen | Cause |
 |---|---|
 | Animates on the spot | An `OnAnimatorMove` exists and applies nothing; or the clips are baked in place and nothing else moves the transform |
-| Slides back to the start of each loop | A looping clip with root motion, `applyRootMotion` off: the pose carries the translation and resets with the loop — bake XZ into the pose |
+| Slides back to the start of each loop | Position (XZ) baked into the pose on a clip that travels: the bones carry the translation and reset with the loop — leave XZ unbaked so the travel is root motion, discarded with `applyRootMotion` off (§3) |
 | Moves twice as far as it should | The mover and the Animator both apply the step: row 2 and a mover script at once |
 | Drifts sideways over a long run | Root rotation not baked on a clip that is nearly, not exactly, straight |
 | Jitters at some frame rates only | Root motion applied per frame to a body stepping in physics time (§2) |

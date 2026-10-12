@@ -3,7 +3,7 @@
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
 AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。空のプロジェクトから検証済みの
-成果物までを一巡りカバーする 47 個の skill で、Claude Code と OpenAI Codex のどちらにも
+成果物までを一巡りカバーする 51 個の skill で、Claude Code と OpenAI Codex のどちらにも
 インストールできます。
 
 単なる Unity のメモの寄せ集めと違う点が三つあります。
@@ -54,6 +54,10 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | | `unity-2d-level` | 2D レベルをデータとして組み立てる：固定の Tilemap レイヤースタックに描き込むシリアライズ可能なレベル、ランタイムでの tile 編集、部屋と扉、エンドレスランにつなぐ chunk、Tiled と LDtk のインポート、SpriteShape の地形、そしてレベルごとに到達可能性を検査するシード生成 |
 | | `unity-2d-grid` | 矩形・アイソメトリック・ヘックスのグリッド上で動くタクティクスやタイルパズルの盤面ロジックを、シーン不要の素の C# で：ヘックスの offset・axial・cube 変換、移動範囲、A* 経路、射線、一つの占有マップ、押し出しルール、ターン順、undo、ポインターからセルへ |
 | | `unity-2d-animation` | 2D Animation と PSD Importer パッケージによるスケルタル 2D キャラクター：rig としてインポートする PSB、ボーン・ジオメトリ・ウェイトの順、`SpriteSkin` と CPU または GPU の変形、ランタイムで切り替える Sprite Library のスキンと装備、2D IK、そして rig のコストを示す監査 |
+| **3D ワールド** | `unity-3d-controller` | `isGrounded` がちらつく、坂を滑り落ちる、段差を上れない、フレームレートが変わると跳ぶ高さが変わる 3D キャラクター：transform を動かすのは一つのコンポーネントだけ、自前の cast で地面を見つける `CharacterController` の motor——坂、段差、動く足場——に、一つの入力 struct を読む三人称・一人称・見下ろし・レーンランナーのコントローラー、Animator ブリッジ、そして坂・段差・頂点・レーン変更を証明する journey |
+| | `unity-3d-level` | アートができる前に寸法どおりに組む 3D レベル：寸法表（扉、通路、段差、坂、ジャンプの間隔）から作り、歩行 journey で証明する greybox、1/2/4 m グリッド上のモジュラーキット、override 監査つきの prefab 構成、一つのレイヤーにまとめたコリジョン代理、Terrain、spline に沿った道とレーン、そして URP のデカール |
+| | `unity-lighting` | ベイクしても何も変わらない、ベイクした壁の横でキャラクターが真っ黒、屋内に空が映り込む、カメラを回すと影がちらつく、数メートル先で影が切れる：URP でのライトモード・ベイク・プローブ・影・環境光をたどる症状別の手順、読み取り専用のシーン監査、結果を読み戻すベイク、そしてスマートフォンで賄える範囲 |
+| | `unity-scene-optimisation` | プロファイリングの counter がコストを特定したあとに変えるもの：batching の経路と URP で GPU instancing が何もしない理由、`LODGroup` と Mesh LOD、ベイクと GPU の occlusion culling、レイヤーごとのカリング距離、テクスチャサイズと mipmap streaming、sprite とパーティクルの overdraw——どの手段もまず一つの窓で試し、同じ counter で読み戻す |
 | **UI** | `unity-game-ui` | **UI の依頼はまずここから。** プロジェクトがどの UI システムを使っているか判定して振り分け、誰も書いていない領域 —— runtime の `OnGUI` HUD —— を自分で受け持ちます |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— そして uGUI が何も描かなくなる六つの原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— そして USS が黙って無視するプロパティ |

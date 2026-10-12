@@ -2,7 +2,7 @@
 
 [繁體中文](README.zh-TW.md) · **简体中文** · [日本語](README.ja.md) · [English](../README.md)
 
-面向 AI 编码代理的 Unity 6 游戏开发 skills。四十七个 skill，覆盖从空项目到可验证产物的完整闭环，
+面向 AI 编码代理的 Unity 6 游戏开发 skills。五十一个 skill，覆盖从空项目到可验证产物的完整闭环，
 可安装到 Claude Code 或 OpenAI Codex。
 
 有三点让它不只是一堆 Unity 笔记：
@@ -49,6 +49,10 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | | `unity-2d-level` | 把 2D 关卡当成数据来组装：可序列化的关卡画进固定的 Tilemap 图层堆叠、运行时改 tile、房间与门、接成无尽跑道的 chunk、Tiled 与 LDtk 导入、SpriteShape 地形，以及逐关检查可达性的种子生成 |
 | | `unity-2d-grid` | 战棋与方块解谜在矩形、等角与六角网格上的棋盘逻辑，纯 C#、不需要场景：六角 offset、axial 与 cube 转换、移动范围、A* 路径、视线、单一占位表、推动规则、回合顺序、undo、指针对应到格子 |
 | | `unity-2d-animation` | 用 2D Animation 与 PSD Importer 包做骨骼式 2D 角色：把 PSB 导入成 rig、先骨骼再几何再权重、`SpriteSkin` 与 CPU 或 GPU 变形、运行时切换 Sprite Library 的造型与装备、2D IK，以及一份 rig 成本的审计 |
+| **3D 世界** | `unity-3d-controller` | `isGrounded` 一直闪烁、沿斜坡滑下去、上不了台阶、换个帧率跳的高度就不一样的 3D 角色：只让一个组件拥有 transform、用自己的 cast 找地面的 `CharacterController` motor——斜坡、台阶、移动平台——读同一个输入 struct 的第三人称、第一人称、俯视与分道跑酷控制器、Animator 桥接，以及证明斜坡、台阶、跳跃顶点与换道的 journey |
+| | `unity-3d-level` | 在美术存在之前就按尺寸搭好的 3D 关卡：从尺寸表（门、走廊、台阶、斜坡、跳跃间距）生成、以行走 journey 证明的 greybox、1/2/4 m 网格上的模块化套件、附 override 审计的 prefab 结构、集中在同一个 layer 的碰撞代理、Terrain、沿 spline 的道路与跑道，以及 URP decal |
+| | `unity-lighting` | 烘焙了却没变化、角色在烘焙过的墙边一片黑、室内反射出天空、镜头一转阴影就闪或几米外阴影就断掉：URP 上覆盖灯光模式、烘焙、probe、阴影与环境光的症状阶梯、只读的场景审计、会读回结果的烘焙，以及手机负担得起的子集 |
+| | `unity-scene-optimisation` | 性能 counter 已经指出成本之后该改什么：各条 batching 路径以及为什么 GPU instancing 在 URP 下毫无作用、`LODGroup` 与 Mesh LOD、烘焙式与 GPU occlusion culling、逐 layer 的剔除距离、纹理尺寸与 mipmap streaming、sprite 与粒子的 overdraw——每个手段先用一个窗口测试，再在同一个 counter 上读回 |
 | **UI** | `unity-game-ui` | **任何 UI 需求都从这里开始。** 检测项目使用的是哪套 UI 系统并导流；并且承担没人写的那一块 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什么都画不出来的六种原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 会静默忽略的那些属性 |

@@ -7,8 +7,12 @@
 2. **Shrink textures** — Max Size 512 (or 256) + compression.
 3. **Reduce pool sizes** — pooled objects multiply cost; drop counts that
    over-provision (e.g. spawner's `coinPoolSize`/`obstaclePoolSize`).
-4. **GPU Instancing** — enable on the material so identical meshes batch.
-5. **LOD groups** — lower detail at distance (advanced).
+4. **Batching** — under URP the SRP Batcher already takes these renderers, so ticking GPU
+   Instancing on a URP Lit material changes nothing. Keep props on shared materials, never
+   `renderer.material` or a `MaterialPropertyBlock` per object, and read the path in the Frame
+   Debugger; for many identical props turn on the GPU Resident Drawer —
+   `unity-scene-optimisation` → `reference/batching.md`.
+5. **LOD groups** — lower detail at distance — `unity-scene-optimisation` → `reference/lod.md`.
 - Draco/meshopt compression shrinks the *file*, not runtime cost — skip it for
   frame-rate problems.
 

@@ -68,8 +68,10 @@ seen to **fail** once, by breaking the thing it guards (coyote time to 0, the co
 and one person has played the greybox for five minutes and named nothing about movement.
 
 Skills: `unity-input`, `unity-camera`, `unity-animation`, `unity-play-harness`; `unity-tilemap`
-for a 2D greybox; `unity-physics-3d` when a 3D contact does not fire; `unity-debug` before
-believing any result file.
+for a 2D greybox; `unity-3d-level` for a 3D greybox built to the numbers
+(`unity-3d-level` → `reference/greybox.md`); `unity-3d-controller` for the 3D character and its
+journeys (`Controller3DJourney` as the test filter); `unity-physics-3d` when a 3D contact does
+not fire; `unity-debug` before believing any result file.
 
 ## 3 · Vertical slice
 
@@ -101,7 +103,8 @@ Exit when: both journeys pass; the round-trip test passes; the build installs an
 finished on the device by someone who did not make it.
 
 Skills: `unity-game-ui` and the UI system it routes to; `unity-audio`; `unity-navigation` for an
-opponent that paths; `unity-rigged-character` or `unity-2d-sprites` for the character art;
+opponent that paths; `unity-lighting` for the slice's final light in 3D (`unity-lighting` →
+`reference/bake-setup.md`); `unity-rigged-character` or `unity-2d-sprites` for the character art;
 `unity-android-release`, `unity-ios-build` or `unity-web-release` for the build;
 `unity-device-testing` to run it.
 
@@ -150,9 +153,12 @@ Exit when: every open feel report has a before/after table and a yes from the pe
 it; the counters named in the brief are inside budget on the slowest supported device; and the
 3C journeys from stage 2 still pass unchanged.
 
-Skills: `unity-profiling` for counters and comparisons, `unity-render-urp` for post-processing
-on a budget, `unity-2d-pixel-perfect` for shimmer, `unity-debug` for reading what a run
-actually did.
+Skills: `unity-profiling` for counters and comparisons, `unity-scene-optimisation` for the
+change once a counter names the cost (LOD, occlusion, batching, culling distances, texture
+memory), `unity-lighting` → `reference/shadows.md` for shadow cost and
+`unity-lighting` → `reference/mobile-subset.md` for a phone, `unity-render-urp` for
+post-processing on a budget, `unity-2d-pixel-perfect` for shimmer, `unity-debug` for reading what
+a run actually did.
 
 ## 6 · Ship
 

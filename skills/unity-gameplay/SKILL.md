@@ -111,6 +111,10 @@ row per need — open the genre file named above and build in its order.
 | 2D levels as data: layer stacks, runtime tiles, rooms, chunks, LDtk and Tiled | `unity-2d-level` |
 | Cell coordinates, range, pathfinding, line of sight, occupancy, turns | `unity-2d-grid` |
 | Bones and weights on a sprite, PSB rigs, Sprite Library | `unity-2d-animation` |
+| 3D character: who owns the transform, third-person, first-person, overhead and lane controllers, the Animator bridge | `unity-3d-controller` |
+| 3D levels: greybox to metrics, modular kits, prefabs, collision proxies, terrain, splines | `unity-3d-level` |
+| 3D light modes, bakes, probes, shadows, environment, the mobile subset | `unity-lighting` |
+| LOD, occlusion, batching, culling distances, texture streaming | `unity-scene-optimisation` |
 | Situations, journeys, timelines; a feel report with no number in it | `unity-play-harness` |
 | The brief, its perspective and movement block, simulation/presentation split | `unity-game-brief` |
 | Project creation, which packages, version pinning | `unity-new-project` |
@@ -124,14 +128,13 @@ row per need — open the genre file named above and build in its order.
 
 ### Given inline here
 
-Every 2D genre file routes its motor, physics, draw order, level and cell needs to the six
-skills above, by file. What no skill owns, the genre files carry as essential method — enough
+Every genre file routes its controller, physics, draw order, level, lighting and cell needs to
+the skills above, by file. What no skill owns, the genre files carry as essential method — enough
 for a 3C prototype that passes a journey:
 
 | Need | Where the method is |
 |---|---|
-| The 3D motor: grounding, jump, slopes, its three variants | `reference/genre-3d.md`, "The motor, in essentials" and "Traps" |
-| Greybox scale in 3D: capsule, door, corridor, step | `reference/level-metrics.md`, `reference/genre-3d.md` |
+| Door, corridor, step and ceiling numbers from the body | `reference/level-metrics.md` §5 |
 | Pickups, switches, hazards, a sentry that sees | the genre file for the view, its last table |
 | Playfield fit, bullets as data, hotspot picking, the launch gesture | `reference/genre-2d-fixed-screen.md` |
 
@@ -183,6 +186,7 @@ for a 3C prototype that passes a journey:
 | Level construction and level data in 2D | `unity-2d-level` |
 | Cell maths, pathfinding, turn order | `unity-2d-grid` |
 | Skeletal sprite art | `unity-2d-animation` |
+| The 3D controller · 3D levels · lighting · LOD and occlusion | `unity-3d-controller` · `unity-3d-level` · `unity-lighting` · `unity-scene-optimisation` |
 | Trusting a test run, reading logs, screenshots | `unity-debug` |
 
 What is left is what no single-system skill can hold: **deciding which constraints this game

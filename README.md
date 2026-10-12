@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Forty-seven skills covering the loop from an
+Unity 6 game-development skills for AI coding agents. Fifty-one skills covering the loop from an
 empty project to a verified artifact — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -52,6 +52,10 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | | `unity-2d-level` | A 2D level put together as data: a serialisable level painted into a fixed stack of Tilemap layers, runtime tile edits, rooms and doors, chunks stitched into an endless run, Tiled and LDtk import, SpriteShape terrain, and seeded generation with reachability checked per level |
 | | `unity-2d-grid` | Board logic for tactics games and tile puzzles on rectangular, isometric and hexagonal grids, as plain C# with no scene: hex offset, axial and cube conversion, movement range, A* paths, lines of sight, one occupancy map, push rules, turn order, undo, pointer to cell |
 | | `unity-2d-animation` | Skeletal 2D characters with the 2D Animation and PSD Importer packages: a PSB imported as a rig, bones then geometry then weights, `SpriteSkin` and CPU or GPU deformation, Sprite Library skins and equipment swapped at runtime, 2D IK, and an audit of what a rig costs |
+| **3D world** | `unity-3d-controller` | A 3D character whose `isGrounded` flickers, that slides down the ramp, refuses the step or jumps a different height at another frame rate: one owner of the transform, a `CharacterController` motor that finds ground by its own cast — slopes, steps, moving platforms — third-person, first-person, top-down and lane-runner controllers reading one input struct, the Animator bridge, and journeys that prove ramp, step, apex and lane change |
+| | `unity-3d-level` | A 3D level built to its metrics before art exists: a greybox from a metrics sheet — door, corridor, step, ramp, jump gap — proven by a walk journey, a modular kit on a 1/2/4 m grid, prefab structure with an override audit, collision proxies on one layer, Terrain, spline roads and lanes, and URP decals |
+| | `unity-lighting` | A bake that did nothing, a character black beside baked walls, the sky reflected indoors, shadows that flicker or stop a few metres away: a symptom ladder over light modes, the bake, probes, shadows and the environment on URP, a read-only scene audit, a bake that reads its result back, and the subset a phone can afford |
+| | `unity-scene-optimisation` | The change to make once a profiling counter has named the cost: batching paths and why GPU instancing does nothing under URP, `LODGroup` and Mesh LOD, baked and GPU occlusion culling, per-layer cull distances, texture size and mipmap streaming, sprite and particle overdraw — each lever tested in one window first and read back on the same counter |
 | **UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
 | | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
 | | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |

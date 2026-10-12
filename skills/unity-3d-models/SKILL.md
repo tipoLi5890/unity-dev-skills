@@ -64,7 +64,9 @@ Two hard truths this skill exists for:
 Static props only. Characters take the FBX route because glTFast cannot produce an Avatar —
 `unity-rigged-character`, or `blender-character-rig` when the rig and the action are authored in
 Blender. Driving the Editor is `unity-cli` and `unity-debug`; build-wide
-stripping is `unity-android-release` and `unity-web-release`.
+stripping is `unity-android-release` and `unity-web-release`. Modular-kit conventions — the
+grid, pivots, snapping — are `unity-3d-level`; LOD groups and scene-level draw cost are
+`unity-scene-optimisation`.
 
 ## Two rules that decide everything else
 

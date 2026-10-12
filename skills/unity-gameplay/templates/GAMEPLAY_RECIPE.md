@@ -86,20 +86,22 @@ python3 scripts/level_metrics.py --apex … --time-to-apex … --run-speed … -
 | Project and packages | `unity-new-project` | |
 | Input: actions, the struct gameplay reads | `unity-input` | |
 | Touch controls | `unity-input` | |
-| Player motor | <!-- 2D: `unity-2d-controller` · 3D: reference/genre-3d.md, "The motor, in essentials" --> | |
+| Player motor | <!-- 2D: `unity-2d-controller` · 3D: `unity-3d-controller` → reference/third-person.md, reference/first-person.md or reference/topdown-and-fixed.md --> | |
 | Bodies, colliders, layer matrix | <!-- `unity-physics-2d` · `unity-physics-3d` --> | |
 | Camera rig | `unity-camera` | |
 | Animator parameters and states | `unity-animation` | |
-| Animator bridge from the motor | <!-- 2D: `unity-2d-controller` → reference/facing-and-animator-bridge.md · 3D: `unity-animation` → reference/parameter-contract.md --> | |
+| Animator bridge from the motor | <!-- 2D: `unity-2d-controller` → reference/facing-and-animator-bridge.md · 3D: `unity-3d-controller` → reference/animator-bridge.md --> | |
 | Character art into the project | <!-- frames: `unity-2d-sprites` · bones on a sprite: `unity-2d-animation` · 3D: `unity-rigged-character` --> | |
 | Draw order, 2D lights, parallax | <!-- `unity-2d-rendering` --> | |
-| Level geometry and level data | <!-- 2D: `unity-tilemap` for palettes, `unity-2d-level` for the level · 3D: greybox per reference/genre-3d.md --> | |
+| Level geometry and level data | <!-- 2D: `unity-tilemap` for palettes, `unity-2d-level` for the level · 3D: `unity-3d-level` → reference/greybox.md, reference/modular-kit.md --> | |
 | Cells, range, turns | <!-- `unity-2d-grid` --> | |
 | Pathing for opponents | <!-- cells: `unity-2d-grid` → reference/pathfinding.md · NavMesh: `unity-navigation` --> | |
 | Pickups, switches, hazards | <!-- genre file --> | |
+| 3D lighting: modes, bake, probes, shadows | <!-- `unity-lighting` → reference/light-modes.md --> | |
 | HUD and menus | `unity-game-ui` | |
 | Probe, situations, journeys | `unity-play-harness` | |
 | Frame budget | `unity-profiling` | |
+| Scene cost: LOD, occlusion, batching | <!-- `unity-scene-optimisation` → reference/lod.md, reference/occlusion.md --> | |
 
 ## The checks this recipe is held to
 
@@ -111,7 +113,7 @@ python3 scripts/level_metrics.py --apex … --time-to-apex … --run-speed … -
 | Level numbers inside reach | `python3 scripts/level_metrics.py … --gap … --height …` | exit 0 |
 | The jump is the designed jump | `python3 scripts/jump_report.py <timeline> --grounded-key grounded --apex … --air-time …` | exit 0 |
 | Controls journey | | `violations=0`, samples > 0 |
-| Character journey | | `violations=0`, samples > 0 |
+| Character journey | <!-- 3D: `-testFilter Controller3DJourney` (`unity-3d-controller` → templates/Controller3DJourneyTest.cs) --> | `violations=0`, samples > 0 |
 | Camera journey | | `violations=0`, samples > 0 |
 
 ## Changes

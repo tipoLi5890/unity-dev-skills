@@ -93,9 +93,9 @@ appear in the component counts. Their presence is read from scripts (`script_ref
 | `2d`, orthographic, 2D gravity `0` or every body at gravity scale `0` | Seen from above, free movement | `reference/genre-2d-topdown.md` |
 | `2d`, cell API calls beside a `Grid`, few or no dynamic bodies | Cell movement; the layout says rectangular, hexagonal or isometric | `reference/genre-2d-grid.md` |
 | `2d`, one orthographic camera, no camera code, kinematic bodies or none | A fixed screen | `reference/genre-2d-fixed-screen.md` |
-| `3d`, perspective, `character-controller` or a dynamic body, pitch under 50° | Behind the character or through its eyes — the files cannot tell which; look for a camera parented under the player | `reference/genre-3d.md` |
-| `3d`, pitch 50° or more, or `navmesh-agent` with pointer code | Overhead or fixed camera | `reference/genre-3d.md` |
-| `3d` physics, orthographic camera | 2.5D: 3D controller rows, 2D camera rows | both genre files, by row |
+| `3d`, perspective, `character-controller` or a dynamic body, pitch under 50° | Behind the character or through its eyes — the files cannot tell which; look for a camera parented under the player | `reference/genre-3d.md`; the controller: `unity-3d-controller` → `reference/third-person.md` or `unity-3d-controller` → `reference/first-person.md` |
+| `3d`, pitch 50° or more, or `navmesh-agent` with pointer code | Overhead or fixed camera | `reference/genre-3d.md`; the controller: `unity-3d-controller` → `reference/topdown-and-fixed.md` |
+| `3d` physics, orthographic camera | 2.5D: 3D controller rows, 2D camera rows | both genre files, by row; the controller from `unity-3d-controller` |
 | `mixed` | Two games in one project, or 2D physics for UI effects on a 3D game — follow `leans`, then confirm with the player prefab | — |
 | Everything `unknown` | No evidence: a new project, the wrong directory, binary scenes | the default ladder in SKILL.md §0 |
 

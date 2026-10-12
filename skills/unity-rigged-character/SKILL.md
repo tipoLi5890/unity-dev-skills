@@ -82,6 +82,7 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 |---|---|
 | Static props — coins, obstacles, environment | `unity-3d-models` |
 | PhysX triage that is not rig-shaped | `unity-physics-3d` |
+| Moving the character in play: the controller, grounding, the Animator bridge | `unity-3d-controller` |
 | Pathfinding, and who owns the transform when an agent drives it | `unity-navigation` |
 | Generating the reference art | `codex-visual` |
 | Rigging, skinning and keying an action in Blender, for a character Mixamo cannot rig | `blender-character-rig` |

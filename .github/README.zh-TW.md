@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。四十七個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。五十一個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -49,6 +49,10 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | | `unity-2d-level` | 把 2D 關卡當成資料來組裝：可序列化的關卡畫進固定的 Tilemap 圖層堆疊、執行期改 tile、房間與門、接成無盡跑道的 chunk、Tiled 與 LDtk 匯入、SpriteShape 地形，以及逐關檢查可達性的種子生成 |
 | | `unity-2d-grid` | 戰棋與方塊解謎在矩形、等角與六角網格上的棋盤邏輯，純 C#、不需要場景：六角 offset、axial 與 cube 轉換、移動範圍、A* 路徑、視線、單一佔位表、推動規則、回合順序、undo、指標對應到格子 |
 | | `unity-2d-animation` | 用 2D Animation 與 PSD Importer 套件做骨骼式 2D 角色：把 PSB 匯入成 rig、先骨骼再幾何再權重、`SpriteSkin` 與 CPU 或 GPU 變形、執行期切換 Sprite Library 的造型與裝備、2D IK，以及一份 rig 成本的稽核 |
+| **3D 世界** | `unity-3d-controller` | `isGrounded` 一直閃爍、沿斜坡滑下去、上不了台階、換個幀率跳的高度就不一樣的 3D 角色：只讓一個元件擁有 transform、用自己的 cast 找地面的 `CharacterController` motor——斜坡、台階、移動平台——讀同一個輸入 struct 的第三人稱、第一人稱、俯視與分道跑酷控制器、Animator 橋接，以及證明斜坡、台階、跳躍頂點與換道的 journey |
+| | `unity-3d-level` | 在美術存在之前就照尺寸蓋好的 3D 關卡：從尺寸表（門、走廊、台階、斜坡、跳躍間距）生成、以行走 journey 證明的 greybox、1/2/4 m 網格上的模組化套件、附 override 稽核的 prefab 結構、集中在同一個 layer 的碰撞代理、Terrain、沿 spline 的道路與跑道，以及 URP decal |
+| | `unity-lighting` | 烘焙了卻沒變化、角色在烘焙過的牆邊一片黑、室內反射出天空、鏡頭一轉陰影就閃或幾公尺外陰影就斷掉：URP 上涵蓋燈光模式、烘焙、probe、陰影與環境光的症狀階梯、唯讀的場景稽核、會讀回結果的烘焙，以及手機負擔得起的子集 |
+| | `unity-scene-optimisation` | 效能 counter 已經指出成本之後該改什麼：各條 batching 路徑以及為什麼 GPU instancing 在 URP 下毫無作用、`LODGroup` 與 Mesh LOD、烘焙式與 GPU occlusion culling、逐 layer 的剔除距離、貼圖尺寸與 mipmap streaming、sprite 與粒子的 overdraw——每個手段先用一個視窗測試，再在同一個 counter 上讀回 |
 | **UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什麼都畫不出來的六種原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 會靜默忽略的那些屬性 |

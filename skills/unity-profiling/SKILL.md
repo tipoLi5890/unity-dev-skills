@@ -99,11 +99,11 @@ A router, read against a window you already have. Depth for the first four rows 
 | One large `ft_max` the first time something appears, never again | first-appearance section, then `unity-render-urp` |
 | `Memory/GC Allocated In Frame` has a non-zero median; spikes on a period | GC section, then `unity-game-ui` for per-frame string building |
 | A spike lined up with a jump in a completed-work counter | synchronous-loads section, then `unity-audio` when it is a clip |
-| Triangles high while looking at distance, draw calls ordinary | distant-geometry section, then `unity-3d-models` |
+| Triangles high while looking at distance, draw calls ordinary | distant-geometry section, then `unity-scene-optimisation` |
 | Discarded work climbing while scheduled climbs | `reference/work-counters.md` |
-| Draw calls and SetPass calls high, triangles ordinary | `unity-sprite-atlas` · `unity-render-urp` · `unity-game-ui` |
-| GPU frame time much larger than the CPU times | `unity-render-urp` |
-| Shadow caster count high | `unity-render-urp` |
+| Draw calls and SetPass calls high, triangles ordinary | `unity-scene-optimisation` · `unity-sprite-atlas` for 2D · `unity-game-ui` for canvases |
+| GPU frame time much larger than the CPU times | `unity-scene-optimisation` · `unity-render-urp` for post-processing |
+| Shadow caster count high | `unity-lighting` |
 | Pixel art shimmering as well as slow | `unity-2d-pixel-perfect` |
 | Slow only in the browser | `unity-web-release` |
 | Slow only on the device | `unity-android-release`, after a development-player window taken on it |
