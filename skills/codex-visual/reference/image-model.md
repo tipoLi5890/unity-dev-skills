@@ -142,7 +142,7 @@ far wider. Grid holds a set together, chaining holds sets together over time, an
 - **Extending a family in place.** An existing member can be made one of the cells — "keep image #2
   as the top-left cell unchanged; fill the rest to match" — and only the NEW cells sliced out. The
   repair limit applies: a cell the prompt says to leave alone does not come back untouched
-  (`reference/animation-sheets.md` §8).
+  (`reference/animation-faults.md` §3).
 - **A template is not a placement guarantee.** A reference image drawn as a 1x1 / 2x2 / 4x4 grid
   with crosshairs or slot outlines, passed via `-i` so the model "draws in the right place", buys
   nothing the slice does not already do — and the model tends to paint the guides into the output.
@@ -172,8 +172,8 @@ far wider. Grid holds a set together, chaining holds sets together over time, an
 
 `$imagegen` is strong on illustrations, concept and key art, textures, skyboxes and icons, and
 **weak at true pixel art**: a full pixel-art brief still returns tens of thousands of distinct
-colours per cell and almost no uniform blocks — post-process it (`reference/animation-sheets.md`
-§9).
+colours per cell and almost no uniform blocks — post-process it (`reference/animation-scripts.md`
+§3).
 
 | Choice | What it is | Who does it |
 |---|---|---|

@@ -42,14 +42,14 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | **UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什麼都畫不出來的六種原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 會靜默忽略的那些屬性 |
-| **資產** | `unity-3d-models` | 靜態道具：在 Unity 看到它們之前，先匯入並減面 AI 生成的網格 |
+| **資產** | `unity-3d-models` | 靜態道具：匯入 AI 生成的網格——在 Unity 看到它們之前先檢查，超出預算的才減面 |
 | | `unity-2d-sprites` | Sprite sheet、切圖、pivot、9-slice、把一組逐格做成可播放的 `AnimationClip` —— 那些住在 importer 裡的中繼資料 |
 | | `unity-2d-pixel-perfect` | 像素畫糊掉、鏡頭一動像素就爬、tile 之間出現髮絲縫 —— 以及你手上到底是哪一個叫 `PixelPerfectCamera` 的元件 |
 | | `unity-sprite-atlas` | 該共用一次 draw call 的 sprite：用腳本產 V2 atlas、打包與平台設定，以及打包好的貼圖怎麼到玩家手上 |
 | | `unity-tilemap` | 矩形、六角與等角網格的 Tile Palette，以及用手上現成的地形圖產出 RuleTile |
 | | `unity-rigged-character` | 可操作的角色：原畫 → image-to-3D → Mixamo → Avatar → Animator → gameplay rig |
 | **AI 素材生成** | `codex-visual` | 用 `codex` 影像模型出 2D 美術，靠一份美術聖經與一張錨定圖鎖住風格：grid one-shot 整組、短動畫生成成一張 sprite sheet 再切成量測過的逐格並輸出 GIF 預覽、去背、尺寸正規化，並以幾何驗收閘門讀回交付檔的置中與尺寸 |
-| | `comfyui-asset-generation` | 用自架 ComfyUI 出音樂、音效與 MiniMax H3 影片：一次一件、只信 `/history`、換模型前先 `/free` |
+| | `comfyui-asset-generation` | 用自架 ComfyUI 出音樂、音效、MiniMax H3 影片與圖生 3D 道具：一次一件、只信 `/history`、換模型前先 `/free` |
 | **執行期領域** | `unity-physics-3d` | 永遠不觸發的碰撞或 trigger、高速穿透、明明在正前方卻打不到的 raycast |
 | | `unity-navigation` | NavMesh、agent、障礙物、link —— 以及決定誰擁有 transform |
 | | `unity-render-urp` | 設了卻不出現的後製、行動裝置負擔得起的子集、Render Graph 審查 |

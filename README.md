@@ -45,14 +45,14 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | **UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
 | | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
 | | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |
-| **Assets** | `unity-3d-models` | Static props: importing and decimating AI-generated meshes before Unity ever sees them |
+| **Assets** | `unity-3d-models` | Static props: importing AI-generated meshes — inspect first, decimate what is over budget, before Unity ever sees them |
 | | `unity-2d-sprites` | Sprite sheets, slicing, pivots, 9-slice, and a set of frames turned into a playable `AnimationClip` — metadata that lives inside the importer |
 | | `unity-2d-pixel-perfect` | Pixel art that renders soft, shimmers as the camera moves, or shows hairline seams — and which of the two components called `PixelPerfectCamera` you actually have |
 | | `unity-sprite-atlas` | Sprites that should share a draw call: V2 atlases from script, packing and platform settings, and how the packed texture reaches the player |
 | | `unity-tilemap` | Tile Palettes for rectangular, hexagonal and isometric grids, and RuleTiles built from a terrain sheet you already have |
 | | `unity-rigged-character` | A playable character: art → image-to-3D → Mixamo → Avatar → Animator → gameplay rig |
 | **AI asset generation** | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files |
-| | `comfyui-asset-generation` | Music, SFX and MiniMax H3 video through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch |
+| | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch |
 | **Runtime domains** | `unity-physics-3d` | A collision or trigger that never fires, tunnelling, a raycast that misses |
 | | `unity-navigation` | NavMesh, agents, obstacles, links — and deciding who owns the transform |
 | | `unity-render-urp` | Post-processing that will not appear, the mobile subset, Render Graph review |

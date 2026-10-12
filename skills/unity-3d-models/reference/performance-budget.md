@@ -2,7 +2,8 @@
 
 ## Performance checklist (in priority order)
 
-1. **Decimate the mesh** — the #1 fix (1M → ~3k tris = ~300× fewer triangles).
+1. **Decimate the mesh** — the #1 fix (1M → ~3k tris = ~300× fewer triangles). A mesh
+   generated at budget with baked maps is regenerated lower instead — `reference/import-and-decimate.md` step 1.
 2. **Shrink textures** — Max Size 512 (or 256) + compression.
 3. **Reduce pool sizes** — pooled objects multiply cost; drop counts that
    over-provision (e.g. spawner's `coinPoolSize`/`obstaclePoolSize`).
@@ -15,7 +16,9 @@
 
 - **Orientation/scale:** glTF is Y-up (matches Unity). Models may still need a
   rotation/scale tweak on the `Model` child. Spawners that measure a
-  `MeshFilter`'s bounds auto-normalize size.
+  `MeshFilter`'s bounds auto-normalize size. A GLB from the ComfyUI templates always
+  needs it: largest extent ≈ 1 unit, origin at the bounding-box centre —
+  `reference/import-and-decimate.md`.
 - **Colliders:** keep a simple primitive collider on the root; never add a
   MeshCollider to a dense model.
 - **Characters:** anything that needs a skeleton, retargeted animation, or an

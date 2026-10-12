@@ -62,6 +62,9 @@ How they compare on quality (these tools move fast — test one character before
 - **Hunyuan3D / Trellis** — best at preserving a smooth-shaded cartoon look, most consistent.
 - **Meshy** — best facial structure and proportion, least cleanup needed around the eyes, but it
   **adds the same unrequested realistic detail** to stylised characters.
+- **Self-hosted ComfyUI (Pixal3D / TRELLIS.2, skill `comfyui-asset-generation`)** — outputs
+  GLB, so the GLB → OBJ step in §1 still applies, and the graph has no pose input, so the T-pose
+  rules in §2 decide the input.
 
 The parameters usually decide it before quality does:
 

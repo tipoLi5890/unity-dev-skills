@@ -10,10 +10,16 @@ Typical local components:
 
 Always verify filenames in the live node definitions.
 
-The caption should cover genre, mood, instrumentation, arrangement, spatial
-character, and vocal treatment. Lyrics can use `[Intro]`, `[Verse]`, `[Chorus]`,
-`[Instrumental]`, and `[Outro]`. For instrumental material, keep lyrics empty when
-supported or use sparse instrumental tags without sung text.
+Write the caption in three labelled sections — **Global Metadata** (genre, BPM, key, mood and
+how it moves, where it is heard, production character), **Vocal Details** (the voice, or that
+there is none), **Arrangement** (the instruments, then section by section what enters, exits or
+changes). The lyrics field carries the structure: `[Intro]`, `[Verse]`, `[Pre-Chorus]`,
+`[Chorus]`, `[Bridge]`, `[Instrumental]`, `[Solo]`, `[Outro]`. Tags are the instructions; lyric
+text between them is sung.
+
+**A background bed with no voice** — the wording that keeps it instrumental, the caption
+skeleton, three worked captions and the check that proves it: `reference/instrumental-bgm.md`.
+Never leave the lyrics empty for one.
 
 A 12–20 second first test validates the complete load → condition → sample → decode
 → save path, but not long-form musical coherence. Increase to production duration
@@ -37,9 +43,9 @@ Keep the text-conditioning seed and sampler seed explicit for reproducibility.
 - **The model can stop early.** A 180 s request can come back well short of it on some prompts,
   so any post-processing fade must read the *actual* duration (`ffprobe`) rather than assume the
   requested length, or the fade lands in silence and the real ending clicks.
-- **Long tracks need a sectioned prompt.** A single-mood description produces loops that stall
-  after ~60 s; tagging sections (intro / A / B / bridge / outro with bars or seconds) holds the
-  structure across the full length.
+- **Length comes from the described sections, not from `max_duration`.** A single-mood
+  description ends early or stalls; an Arrangement that names its sections (intro, A, B, A,
+  breakdown, outro) holds the structure and the length (`reference/instrumental-bgm.md`).
 - Deliver the source as `SaveAudioAdvanced` FLAC (lossless), then post-process locally: mono
   44.1 kHz, `loudnorm` to −16 LUFS, and a 0.5 s fade in/out for looping beds; ship as 160 kbps
   MP3.

@@ -50,6 +50,29 @@ Cleanup body, sent only after both queue arrays are empty:
 `/free` may return an empty body. Treat any successful 2xx response as success;
 do not require JSON.
 
+## Client overrides and output
+
+`scripts/comfy_asset_client.py` takes a template and changes it per run:
+
+```bash
+--set 186.target_face_count=8000        # NODE.INPUT=VALUE, repeatable
+--set 122.image=pickup_crate.png        # not JSON, so a string
+--set '312.masks=["122",1]'             # a JSON list rewires the input to node 122, output 1
+--set 4.caption=@captions/menu.txt      # @path: the value is the file's text, line breaks kept
+```
+
+VALUE is parsed as JSON when it parses (numbers, booleans, lists) and is a string
+otherwise; quote a value that must stay a string of digits (`'119.resolution="64"'`).
+A node id that is not in the graph is an error. Dynamic-combo inputs use dotted
+names after the first dot: `--set 241.sign_mode.qef=false`.
+
+The client refuses to submit while any input still contains `REPLACE_WITH_`, and
+while the queue holds a running or pending job. An upload keeps its local
+basename; a second file of that name needs `--overwrite-uploads`.
+
+Its JSON result adds `elapsed_seconds` and `vram_free_min`, the lowest free VRAM
+seen while polling, to `prompt_id`, `uploads`, `outputs` and `vram_after_unload`.
+
 ## Saved workflows
 
 List server-side workflows with:
@@ -69,4 +92,6 @@ expand subgraphs or export it in API format before submitting it to `/prompt`.
 - `status_str: error`: runtime failure; report the failing node and concise cause.
 - `status_str: success`: download and inspect every declared output. Depending
   on the save node, video can be reported under `images` with
-  `animated: true`, not under a dedicated `video` key.
+  `animated: true`, not under a dedicated `video` key. A 3D save node reports
+  under a `3d` key (`{"3d":[{"filename":"….glb","subfolder":"3d","type":"output"}]}`);
+  the client downloads any entry that carries a `filename`.

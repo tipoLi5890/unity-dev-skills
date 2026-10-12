@@ -28,10 +28,18 @@ switch or cleanup from racing the next job.
 - H3 R2V and multi-frame reference use the REF2VA diffusion model and may share
   one loaded model.
 - MiniMax Music 3 and Stable Audio 3 are separate families.
-- Common VAE or text-encoder filenames do not make two jobs the same family.
+- Common VAE or text-encoder filenames do not make two jobs the same family: the
+  diffusion model decides, and the two H3 families stay separate.
+- Image-to-3D is the one explicit exception. Pixal3D, Pixal3D multi-view and
+  TRELLIS.2 share the image encoder and both VAEs and count as one family: run
+  them back to back with `--keep-loaded` and no `/free`; a switch costs one
+  diffusion-model reload. Call `/free` before leaving for audio or video.
 
 ## Recovery
 
+- Queue busy with someone else's job (`Refusing to submit: ComfyUI has a running
+  or pending job`): wait for an empty queue. Never work around it — no
+  interrupt, no queue clearing, no `/free`, no second submission.
 - Validation failure: correct the graph once or report the missing model.
 - Runtime failure: wait for the queue to settle, then unload unless a same-model
   retry was explicitly chosen.

@@ -43,7 +43,8 @@ def request(
         detail = exc.read().decode("utf-8", errors="replace")
         raise ComfyError(f"HTTP {exc.code} for {path}: {detail}") from exc
     except urllib.error.URLError as exc:
-        raise ComfyError(f"Cannot reach ComfyUI at {base}: {exc.reason}") from exc
+        # The address is private; keep it out of logs and transcripts.
+        raise ComfyError(f"Cannot reach the configured ComfyUI server: {exc.reason}") from exc
 
 
 def request_json(
@@ -176,14 +177,60 @@ def download_outputs(
     return downloaded
 
 
+def apply_overrides(prompt: dict[str, Any], overrides: list[str]) -> None:
+    for item in overrides:
+        target, sep, raw = item.partition("=")
+        node_id, dot, input_name = target.partition(".")
+        if not sep or not dot or not node_id or not input_name:
+            raise ComfyError(f"--set expects NODE.INPUT=VALUE, got: {item}")
+        node = prompt.get(node_id)
+        if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+            raise ComfyError(f"--set names a node that is not in the graph: {node_id}")
+        # @path reads the value from a text file: a caption or lyrics with line breaks.
+        # Otherwise JSON first, so numbers, booleans and ["node", slot] links keep their
+        # type; anything else is a plain string.
+        if raw.startswith("@"):
+            try:
+                value = Path(raw[1:]).read_text(encoding="utf-8").strip("\n")
+            except OSError as exc:
+                raise ComfyError(f"--set cannot read {raw[1:]}: {exc.strerror}") from exc
+        else:
+            try:
+                value = json.loads(raw)
+            except json.JSONDecodeError:
+                value = raw
+        node["inputs"][input_name] = value
+
+
+def unfilled_placeholders(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if "REPLACE_WITH_" in value else []
+    children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+    return [found for child in children for found in unfilled_placeholders(child)]
+
+
+def vram_free(base: str) -> int | None:
+    try:
+        devices = request_json(base, "/system_stats").get("devices")
+    except ComfyError:
+        return None
+    values = [
+        device.get("vram_free")
+        for device in devices or []
+        if isinstance(device, dict) and isinstance(device.get("vram_free"), int)
+    ]
+    return min(values) if values else None
+
+
 def wait_for_result(
     base: str,
     prompt_id: str,
     *,
     poll_seconds: float,
     timeout_seconds: float,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], int | None]:
     deadline = time.monotonic() + timeout_seconds
+    vram_free_min: int | None = None
     while time.monotonic() < deadline:
         result = request_json(base, f"/history/{prompt_id}").get(prompt_id)
         if result:
@@ -191,14 +238,18 @@ def wait_for_result(
             # An errored prompt is terminal too: it never sets completed, so waiting
             # on that flag alone turns every runtime failure into a timeout.
             if status.get("completed") or status.get("status_str") == "error":
-                return result
+                return result, vram_free_min
+        # The low-water mark over the run is the only view of peak VRAM use.
+        free = vram_free(base)
+        if free is not None and (vram_free_min is None or free < vram_free_min):
+            vram_free_min = free
         time.sleep(poll_seconds)
     raise ComfyError(f"Timed out waiting for {prompt_id}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run one API-format ComfyUI audio or video workflow safely."
+        description="Run one API-format ComfyUI audio, video or 3D workflow safely."
     )
     parser.add_argument("--workflow", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -212,6 +263,13 @@ def main() -> int:
         help="Authorized local image, video, or audio input; repeat as needed",
     )
     parser.add_argument("--overwrite-uploads", action="store_true")
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="NODE.INPUT=VALUE",
+        help="Override one graph input; VALUE is @file for text, JSON when it parses, else a string",
+    )
     parser.add_argument("--poll-seconds", type=float, default=3.0)
     parser.add_argument("--timeout-seconds", type=float, default=1800.0)
     parser.add_argument(
@@ -231,22 +289,29 @@ def main() -> int:
     if not queue_empty(base):
         raise ComfyError("Refusing to submit: ComfyUI has a running or pending job")
 
+    payload = json.loads(args.workflow.read_text(encoding="utf-8"))
+    apply_overrides(payload.get("prompt", {}), args.set)
+    unfilled = unfilled_placeholders(payload.get("prompt", {}))
+    if unfilled:
+        raise ComfyError(f"Refusing to submit: unfilled placeholders {unfilled}")
+
     uploads = [
         upload_asset(base, source, overwrite=args.overwrite_uploads)
         for source in args.upload
     ]
-    payload = json.loads(args.workflow.read_text(encoding="utf-8"))
+    started = time.monotonic()
     submitted = request_json(base, "/prompt", payload)
     if submitted.get("node_errors") or "prompt_id" not in submitted:
         raise ComfyError(json.dumps(submitted, indent=2, ensure_ascii=False))
 
     prompt_id = submitted["prompt_id"]
-    result = wait_for_result(
+    result, vram_free_min = wait_for_result(
         base,
         prompt_id,
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
     )
+    elapsed_seconds = round(time.monotonic() - started, 1)
     status = result.get("status", {})
     if status.get("status_str") != "success":
         raise ComfyError(json.dumps(status, indent=2, ensure_ascii=False))
@@ -267,6 +332,8 @@ def main() -> int:
                 "prompt_id": prompt_id,
                 "uploads": uploads,
                 "outputs": downloaded,
+                "elapsed_seconds": elapsed_seconds,
+                "vram_free_min": vram_free_min,
                 "vram_after_unload": vram,
             },
             indent=2,

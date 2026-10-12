@@ -47,14 +47,14 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | **UI** | `unity-game-ui` | **UI の依頼はまずここから。** プロジェクトがどの UI システムを使っているか判定して振り分け、誰も書いていない領域 —— runtime の `OnGUI` HUD —— を自分で受け持ちます |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— そして uGUI が何も描かなくなる六つの原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— そして USS が黙って無視するプロパティ |
-| **アセット** | `unity-3d-models` | 静的なプロップ：AI 生成メッシュを、Unity が目にする前にインポートして減面する |
+| **アセット** | `unity-3d-models` | 静的なプロップ：AI 生成メッシュのインポート——Unity が目にする前にまず検査し、予算を超えたものだけ減面する |
 | | `unity-2d-sprites` | スプライトシート、スライス、pivot、9-slice、コマ列を再生可能な `AnimationClip` に —— importer の内側にあるメタデータ |
 | | `unity-2d-pixel-perfect` | ドット絵がぼける、カメラが動くとピクセルが這う、タイルの継ぎ目に髪の毛のような隙間 —— そして手元にあるのは `PixelPerfectCamera` という名の二つのコンポーネントのどちらなのか |
 | | `unity-sprite-atlas` | 同じ draw call に載せたいスプライト：スクリプトからの V2 アトラス、パッキングとプラットフォーム設定、そして焼いたテクスチャがプレイヤーに届くまで |
 | | `unity-tilemap` | 矩形・ヘックス・アイソメトリックの Tile Palette と、手持ちの地形シートから作る RuleTile |
 | | `unity-rigged-character` | 操作できるキャラクター：原画 → image-to-3D → Mixamo → Avatar → Animator → ゲームプレイ用リグ |
 | **AI アセット生成** | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化、そして納品ファイルから中心とサイズを読み戻す幾何ゲート |
-| | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画を生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free` |
+| | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画・画像から 3D プロップを生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free` |
 | **ランタイム領域** | `unity-physics-3d` | 決して発火しない衝突や trigger、高速すり抜け、目の前にあるのに当たらない raycast |
 | | `unity-navigation` | NavMesh、agent、障害物、link —— そして transform を誰が所有するかの決定 |
 | | `unity-render-urp` | 設定したのに出てこないポストプロセス、モバイルで賄える範囲、Render Graph のレビュー |

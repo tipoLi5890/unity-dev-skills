@@ -2,6 +2,104 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.19.0
+
+`comfyui-asset-generation` grows image-to-3D: one image or four views become a game-budget GLB on
+a self-hosted ComfyUI, and the budget is set where the mesh is generated — not repaired after it.
+The same release teaches its music to stay instrumental when it is a background bed, and gives
+`codex-visual` a call that proves it produced a file and a gate on the image before a conversion.
+
+- **Three API templates**, core nodes only: `templates/pixal3d_image_to_model_api.json` and
+  `templates/trellis2_image_to_model_api.json` (one image → GLB) and
+  `templates/pixal3d_multiview_to_model_api.json` (four views → GLB). The saved UI workflow picks
+  its path with switch nodes; an API graph has nobody to flip them, so each switch is resolved
+  statically into one template per path. Node ids are the UI workflow's, so a knob has the same
+  address in both.
+- **Six deliberate differences from the saved UI workflow**: 8000 faces instead of 700000, a 384
+  remesh instead of 768, a 1024 texture instead of 4096, the normal bake tied to that texture size
+  instead of a fixed 2048, occlusion `bias` 0.05 instead of 0.01, unwrap `padding` 4 instead of 1.
+  The UI values make a ~65 MB showcase file; the defaults make a ~4 MB hero. The presets are named
+  for the rows of `unity-3d-models`' triangle-budget table and sit inside them — pickup 2000,
+  obstacle or environment prop 4000, hero 8000 — with a 20000-face close-up prop above the table.
+- **Which path is the decision that matters.** Pixal3D from one image is pixel-aligned: highest
+  fidelity, but the mesh takes the pose of the input view — a three-quarter view from above comes
+  back tilted in world space, and a straight-on view comes back upright with invented depth (a
+  pickup crate 2.5× too deep). Pixal3D multi-view is axis-aligned with true proportions on the
+  four seen sides, a little darker than the input, and invents the top a level turnaround never
+  shows — a lid emblem is lost. TRELLIS.2 gives an upright pose of its own at the lowest fidelity:
+  small details smear, hue drifts. The pose is not an error to tune away: rotate in Unity, or
+  take the multi-view path.
+- **The one-scale finding.** The multi-view model wants the same scale in every view. Cropping
+  each sheet panel to its own mask keeps one scale only when every view is height-limited; on an
+  object wider than tall the front is fitted to its width and the side to its height, and a crate
+  came back with its depth at 0.88 of the width instead of 0.56. `codex-visual` gains
+  **`scripts/turnaround_to_views.py`**, which splits a one-row turnaround by content (panels are
+  not equal width) and cuts all four views as squares of one side — which is why the multi-view
+  template takes four prepared views and has no background-removal step.
+- **The left/right finding.** Side views fed swapped do not break the geometry of a
+  near-symmetric object; they show up as colour — orange turned yellow-green and bled across
+  neighbouring panels. Re-seeding does not fix it; swapping nodes `802` and `804` does, and is the
+  first move on any hue shift.
+- **Face target and remesh resolution move together.** 5000 faces asked of a 768 remesh shredded
+  the mesh: a thin part vanished, the silhouette collapsed and the bounding box shrank 12%. 4000
+  from a 256 remesh and 2000 from 128 held both. Skipping the remesh breaks too — half the
+  requested faces, shrunken bounds, three times the run time. A shrunken `extents` against a
+  higher-budget run of the same input is the tell.
+- **The double shell.** Every face has an opposite-facing twin a fraction of a percent of the
+  bounding-box diagonal behind it, on both model paths, and no remesh option removes it
+  (`sign_mode` sdf damages the mesh on top). It faces away from the viewer, so a budget of N
+  triangles buys the visible detail of N/2 — and the GLB's material is exported double-sided, so
+  the imported material is set to front faces only.
+- **The occlusion finding.** At the UI workflow's `bias` 0.01, 6–24% of the outward-facing surface
+  bakes pure black; at 0.05 it is 1–3%, at 0.1 about none. The map still looks half black at any
+  bias, because the inner shell is legitimately dark and owns half the atlas — so it is judged by
+  shape: whole black charts are the shell, speckle inside a lit chart is the error.
+- **Two gates.** **`scripts/inspect_glb.py`** is the numeric one: triangles against a budget (over
+  by 5% or under half of it fails), material count, texture size, required texture slots, bytes;
+  exit 0 / 1 / 2, one JSON object out. The QA renders each template saves beside the GLB are the
+  visual one — `front`, `right`, `back`, `left`, `top`, `clay`, `occlusion`, `uv_atlas`, and on
+  the single-image templates `crop`, which is all the model saw of the input.
+- **`scripts/comfy_asset_client.py`** takes a repeatable `--set NODE.INPUT=VALUE` (JSON when it
+  parses, so a list rewires a link), refuses to submit while any input still holds a
+  `REPLACE_WITH_` placeholder, and prints `elapsed_seconds` and `vram_free_min`.
+- **`codex-visual`** gains `reference/image-to-3d-input.md` — the image a 3D graph can use: the
+  mask crop is everything the model sees, lighting in the image becomes base colour, a contact
+  shadow becomes geometry, the project's usual key colour needs no change, and a turnaround is
+  asked as four objects in one row on flat black with the approved three-quarter image attached.
+- **An instrumental bed that stays instrumental.** MiniMax Music 3 is a song model, and a
+  background bed with a voice in it fights the game's own sound. Fifty-odd 30-second takes across
+  a chase bed, a menu bed and a world-map bed, each screened by separating the vocal stem and
+  tagging the stem: a plain caption with **empty lyrics** came back with a hum or a voice on 4 of
+  8; `[Instrumental]` in the lyrics on 1 of 8; a caption that only mentioned a choir pad on 1 of
+  2; and the form now documented — a three-section caption whose Vocal Details spell the
+  exclusions out and name the lead instrument, with `[Intro]` / `[Instrumental]` / `[Outro]` as
+  the only lyrics — on 1 of 23. **`reference/instrumental-bgm.md`** carries that wording, a
+  caption skeleton, what makes a caption a bed rather than a song, and three worked captions for
+  the courier run. Length is the other finding: `max_duration` is only a ceiling — a 90-second
+  request with one described section came back at 26–35 s, and the same bed with five described
+  sections at one to two minutes, varying by seed. **`scripts/check_instrumental.py`** is the
+  screen (a stem separator alone calls a flute a voice; the tagger on the stem tells them apart),
+  and the client's `--set` takes `@file`, so a caption with line breaks is not a shell-quoting
+  problem. The music template's default lyrics are now `[Intro]` / `[Instrumental]` / `[Outro]`.
+- **`codex-visual` is easier to enter and harder to fool.** `SKILL.md` opens on a table from what
+  you want (a set that matches, a loop that jitters, a fringed cut-out, a source image for 3D) to
+  where to read. **`scripts/codex_generate.py`** makes the generation call and proves it:
+  `codex exec` exits 0 when the agent model is rejected and when no image was made, so the script
+  probes the model, runs from a scratch directory (the image tool leaves a copy under `output/`
+  wherever it runs), takes the original from `generated_images` and reads back its size — exit 3
+  for a rejected model, 4 for no image. **`scripts/audit_3d_source.py`** gates an image before a
+  conversion: square, a flat field out to the frame, one piece, clear of the edge; and with
+  `--views`, four views at one scale. `reference/animation-sheets.md` had grown to three times the
+  size of `SKILL.md` and is now three files by purpose — the prompt side stays there, diagnosis
+  and acceptance thresholds are `reference/animation-faults.md`, script usage, previews, the
+  pixel post-process and the handoff are `reference/animation-scripts.md` — with every pointer
+  renumbered. `SKILL.md` no longer repeats the four locks in full and has room again.
+- **`unity-3d-models`** no longer tells you to simplify a mesh that was generated at budget: its
+  normal map and occlusion are baked from the dense mesh onto the decimated one, and a later
+  simplify throws that correspondence away. Inspect first; set the budget in the graph and
+  regenerate. Largest extent is about 1 unit with the origin at the bounding-box centre, so scale
+  and offset go on the `Model` child.
+
 ## 0.18.0
 
 `codex-visual` learns that position and size are never the model's job — and gets the scripts

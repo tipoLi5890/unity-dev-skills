@@ -42,7 +42,7 @@ Fix it upstream, in the frames, not downstream in the pivots. One pivot on frame
 in different places is still a jump; one pivot on registered frames is a ground line. Read
 `slip_max_px` and `feet_drift_px` from `frames.json` before importing, send the set back to the
 slicer if they are not near zero — and never ask for a new sheet for it: the next one has the same
-grid wander (`codex-visual`'s `animation-sheets.md` §4a).
+grid wander (`codex-visual`'s `animation-faults.md` §1a).
 
 > **A disagreement about the metrics is usually a disagreement about the alpha cutoff, and the
 > sidecar tells you which one it used.** `frames.json` records `alpha_threshold` at the top level

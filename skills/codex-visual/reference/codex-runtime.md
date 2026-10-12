@@ -7,6 +7,21 @@ one errors, read `codex exec --help` before this file.
 
 The Bash tool **cannot drive a TUI**; bare `codex "..."` hangs. Always `codex exec ...`.
 
+**`scripts/codex_generate.py` is the call for a generation.** `codex exec` exits 0 when the agent
+model is rejected and when the image tool never ran, so the script proves the result instead:
+
+```bash
+python3 <skill>/scripts/codex_generate.py --prompt-file prompt.txt --out "$DEST" \
+    -i <repo>/ArtDirection/anchors/master.png        # [-m MODEL] [--no-probe] [--timeout 600]
+```
+
+It probes the model with a one-word prompt (`--no-probe` once it has passed in a batch), runs from
+a scratch directory, copies the **original** out of `generated_images` (§2, §4), and prints its
+real `size` and whether it carries `alpha` (an RGBA render was keyed by the agent — ask again for
+an opaque one). **Exit 2** = `codex` missing, **3** = the model was rejected (pass another `-m`;
+a slug that worked yesterday can be refused today), **4** = the call ran and made no image. The
+rules below are what it does, and what a call made by hand has to do.
+
 - **Generation must be allowed to write:** `--sandbox workspace-write --skip-git-repo-check`. The
   `exec` default is read-only and **silently blocks the save**.
 - **`< /dev/null`** — from a non-TTY tool `codex exec` otherwise waits on stdin.
@@ -38,8 +53,9 @@ $CODEX_HOME/generated_images/<session-id>/exec-<uuid>.png
 ```
 
 `$CODEX_HOME` = `~/.codex`, and the directory name is the session id. `-C` moves the agent's shell
-cwd, not the save path; a workspace copy appears only on the flat-vector detour (§6). Capture it
-yourself:
+cwd, not the save path. The image tool also leaves a copy under `output/` in the working
+directory — run from a scratch directory, never the project root — and a workspace copy appears
+on the flat-vector detour (§6). `codex_generate.py` does the capture; by hand:
 
 ```bash
 # simplest: copy the newest, then verify it is a PNG
@@ -122,7 +138,7 @@ bundles — `remove_chroma_key.py --key-color '#ff00ff' --tolerance 40 --despill
 > they clear; `sheet_to_frames.py --drop-strays` does the same for an animation sheet. Read the
 > `strays` column, and never trust a bbox you have not gated with `audit_set.py`. A **binary** key
 > leaves the same speck at alpha 255, where `--drop-strays` cannot see it
-> (`reference/animation-sheets.md` §6).
+> (`reference/animation-scripts.md` §2).
 
 > **Trap 4 — a binary key leaves the key ON the subject, and no importer setting removes it.** The
 > renderer paints the anti-aliased rim as a mix of subject and key: field `(247,2,243)`, outline
@@ -135,7 +151,7 @@ bundles — `remove_chroma_key.py --key-color '#ff00ff' --tolerance 40 --despill
 > line, the key un-mixed out, then a choke — and reads 0.0–0.2% / 0.0–0.3% on the same sheets with
 > the interior untouched. Its rim alpha is soft (0.35–1) but its colour is clean, which is the
 > difference from Trap 2: a GIF's 1-bit cut lands on un-mixed pixels, so there is no halo. The two
-> simpler keys that fail, with their numbers: `reference/animation-sheets.md` §4a.
+> simpler keys that fail, with their numbers: `reference/animation-faults.md` §1a.
 > **A sheet that comes back RGBA was keyed by the agent** — reject it and ask for an opaque one.
 
 The hex in the generation prompt and `--key-color` are **one fact written twice**: key magenta out
@@ -191,9 +207,11 @@ Relay Codex's stdout back to the user in your own words.
   `--register ground | free | centroid | keep` — where a frame sits is decided by silhouette, not
   by the cell the model drew it in. `audit_frames.py` re-reads the written PNGs (feet, slip,
   fringe, tint, cut; exit 1) and `frames_to_anim.py --onion --bg` makes the two previews that show
-  motion. Full usage: `reference/animation-sheets.md` §6.
+  motion. Full usage: `reference/animation-scripts.md` §2.
 - **Animation frames never go through `slice_grid.py`** — it centres every cell on its own bounding
   box, so a bat or a raised arm moves the body the other way.
+- **3D source scripts** — `turnaround_to_views.py` · `audit_3d_source.py`: one scale for four
+  views, and the gate on an image before a conversion (`reference/image-to-3d-input.md` §5, §8).
 - **`key_unmix.py`** keys both kinds of sheet (§5). **`sprite_ops.py`** is not a command: it holds
   the definitions the keyer, the slicer and the two gates share (core, rim, fringe, tint, slip), so
   none of them can disagree about a number. The scripts directory travels as a whole.
