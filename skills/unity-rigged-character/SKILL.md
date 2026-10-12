@@ -2,15 +2,15 @@
 name: unity-rigged-character
 description: >-
   Turn an AI-generated character into a rigged, animated, textured Unity
-  character: T-pose reference art → image-to-3D (Rodin / Meshy / Tripo /
-  Hunyuan3D) → mesh cleanup → Mixamo auto-rig → Humanoid Avatar → Animator
-  (blend tree, masked reaction layer) → PBR materials → a gameplay object. Load
-  for a playable character (not a prop): "make the player a real character",
-  "rig this model", "add run/jump animations", Mixamo's uploader stalls with no
-  error, the character T-poses in place, every clip is named "mixamo.com", a
-  white mannequin or uniform plastic look, a hitbox far wider than the
-  character. Characters go FBX because glTFast cannot produce an Avatar; static
-  props are unity-3d-models.
+  character: T-pose reference art → image-to-3D → mesh cleanup → Mixamo auto-rig
+  → Humanoid Avatar → Animator (blend tree, masked reaction layer) → PBR
+  materials → a gameplay object. Load for a playable character: "make the player
+  a real character", "rig this model", "add run/jump animations", Mixamo's
+  uploader stalls with no error, the character T-poses in place, every clip is
+  named "mixamo.com", a white mannequin or uniform plastic look, a hitbox far
+  wider than the character. Characters go FBX because glTFast cannot produce an
+  Avatar. Props: unity-3d-models; chibi proportions or custom actions:
+  blender-character-rig.
 ---
 
 # unity-rigged-character — AI character → animated Unity character
@@ -25,6 +25,17 @@ A prop can be a GLB. A **character cannot**, and that single fact reshapes the w
 If the asset is scenery, stop here and use `unity-3d-models` instead.
 
 ---
+
+## Which route
+
+| The character | Route |
+|---|---|
+| Standard humanoid proportions, animated with stock clips | Mixamo — this skill, the pipeline below |
+| Chibi or short limbs, non-human proportions, extra parts (ears, a tail), or a custom action | skill `blender-character-rig`; come back at stage 4 with its FBX |
+
+The two routes want different inputs on purpose: Mixamo takes a T-pose and a mesh with stray
+shells removed; the Blender route takes an A-pose and keeps every island and the inner shell.
+Choose before commissioning the art.
 
 ## The pipeline
 
@@ -73,6 +84,7 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 | PhysX triage that is not rig-shaped | `unity-physics-3d` |
 | Pathfinding, and who owns the transform when an agent drives it | `unity-navigation` |
 | Generating the reference art | `codex-visual` |
+| Rigging, skinning and keying an action in Blender, for a character Mixamo cannot rig | `blender-character-rig` |
 | 2D sprite characters | `unity-2d-sprites` |
 
 ## Related skills
@@ -81,3 +93,5 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 - `unity-game-ui` — the character-select screen the rig ends up on.
 - `unity-debug` — verifying any of this in the running game, with screenshots the agent reads.
 - `codex-visual` — generating the T-pose reference art the pipeline starts from.
+- `blender-character-rig` — the other route: bones from measured landmarks, weights by position,
+  a keyed action and an FBX proven by re-import, for chibi proportions or a custom action.

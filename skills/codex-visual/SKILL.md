@@ -243,7 +243,7 @@ PHASE 3S's stack, but the cells are **moments of one character**. The sheet deci
   `frames.json` and a GIF/APNG/WebP preview — **Unity plays none of those three formats**.
 - **3D meshes** — this skill draws the source image (`reference/image-to-3d-input.md`); conversion:
   `comfyui-asset-generation`; import: `unity-3d-models`; playable characters:
-  `unity-rigged-character`.
+  `unity-rigged-character` or `blender-character-rig`.
 - **Audio and video**, a real moving-camera clip included — music, SFX and MiniMax H3 video through
   a self-hosted ComfyUI: `comfyui-asset-generation`.
 - **Where the art goes in a HUD**, type sizes, contrast: `unity-game-ui`.

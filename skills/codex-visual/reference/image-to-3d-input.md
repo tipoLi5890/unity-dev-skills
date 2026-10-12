@@ -18,6 +18,7 @@ crop is all the model sees**.
 |---|---|---|---|
 | one-image conversion — one view carries the design | **one three-quarter view from above**: front, one side, top | in the pose of the picture (tilted; rotated upright after import), true to the image | back and underside — invented |
 | upright conversion — a hard-surface prop at true proportions | **a four-view level turnaround** (§5) from the approved three-quarter image | axis-aligned, posed to the front view; a little darker than the input | **the top** and underside — invented; a lid emblem is lost |
+| a character that will be rigged | **a four-view level turnaround of a symmetric A-pose** (§9) from the approved three-quarter image | upright, axis-aligned, in the pose of the views; an unrigged mesh | the top of the head and the soles — invented; nothing a limb hides |
 
 - **Never a lone straight-on view.** Depth is then a guess: a crate comes back 2.5x too deep.
 - A runner seen from above and behind shows a prop's top first: a prop whose top carries the
@@ -132,3 +133,75 @@ regenerate; a conversion costs minutes, this a second. What no script reads:
 3. Turnaround: `left.png` has the front pointing left (§6).
 
 Then hand off: conversion to `comfyui-asset-generation`, import to `unity-3d-models`.
+
+## 9. A character
+
+A character that will be rigged takes the turnaround path (§5), drawn so that bones can be placed
+from the mesh and every limb can be weighted apart from its neighbour.
+
+- **Strict symmetric A-pose.** Arms straight, about 45° down, clear of the hips with open space
+  under each arm; legs apart with a visible gap. A limb that touches the body fuses to it.
+- **Chunky, evenly thick limbs; mitten hands.** No separate fingers, no thin wrists or ankles.
+- **Thin parts thick, and the same in every view** — ears, a tail: one length, one thickness, one
+  angle, never crossing the body or a limb.
+- **No held prop.** Generate the prop as its own image and its own mesh; it is attached to a hand
+  bone after rigging.
+- **No shadow, ground or glow** (§3), and the black sheet background of §5.
+
+The order is the same: the three-quarter image first, approved, then the sheet from it via `-i`,
+`turnaround_to_views.py`, and `audit_3d_source.py --views` — the same gate passes a character
+sheet.
+
+```bash
+# three-quarter view — the design to approve
+codex exec --sandbox workspace-write --skip-git-repo-check \
+'$imagegen <STYLE PREAMBLE verbatim>. Subject: ONE character, the runner of a three-lane courier game, a
+short-limbed plush courier mascot with long upright ears, a round head, a satchel strap moulded
+flat onto the chest and a short thick tail. Standing in a strict symmetric A-pose: both arms
+straight, angled about 45 degrees down and held clear of the hips, legs apart with a visible gap
+between them. Chunky evenly thick arms and legs, mitten hands with no separate fingers, thick ears.
+Empty hands, holding nothing. Three-quarter view from slightly above. Square image, the whole
+character in frame, nothing cropped, centered, filling about 80% of the frame. Soft even lighting.
+No cast or contact shadow, no ground plane, no glow, no rim light, no text. Flat solid #FF00FF
+background (or the key colour ART_DIRECTION.md records).' \
+-i <repo>/ArtDirection/anchors/master.png < /dev/null
+```
+
+```bash
+# turnaround sheet, from the approved three-quarter image
+codex exec --sandbox workspace-write --skip-git-repo-check \
+'$imagegen <STYLE PREAMBLE verbatim>. A wide 4:1 turnaround sheet of the character in the second
+attached image: the SAME character four times in ONE row, left to right: FRONT view, LEFT side
+view, BACK view, RIGHT side view. Every view straight-on at eye level, same scale, same baseline,
+a clear empty gap between views, nothing overlapping. The same strict symmetric A-pose in all four:
+arms straight, about 45 degrees down, clear of the hips, legs apart with a visible gap. In the
+LEFT side view the character faces the left edge of the image; in the RIGHT side view, the right
+edge; the two side views are mirror images of each other. The inner side of each ear always faces
+forward, so both side views show the ears edge-on. Ears and tail the same length and thickness in
+every view. Empty hands, holding nothing. Match the shape, colours and details of the attached
+character exactly. Soft even lighting, no shadows, no ground, no glow. Flat pure black #000000
+background. No labels, no text, no gridlines.' \
+-i <repo>/ArtDirection/anchors/master.png <project asset dir>/runner.png < /dev/null
+```
+
+```bash
+"$PY" <skill>/scripts/turnaround_to_views.py runner_sheet.png views/runner
+"$PY" <skill>/scripts/audit_3d_source.py --views views/runner     # exit 1 → regenerate the sheet
+```
+
+What the gate does not read — open the four views:
+
+1. **The ears agree.** An ear whose inner colour faces the viewer in one side view and forward in
+   the other is the common failure; the fix is the forward-facing sentence in the prompt, then a
+   new sheet. Both side views show each ear edge-on.
+2. **The side views mirror each other**, and `left.png` has the face pointing left (§6).
+3. **Open space under both arms and between the legs** in the front and back views.
+4. **Ears and tail are one length and one thickness** across all four, and cross nothing.
+5. **Nothing in the hands**, no shadow under the feet.
+
+In a level side view an A-pose arm reads as hanging straight down, in front of the body. That is
+expected, not a drawing error: the front and back views carry the angle.
+
+Then hand off: conversion to `comfyui-asset-generation` (its multi-view path, at the close-up
+budget), rigging to `blender-character-rig`, or to `unity-rigged-character` when the character
+has standard humanoid proportions and is drawn to that skill's T-pose brief instead.

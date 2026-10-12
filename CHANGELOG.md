@@ -2,6 +2,121 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.20.0
+
+Thirty-seven skills. The new one, `blender-character-rig`, covers the character Mixamo cannot rig
+— short limbs, a head as wide as the torso, long ears, a tail — from a generated GLB to an FBX
+that has been read back by re-import. It works in a running Blender driven through its MCP
+server: import, measure, place bones, compute weights, hang a prop on a hand, key an action,
+render a preview, export, and compare what an import of the file holds against what went in.
+Three neighbours gain the character branch that leads to it, and `unity-3d-models` routes to it.
+
+- **Scripts that run from the skill, not pasted into a call.** Nine `bcr_*` modules over a shared
+  `bcr_common.py` each expose `run(params) -> dict`. A short stub sent through the server's code
+  tool puts `<skill>/scripts` on `sys.path`, reloads the module and assigns the return to
+  `result`, so a call is a dozen lines of parameters and the logic is the shipped file. Every
+  return has one shape: `ok`, `gates` (each with `name`, `value`, `limit`, `pass`), `created`,
+  and the Blender version; `report_path` writes it as JSON. Two more scripts run on the host:
+  `scripts/rig_gate.py` (stdlib only) and `scripts/frames_preview.py` (Pillow), both exit 0 / 1 /
+  2 with one JSON object out.
+- **Bones from measurement.** `bcr_import_prep` turns the GLB into one object with an identity
+  transform, its origin between the feet, at a real height, welded by position — the worked
+  20,000-triangle runner goes from 14,991 vertices to 9,994 and keeps every face, in 13 islands
+  after the weld, because UVs live on face corners and a seam survives the weld. `bcr_survey` then reads
+  the mesh: horizontal slices report how many separate runs of vertices each has (2 at the legs
+  and the ears, 3 where the arms hang beside the body), and a box returns the centroid of the
+  vertices inside it, which is how a hand, a foot and an ear tip get coordinates. `bcr_armature`
+  takes the bone spec as data — head, tail, parent, `radius`, an optional `segment`, `mirror` for
+  the `.R` twins — and stores it on the rig as `bcr_bones`. The worked skeleton is 22 bones.
+- **Weights computed, not solved.** Automatic weights fail on a generated mesh: it is a double
+  shell whose inner vertices are hidden from every bone, in several disconnected islands, so the
+  solve stops or leaves vertices unweighted. `bcr_skin` needs no solve. Distance to each deform
+  bone's segment is divided by that bone's radius and the nearest bone owns the vertex; it shares
+  the vertex only with its own parent and children (`tau` 0.2), so an arm reaches the torso
+  through the shoulder and never through the ribs; a chain named in `gradients` — ears, a tail —
+  is weighted along its length so it bends as a curve; then four smoothing passes and a cut to
+  four influences. The inner twin of a vertex gets the weights of the skin over it, because the
+  rule only looks at where a vertex is. Nothing is deleted: the inner shell and the small islands
+  stay, since the baked maps address them. It refuses a mesh whose object scale is not 1.
+- **The extreme pose is the weight test.** Four numeric gates pass on weights that still look
+  wrong, so the test is a picture: `bcr_pose` `apply` with an arm straight up, the other forward,
+  the head turned, the spine bent, one ear folded and a leg lifted, one `bcr_preview` still, then
+  `reset`. What the picture says is a table — a thin part torn into strips is hard nearest-bone
+  weights and wants a gradient chain; a torso that follows a raised arm is an arm radius that is
+  too large; a crease that reads as a fold wants a higher `tau` or more passes — and
+  `dominant_vertices` names the bone whose radius is too small before the render does.
+- **A prop on a hand bone.** `bcr_attach` measures the grip instead of taking it from the caller:
+  the handle's axis is the centroid of a thin slice at the free end, the one place nothing but
+  handle exists. A band further up that catches the head puts the axis beside the handle, and
+  `handle_radius_ratio` shows it — about 0.3 where a handle is a few percent of the prop's length
+  — so the gate is 0.15. Bone parenting attaches at the bone's tail and moves the prop by the
+  bone's length; the module sets the parent, updates the view layer and assigns the wanted world
+  matrix again, gated on a drift under 1e-4. `head_side` says which way the head sticks out, so
+  the rotation that faces it forward is read rather than tried.
+- **Poses in armature axes, and contact measured before a render.** A bone's own axes depend on
+  its roll, so the same rotation means something different on every bone. `bcr_pose` takes steps
+  in the armature's axes, applied in the order written — `[["Y", 40], ["X", -85]]` — and converts
+  them with each bone's rest matrix. `key` writes an FK action from a frame table, keys a bone
+  named in any frame in every frame, and gates that the action's slot is assigned, because an
+  action without one drives nothing. `bcr_probe` then reads the striking edge in world space at
+  chosen frames. A first pass that swings too far reads as the edge at floor height with
+  `direction_z` near −1 at the contact frame: one read-only call shows it, by how much and which
+  way, before any render; the target is then placed at the
+  measured contact and gated with `within` 0.05 and `direction_z_min` −0.8.
+- **Preview in chunks.** A render call has to return before the host's tool timeout, so
+  `bcr_preview` renders a range a chunk at a time — twenty frames at 50% to start from — deletes
+  a stale file in the range first, writes where `out_dir` says and restores the render path,
+  resolution, format, camera and frame in a `finally`. `scripts/frames_preview.py` makes the GIF
+  and a contact sheet of the key frames. Two things only the pictures show: a target standing
+  between the camera and the character, and material slots that came out swapped.
+- **The FBX round trip, and the clip-naming finding.** An export that returns `FINISHED` says a
+  file was written. `bcr_fbx` snapshots the rig, exports, imports the file into a scene of its
+  own and snapshots that; `scripts/rig_gate.py` compares the two on eight gates — bones, parents,
+  bone positions within 0.001 m, vertex groups, the prop still on its bone, influences, scale,
+  the action. The finding is in the exporter's all-actions switch. Off, the file carries one take
+  with its frame numbers kept, and the take is named after the *scene*, not the action. On, every
+  action in the .blend is written onto the armature — the one authored for the target object
+  included — each named `<rig>|<action>` and re-based to start at 0. So the clip's name is a
+  decision made before Unity: rename the scene, rename the clip in the importer, or keep one
+  action per .blend and switch all-actions on. Two smaller ones: the importer's default
+  `anim_offset` moves every key by one frame, so the read-back passes 0; and the baked take has
+  an f-curve for every channel of every bone (229 against 30 authored for the worked rig), which
+  is expected.
+- **Session discipline.** The server is found by listing its tools, not by recalling them, and
+  unreachable is not absent. New work goes in its own collection; what the user made is hidden,
+  never deleted, and a camera, light or world is added beside theirs. Every non-additive change
+  is reported with whether the file is saved, and nothing is saved unasked. A `bcr_*` call that
+  raises removes what it had created, and calls are idempotent by name. With a non-English UI
+  `nodes["Principled BSDF"]` raises `KeyError`, so nodes are found by `bl_idname`. A render tool
+  given an output path may write into Blender's own temp directory: the path in its result is the
+  authority. Seven references carry the depth — `reference/mcp-session.md`,
+  `reference/scene-discipline.md`, `reference/import-and-survey.md`,
+  `reference/armature-and-skinning.md`, `reference/prop-on-bone.md`,
+  `reference/action-and-preview.md`, `reference/fbx-export.md`.
+- **`codex-visual`** gains the source image for a character: a strict symmetric A-pose with the
+  arms clear of the hips and a gap between the legs, chunky evenly thick limbs with mitten hands,
+  thin parts drawn thick and the same in every view, no held prop — that is generated separately
+  — and no shadow or ground. The four-view sheet is drawn from the approved three-quarter image
+  and passes the same `--views` gate as a prop. One failure is caught only by eye: an ear whose
+  inner colour faces the viewer in one side view and forward in the other, fixed by saying in the
+  prompt that the inner ear always faces forward.
+- **`comfyui-asset-generation`** gains the character row: the multi-view template at the close-up
+  budget — 20,000 faces, a 768 remesh, a 2048 texture — gated by `inspect_glb.py --max-triangles
+  20000 --texture-size 2048`. What comes back is upright, axis-aligned and unrigged, and the
+  double shell that costs a prop half its triangles is, on a character, the reason automatic
+  weights fail.
+- **`unity-rigged-character`** opens on the choice of route. Standard humanoid proportions and
+  stock clips go to Mixamo, as before; chibi proportions, short limbs, extra parts or a custom
+  action go to `blender-character-rig`. The two differ on purpose — Mixamo wants a T-pose and
+  stray shells removed, the Blender route takes an A-pose and keeps every island and the inner
+  shell — and both end in the same FBX import.
+
+What `blender-character-rig` does not do: IK, so the feet stay planted and the action is
+single-handed where short arms do not meet; closed hands, so a handle passes through the palm;
+facial animation; the Unity import, the Avatar and whether the Humanoid mapping accepts the
+skeleton, which are `unity-rigged-character`'s to confirm in an Editor; and installing Blender,
+its add-on or the MCP server, which stays the user's.
+
 ## 0.19.0
 
 `comfyui-asset-generation` grows image-to-3D: one image or four views become a game-budget GLB on

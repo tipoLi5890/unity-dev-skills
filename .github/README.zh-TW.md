@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。三十六個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。三十七個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -47,9 +47,10 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | | `unity-2d-pixel-perfect` | 像素畫糊掉、鏡頭一動像素就爬、tile 之間出現髮絲縫 —— 以及你手上到底是哪一個叫 `PixelPerfectCamera` 的元件 |
 | | `unity-sprite-atlas` | 該共用一次 draw call 的 sprite：用腳本產 V2 atlas、打包與平台設定，以及打包好的貼圖怎麼到玩家手上 |
 | | `unity-tilemap` | 矩形、六角與等角網格的 Tile Palette，以及用手上現成的地形圖產出 RuleTile |
-| | `unity-rigged-character` | 可操作的角色：原畫 → image-to-3D → Mixamo → Avatar → Animator → gameplay rig |
+| | `unity-rigged-character` | 可操作的角色：原畫 → image-to-3D → Mixamo → Avatar → Animator → gameplay rig；Mixamo 綁不了的比例，改由 `blender-character-rig` 出 FBX 接手 |
 | **AI 素材生成** | `codex-visual` | 用 `codex` 影像模型出 2D 美術，靠一份美術聖經與一張錨定圖鎖住風格：grid one-shot 整組、短動畫生成成一張 sprite sheet 再切成量測過的逐格並輸出 GIF 預覽、去背、尺寸正規化，並以幾何驗收閘門讀回交付檔的置中與尺寸 |
 | | `comfyui-asset-generation` | 用自架 ComfyUI 出音樂、音效、MiniMax H3 影片與圖生 3D 道具：一次一件、只信 `/history`、換模型前先 `/free` |
+| | `blender-character-rig` | 透過 MCP server 在執行中的 Blender 裡，替圖生 3D 角色綁骨架、做動畫：骨頭依量到的特徵點擺放、權重依位置計算、道具掛在手骨上、key 出一段 action、算出預覽，再把 FBX 重新匯入驗證 |
 | **執行期領域** | `unity-physics-3d` | 永遠不觸發的碰撞或 trigger、高速穿透、明明在正前方卻打不到的 raycast |
 | | `unity-navigation` | NavMesh、agent、障礙物、link —— 以及決定誰擁有 transform |
 | | `unity-render-urp` | 設了卻不出現的後製、行動裝置負擔得起的子集、Render Graph 審查 |

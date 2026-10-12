@@ -61,10 +61,13 @@ The first three are named for the rows of the triangle-budget table in `unity-3d
 sit inside them; that table, not this one, says what a game can afford. Close-up is for a prop
 the camera gets near and the game does not pool; showcase is not a game asset.
 
+A character that will be rigged uses the close-up row as well (`reference/image-to-3d.md`,
+A character).
+
 ```bash
 --set 186.target_face_count=2000 --set 241.resolution=128                        # pickup
 --set 186.target_face_count=4000 --set 241.resolution=256                        # obstacle, environment prop
---set 186.target_face_count=20000 --set 241.resolution=768 --set 288.value=2048  # close-up prop
+--set 186.target_face_count=20000 --set 241.resolution=768 --set 288.value=2048  # close-up prop, character
 ```
 
 - **The face target and the remesh resolution move together.** 5000 faces asked of a 768 remesh
@@ -93,6 +96,12 @@ this, and no remesh option removes it — not `sign_mode.drop_inverted_component
   draws the inner shell as well and lets it z-fight at a distance. Make the imported material
   front-face only, then confirm in the engine that no face went missing.
 - The engine's triangle budget still counts all of them.
+- Automatic (bone-heat) skin weights fail on it: the inner shell is hidden from every bone and
+  the mesh is several islands, so the solve fails or leaves vertices unweighted.
+- Weights computed from position give the inner twin of a vertex the same weights as the skin
+  over it: skill `blender-character-rig`, its armature-and-skinning reference.
+- Keep the shell when rigging — the baked normal and occlusion maps address it — and cull back
+  faces instead of deleting it.
 
 ## Occlusion
 

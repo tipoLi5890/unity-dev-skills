@@ -55,14 +55,15 @@ Two hard truths this skill exists for:
 | The game lags/stutters with 3D assets; triangle budget; draw calls | `reference/performance-budget.md` |
 | Numbers for the lag before touching a mesh: triangle and draw-call counters, a before/after window | skill `unity-profiling` |
 | Textures and meshes are bloating memory or the build | skill `unity-android-release`, its size-and-stripping reference |
-| A **rigged, animated character** rather than a prop | skill `unity-rigged-character` |
+| A **rigged, animated character** rather than a prop | skill `unity-rigged-character` (Mixamo, stock clips), or skill `blender-character-rig` for chibi proportions, extra parts or a custom action |
 | 2D sprite sheets, slicing, pivots, 9-slice borders | skill `unity-2d-sprites` |
 | Verifying any of it visually | skill `unity-debug` |
 
 ## Scope — what this skill does NOT do
 
 Static props only. Characters take the FBX route because glTFast cannot produce an Avatar —
-`unity-rigged-character`. Driving the Editor is `unity-cli` and `unity-debug`; build-wide
+`unity-rigged-character`, or `blender-character-rig` when the rig and the action are authored in
+Blender. Driving the Editor is `unity-cli` and `unity-debug`; build-wide
 stripping is `unity-android-release` and `unity-web-release`.
 
 ## Two rules that decide everything else

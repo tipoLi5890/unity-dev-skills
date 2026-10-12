@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Thirty-six skills covering the loop from an
+Unity 6 game-development skills for AI coding agents. Thirty-seven skills covering the loop from an
 empty project to a verified artifact — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -50,9 +50,10 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 | | `unity-2d-pixel-perfect` | Pixel art that renders soft, shimmers as the camera moves, or shows hairline seams — and which of the two components called `PixelPerfectCamera` you actually have |
 | | `unity-sprite-atlas` | Sprites that should share a draw call: V2 atlases from script, packing and platform settings, and how the packed texture reaches the player |
 | | `unity-tilemap` | Tile Palettes for rectangular, hexagonal and isometric grids, and RuleTiles built from a terrain sheet you already have |
-| | `unity-rigged-character` | A playable character: art → image-to-3D → Mixamo → Avatar → Animator → gameplay rig |
+| | `unity-rigged-character` | A playable character: art → image-to-3D → Mixamo → Avatar → Animator → gameplay rig — or, for proportions Mixamo cannot rig, an FBX from `blender-character-rig` in Mixamo's place |
 | **AI asset generation** | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files |
 | | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch |
+| | `blender-character-rig` | An image-to-3D character rigged and animated in a running Blender through its MCP server: bones from measured landmarks, weights computed by position, a prop on a hand bone, a keyed action, a preview, and an FBX proven by re-import |
 | **Runtime domains** | `unity-physics-3d` | A collision or trigger that never fires, tunnelling, a raycast that misses |
 | | `unity-navigation` | NavMesh, agents, obstacles, links — and deciding who owns the transform |
 | | `unity-render-urp` | Post-processing that will not appear, the mobile subset, Render Graph review |

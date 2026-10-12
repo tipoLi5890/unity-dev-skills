@@ -28,6 +28,26 @@ view**. Set the model and all children to the prefab root's layer after parentin
 **All Editor automation must be re-runnable** — rebuild from a clean state rather than
 reconciling with what's there. Re-exports happen constantly.
 
+### An FBX authored in Blender
+
+The file from skill `blender-character-rig` differs from a Mixamo set on clip naming and on one FBX per animation (points 1 and 2 above):
+
+- **One FBX holds the mesh and the clip.** No second file, so nothing to link with Copy From
+  Other Avatar. Confirm a prop parented to a hand bone arrives under that bone's transform.
+- **The clip is named after the Blender scene**, not after the action, unless the scene was
+  renamed before export or the clip is renamed on the Animation tab. Exported with every action
+  in the .blend, each clip is named `<rig>|<action>` instead. Read the name; do not assume it.
+- **Generic plays it as authored**: the clip drives the bones it was keyed on, the extra ones
+  (ears, a tail) included. Choose Generic when the Blender action is all the character plays.
+- **Humanoid is a check, not a given.** It matters only to mix in retargeted clips or to use the
+  humanoid AvatarMask of §9. Set the Rig tab to Humanoid, open **Configure** and confirm every
+  required bone is mapped: very short limbs and extra bones can leave a slot empty or
+  misassigned. Extra bones sit outside the Humanoid mapping — confirm in Play mode that they
+  still move before relying on them.
+- **Scale imports at `(1,1,1)`** on the model root and the armature. Anything else is unapplied
+  scale in the .blend: fix it there and re-export, not with the importer's scale factor.
+- **Clip length matches what was keyed** — the worked `GateLatchSwing` runs frames 1–40 at 24 fps, about 1.63 s.
+
 ## 9. Animator structure
 
 **Two run clips (slow + fast) earn a 1D Blend Tree.** Do not time-scale a single clip:

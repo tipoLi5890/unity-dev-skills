@@ -41,3 +41,8 @@ textures. `--keep-spike` disables stray-shell removal. **Check the printed ratio
 uploading:** arm-span/height **0.8–1.0**, depth/height **0.2–0.3**. A depth/height near
 0.54 means stray geometry is still polluting the bounding box — re-clean, don't upload.
 The ASCII front/side views printed at the end should read as a T-pose.
+
+> **Stray-shell removal is for Mixamo.** Its auto-rigger wants one body and a clean bounding box.
+> The Blender route (skill `blender-character-rig`) keeps every island and the inner shell: the
+> baked normal and occlusion maps address them, and its weights are computed by position, so a
+> mesh in several pieces is not a failure there. Do not run this cleanup on a mesh bound for it.

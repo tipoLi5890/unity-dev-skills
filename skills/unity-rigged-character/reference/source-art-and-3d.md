@@ -17,6 +17,10 @@ installs for one format change — so use **`glb2mixamo.py`** in this skill: std
 a Mixamo-ready OBJ, runs the humanoid sanity checks, and extracts the embedded maps you will
 need later with `--textures=DIR` (without the flag it only lists them).
 (`assimp export in.glb out.obj` works too if it happens to be installed.)
+A Blender that is already open does not change this: the reason to go through it is not the
+format change but a character Mixamo cannot rig — chibi or short limbs, non-human proportions,
+ears or a tail, a custom action. That route is skill `blender-character-rig`, and it exports
+the FBX itself.
 
 > **Never run index-level connectivity checks on glTF geometry.** FBX keeps a de-duplicated
 > vertex array and indexes UVs separately; **glTF binds every attribute to one vertex, so each
@@ -29,9 +33,11 @@ need later with `--textures=DIR` (without the flag it only lists them).
 
 ## 2. T-pose reference art — the input that decides everything downstream
 
-**T-pose is the precondition for auto-rigging**: arms fully horizontal, clearly separated
+**T-pose is the precondition for Mixamo's auto-rigging**: arms fully horizontal, clearly separated
 from the torso, legs apart with a visible gap. A natural arms-down pose makes the
 auto-rigger weld arm and torso skin weights together, and nothing downstream fixes it.
+The Blender route places bones from measured landmarks and takes a symmetric **A-pose**
+instead; its art brief is the character section of `codex-visual`'s image-to-3D input reference.
 
 - **No text anywhere in frame.** Turnaround sheets label views `FRONT` / `LEFT` / `BACK` /
   `RIGHT`; image-to-3D treats those letterforms as **geometry to build**. Crop them out.
@@ -64,7 +70,9 @@ How they compare on quality (these tools move fast — test one character before
   **adds the same unrequested realistic detail** to stylised characters.
 - **Self-hosted ComfyUI (Pixal3D / TRELLIS.2, skill `comfyui-asset-generation`)** — outputs
   GLB, so the GLB → OBJ step in §1 still applies, and the graph has no pose input, so the T-pose
-  rules in §2 decide the input.
+  rules in §2 decide the input. Its multi-view path, fed four level views of one character at
+  one scale, returns an upright, axis-aligned, unrigged mesh in the pose of the views: the
+  input the Blender route starts from.
 
 The parameters usually decide it before quality does:
 

@@ -1,4 +1,4 @@
-# Image to 3D — a static prop from one image or four views
+# Image to 3D — an unrigged mesh from one image or four views
 
 Three API templates turn images into a textured GLB with core ComfyUI nodes only. They share one
 back half — structure → shape → texture → remesh → decimate → unwrap → bake → save, plus QA
@@ -134,14 +134,52 @@ The renders saved under `3d/qa/` are the visual gate. Look at every one before i
 | `status_str: error` | report the failing node; when out of memory, lower `94.target_resolution` and retry once |
 | success, but a gate or render fails | the symptom table in `reference/image-to-3d-tuning.md` |
 
+## A character
+
+A character that will be rigged takes the multi-view template only: the rig needs a mesh that
+stands upright, axis-aligned and in true proportion, and the single-image paths return a tilted
+mesh or invent the back.
+
+- **Four views of one pose at one scale.** FRONT, LEFT, BACK, RIGHT of a strict symmetric
+  A-pose: arms straight, about 45° down and clear of the hips, legs apart with a visible gap,
+  limbs chunky and evenly thick, thin parts (ears, a tail) thick and drawn the same in every
+  view. Drawing and gating the sheet is `codex-visual`, its reference on source images for 3D.
+- **No held prop.** Generate the prop as its own job and attach it after rigging.
+- **The close-up budget.** The visible surface gets half the triangles, and a joint that bends
+  needs them.
+- A-pose is what `blender-character-rig` takes. Mixamo wants a T-pose: read
+  `unity-rigged-character` before drawing the views for that route.
+
+```bash
+python3 scripts/comfy_asset_client.py --workflow templates/pixal3d_multiview_to_model_api.json \
+  --output-dir out/runner \
+  --upload views/runner_front.png --upload views/runner_left.png \
+  --upload views/runner_back.png --upload views/runner_right.png \
+  --set 801.image=runner_front.png --set 802.image=runner_left.png \
+  --set 803.image=runner_back.png --set 804.image=runner_right.png \
+  --set 186.target_face_count=20000 --set 241.resolution=768 --set 288.value=2048
+python3 scripts/inspect_glb.py out/runner/*.glb --max-triangles 20000 --texture-size 2048
+```
+
+On `clay`, on top of the acceptance table: each arm separate from the torso, a gap between the
+legs, both ears and the tail present and not fused to the head or body. A limb fused to the body
+cannot be skinned apart: fix the views and regenerate.
+
 ## Hand-off
 
-Static props only; a character that needs a rig is `unity-rigged-character`. Importing the GLB
-is `unity-3d-models`, with these facts in hand:
+The result is an unrigged mesh, and it leaves by one of two routes. A prop is imported as it is:
+`unity-3d-models`. A character is rigged first and reaches Unity as FBX: `blender-character-rig`
+for chibi or short-limbed proportions, extra parts (ears, a tail) or a custom action; Mixamo in
+`unity-rigged-character` for standard humanoid proportions and stock clips. These facts go with
+it either way:
 
 - The file is already at budget, with normal map and occlusion baked from the dense mesh onto
   the decimated one. Simplifying it afterwards with gltf-transform breaks that match: set the
   budget in the graph and regenerate.
+- That holds for a character too: welding or decimating the GLB in a glTF tool is still wrong.
+  The weld by position inside `blender-character-rig` is a different operation — it merges the
+  vertices split at UV seams, keeps every face and island, and has its own check (that skill's
+  import-and-survey reference).
 - The origin is the bounding-box centre, not the base: scale and offset the `Model` child, and
   rotate it for a Pixal3D single-image mesh.
 - One material, exported double-sided (`double_sided` in the gate's output). The mesh is a

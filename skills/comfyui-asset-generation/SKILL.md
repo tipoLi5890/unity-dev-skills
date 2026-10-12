@@ -54,6 +54,7 @@ infer permission to upload private inputs unless the user authorizes those actio
 | Any MiniMax H3 video mode | `reference/minimax-h3.md` and the matching H3 template |
 | H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
 | A static 3D prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
+| A character to be rigged: multi-view only, four A-pose views at one scale, the close-up budget | `reference/image-to-3d.md` (A character); `templates/pixal3d_multiview_to_model_api.json` |
 | 3D budgets, node knobs, occlusion, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` |
 | H3 character motion transfer, pace matching, or side-by-side QA | Also read `reference/h3-motion-transfer.md`; normalize non-24 fps sources with `scripts/prepare_h3_motion_reference.py` |
 
@@ -87,8 +88,9 @@ with the Codex host — display name, one-line summary, and the
   pause behaviour): `unity-audio`. This skill stops at a validated file on disk.
 - **Importing a GLB into Unity** — glTFast, scale, pivot and rotation on the `Model` child,
   prefab wiring, culling and the triangle budget: `unity-3d-models`.
-- **A character that needs a rig** — skeleton, Avatar, animation clips: `unity-rigged-character`.
-  The 3D templates here produce static props.
+- **Rigging a character** — skeleton, skin weights, Avatar, animation clips. The 3D templates
+  here produce an unrigged mesh; a character takes the multi-view path and is rigged in
+  `blender-character-rig` or through Mixamo in `unity-rigged-character`.
 - **Images and sprites** — reference art, icons, sprite sheets, chroma-key transparency and the
   art-bible discipline, and the source image or turnaround sheet an image-to-3D job starts from:
   `codex-visual`.
@@ -100,7 +102,8 @@ with the Codex host — display name, one-line summary, and the
 
 - MiniMax H3's reliable trained range is approximately 5–15 seconds per video;
   disclose when a request exceeds that tested range.
-- Image-to-3D yields static props: one mesh, one material, no skeleton, no real-world scale.
+- Image-to-3D yields an unrigged mesh: one mesh, one material, no skeleton, no real-world
+  scale.
 - Keep engine import, compression, middleware, and Unity/Unreal/Godot integration
   in downstream skills.
 - Do not expose unauthenticated ComfyUI to the public internet. Prefer LAN or an

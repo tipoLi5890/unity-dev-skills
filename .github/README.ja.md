@@ -3,7 +3,7 @@
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
 AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。空のプロジェクトから検証済みの
-成果物までを一巡りカバーする 36 個の skill で、Claude Code と OpenAI Codex のどちらにも
+成果物までを一巡りカバーする 37 個の skill で、Claude Code と OpenAI Codex のどちらにも
 インストールできます。
 
 単なる Unity のメモの寄せ集めと違う点が三つあります。
@@ -52,9 +52,10 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | | `unity-2d-pixel-perfect` | ドット絵がぼける、カメラが動くとピクセルが這う、タイルの継ぎ目に髪の毛のような隙間 —— そして手元にあるのは `PixelPerfectCamera` という名の二つのコンポーネントのどちらなのか |
 | | `unity-sprite-atlas` | 同じ draw call に載せたいスプライト：スクリプトからの V2 アトラス、パッキングとプラットフォーム設定、そして焼いたテクスチャがプレイヤーに届くまで |
 | | `unity-tilemap` | 矩形・ヘックス・アイソメトリックの Tile Palette と、手持ちの地形シートから作る RuleTile |
-| | `unity-rigged-character` | 操作できるキャラクター：原画 → image-to-3D → Mixamo → Avatar → Animator → ゲームプレイ用リグ |
+| | `unity-rigged-character` | 操作できるキャラクター：原画 → image-to-3D → Mixamo → Avatar → Animator → ゲームプレイ用リグ。Mixamo がリグを付けられない体型は、`blender-character-rig` の FBX で置き換える |
 | **AI アセット生成** | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化、そして納品ファイルから中心とサイズを読み戻す幾何ゲート |
 | | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画・画像から 3D プロップを生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free` |
+| | `blender-character-rig` | 起動中の Blender を MCP サーバー経由で操作し、画像から生成した 3D キャラクターにリグとアニメーションを付ける：計測したランドマークからボーンを配置、ウェイトは位置から計算、プロップは手のボーンに、アクションをキー入力してプレビューを出し、FBX は再インポートで確かめる |
 | **ランタイム領域** | `unity-physics-3d` | 決して発火しない衝突や trigger、高速すり抜け、目の前にあるのに当たらない raycast |
 | | `unity-navigation` | NavMesh、agent、障害物、link —— そして transform を誰が所有するかの決定 |
 | | `unity-render-urp` | 設定したのに出てこないポストプロセス、モバイルで賄える範囲、Render Graph のレビュー |
