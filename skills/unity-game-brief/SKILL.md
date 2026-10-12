@@ -65,8 +65,13 @@ Fill `templates/GAME_BRIEF.md`. **One page.** A second page means a feature list
 
 Five decisions, and this skill decides only these five: **palette roles** (≤5, one meaning each),
 **reactive-vs-ground contrast** as a ratio (3:1 floor by default), **three silhouettes** that stay
-tellable apart in black at shipping size, the **camera** (distance, pitch, aspect), and **one anchor
-image**. Everything else about art is production.
+tellable apart in black at shipping size, **perspective and movement**, and **one anchor image**.
+Everything else about art is production.
+
+Perspective and movement is recorded as constraints, never as a genre label: dimension (2D, 2.5D,
+3D); projection (orthographic with size and pixels per unit, or perspective with FOV, distance and
+pitch); view axis (side, top, isometric, behind, eye); movement model (free, lane with lane width,
+or cell with cell size and layout) and what owns the transform; aspect; input devices.
 
 Budget: 2–3 distinct boards → the human picks → at most 2 correction rounds → locked. Corrections
 are one sentence, one axis: *keep [what works], change [one axis], toward [the other end], not all
@@ -203,4 +208,5 @@ take if nobody answers.**
 | Type sizes, contrast ratios in practice, HUD layout | `unity-game-ui` |
 | Download size, heap ceilings, browser headers | `unity-web-release` |
 | Collisions, agents that will not move, post-processing | `unity-physics-3d` · `unity-navigation` · `unity-render-urp` |
+| Which controller, camera and movement skills a perspective needs | `unity-gameplay` |
 | Building the whole game from the proposal | Every other skill in this plugin |

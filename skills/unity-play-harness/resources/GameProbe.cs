@@ -23,6 +23,10 @@ using UnityEngine.SceneManagement;
 ///
 /// Unity 6 API notes: Rigidbody.linearVelocity (was .velocity before Unity 6),
 /// Time.frameCount, SceneManager.GetActiveScene().name, Camera.main.
+///
+/// The only physics type named here is Rigidbody. A 2D body, a CharacterController, a
+/// kinematic motor or a grid mover reports through SetPlayerVelocity, so this file compiles
+/// without the 2D physics module and without knowing which mover the game uses.
 /// </summary>
 public static class GameProbe
 {
@@ -50,6 +54,7 @@ public static class GameProbe
     static Func<string> _state;
     static Func<Transform> _player;
     static Func<Rigidbody> _body;
+    static Func<Vector3> _velocity;
     static bool _hooked;
 
     static Vector3 _lastPos;
@@ -104,12 +109,28 @@ public static class GameProbe
     public static void SetState(Func<string> state) { Hook(); _state = state; }
 
     /// <summary>pos/vel/speed. Pass the Rigidbody accessor when there is one; otherwise velocity
-    /// is derived from the position delta between snapshots (valid when sampled every frame).</summary>
+    /// is derived from the position delta between snapshots (valid when sampled every frame).
+    /// Any other mover — a 2D body, a CharacterController, a motor — uses SetPlayerVelocity.</summary>
     public static void SetPlayer(Func<Transform> player, Func<Rigidbody> body = null)
     {
         Hook();
         _player = player;
         _body = body;
+        _velocity = null;
+        _lastPosUt = -1f;
+    }
+
+    /// <summary>pos/vel/speed for a player that is not a Rigidbody: vel is whatever the delegate
+    /// returns, speed its magnitude. One delegate covers Rigidbody2D.linearVelocity (a Vector2
+    /// converts, z reads 0), CharacterController.velocity, a kinematic motor's own velocity and
+    /// a grid mover's step velocity. Guard a destroyed body inside the delegate. The last call
+    /// of SetPlayer or SetPlayerVelocity wins; a null velocity falls back to the position delta.</summary>
+    public static void SetPlayerVelocity(Func<Transform> player, Func<Vector3> velocity)
+    {
+        Hook();
+        _player = player;
+        _body = null;
+        _velocity = velocity;
         _lastPosUt = -1f;
     }
 
@@ -180,7 +201,8 @@ public static class GameProbe
             s.hasPlayer = true;
             s.pos = tr.position;
             Rigidbody rb = _body != null ? EvalRef(_body) : null;
-            if (rb != null) s.vel = rb.linearVelocity;          // Unity 6 name
+            if (_velocity != null) s.vel = EvalVec(_velocity);
+            else if (rb != null) s.vel = rb.linearVelocity;     // Unity 6 name
             else s.vel = DeriveVelocity(s.pos, s.ut);
             s.speed = s.vel.magnitude;
         }
@@ -226,7 +248,7 @@ public static class GameProbe
         _ready.Clear(); _readyOrder.Clear();
         _counts.Clear(); _countsOrder.Clear();
         _custom.Clear(); _customOrder.Clear();
-        _state = null; _player = null; _body = null;
+        _state = null; _player = null; _body = null; _velocity = null;
         Situation = null;
         _lastPosUt = -1f;
         _derivedVel = Vector3.zero;
@@ -400,6 +422,11 @@ public static class GameProbe
     static T EvalRef<T>(Func<T> f) where T : class
     {
         try { return f(); } catch (Exception e) { Warn(e); return null; }
+    }
+
+    static Vector3 EvalVec(Func<Vector3> f)
+    {
+        try { return f(); } catch (Exception e) { Warn(e); return Vector3.zero; }
     }
 
     static void Warn(Exception e) => Debug.LogWarning("[PROBE] hook threw: " + e.Message);

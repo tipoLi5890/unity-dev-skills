@@ -71,7 +71,9 @@ month, and when it fails it tells you only that three seconds passed.
 
 Copy `resources/GameProbe.cs`, `resources/Situations.cs` and `resources/JourneyRecorder.cs` into a
 Runtime assembly, `resources/Editor/ProbeCommands.cs` into an Editor one, and start from
-`templates/CourierSituations.cs` and `templates/JourneyTest.cs`.
+`templates/CourierSituations.cs` and `templates/JourneyTest.cs`. A 2D game starts from
+`templates/CourierSituations2D.cs` instead and adds `resources/JourneyInvariants2D.cs`, which is
+a separate file so that a project without the 2D physics module still compiles the rest.
 
 ---
 
@@ -81,7 +83,7 @@ Runtime assembly, `resources/Editor/ProbeCommands.cs` into an Editor one, and st
 |---|---|
 | `schema` · `frame` · `t` · `ut` · `dt` · `timeScale` | Version, and the clock in both scales — a `timeScale` of 0 explains most "it froze" reports |
 | `scene` · `situation` · `state` · `cam` | Where the game is, and which moment it was told to be in; a null `cam` explains a black screenshot |
-| `pos` · `vel` · `speed` | The player, from `transform.position` and `Rigidbody.linearVelocity` |
+| `pos` · `vel` · `speed` | The player: `transform.position`, and velocity from the delegate given to `SetPlayerVelocity` (a 2D body, a `CharacterController`, a motor, a grid mover), else `Rigidbody.linearVelocity`, else the position delta |
 | `ready{}` · `allReady` | Every readiness member, re-evaluated this frame |
 | `counts{}` · `custom{}` | Named ints, and the handful of game-specific numbers a complaint could be about |
 | `batch` · `playing` | Which instrument produced the line, and whether the game was running at all |
@@ -135,4 +137,6 @@ something is broken.
 | Assembly definitions, folder layout, which Editor version the project is pinned to | `unity-new-project` |
 | A collision or trigger that never fires, a raycast that misses | `unity-physics-3d` |
 | Building the UI rather than reaching a screen of it | `unity-game-ui` |
+| Which controller, camera or movement model a game needs, by perspective | `unity-gameplay` |
+| Reading input through one funnel a journey can drive | `unity-input` |
 | The same observability on a real phone: a probe scene read through logcat or the iOS console | `unity-device-testing` |

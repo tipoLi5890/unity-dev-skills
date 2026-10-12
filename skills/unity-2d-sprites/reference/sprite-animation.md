@@ -260,8 +260,9 @@ sm.defaultState = sm.states[0].state;      // assert on it afterwards, do not as
 ```
 
 A single-clip controller is the whole graph for an idle or a one-shot. States, parameters and
-transitions past that — blend trees, masked layers, root motion — are `unity-rigged-character`'s
-subject, not this skill's.
+transitions past that are `unity-animation` → `reference/sprite-state-graph.md`; blend trees and
+root motion are routed from `unity-animation`, and masked layers on a 3D rig are
+`unity-rigged-character`.
 
 ## 7. Acceptance — four reads, and none of them is the exit code
 

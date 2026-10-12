@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Thirty-seven skills covering the loop from an
+Unity 6 game-development skills for AI coding agents. Forty-one skills covering the loop from an
 empty project to a verified artifact — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -36,12 +36,16 @@ Or drop the skills straight into a project — copy `skills/*` into `<project>/.
 |---|---|---|
 | **Terminal & verification** | `unity-cli` | Driving Unity from a terminal: editors, licences, templates, CI, MCP, and exit codes that say whether a retry is honest |
 | | `unity-debug` | You need to verify a change you cannot see — and to prove the harness is telling the truth before believing it |
-| | `unity-play-harness` | Making the game drivable and readable: a one-line probe snapshot, named situations that boot straight into a moment and wait on a readiness set, journey tests that assert invariants, a feel complaint turned into a repeatable test |
+| | `unity-play-harness` | Making the game drivable and readable: a one-line probe snapshot, named situations that boot straight into a moment and wait on a readiness set, journey tests that assert invariants, a feel complaint turned into a repeatable test — for a 3D or a 2D game |
 | | `unity-profiling` | What a slow or uneven frame is actually doing: counters without the Profiler window, 90-frame windows with median/p95/worst, work counters, a before/after table |
 | | `unity-search` | "Find it / where is it / what references it" as one Unity Search query — type filters, folders, labels, `ref=` relationships, scene component queries — shown before it runs, and opened in a live Editor when there is one |
 | | `unity-device-testing` | Acceptance on a **real phone**, Android or iOS: a probe scene that logs one tagged line per state change, a driver that asserts on it and taps system dialogs, a human asked for one physical action at a time and verified from the device, and exit codes that separate a real failure from a broken harness |
 | **Day one** | `unity-new-project` | Decisions that are expensive to retrofit: editor pinning, `.meta`/LFS, UPM tag pinning, IL2CPP/ARM64, asmdef boundaries |
 | | `unity-game-brief` | The first hour, before any Unity work: one line of idea into a one-page experience brief, the look locked with images, an architecture proposal derived from the constraints, invariants, and one interaction a human can play |
+| | `unity-gameplay` | **Start here for any gameplay request that names no perspective.** Fingerprints the project — 2D or 3D, projection, view, movement model — and routes controls, camera, animation and verification; owns genre recipes written as constraints, level metrics derived from the controller's numbers, and production stages with exit checks |
+| **3C — input, camera, character** | `unity-input` | Player input that gameplay reads as one struct, never a device: an actions asset for keyboard, gamepad and touch, presses latched in `Update` and spent once in `FixedUpdate` — the jump that goes missing or fires twice — plus buffering, on-screen sticks, pointer aim and rebinding |
+| | `unity-camera` | A camera that jitters, shows outside the level or clips through walls: the two clocks behind the jitter, Cinemachine rigs for 2D follow with a room confiner, pixel-perfect follow, third-person orbit and first person, shake and blends, the 2.x → 3.x name table, and a journey that proves a rig holds |
+| | `unity-animation` | An Animator that disagrees with the game — stuck in a state, an attack that plays by itself, a hitbox that stays on: one writer per parameter, blend trees and sprite state graphs built from script, events and attack windows that survive interruption, IK, Timeline handover, root motion |
 | **UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
 | | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
 | | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |

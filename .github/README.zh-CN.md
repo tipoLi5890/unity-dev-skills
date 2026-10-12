@@ -2,7 +2,7 @@
 
 [繁體中文](README.zh-TW.md) · **简体中文** · [日本語](README.ja.md) · [English](../README.md)
 
-面向 AI 编码代理的 Unity 6 游戏开发 skills。三十七个 skill，覆盖从空项目到可验证产物的完整闭环，
+面向 AI 编码代理的 Unity 6 游戏开发 skills。四十一个 skill，覆盖从空项目到可验证产物的完整闭环，
 可安装到 Claude Code 或 OpenAI Codex。
 
 有三点让它不只是一堆 Unity 笔记：
@@ -33,12 +33,16 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 |---|---|---|
 | **终端与验证** | `unity-cli` | 从终端驱动 Unity：editor、许可、template、CI、MCP，以及能告诉你"重试是否诚实"的 exit code |
 | | `unity-debug` | 你需要验证一个看不见的改动 —— 并且在相信测量工具之前，先证明它说的是真话 |
-| | `unity-play-harness` | 把游戏做成 agent 能驱动、能读懂的样子：一行 probe 快照、直接开进某个时刻并等待"就绪集合"的具名 situation、采样成时间线并断言不变量的 journey test，以及把一句手感抱怨变成可复现的测试 |
+| | `unity-play-harness` | 把游戏做成 agent 能驱动、能读懂的样子：一行 probe 快照、直接开进某个时刻并等待"就绪集合"的具名 situation、采样成时间线并断言不变量的 journey test，以及把一句手感抱怨变成可复现的测试——3D 或 2D 游戏皆可 |
 | | `unity-profiling` | 慢帧或不稳定的帧背后到底在做什么工作：不开 Profiler 窗口的 counter、90 帧窗口的 median/p95/worst、工作量计数，以及一张前后对照表 |
 | | `unity-device-testing` | 在**真机**上做验收（Android／iOS）：探针场景每次状态变化打印一行带标签的 log、驱动脚本对 log 断言并替你点系统对话框、真人一次只做一个物理动作且由设备端验证、用 exit code 区分"真的失败"和"测试工具坏了" |
 | | `unity-search` | 把"找一下／在哪里／谁引用了它"变成一条 Unity Search 查询：类型 filter、文件夹、label、`ref=` 关系、场景组件查询 —— 先把查询写给你看，Editor 还活着时顺手帮你打开窗口 |
 | **第一天** | `unity-new-project` | 事后补救代价很高的决策：editor 版本锁定、`.meta`/LFS、UPM 锁 tag、IL2CPP/ARM64、asmdef 边界 |
 | | `unity-game-brief` | 动 Unity 之前的第一个小时：一行想法变成一页体验简报、用图锁定视觉、由约束推导出架构提案、写成可测试的不变量，以及一个人能真的玩到的交互 |
+| | `unity-gameplay` | **任何没有指明视角的 gameplay 需求都从这里开始。** 为项目做指纹识别——2D 或 3D、投影、视角、移动模型——并把操控、相机、动画与验证导流到各自的 skill；并且承担写成约束的类型配方、由控制器数值推导出的关卡度量，以及带有退出检查的制作阶段 |
+| **3C —— 输入、相机、角色** | `unity-input` | 让 gameplay 只读一个 struct、永远不读设备的玩家输入：覆盖键盘、手柄与触控的 actions asset，按下在 `Update` 锁存、在 `FixedUpdate` 只消费一次——解决时有时无或连跳两次的跳跃——再加上输入缓冲、屏幕摇杆、指针瞄准与重新绑定 |
+| | `unity-camera` | 会抖动、拍到关卡外面或穿墙的相机：抖动背后的那两个时钟、Cinemachine 的 2D 跟随与房间 confiner、pixel-perfect 跟随、第三人称环绕与第一人称 rig、震动与 blend、2.x → 3.x 名称对照表，以及证明 rig 站得住的 journey |
+| | `unity-animation` | 跟游戏状态对不上的 Animator——卡在某个状态、攻击自己播出来、hitbox 一直开着：每个参数只有一个写入者、用脚本构建 blend tree 与 sprite 状态图、被打断也不会丢的事件与攻击窗口、IK、Timeline 交接、root motion |
 | **UI** | `unity-game-ui` | **任何 UI 需求都从这里开始。** 检测项目使用的是哪套 UI 系统并导流；并且承担没人写的那一块 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什么都画不出来的六种原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 会静默忽略的那些属性 |

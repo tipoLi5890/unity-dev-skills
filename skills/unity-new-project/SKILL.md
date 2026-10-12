@@ -162,7 +162,8 @@ with — with nothing left to ask, just wait.
   `RectTransform`/`Canvas` or `JsonUtility` — which is what the boundary is *for*.
 - **Single input funnel from day one**: gameplay depends on abstract actions, never on device
   specifics — touch, keyboard, gamepad and a sensing SDK all converge on one router (device
-  details come from the sensing layer; the funnel is universal).
+  details come from the sensing layer; the funnel is universal). The action asset and the struct
+  gameplay reads: `unity-input`.
 - Scenes: a bootstrap scene that loads content scenes additively beats one
   mega-scene — merge conflicts on a single scene file are unresolvable.
 - Art pipeline: if assets are AI-generated, set up the art bible + grid
@@ -198,6 +199,8 @@ locales are `unity-localization`.
 
 The terminal: `unity-cli`. Verifying a change: `unity-debug`.
 
+Gameplay: `unity-gameplay` (routes by perspective).
+3C: `unity-input` · `unity-camera` · `unity-animation`.
 UI: `unity-game-ui` (routes) → `unity-ui-ugui` · `unity-ui-toolkit`.
 Assets: `unity-3d-models` · `unity-2d-sprites` · `unity-rigged-character`.
 Runtime domains: `unity-physics-3d` · `unity-navigation` · `unity-render-urp` ·

@@ -20,7 +20,7 @@ complaint-to-test — has something to read. One line, one object, always the sa
 | `situation` | string | Set by `Situations.Enter`; `null` when the game booted normally |
 | `state` | string | The game's own state machine, through `SetState(() => _run.Phase.ToString())` |
 | `cam` | string | `Camera.main != null ? Camera.main.name : null` — a `null` here is why the screenshot is black |
-| `pos` · `vel` | `[x,y,z]` | `transform.position` · `Rigidbody.linearVelocity` (Unity 6 name; it was `velocity` before) |
+| `pos` · `vel` | `[x,y,z]` | `transform.position` · the velocity delegate, else `Rigidbody.linearVelocity` (Unity 6 name; it was `velocity` before), else the position delta |
 | `speed` | float | `vel.magnitude` |
 | `ready{}` | object | Every readiness member, each re-evaluated this frame |
 | `allReady` | bool | Every member true **and** at least one member registered |
@@ -37,6 +37,48 @@ GameProbe.Count("hazards", () => _hazards.Count);
 GameProbe.SetState(() => _run.Phase.ToString());
 GameProbe.SetPlayer(() => _runner, () => _runnerBody);
 ```
+
+## Where `vel` comes from
+
+Three sources, first match wins. The key and its `[x,y,z]` shape are the same in all three, so a
+timeline from a 2D game and one from a 3D game are read by the same report.
+
+| The player is moved by | Register | `vel` is |
+|---|---|---|
+| A `Rigidbody` | `SetPlayer(() => _runner, () => _runnerBody)` | `linearVelocity` |
+| A `Rigidbody2D`, a `CharacterController`, a kinematic motor, a grid mover | `SetPlayerVelocity(() => _runner, () => …)` | Whatever the delegate returns |
+| Nothing the probe was told about | `SetPlayer(() => _runner)` | `(pos − previous pos) / unscaled dt` between snapshots |
+
+```csharp
+// Rigidbody2D — a Vector2 converts, z reads 0
+GameProbe.SetPlayerVelocity(() => _runner,
+    () => _body2D != null ? (Vector3)_body2D.linearVelocity : Vector3.zero);
+// CharacterController — the velocity of the last Move call
+GameProbe.SetPlayerVelocity(() => _runner, () => _controller.velocity);
+// A kinematic motor or a grid mover — the velocity the game itself computed this step
+GameProbe.SetPlayerVelocity(() => _runner, () => _motor.Velocity);
+```
+
+- **One delegate, no physics type.** `GameProbe.cs` names `Rigidbody` and nothing from the 2D
+  module, so the same file compiles in a project with either physics module removed from
+  `Packages/manifest.json`.
+- **The last call wins.** `SetPlayer` clears the delegate, `SetPlayerVelocity` clears the
+  `Rigidbody` accessor. Call one of them, once, from the boot object.
+- **Guard a destroyed body inside the delegate.** A hook that throws is caught, logged as
+  `[PROBE] hook threw` and read as zero — a `speed` of 0.000 on a moving runner means exactly that.
+- **Report the velocity the mover applied, not the one it was asked for.** A motor that returns
+  its input vector reads full speed while pressed against a wall; return the resolved
+  displacement over `dt`.
+- **A grid mover has two honest answers.** Its step velocity (cell size over step time) while a
+  step animates and zero between steps; or no delegate at all, and the cell in `custom{}` as the
+  fact. Assert on the cell either way — `pos` is only where the animation has got to.
+- **The fallback is for a player sampled every frame.** A single `eval` in a live Editor has no
+  previous snapshot, so the derived `vel` reads zero on the first call and an average over the
+  gap after that.
+- **The fallback divides by unscaled time, so it is wrong under a pinned step.** A journey that
+  sets `Time.captureDeltaTime` advances game time by a fixed step while the wall clock runs
+  free, and a headless run then reads a speed hundreds of times too high. Any journey that pins
+  the step registers a delegate with `SetPlayerVelocity`.
 
 **A delegate cannot go stale; a bool can.** The failure this design exists to prevent is a
 readiness flag set true during a load that was later cancelled, which then reads ready forever.
@@ -139,7 +181,8 @@ Decide these three deliberately:
 
 Confirm on your version, three things:
 
-- **`Rigidbody.linearVelocity` is the name your Editor resolves** — it is the Unity 6 spelling.
+- **`Rigidbody.linearVelocity` is the name your Editor resolves** — it is the Unity 6 spelling,
+  and `Rigidbody2D.linearVelocity` is the same rename on the 2D body.
 - **`Camera.main` returns the camera you mean** when more than one is tagged `MainCamera`; `cam`
   in the line is how you find out that it does not.
 - **Whether `sceneUnloaded` for the outgoing scene raises before the incoming scene's `Awake`.**

@@ -229,4 +229,4 @@ stops at "the next track starts without a seam".
 
 Git LFS and `.gitattributes` setup for the binaries this skill imports is `unity-new-project`;
 this skill only says to check that a **new** audio extension is actually covered before the first
-commit. Generating or encoding the audio itself is outside the library.
+commit. Generating music and SFX is `comfyui-asset-generation`.

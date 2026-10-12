@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。三十七個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。四十一個 skill，涵蓋從空專案到可驗證產物的完整迴圈，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -33,12 +33,16 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 |---|---|---|
 | **終端機與驗證** | `unity-cli` | 從終端機驅動 Unity：editor、授權、template、CI、MCP，以及能告訴你「重試是否誠實」的 exit code |
 | | `unity-debug` | 你需要驗證一個看不見的改動 —— 並且在相信量測工具之前，先證明它說的是真話 |
-| | `unity-play-harness` | 把遊戲做成 agent 能驅動、能讀懂的樣子：一行 probe 快照、直接開進某個時刻並等待「就緒集合」的具名 situation、取樣成時間線並斷言不變量的 journey test，以及把一句手感抱怨變成可重現的測試 |
+| | `unity-play-harness` | 把遊戲做成 agent 能驅動、能讀懂的樣子：一行 probe 快照、直接開進某個時刻並等待「就緒集合」的具名 situation、取樣成時間線並斷言不變量的 journey test，以及把一句手感抱怨變成可重現的測試——3D 或 2D 遊戲皆可 |
 | | `unity-profiling` | 慢幀或不穩定的幀背後到底在做什麼工作：不開 Profiler 視窗的 counter、90 幀視窗的 median/p95/worst、工作量計數，以及一張前後對照表 |
 | | `unity-device-testing` | 在**真的手機**上做驗收（Android／iOS）：探針場景每次狀態變化印一行帶標籤的 log、驅動腳本對 log 斷言並替你點系統對話框、真人一次只做一個實體動作且由裝置端驗證、用 exit code 分開「真的失敗」和「測試工具壞了」 |
 | | `unity-search` | 把「找一下／在哪裡／誰引用了它」變成一條 Unity Search 查詢：型別 filter、資料夾、label、`ref=` 關係、場景元件查詢 —— 先把查詢寫給你看，Editor 還活著時順手幫你開視窗 |
 | **第一天** | `unity-new-project` | 事後補救很貴的決策：editor 版本釘死、`.meta`/LFS、UPM 釘 tag、IL2CPP/ARM64、asmdef 邊界 |
 | | `unity-game-brief` | 動 Unity 之前的第一個小時：一行想法變成一頁體驗簡報、用圖鎖定視覺、由限制推導出架構提案、寫成可測試的不變量，以及一個人可以真的玩到的互動 |
+| | `unity-gameplay` | **任何沒有指明視角的 gameplay 需求都從這裡開始。** 為專案做指紋辨識——2D 或 3D、投影、視角、移動模型——並把操控、相機、動畫與驗證導流到各自的 skill；並且擁有寫成限制條件的類型配方、由控制器數值推導出的關卡度量，以及附帶結束檢查的製作階段 |
+| **3C —— 輸入、相機、角色** | `unity-input` | 讓 gameplay 只讀一個 struct、永遠不讀裝置的玩家輸入：涵蓋鍵盤、手把與觸控的 actions asset，按下在 `Update` 鎖存、在 `FixedUpdate` 只花用一次——解掉時有時無或連跳兩次的跳躍——再加上輸入緩衝、螢幕搖桿、指標瞄準與重新綁定 |
+| | `unity-camera` | 會抖動、拍到關卡外面或穿牆的相機：抖動背後的那兩個時鐘、Cinemachine 的 2D 跟隨與房間 confiner、pixel-perfect 跟隨、第三人稱環繞與第一人稱 rig、震動與 blend、2.x → 3.x 名稱對照表，以及證明 rig 站得住的 journey |
+| | `unity-animation` | 跟遊戲狀態對不上的 Animator——卡在某個狀態、攻擊自己播出來、hitbox 一直開著：每個參數只有一個寫入者、用腳本建出 blend tree 與 sprite 狀態圖、被打斷也不會漏的事件與攻擊視窗、IK、Timeline 交接、root motion |
 | **UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什麼都畫不出來的六種原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 會靜默忽略的那些屬性 |

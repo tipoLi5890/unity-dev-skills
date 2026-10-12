@@ -21,7 +21,7 @@
 
 **Do not pin a version** unless something states a minimum. Resolution without a version takes the
 latest release compatible with the editor, which is what you want on day one; a pin is a promise to
-maintain that number.
+maintain that number. Cinemachine is the one deliberate pin — see its row below.
 
 ## Confirm the id before it goes in the list
 
@@ -37,9 +37,9 @@ not on the registry at all — both traps, with the `curl` form, are in
 | The need | Id | Why it is on this list |
 |---|---|---|
 | Text on screen | `com.unity.ugui` | uGUI, and TextMeshPro rides along inside it. UI Toolkit needs no package — it is in the Editor |
-| Input from anything | `com.unity.inputsystem` | One action map serves touch, keyboard and gamepad; the legacy Input Manager makes that a rewrite |
+| Input from anything | `com.unity.inputsystem` | One action map serves touch, keyboard and gamepad; the legacy Input Manager makes that a rewrite — `unity-input` |
 | Tests that a command can run | `com.unity.test-framework` | Usually already present. Without it there is no test lane at all |
-| A camera that follows, frames and shakes | `com.unity.cinemachine` | Cheap to add, unpleasant to hand-roll — 3D and most 2D alike |
+| A camera that follows, frames and shakes | `com.unity.cinemachine` | Cheap to add, unpleasant to hand-roll — 3D and most 2D alike. A default add resolves 2.x on Unity 6; pin 3.x deliberately — `unity-camera` §0 |
 | Content that ships after the build | `com.unity.addressables` | Add when download size matters or content updates are planned, not before |
 
 ## Render pipeline — exactly one, and usually the template already chose
@@ -57,15 +57,17 @@ decision rather than a package-list one.
 
 | Look | Id |
 |---|---|
-| 2D of any kind | `com.unity.2d.feature` — the bundle: sprites, tilemap, animation, pixel-perfect |
-| Pixel art specifically | `com.unity.2d.pixel-perfect`, already inside the bundle above |
-| Anything that has to walk around a 3D level | `com.unity.ai.navigation` |
-| Cutscenes, scripted sequences, timed juice | `com.unity.timeline` |
+| 2D of any kind | `com.unity.feature.2d` — the bundle: sprites, tilemap, animation, pixel-perfect — `unity-2d-sprites`, `unity-tilemap` |
+| Pixel art specifically | `com.unity.2d.pixel-perfect`, already inside the bundle above — `unity-2d-pixel-perfect` |
+| Anything that has to walk around a 3D level | `com.unity.ai.navigation` — `unity-navigation` |
+| Cutscenes, scripted sequences, timed juice | `com.unity.timeline` — the Animator hand-off is `unity-animation` |
 | Logic authored as graphs rather than code | `com.unity.visualscripting` |
 
 ## What the game does
 
 Read down the left column for the closest description, then **add** the foundation rows above.
+These rows are packages only: which controller, camera and movement skills each one needs is the
+recipe in `unity-gameplay`.
 
 | The game is | Add |
 |---|---|
@@ -115,10 +117,10 @@ the pickup counter; nothing streamed, nothing sold, nobody else in the match.
 | Id | Verdict |
 |---|---|
 | `com.unity.render-pipelines.universal` | Template already has it — **cross off** |
-| `com.unity.2d.feature` | Template already has it — **cross off** |
+| `com.unity.feature.2d` | Template already has it — **cross off** |
 | `com.unity.ugui` | Template already has it — **cross off** |
 | `com.unity.inputsystem` | Present but stale in the template's locks; it is reinstalled by the fix in `reference/package-bootstrap.md`, not added here |
-| `com.unity.cinemachine` | **Install** — the only genuine addition |
+| `com.unity.cinemachine` | **Install**, pinned to 3.x — the only genuine addition |
 | `com.unity.addressables` | No streamed content on day one — **leave out** |
 | `com.unity.ai.navigation` | The sentry moves on a fixed lane path — **leave out** |
 

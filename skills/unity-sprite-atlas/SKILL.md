@@ -250,7 +250,7 @@ Download size and texture budget for a shipping build are `unity-web-release` an
 Addressables as a content-delivery strategy (groups, catalogues, remote hosting, updates) is
 larger than §5, which covers only the three pieces an atlas needs.
 
-Generating the artwork itself is outside this library.
+Generating the artwork is `codex-visual`.
 
 ## Reference
 

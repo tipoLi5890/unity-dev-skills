@@ -2,7 +2,8 @@
 
 > Part of the `unity-play-harness` skill. A situation is a name, a way in, and the set of things
 > that must be true before anyone looks. `resources/Situations.cs` is the file;
-> `templates/CourierSituations.cs` is a filled-in registration to copy.
+> `templates/CourierSituations.cs` is a filled-in registration to copy, and
+> `templates/CourierSituations2D.cs` is the same registration for a 2D game.
 
 This answers the question that decides whether a game is testable at all: **how does a test reach
 this screen?** If the answer is "play for ninety seconds", that moment is never checked twice.
@@ -96,6 +97,21 @@ return yet: poll `unity command probe` until `playing:true`, then re-issue it.
 | `approach-gate` | Runner 12 units out, aimed at the gate, optional entry `angle` | `laneMesh`, `laneCollider`, `gate`, `sentry` | Every complaint about arriving at the gate starts here |
 | `runner-launch` | Runner at the start line, `Launch()` called | `laneMesh`, `laneCollider`, `runner`, `pickups` | The first two seconds: sluggish or twitchy |
 | `hazard-lane` | Mid-track, middle lane, `cold=true` forces a fresh load | `laneMesh`, `laneCollider`, `hazardVolume` | Streaming: the lane that pops in late |
+
+`templates/CourierSituations2D.cs` carries the same idea into the three 2D views of the run —
+keep the one the game is. The ready sets name the 2D colliders, because a tilemap drawn before
+its collider is generated is the same split as a lane mesh without its collider.
+
+| Id | Enters | Ready set | Because |
+|---|---|---|---|
+| `ledge-drop` | Side run: runner on a rooftop, `inset` units short of the edge, a gap below | `runnerCollider`, `rooftopMesh`, `rooftopCollider`, `gapHazard` | Every report about a jump that felt late or a fall that felt heavy |
+| `depot-aisle` | Top-down depot: runner in aisle `lane`, sentry posted `distance` units ahead | `runnerCollider`, `aisleFloor`, `aisleWalls`, `sentry`, `visionCone` | "It saw me through the shelving" and "it never sees me" |
+| `yard-step` | Sorting yard: pickup one cell short of the gate cell, runner one cell behind it | `runnerCollider`, `yardCells`, `yardWalls`, `pickup`, `gateCell` | One step decides it, so one step is the whole journey |
+
+Two differences from the 3D file. Velocity is registered with `SetPlayerVelocity`, so the probe
+never names a 2D type → `reference/probe-contract.md`. And every placement writes x and y only:
+z is the sorting depth in a 2D scene, and a situation that zeroes it moves the runner behind the
+background.
 
 Keep the set small and keep the ids stable. They end up in test names, in journey directories,
 in screenshot filenames and in the sentence you write back to the person who complained.

@@ -12,7 +12,7 @@ drawn, the state that briefly went backwards, the speed that was only excessive 
 
 ```
 [SetUp]            PlayerPrefs.DeleteAll() · Situations.ClearParams() · GameProbe.Reset()
-                   delete the journey directory
+                   leave the journeys root alone — the recorder clears its own folder
 load               the scene, LoadSceneMode.Single, then one frame
 enter              Situations.Enter(id) → WaitUntilReady()          ← never WaitForSeconds
 record             using (var journey = new JourneyRecorder(id, dir))
@@ -50,6 +50,24 @@ var inside = JourneyAsserts.NeverInside(samples, LayerMask.GetMask("Track"), 0.2
 Assert.IsEmpty(inside, JourneyAsserts.Describe(inside));
 ```
 
+A 2D game uses the sibling in `resources/JourneyInvariants2D.cs` — the same rule on the x/y
+plane, with `Physics2D.OverlapCircle` behind it. It is a separate file so that a project without
+the 2D physics module still compiles the rest of the harness.
+
+```csharp
+var inside = JourneyInvariants2D.NeverInside2D(samples, LayerMask.GetMask("Rooftop"), 0.2f);
+Assert.IsEmpty(inside, JourneyAsserts.Describe(inside));
+```
+
+- **Triggers never count**, whatever `Physics2D.queriesHitTriggers` is set to: a pickup and a
+  sentry's vision cone are places the runner is allowed to be.
+- **Keep the radius smaller than the body.** A runner standing on a rooftop touches it, and a
+  circle as wide as its collider reports every grounded sample. Start at half the collider's
+  smallest half-extent — 0.2 for a 0.8-wide runner — and leave the runner's own layer out of the mask.
+- **`pos` is the transform, not the collider's centre.** A sprite pivoted at the feet puts the
+  circle half inside the floor; sample from a child at the body's centre, or pass that child to
+  `SetPlayerVelocity`.
+
 **2 · The state machine only moved forward.** Catches a re-entered phase and a state nobody
 declared — both of which pass every single-frame check.
 
@@ -79,6 +97,44 @@ The absolute numbers belong in the printed line underneath, where they stay read
 ```csharp
 TestContext.WriteLine($"samples={samples.Count} maxEntrySpeed={maxEntry:F2} timeline={journey.TimelinePath}");
 ```
+
+## What a 2D game asserts
+
+The recorder, the timeline and the report are the same; only the registration differs —
+`templates/CourierSituations2D.cs` registers `SetPlayerVelocity` and the 2D colliders. `speed` and
+`vel` are then as trustworthy as the delegate behind them. → `reference/probe-contract.md`
+
+| View | Situation | Worth asserting over the run |
+|---|---|---|
+| Side run | `ledge-drop` | `NeverInside2D` on the rooftop layer · `rooftopMesh` and `rooftopCollider` true in the same sample · `-vel[1]` under the terminal fall speed · `custom.grounded` false for no longer than the designed air time |
+| Top-down depot | `depot-aisle` | `NeverInside2D` on the shelving layer · `speed` under the run speed (a diagonal that reads 1.41× is an un-normalised input) · `custom.seen` never true while `custom.sentryDist` exceeds the cone length |
+| Sorting yard | `yard-step` | `custom.pickupToGate` never rises · one step changes `cellX` + `cellY` by exactly 1 · `pos` equals the cell centre whenever `custom.stepping` is false |
+
+```csharp
+// Side run: the fall never exceeds the designed terminal speed.
+var tooFast = JourneyAsserts.Never(samples, s => -s.vel.y > 22f, "terminal-fall");
+// Depot: seen only from inside the cone's reach.
+var seenFar = JourneyAsserts.Never(samples,
+    s => s.CustomOf("seen") is bool seen && seen && s.Number("sentryDist") > 5f, "seen-out-of-range");
+// Yard: the pickup only ever gets closer to the gate cell.
+int best = int.MaxValue;
+var drifted = JourneyAsserts.Never(samples, s =>
+{
+    int d = (int)s.Number("pickupToGate", 0f);
+    bool worse = d > best;
+    if (d < best) best = d;
+    return worse;
+}, "pickup-moved-away");
+```
+
+Two things a 2D recording gets wrong on its own:
+
+- **A body moved in `FixedUpdate` and sampled in `Update` repeats.** Without interpolation `pos`
+  holds for several frames and then jumps, so a per-frame `Never` on position deltas fires on
+  the sampling, not on the game. Set `Rigidbody2D.interpolation`, or assert on `vel`.
+- **A moving platform or a pushed pickup is not static geometry.** `NeverInside2D` tests the
+  colliders where they are when the assertion runs; sample an overlap flag into `custom{}` each
+  frame and use `Never` on it.
 
 ## What to sample
 

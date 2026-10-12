@@ -7,17 +7,15 @@
 
 ## 1. Cinemachine writes orthographic size too
 
-Both Cinemachine and the pixel camera set orthographic size every frame, and the loser is
-whichever ran first: jitter, plus framing that pops between shots. Add the
-**`CinemachinePixelPerfect` extension** through the Add Extension dropdown on each virtual camera.
-It calls the component's `CorrectCinemachineOrthoSize(float)` and hands back the nearest
-pixel-perfect size, which is what makes the two agree. Adding the extension by `AddComponent` does
-not register it with the virtual camera's extension list.
+The camera's orthographic size is owned by the pixel-perfect component. Cinemachine writes it
+every frame as well, and the loser is whichever ran first: jitter, plus framing that pops between
+shots. So the **`CinemachinePixelPerfect` extension** must be on every camera rig, on the rig's
+own GameObject — the Add Extension dropdown puts it there; on a child or a parent it never
+registers with the rig. It calls the component's `CorrectCinemachineOrthoSize(float)` and hands
+back the nearest pixel-perfect size, which is what makes the two agree.
 
-Three limits to design around rather than fix: a blend between two virtual cameras is not
-pixel-perfect *during* the blend; `UpscaleRenderTexture` narrows the set of valid orthographic
-sizes, so framing can land further from what you asked for; and a target group driven by a
-framing transposer stays visibly choppy.
+Follow, dead zones, confiners, blends and the component names for each Cinemachine major:
+`unity-camera` → `reference/pixel-perfect-follow.md`.
 
 ## 2. `UpscaleRenderTexture` versus UI text and post-processing
 

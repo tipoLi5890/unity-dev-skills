@@ -66,8 +66,13 @@
 
 <!-- Filled in only after the human has said yes to an image, never from prose. Record the five
      locked decisions: palette roles, the contrast ratio that must hold between the thing the
-     player reacts to and the ground behind it, the three silhouettes, the camera (distance,
-     pitch, aspect), and the path of the one anchor image everything later is compared to.
+     player reacts to and the ground behind it, the three silhouettes, perspective and movement,
+     and the path of the one anchor image everything later is compared to.
+     Perspective and movement is written as constraints with numbers, never as a genre label:
+     dimension is 2D, 2.5D or 3D; projection is orthographic (size, pixels per unit) or
+     perspective (FOV, distance, pitch); view axis is side, top, isometric, behind or eye;
+     movement model is free, lane (lane width) or cell (cell size, layout), with the one owner
+     of the transform named beside it.
      The art bible itself lives in ART_DIRECTION.md. -->
 
 | | |
@@ -75,7 +80,13 @@
 | Palette roles | |
 | Reactive-vs-ground contrast | |
 | Three silhouettes | |
-| Camera | |
+| Perspective and movement: dimension | |
+| — projection (ortho size + pixels per unit, or FOV + distance + pitch) | |
+| — view axis | |
+| — movement model (free · lane + width · cell + size + layout) | |
+| — what owns the transform | |
+| — aspect | |
+| — input devices | |
 | Anchor image | |
 
 ## Not in the first version

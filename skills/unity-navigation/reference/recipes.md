@@ -600,6 +600,7 @@ it is to pathing (SKILL.md §4). Colliders are `unity-physics-3d`.
 - SKILL.md §2 — path status, `SamplePosition`, and why the `CalculatePath` bool lies
 - SKILL.md §3 — who owns the transform; [`agent-api.md`](agent-api.md) §3 — the agent defaults
 - SKILL.md §4 — carve or avoid, before you tune tile size
-- `unity-rigged-character` — Animator controllers, Avatars, IK Pass and the rig itself
+- `unity-rigged-character` — Animator controllers, Avatars and the rig itself
+- `unity-animation` → `reference/ik-and-rigging.md` — IK Pass and foot/hand IK
 - `unity-physics-3d` — colliders, `Physics.Raycast` and the raycaster split
 - AI Navigation package manual: <https://docs.unity3d.com/Packages/com.unity.ai.navigation@latest>

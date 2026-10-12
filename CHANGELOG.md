@@ -2,6 +2,102 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.21.0
+
+Forty-one skills. Four new ones cover the layer between a brief and a character that can be played:
+`unity-gameplay` works out which game the project is and routes, and `unity-input`, `unity-camera`
+and `unity-animation` are the 3C skills it routes to. `unity-play-harness` reads a 2D game as
+readily as a 3D one, and the neighbours route to all four.
+
+- **`unity-gameplay` — a genre is a set of constraints.** Six constraints replace the genre label:
+  dimension, projection, view, movement model, transform owner and level unit.
+  `scripts/fingerprint.py` reads them from a project without opening Unity — components in scenes
+  and prefabs are the evidence, an installed package is not, and physics outranks renderers — and
+  reports the Cinemachine major beside them; a five-step default ladder covers the project with no
+  evidence and ends in one question. Five recipes follow the verdict: `reference/genre-2d-side.md`,
+  `genre-2d-topdown.md`, `genre-2d-grid.md`, `genre-2d-fixed-screen.md` and `genre-3d.md`, each a
+  starting set of constraints, filled into `templates/GAMEPLAY_RECIPE.md` with one row per need.
+  `scripts/level_metrics.py` derives gravity and jump velocity from apex height, time to apex and
+  run speed and exits 1 when a gap or a ledge is outside reach; `scripts/jump_report.py` measures
+  apex and air time from a recorded timeline, because the jump the game performs is not the one the
+  constants describe. `reference/pipeline-stages.md` gives each production stage an exit check.
+- **`unity-input` — gameplay reads one struct, never a device.** A press happens on the render clock
+  and gameplay runs on the physics clock, so `WasPressedThisFrame()` polled in `FixedUpdate` loses a
+  jump on a fast frame and fires it twice on a slow one. `resources/RunInputReader.cs` reads the
+  device in `Update` and latches each press with its time; gameplay spends it once from
+  `FixedUpdate` through `TryUse`, which is also the input buffer. `resources/RunInput.cs` is the
+  struct, with `StepRepeater` for a grid step under a held key; `resources/ScriptedRunInput.cs`
+  drives the same funnel from a test; `resources/RebindStore.cs` saves overrides as JSON.
+  `templates/RunActions.inputactions` has one map and three schemes — keyboard and mouse, gamepad,
+  touch — and `resources/Editor/CreateRunActions.cs` builds it from script.
+  `scripts/inputactions_lint.py` exits 1 on an action with no binding in some scheme, a composite
+  missing a part or a binding to an action that is gone. `templates/InputJourneyTest.cs` sends ten
+  taps at four fixed steps per frame and at one step per six frames and asserts as many launches as
+  presses. Six reference files cover the asset, reading, touch and on-screen controls, pointer and
+  stick aim, rebinding and devices, and the move off `UnityEngine.Input`.
+- **`unity-camera` — a jittering camera is two clocks disagreeing.** The target moves on the physics
+  step and the camera eases on the rendered frame; a table names the clock of every mover and five
+  checks are worked in order, the first being a followed body with interpolation off. Cinemachine
+  2.x and 3.x share a package id and almost no component names, an add with no version on Unity 6
+  resolves 2.x, and everything shipped is written for 3.x — `reference/version-and-names.md` is the
+  name table. Rigs: 2D side follow, runner, top down and isometric as one rig with four sets of
+  numbers, a room confiner with its two caches, pixel-perfect follow, third-person orbit with
+  deocclusion, over the shoulder, lock on, first person and fixed posts, then shake with a written
+  budget and blends. `resources/Editor/CameraRigBuilder.cs` builds a 2D follow rig, a third-person
+  rig and a fixed rig and reports before it creates; `resources/RoomConfinerSwitch.cs` is the
+  one-camera room switch. `resources/CameraProbe.cs` puts `camViewport`, `camInBounds` and
+  `camOffset` on the probe after the Brain has run, `templates/CameraJourneyTest.cs` records 600
+  frames and asserts all three, and `scripts/camera_jitter.py` counts sign changes in the offset's
+  frame-to-frame delta against a limit of 0.1. `CAMERA_JOURNEY_BREAK` set to `confiner` or `clocks`
+  has to turn the journey red before a green run means anything.
+- **`unity-animation` — the game's state is the truth, and the Animator renders it.** One contract
+  for a 3D Humanoid and a 2D frame-clip character: one writer per parameter through a bridge that
+  writes every parameter every frame, gameplay never reads the Animator, and only named moments
+  cross back — an AnimationEvent, an attack window, a Timeline signal — each with a game-side
+  fallback. Four Editor tools, each reporting before it writes: `AnimatorParamAudit.cs` lists every
+  parameter with where the graph reads it and which scripts write it,
+  `DirectionalBlendTreeBuilder.cs` builds a directional tree from clips named by direction,
+  `SpriteStateGraphBuilder.cs` builds an idle, run, jump, fall and hurt controller from named clips,
+  and `ClipEventWriter.cs` places an event by normalised time and reads the clip back.
+  `resources/AttackWindowBehaviour.cs` opens and closes a window by normalised time and closes it on
+  any exit, so a swing interrupted at 40% does not leave a hitbox on; `resources/FootIK.cs` plants
+  Humanoid feet from two raycasts. `templates/AnimatorStateJourneyTest.cs` samples `animState`
+  beside the game's `state` and fails when they disagree for more than three frames. Eight reference
+  files: the parameter contract, blend trees, the sprite state graph, events and windows, override
+  controllers, IK and rigging, Timeline, and root motion.
+- **`unity-play-harness` reads a 2D game.** `GameProbe.SetPlayerVelocity` takes a delegate, so a
+  `Rigidbody2D`, a `CharacterController`, a kinematic motor or a grid mover reports `vel` through
+  the same key and shape as a `Rigidbody`. `GameProbe.cs` still names no 2D type and compiles with
+  either physics module removed. The order is the delegate, then the `Rigidbody`, then the position
+  delta — and the delta divides by unscaled time, so a journey that pins the step registers a
+  delegate. `resources/JourneyInvariants2D.cs` adds `NeverInside2D`, the never-inside-solid-geometry
+  rule on the x/y plane; triggers never count, and it is a separate file so a project without the 2D
+  physics module compiles the rest. `templates/CourierSituations2D.cs` registers three situations —
+  `ledge-drop` for a side run, `depot-aisle` for a top-down depot, `yard-step` for a sorting yard —
+  with ready sets that name the 2D colliders and placements that write x and y only.
+  `reference/journeys.md` says what each view is worth asserting. `templates/JourneyTest.cs` no
+  longer deletes the journeys root, which took every other journey's timeline with it, and reads its
+  directory from `JourneyRecorder.DefaultRoot()` or `$JOURNEY_OUT`.
+- **Neighbours route to them.** `unity-new-project` gains the gameplay and 3C lines in its skill map
+  and points its input funnel at `unity-input`; `reference/package-selection.md` corrects the 2D
+  feature set's id from `com.unity.2d.feature` to `com.unity.feature.2d`, says a default Cinemachine
+  add resolves 2.x on Unity 6 and makes 3.x the one deliberate pin, and names the owning skill on
+  each package row; `reference/package-bootstrap.md` no longer says to delete the 2D packages
+  outright — `2d.animation` and `psdimporter` stay when the art is skeletal, `spriteshape` for
+  spline terrain, `aseprite` when that is the source format. `unity-game-brief` replaces its camera
+  decision with perspective and movement, six lines written as constraints with numbers in
+  `reference/visual-direction.md` and `templates/GAME_BRIEF.md`, and hands the choice of skills to
+  `unity-gameplay`. `unity-2d-pixel-perfect` keeps the one Cinemachine rule and sends follow,
+  confiners and blends to `unity-camera`. `unity-2d-sprites`, `unity-rigged-character` and
+  `unity-navigation` send state graphs, events, attack windows and IK to `unity-animation`.
+  `unity-play-harness` gains scope rows for `unity-gameplay` and `unity-input`. Two dead ends close:
+  `unity-audio` names `comfyui-asset-generation` for generating music and SFX, and
+  `unity-sprite-atlas` names `codex-visual` for generating artwork.
+- **What this does not do.** No skill covers a 2D character controller, a 3D character controller,
+  2D physics, level construction, lighting, interaction, combat, AI, scene flow or game feel. The
+  genre files in `unity-gameplay` carry the essentials of a player motor, 2D physics set-up and cell
+  movement — enough for a prototype that passes a journey, not a full treatment.
+
 ## 0.20.0
 
 Thirty-seven skills. The new one, `blender-character-rig`, covers the character Mixamo cannot rig

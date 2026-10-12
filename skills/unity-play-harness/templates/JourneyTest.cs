@@ -15,7 +15,7 @@ using UnityEngine.TestTools;
 /// UnityEngine.TestRunner and UnityEditor.TestRunner, and the assembly holding GameProbe).
 ///
 /// Run it:
-///   "$UNITY" -projectPath . -runTests -testPlatform PlayMode \
+///   JOURNEY_OUT=/tmp/journeys "$UNITY" -projectPath . -runTests -testPlatform PlayMode \
 ///     -testFilter ApproachGateJourney -testResults /tmp/results.xml -logFile /tmp/tests.log
 ///   python3 scripts/journey_report.py --after /tmp/journeys/approach-gate/timeline.jsonl \
 ///     --max speed:12 --ready-before arrival --monotonic state:Idle,Launched,Approach,AtGate
@@ -25,7 +25,7 @@ using UnityEngine.TestTools;
 public class ApproachGateJourney
 {
     const string ScenePath = "Assets/Scenes/Run.unity";   // replace with your game's scene
-    static string JourneyDir => Path.Combine(Application.persistentDataPath, "journeys");
+    static string JourneyDir => JourneyRecorder.DefaultRoot();   // or $JOURNEY_OUT when set
 
     [SetUp]
     public void SetUp()
@@ -36,7 +36,8 @@ public class ApproachGateJourney
         PlayerPrefs.Save();
         Situations.ClearParams();
         GameProbe.Reset();
-        if (Directory.Exists(JourneyDir)) Directory.Delete(JourneyDir, true);
+        // No wipe of JourneyDir: JourneyRecorder clears its own journey's folder, and deleting
+        // the root would take every other journey's timeline with it.
     }
 
     [UnityTest]

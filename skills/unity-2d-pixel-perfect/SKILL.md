@@ -172,11 +172,10 @@ authoring the tilemap is `unity-tilemap`.
 
 ## 6. Cinemachine writes orthographic size too
 
-Both Cinemachine and the pixel camera set orthographic size every frame, and the loser is
-whichever ran first: jitter, plus framing that pops between shots. Add the
-**`CinemachinePixelPerfect` extension** through the Add Extension dropdown on each virtual camera —
-added by `AddComponent` it is not registered with the virtual camera's extension list. What it
-calls, and three limits to design around rather than fix: `reference/motion-and-upscale.md` §1.
+The pixel camera owns orthographic size, and Cinemachine writes it every frame too: jitter, plus
+framing that pops between shots. Put the **`CinemachinePixelPerfect` extension** on every camera
+rig, through its Add Extension dropdown. Follow, dead zones, confiners, blends and the component
+names for each Cinemachine major: `unity-camera` → `reference/pixel-perfect-follow.md`.
 
 ## 7. `UpscaleRenderTexture` versus UI text and post-processing
 
@@ -233,7 +232,7 @@ filtering and snapping make smooth art look wrong.
   enums with old-bool equivalents, combinations, `pixelSnapSpacing`.
 - [`reference/pipeline-and-migration.md`](reference/pipeline-and-migration.md) — pipeline reads,
   assembly names, migration steps.
-- [`reference/motion-and-upscale.md`](reference/motion-and-upscale.md) — Cinemachine limits, the
+- [`reference/motion-and-upscale.md`](reference/motion-and-upscale.md) — the Cinemachine rule, the
   upscale's side effects, physics stutter.
 - Code: [`PipelineDetection.cs`](resources/PipelineDetection.cs) (resolve the pipeline, pick the
   type, detect a mismatch), [`CameraSetupURP.cs`](resources/CameraSetupURP.cs) (enum-style),

@@ -20,8 +20,26 @@ pipeline, not a full style guide — five decisions.
 | **Palette roles** (≤5) | Each colour has exactly one meaning: the thing the player reacts to, the ground it moves over, the destination, the danger, the neutral. Never two meanings for one colour. | A hazard and a pickup that read the same at speed |
 | **Reactive-vs-ground contrast** | A ratio, not an adjective. Default floor **3:1** between anything the player reacts to and whatever is directly behind it. | A build that is only readable on the machine it was authored on |
 | **Three silhouettes** | The three shapes from the brief's three moments, recognisable in black on white at the size they ship. | Art that works in the mockup and vanishes in motion |
-| **Camera** | Distance, pitch, and the aspect it is framed for, as numbers. | Every layout number being wrong at once |
+| **Perspective and movement** | The block below, as constraints with numbers — never a genre label. | Every lane, cell and layout number being wrong at once |
 | **Anchor image** | One file, one path, referenced from the brief. Everything later is compared to it. | Style drift with nothing to point at |
+
+**Perspective and movement** is one decision with six lines, because none of them can move without
+the others:
+
+| Line | Recorded as |
+|---|---|
+| Dimension | 2D, 2.5D or 3D |
+| Projection | Orthographic with its size and pixels per unit, or perspective with FOV, distance and pitch |
+| View axis | Side, top, isometric, behind or eye |
+| Movement model | Free, lane with the lane width, or cell with the cell size and layout — and what owns the transform |
+| Aspect | The ratio the frame is composed for |
+| Input devices | Every device the first version reads, and which one the layout is sized for |
+
+The courier run's block: 3D; perspective, FOV 40, a fixed offset 8 units behind the runner, pitch 21°; view
+axis behind; lane movement, three lanes 1.3 units apart, the simulation owns the transform and the
+presenter only follows it; 16:10; a gamepad, three buttons. A genre name would have fixed none of
+those numbers, which is the brief's "verbs, not genre" rule applied to the frame. Which controller,
+camera and movement skills a given block needs is `unity-gameplay`.
 
 Anything else — final resolution, animation counts, tile sets, UI chrome, the art bible's full
 schema — is not a day-one decision and belongs to `codex-visual` and to the asset skills.
