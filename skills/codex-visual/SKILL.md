@@ -32,7 +32,7 @@ visual work through **one canonical project spec**.
 | `/ArtDirection/candidates/` | Bootstrap explorations. |
 | `/ArtDirection/anchors/` · `anchors/sets/` | Locked reference image(s) fed via `-i`; `sets/` = per-set anchors (an approved first member). |
 | `/ArtDirection/manifest.md` | Registry of every generated asset. |
-| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Call:** `codex_generate.py` |
+| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Call:** `codex_generate.py` |
 | project asset dir | Shippable art, at the path the spec defines (e.g. `Assets/…` for Unity). |
 
 `<repo>` = the project root, as an **absolute path**.
@@ -165,8 +165,8 @@ it earns them: `reference/image-model.md` §3.
 1. **Read `/ART_DIRECTION.md`.** If PENDING → Phase 1.
 2. **Follow the recorded engine/approach:** *codex `$imagegen`* — `STYLE PREAMBLE` verbatim ＋ the
    asset request on a flat key colour, anchor via `-i`, original copied to `DEST`
-   (`reference/codex-runtime.md` §9); *pixel via post-process* — downscale NEAREST to the spec's
-   grid, quantise to its palette size, snap to grid, validate; *transparency* — `key_unmix.py`,
+   (`reference/codex-runtime.md` §9); *pixel via post-process* — snap to the spec's grid and
+   palette, then `audit_pixel.py` (`reference/pixel-grid.md`); *transparency* — `key_unmix.py`,
    never a binary key (`reference/codex-runtime.md` §5); *another engine* — the
    spec's recipe.
 3. **Verify + register:** `ls -la "$DEST" && file "$DEST"`, then a `manifest.md` row (date, path,
@@ -223,7 +223,7 @@ PHASE 3S's stack, but the cells are **moments of one character**. The sheet deci
    `reference/animation-scripts.md` §1, §2.
 6. **One cell wrong** → a new sheet or a local splice; **jitter, cut feet, a fringe, a boiling
    idle** → not a re-generation → `reference/animation-faults.md` §3, §1a. **Pixel style** →
-   post-process the whole sheet, then register → `reference/animation-scripts.md` §3.
+   post-process the whole sheet, then register → `reference/pixel-grid.md`.
 7. **Outputs and the handoff:** frames + `frames.json` (`pivot_norm` = the pivot) + the keyed
    sheet (→ `anchors/sets/<action>.png` if the next animation must match) + previews →
    `reference/animation-scripts.md` §4.

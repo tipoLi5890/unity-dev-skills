@@ -182,9 +182,37 @@ Examples:
   sheet_to_frames.py sheet_keyed.png --rows 5 --cols 6 --palette 24 --pixelate 64 --upscale 4 \
       --register ground --outdir out/morph
 
+  # the same, on a generated sheet whose "pixels" are uneven blocks a few px wide: every
+  # cell is cut along its own blocks and sampled once per block, then held to the art
+  # bible's palette; the report prints native_block_px, which says what N the sheet was drawn at
+  sheet_to_frames.py run_keyed.png --rows 4 --cols 4 --key-color '#ff00ff' --pixelate 64 \
+      --pixel-method snap --palette-file ART_DIRECTION.md --upscale 4 --register ground \
+      --outdir out/courier_run --names run --palette-out out/courier_run/palette.hex
+
   # the strict duplicate test, and no sub-threshold tail left for a trimmer
   sheet_to_frames.py sheet_keyed.png --rows 5 --cols 6 --dup-metric pixel --dup-threshold 22 \
       --alpha-thr 16 --clear-below-thr --report
+
+PIXEL ART. `--pixelate N` makes every cell N px on its long side, and
+`--pixel-method` says how. `nearest` (the default) quantises the full-size sheet
+(`--palette K`) and then point-samples it: one source pixel per output pixel,
+wherever the resize lands. `snap` is for a generated sheet, whose "pixels" are
+blocks a few px wide that are not quite square and not quite on a grid: each
+cell of the equal split is cut into N cells along its OWN block edges (the
+fit; `--snap-warp on`, the default, lets each cut move to the edge next to it),
+every block is read once at its centre (the median of the block when that
+centre is a stray), alpha comes out 0 or 255, and the colours are reduced on
+the small sheet — to `--palette K` built from it, or to a fixed
+`--palette-file` (an art bible's Palette table, a .hex, a palette .png; the key
+colour is left out of it; with `--palette K` as well, only the K most used of
+the file's colours stay). `--palette-out` saves the palette the sheet was held
+to, which is how a second sheet gets the first one's colours. N stays the
+caller's number: `pixel metric native_block_px` prints the block size the
+source was drawn at and the cell count that implies, and `pixel metric
+edge_fit` / `unit_gaps` say how well the unwarped lattice of N cells explains
+the source's edges. Under snap, `--upscale F` puts every cut, pad, canvas and
+paste offset on a multiple of F, so each written frame is whole F px blocks
+from its top-left corner; `--canvas` must be a multiple of F.
 
 Exit codes: 0 ok · 1 rows × cols cells cannot be formed, bad args, a missing
 `--outdir`, writing without `--register`, or `--bg-color` on an input that
@@ -196,6 +224,8 @@ Requires Pillow. `--register ground | free | centroid`, `--gutters search` and t
 rim measurement also need numpy and `sprite_ops.py` beside this script (codex's
 imagegen venv has both: ~/.codex/imagegen-venv/bin/python); without them the
 Pillow-only path — `--gutters nominal --register keep` — still runs.
+`--pixel-method snap` needs numpy and `pixel_ops.py` beside this script, and is
+refused without them.
 """
 import argparse
 import json
@@ -210,6 +240,7 @@ THR = 16  # alpha above this counts as content; --alpha-thr overrides it in main
 
 GRID_R2 = 0.6  # in-cell x spread explained by the grid column at or above this is the grid, not motion
 _OPS = None
+_PIX = None
 
 
 def ops():
@@ -227,6 +258,36 @@ def ops():
         except ImportError as e:
             _OPS = (None, str(e))
     return _OPS if _OPS[0] is not None else None
+
+
+def pix():
+    """(numpy, pixel_ops), or None when either is missing — what `--pixel-method snap` runs on."""
+    global _PIX
+    if _PIX is None:
+        try:
+            import numpy
+            here = os.path.dirname(os.path.abspath(__file__))
+            if here not in sys.path:
+                sys.path.insert(0, here)
+            import pixel_ops
+            _PIX = (numpy, pixel_ops)
+        except ImportError as e:
+            _PIX = (None, str(e))
+    return _PIX if _PIX[0] is not None else None
+
+
+def up_to(v, step):
+    """v rounded UP to a multiple of step."""
+    return -(-int(v) // step) * step
+
+
+def near(v, step):
+    """v rounded to the nearest multiple of step (half up)."""
+    return int(math.floor(v / step + 0.5)) * step
+
+
+def hex_of(rgb):
+    return "#%02x%02x%02x" % tuple(int(v) for v in rgb[:3])
 
 
 def cv(xs):
@@ -462,16 +523,77 @@ def grid_cell_size(W, H, rows, cols):
             max(y1 - y0 for _, _, _, y0, _, y1 in rects))
 
 
-def gutter_rects(sheet, rows, cols):
+def snap_sheet(sheet, rows, cols, ncw, nch, warp):
+    """Every cell of the equal split read as ncw x nch cells along its OWN blocks -> (uint8 sheet, info).
+
+    A generated sheet draws each frame's blocks at their own phase, so one lattice for the whole
+    sheet fits none of them; fitted cell by cell, the result is also an exact cols x rows grid by
+    construction. The evidence kept is the UNWARPED fit's, whatever `warp` says: a warped fit moves
+    its cuts onto the edges it is then scored against. The medians are over the cells that hold
+    anything, and `native_block` over those where a block size could be read at all."""
+    np, po = pix()
+    out = np.zeros((rows * nch, cols * ncw, 4), np.uint8)
+    kinds = dict(warped=0, fitted=0, uniform=0)
+    fits, bxs, bys = [], [], []
+    for r, c, x0, y0, x1, y1 in cell_rects(sheet.width, sheet.height, rows, cols, 0.0):
+        cell = po.to_float(sheet.crop((x0, y0, x1, y1)))
+        fit = po.fit_cells(cell, ncw, nch, warp=warp)
+        got, _, _ = po.recover_cells(cell, fit["x_lines"], fit["y_lines"], method="robust", alpha="binary")
+        out[r * nch:(r + 1) * nch, c * ncw:(c + 1) * ncw] = po.to_u8(got)
+        kinds[fit["lattice"]] += 1
+        if cell[..., 3].any():
+            fits.append((fit["edge_fit"], fit["unit_gaps"]))
+            bx, by = po.block_estimate(cell)
+            bxs += [bx] if bx else []
+            bys += [by] if by else []
+    return out, dict(
+        lattice=" ".join(f"{k} {n}" for k, n in kinds.items()), cells_with_content=len(fits),
+        edge_fit=(statistics.median(f[0] for f in fits) if fits else 0.0),
+        unit_gaps=(statistics.median(f[1] for f in fits) if fits else 0.0),
+        native_block=[statistics.median(bxs) if bxs else 0.0, statistics.median(bys) if bys else 0.0])
+
+
+def snap_colours(small, fixed, k, metric):
+    """Hold the SMALL sheet to a palette -> (uint8 sheet, palette or None, source, stats or None).
+
+    `fixed` is a palette read from a file; with `k` as well, only the k of its colours this sheet
+    uses most stay, and the sheet is mapped again onto those. `k` alone builds the palette from
+    the sheet. One pixel is one cell here, so a colour's vote is the cells that carry it — not the
+    anti-aliased rim a full-size sheet would add to the count."""
+    np, po = pix()
+    if fixed is not None:
+        out, st = po.apply_palette(small, fixed, metric)
+        if k:
+            seen, counts = np.unique(out[out[..., 3] > 0][:, :3], axis=0, return_counts=True)
+            votes = {tuple(int(v) for v in rgb): int(n) for rgb, n in zip(seen, counts)}
+            order = sorted(st["used"], key=lambda i: (-votes.get(tuple(int(v) for v in fixed[i]), 0), i))
+            if not order:      # nothing visible: there is no colour to keep
+                return out, None, "file", None
+            fixed = fixed[sorted(order[:k])]
+            out, st = po.apply_palette(small, fixed, metric)
+        return out, fixed, "file", st
+    if k:
+        built = po.build_palette([small], k, metric)
+        if not len(built):
+            return small, None, "none", None
+        out, st = po.apply_palette(small, built, metric)
+        return out, built, "built", st
+    return small, None, "none", None
+
+
+def gutter_rects(sheet, rows, cols, step=1):
     """Row-major cut rects on the FOUND gutters -> (rects, interior cuts that run through content).
 
     The model does not draw its rows at exact thirds, nor its columns at the same x in every
     row: an equal split cuts feet and bat tips that a cut 20 px away would have missed. Rows are
     found on the whole sheet, columns inside each row band (`sprite_ops.find_cuts`); a cut stays
     on the equal split wherever that line is already empty, so a sheet drawn on the true grid is
-    cut exactly as before."""
+    cut exactly as before. `step` > 1 says the sheet is whole step x step blocks: the cuts are
+    then searched on the blocks and land on multiples of step, so a cut never splits one."""
     np, so = ops()
     content = np.asarray(sheet.getchannel("A")) > THR
+    if step > 1:
+        content = content[::step, ::step]
     ys, yclean = so.find_cuts(content.sum(axis=1), rows)
     dirty = yclean.count(False)
     rects = []
@@ -479,7 +601,7 @@ def gutter_rects(sheet, rows, cols):
         xs, xclean = so.find_cuts(content[ys[r]:ys[r + 1]].sum(axis=0), cols)
         dirty += xclean.count(False)
         for c in range(cols):
-            rects.append((r, c, xs[c], ys[r], xs[c + 1], ys[r + 1]))
+            rects.append((r, c, xs[c] * step, ys[r] * step, xs[c + 1] * step, ys[r + 1] * step))
     return rects, dirty
 
 
@@ -740,11 +862,38 @@ def main():
                          "It resizes the WHOLE sheet to cols*N x rows*N, so it also regularises a ragged "
                          "grid (a 1254 px sheet's 313.5 px cells become exact) — and --canvas must then "
                          "match N times --upscale, or the frames get padded")
+    ap.add_argument("--pixel-method", choices=["nearest", "snap"], default="nearest",
+                    help="how --pixelate reads the sheet. nearest (default) = point-sample the whole sheet; "
+                         "snap = cut every cell into N cells along its own block edges and read each block "
+                         "once (for a generated sheet, whose blocks are uneven and sit at a different phase "
+                         "in every cell); alpha comes out 0 or 255 and the palette is applied to the small "
+                         "sheet. Needs --pixelate, numpy and pixel_ops.py beside this script")
+    ap.add_argument("--snap-warp", choices=["on", "off"], default="on",
+                    help="snap: on (default) = each cut may move to the block edge next to it; off = one "
+                         "phase per cell, cuts evenly spaced (the equal split when the cell shows too few "
+                         "edges to read a phase from). The printed edge_fit / unit_gaps are the unwarped "
+                         "fit's either way")
     ap.add_argument("--palette", type=int, metavar="K",
-                    help="quantise the WHOLE sheet to K colours once, before slicing (one shared palette)")
+                    help="quantise the WHOLE sheet to K colours once, before slicing (one shared palette). "
+                         "Under --pixel-method snap the K colours are built from the small sheet instead, "
+                         "and with --palette-file K caps how many of the file's colours may be used")
+    ap.add_argument("--palette-file", metavar="PATH",
+                    help="snap: a fixed palette — an art bible's .md (the hex colours under --palette-section), "
+                         "a .hex / .txt (one colour per line) or a palette .png. The key colour "
+                         "(--bg-color / --key-color) is left out of it")
+    ap.add_argument("--palette-section", metavar="NAME",
+                    help="the heading or bold list item of a .md --palette-file that holds the colours "
+                         "(default Palette)")
+    ap.add_argument("--palette-out", metavar="PATH",
+                    help="snap: write the palette the sheet was held to as a .hex, one rrggbb per line — "
+                         "pass it to the next sheet as --palette-file and the two share their colours")
+    ap.add_argument("--colour-metric", choices=["lab", "rgb"],
+                    help="snap: the distance a colour is matched to the palette by (default lab, CIEDE2000; "
+                         "rgb = euclidean)")
     ap.add_argument("--dither", choices=["none", "floydsteinberg"], default="none")
     ap.add_argument("--upscale", type=int, default=1, metavar="F",
-                    help="integer NEAREST upscale after --pixelate (default 1)")
+                    help="integer NEAREST upscale after --pixelate (default 1). Under --pixel-method snap "
+                         "every cut, pad, canvas and paste offset is then a multiple of F")
     ap.add_argument("--dup-metric", choices=["signature", "pixel"], default="signature",
                     help="how a frame pair is compared. signature (default, cheap) = a 16x16 "
                          "alpha-premultiplied luma + alpha thumbnail, which is dominated by silhouette "
@@ -816,6 +965,61 @@ def main():
         print("ERROR: --pixelate snaps the sheet to a pixel lattice; --scale-search / --subject-px "
               "would resample it off that lattice.", file=sys.stderr)
         return 1
+    snap = a.pixel_method == "snap"
+    if not snap and (a.palette_file or a.palette_out or a.colour_metric or a.palette_section):
+        print("ERROR: --palette-file / --palette-section / --palette-out / --colour-metric belong to "
+              "--pixel-method snap, which colours the small sheet; the nearest path quantises the "
+              "full-size sheet with --palette K.", file=sys.stderr)
+        return 1
+    if snap:
+        if not a.pixelate or a.pixelate < 1:
+            print("ERROR: --pixel-method snap reads N cells out of every frame — pass --pixelate N (the "
+                  "cell count on the frame's long side, from the art bible's pixel spec).", file=sys.stderr)
+            return 1
+        if a.dither != "none":
+            print("ERROR: --dither floydsteinberg spreads each colour's error over its neighbours, which "
+                  "on a sheet of one sample per cell is noise at the size of the art's pixels; "
+                  "--pixel-method snap maps every cell to its nearest palette colour.", file=sys.stderr)
+            return 1
+        if a.palette is not None and a.palette < 1:
+            print("ERROR: --palette must be >= 1", file=sys.stderr)
+            return 1
+        if a.palette_section and not a.palette_file:
+            print("ERROR: --palette-section names a section of --palette-file; pass the file.", file=sys.stderr)
+            return 1
+        if a.palette_out and not (a.palette or a.palette_file):
+            print("ERROR: --palette-out writes the palette the sheet was held to — pass --palette K or "
+                  "--palette-file.", file=sys.stderr)
+            return 1
+        if not pix():
+            print(f"ERROR: --pixel-method snap needs numpy and pixel_ops.py beside this script "
+                  f"({_PIX[1]}) — codex's imagegen venv has numpy.", file=sys.stderr)
+            return 1
+        if a.canvas and a.upscale > 1 and (a.canvas[0] % a.upscale or a.canvas[1] % a.upscale):
+            print(f"ERROR: --canvas {a.canvas[0]} {a.canvas[1]} is not a multiple of --upscale {a.upscale}: "
+                  f"under --pixel-method snap every frame is whole {a.upscale} px blocks from its top-left "
+                  f"corner, and a canvas that ends inside a block cannot be. "
+                  f"--canvas {up_to(a.canvas[0], a.upscale)} {up_to(a.canvas[1], a.upscale)} holds it.",
+                  file=sys.stderr)
+            return 1
+    metric = a.colour_metric or "lab"
+    fixed = None
+    if a.palette_file:
+        np, po = pix()
+        section = a.palette_section or "Palette"
+        try:
+            key_rgbs = []      # the key is never a colour of the art, whatever the palette file lists
+            for h in (a.bg_color, a.key_color):
+                if h and parse_hex(h) not in key_rgbs:
+                    key_rgbs.append(parse_hex(h))
+            listed = len(po.read_palette(a.palette_file, section)[0])
+            fixed, _ = po.read_palette(a.palette_file, section, exclude=key_rgbs)
+        except (ValueError, OSError) as e:
+            print(f"ERROR: --palette-file cannot be read as a palette: {e}", file=sys.stderr)
+            return 1
+        print(f"palette_file {a.palette_file} colours {len(fixed)} key_excluded "
+              + (" ".join(hex_of(k) for k in key_rgbs) if key_rgbs else "none")
+              + f" (dropped {listed - len(fixed)})")
     if a.scale_search and not (0 < a.scale_search[0] <= 1.0 <= a.scale_search[1]):
         print("ERROR: --scale-search LO HI must bracket 1.0, e.g. 0.92 1.08", file=sys.stderr)
         return 1
@@ -836,7 +1040,7 @@ def main():
         return 1
     if a.bg_color:
         sheet = key_flat_bg(sheet, parse_hex(a.bg_color), a.bg_tol)
-    if a.palette:
+    if a.palette and not snap:
         sheet = quantise_sheet(sheet, a.palette, a.dither)
     if a.clear_below_thr:
         ach = sheet.getchannel("A")
@@ -859,13 +1063,71 @@ def main():
         return 1
     cw, ch = grid_cell_size(W, H, a.rows, a.cols)
 
-    if a.pixelate:
+    pixel_doc = None
+    used_palette = None
+    blk = a.upscale if snap else 1     # snap: every placement below lands on a multiple of this
+    if a.pixelate and snap:
+        f = a.pixelate / max(cw, ch)
+        ncw, nch = max(1, round(cw * f)), max(1, round(ch * f))
+        if ncw > W // a.cols or nch > H // a.rows:
+            print(f"ERROR: --pixelate {a.pixelate} asks for {ncw}x{nch} cells out of a {W // a.cols}x"
+                  f"{H // a.rows} px frame — more cells than the source has pixels. Snap reads a sheet "
+                  f"DOWN to its art pixels; N is the frame's size in those.", file=sys.stderr)
+            return 1
+        np, po = pix()
+        warp = a.snap_warp == "on"
+        try:
+            small, info = snap_sheet(sheet, a.rows, a.cols, ncw, nch, warp)
+        except ValueError as e:
+            print(f"ERROR: --pixel-method snap could not read {ncw}x{nch} cells out of a frame: {e}",
+                  file=sys.stderr)
+            return 1
+        print(f"snapped cell {cw}x{ch} -> {ncw}x{nch} sheet {W}x{H} -> "
+              f"{a.cols * ncw}x{a.rows * nch} (an exact {a.cols}x{a.rows} grid)")
+        small, used_palette, source, st = snap_colours(small, fixed, a.palette, metric)
+        bx, by = info["native_block"]
+        print("pixel metric method snap")
+        print(f"pixel metric cells {ncw}x{nch}")
+        print(f"pixel metric warp {a.snap_warp}")
+        print(f"pixel metric cells_with_content {info['cells_with_content']}")
+        print(f"pixel metric lattice {info['lattice']}")
+        print(f"pixel metric edge_fit {info['edge_fit']:.3f}")
+        print(f"pixel metric unit_gaps {info['unit_gaps']:.3f}")
+        print(f"pixel metric native_block_px {bx:.2f} {by:.2f}")
+        print("pixel metric native_cells "
+              + (f"{round(cw / bx)}x{round(ch / by)}" if bx and by else "n/a"))
+        print(f"pixel metric palette_source {source}")
+        print(f"pixel metric palette_colours {0 if used_palette is None else len(used_palette)}")
+        if st:
+            print(f"pixel metric colours_in {st['colours_in']}")
+            print(f"pixel metric colours_used {st['colours_used']}")
+            print(f"pixel metric colour_metric {metric}")
+            print(f"pixel metric colour_move_max {st['max_distance']:.2f}")
+            print(f"pixel metric colour_move_mean {st['mean_distance']:.2f}")
+        sheet = Image.fromarray(small, "RGBA")
+        pixel_doc = dict(method="snap", cells=[ncw, nch], block_px=a.upscale, alpha="binary",
+                         lattice=info["lattice"], edge_fit=round(info["edge_fit"], 3),
+                         unit_gaps=round(info["unit_gaps"], 3), native_block_px=[bx, by],
+                         palette=dict(source=source,
+                                      path=(os.path.abspath(a.palette_file) if a.palette_file else None),
+                                      colours=([] if used_palette is None else
+                                               [hex_of(c) for c in used_palette])))
+        cw, ch = grid_cell_size(sheet.width, sheet.height, a.rows, a.cols)
+    elif a.pixelate:
         f = a.pixelate / max(cw, ch)
         ncw, nch = max(1, round(cw * f)), max(1, round(ch * f))
         sheet = sheet.resize((a.cols * ncw, a.rows * nch), Image.Resampling.NEAREST)
         print(f"pixelated cell {cw}x{ch} -> {ncw}x{nch} NEAREST sheet {W}x{H} -> "
               f"{sheet.width}x{sheet.height} (an exact {a.cols}x{a.rows} grid)")
         cw, ch = grid_cell_size(sheet.width, sheet.height, a.rows, a.cols)
+        # --palette re-binarises alpha (quantise_sheet); without it the source's alpha is point-sampled,
+        # soft rim and all — "soft" is the value audit_pixel.py reads as "do not gate alpha"
+        seen = sorted({p[:3] for p in _flat(sheet) if p[3]}) if a.palette else []
+        pixel_doc = dict(method="nearest", cells=[ncw, nch], block_px=a.upscale,
+                         alpha=("binary" if a.palette else "soft"), lattice=None, edge_fit=None,
+                         unit_gaps=None, native_block_px=None,
+                         palette=dict(source=("built" if a.palette else "none"), path=None,
+                                      colours=[hex_of(c) for c in seen]))
     if a.upscale > 1:
         sheet = sheet.resize((sheet.width * a.upscale, sheet.height * a.upscale), Image.Resampling.NEAREST)
         # re-read the cell from the rects rather than multiplying: on a ragged
@@ -876,6 +1138,9 @@ def main():
     W, H = sheet.size
 
     nominal = cell_rects(W, H, a.rows, a.cols, a.inset_frac)
+    if blk > 1 and a.inset_frac:     # the equal split is whole blocks already; an inset has to be made so
+        nominal = [(r, c, near(x0, blk), near(y0, blk), near(x1, blk), near(y1, blk))
+                   for r, c, x0, y0, x1, y1 in nominal]
     if any(x1 - x0 < 1 or y1 - y0 < 1 for _, _, x0, y0, x1, y1 in nominal):
         print(f"ERROR: --inset-frac {a.inset_frac} leaves an empty cell rect", file=sys.stderr)
         return 1
@@ -891,7 +1156,7 @@ def main():
         gutters = "nominal"
         print(f"WARN: --gutters search needs numpy and sprite_ops.py beside this script ({_OPS[1]}); "
               f"cutting on the equal split instead — a subject that crosses it is cut.")
-    cuts, unclean = gutter_rects(sheet, a.rows, a.cols) if gutters == "search" else (nominal, 0)
+    cuts, unclean = gutter_rects(sheet, a.rows, a.cols, blk) if gutters == "search" else (nominal, 0)
     moved = sum(1 for n, c in zip(nominal, cuts) if n[2:] != c[2:])
     # how far any cut reaches past its nominal cell: every cell is padded by this
     # much, so the nominal origin sits at the same pixel of every sub-image
@@ -1083,20 +1348,23 @@ def main():
             bb = alpha_bbox(im) or (0, 0, 0, 0)
             ext[i] = (x + bb[0], y + bb[1], x + bb[2], y + bb[3], bb)
         room = 4   # px of clear canvas outside the furthest content
+        if blk > 1:    # ...and a block more: seating on the block lattice moves a frame by up to one
+            room = up_to(room, blk) + blk
         half_w = math.ceil(max(max(-e[0], e[2]) for e in ext.values())) + room
         if a.register == "centroid":
             margin = 0
             half_h = math.ceil(max(max(-e[1], e[3]) for e in ext.values())) + room
-            fit_w, fit_h = 2 * half_w, 2 * half_h
+            fit_w, fit_h = up_to(2 * half_w, blk), up_to(2 * half_h, blk)
             CW, CH = (a.canvas if a.canvas else [fit_w, fit_h])
             ax, ay = CW / 2.0, CH / 2.0
             pivot_norm = [0.5, 0.5]
         else:
             margin = a.foot_margin if a.foot_margin is not None else max(4, round(0.05 * ref_h * k))
+            margin = up_to(margin, blk)
             below = math.ceil(max(e[3] for e in ext.values())) - 1     # content rows under the feet row
             fit_margin = max(margin, below + room)
-            fit_w = 2 * half_w
-            fit_h = math.ceil(max(-e[1] for e in ext.values())) + room + fit_margin + 1
+            fit_w = up_to(2 * half_w, blk)
+            fit_h = up_to(math.ceil(max(-e[1] for e in ext.values())) + room + fit_margin + 1, blk)
             if a.canvas:
                 CW, CH = a.canvas
             else:
@@ -1106,18 +1374,27 @@ def main():
         offsets, clipped = {}, []
         lattice = a.upscale if a.upscale > 1 else 1      # --upscale F: every frame keeps the reference's F px lattice
         rx0, ry0 = round(ax + place[a.ref][1]), round(ay + place[a.ref][2])
+        # snap: the reference itself goes on the block lattice of the canvas, and every other
+        # frame follows it there
+        bx0, by0 = (near(rx0, blk), near(ry0, blk)) if blk > 1 else (rx0, ry0)
         for i in live_i:
             sc, x, y = place[i]
             px, py = round(ax + x), round(ay + y)
             if lattice > 1:
-                px = rx0 + round((px - rx0) / lattice) * lattice
-                py = ry0 + round((py - ry0) / lattice) * lattice
+                px = bx0 + round((px - rx0) / lattice) * lattice
+                py = by0 + round((py - ry0) / lattice) * lattice
             offsets[i] = (px, py)
             bb = ext[i][4]
             loss = (max(0, -(px + bb[0])), max(0, -(py + bb[1])),
                     max(0, px + bb[2] - CW), max(0, py + bb[3] - CH))
             if any(loss):
                 clipped.append((frames[i][0]["name"], loss))
+        if blk > 1 and a.register != "centroid":
+            # the feet row is wherever the lattice put the reference, so the margin and the pivot
+            # are read from the placed reference rather than from the request
+            ay = float(by0 - place[a.ref][2])
+            margin = int(CH - 1 - ay)
+            pivot_norm = [0.5, round(margin / CH, 6)]
         if tail_px:
             print(f"resample_tail {tail_px} px at alpha 1..{THR} "
                   + ("cleared" if a.clear_below_thr else "given their neighbour's colour (alpha kept; "
@@ -1182,11 +1459,15 @@ def main():
                   f"will be cropped")
         ox = (CW - cw) // 2
         oy = (CH - ch) if pivot == "bottom-center" else (CH - ch) // 2
+        if blk > 1:
+            ox, oy = ox // blk * blk, oy // blk * blk
 
         # ---- whole-frame alignment (translations only; never scale, never per-cell recentre)
         # The baseline target is snapped to a whole pixel so an integer shift lands on
         # it exactly; a centroid target cannot be, and keeps its <=0.5 px residual.
         tgt_bot = whole(aux["median_bottom"])
+        if blk > 1:    # a bbox bottom is a block edge, and so must the line they are all moved to be
+            tgt_bot = float(near(aux["median_bottom"], blk))
         med_cx = aux["median_cx"]
         shifts = {}
         for m in metas:
@@ -1196,6 +1477,7 @@ def main():
                     sy = round(tgt_bot - m["bbox_bottom"])
                 if a.align in ("centroid", "both"):
                     sx = round(med_cx - m["centroid"][0])
+                sx, sy = near(sx, blk), near(sy, blk)
             shifts[m["name"]] = (int(sx), int(sy))
         if a.align != "none":
             print(f"align {a.align} target_bottom {tgt_bot:.0f} target_centroid_x {med_cx:.3f}")
@@ -1240,6 +1522,7 @@ def main():
             fit_w = max(cw, CW + 2 * max(worst[0], worst[2]))
             fit_h = max(ch, CH + (worst[1] if pivot == "bottom-center"
                                   else 2 * max(worst[1], worst[3])))
+            fit_w, fit_h = up_to(fit_w, blk), up_to(fit_h, blk)
             print(f"WARN: {len(clipped)} of {len(live)} frames cropped, and the `metric` lines above "
                   f"describe the sheet before the shift. --canvas {fit_w} {fit_h} gives the shift room; "
                   f"the post_align block below measures what would actually be written.")
@@ -1410,6 +1693,14 @@ def main():
         out_frames.append(rec)
         print(f"wrote {dest}")
 
+    if a.palette_out and used_palette is not None:
+        po = pix()[1]
+        po.write_palette(a.palette_out, used_palette)
+        print(f"wrote {a.palette_out} colours {len(used_palette)}")
+    elif a.palette_out:
+        print(f"WARN: --palette-out {a.palette_out} not written — the sheet holds no colour to build a "
+              f"palette from")
+
     side = a.json or os.path.join(a.outdir, "frames.json")
     register_doc = reg_top or dict(mode="keep", ref=a.ref)
     doc = dict(
@@ -1429,6 +1720,9 @@ def main():
         set_metrics_pre_align=pre_doc,
         verdict=dict(ok=not faults, faults=[dict(kind=kind, detail=msg) for kind, msg in faults]),
         frames=out_frames)
+    if pixel_doc:
+        # what --pixelate made of the sheet; `audit_pixel.py` reads its expectations from here
+        doc["pixel"] = pixel_doc
     with open(side, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=2)
     print(f"wrote {side}")

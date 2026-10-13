@@ -212,9 +212,17 @@ Relay Codex's stdout back to the user in your own words.
   box, so a bat or a raised arm moves the body the other way.
 - **3D source scripts** — `turnaround_to_views.py` · `audit_3d_source.py`: one scale for four
   views, and the gate on an image before a conversion (`reference/image-to-3d-input.md` §5, §8).
+- **Pixel scripts** — `pixel_snap.py` · `audit_pixel.py`, with `sheet_to_frames.py --pixelate N
+  --pixel-method snap` for animation sheets. `pixel_snap.py` is the last step of the static path:
+  it snaps images already on their final canvas to a fixed cell count and one palette, and writes
+  each cell as an F px block. `audit_pixel.py` is the gate on either kind — block size, canvas,
+  lattice phase, binary alpha, colour count, palette; exit 1 on a failed gate, 2 when it had
+  nothing to check against. Full usage: `reference/pixel-grid.md`.
 - **`key_unmix.py`** keys both kinds of sheet (§5). **`sprite_ops.py`** is not a command: it holds
   the definitions the keyer, the slicer and the two gates share (core, rim, fringe, tint, slip), so
-  none of them can disagree about a number. The scripts directory travels as a whole.
+  none of them can disagree about a number. **`pixel_ops.py`** is the same kind of shared module
+  for the pixel scripts — the cell fit, the colour recovery, the palette and the lattice read-back —
+  and has no command of its own beyond `--selftest`. The scripts directory travels as a whole.
 
 ## 9. The single-asset call (PHASE 3)
 

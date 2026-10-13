@@ -2,16 +2,20 @@
 
 The project's art bible, written in PHASE 2 of `SKILL.md`. PHASE 2 fills `Status: LOCKED`, version,
 **dimensionality**, **style family**, **engine/approach**, palette, mood, **pixel spec if pixel**
-(grid px, palette size, view angle, frame counts, outline), **asset-format conventions**, the
-verbatim **STYLE PREAMBLE**, anchor path(s), do/don't.
+(cells per frame, block scale, palette, view angle, frame counts, outline), **asset-format
+conventions**, the verbatim **STYLE PREAMBLE**, anchor path(s), do/don't.
 
 - **Status / Version / Last updated**, **Scenario / IP brief**
 - **Dimensionality / render target** (2D / 2.5D / 3D), **Style family** (from the board/refs)
 - **Generation engine / approach** (which engine above; + any post-process; + pinned agent model,
   if the project pins one)
 - **Asset-template formats** this project needs
-- **Palette** — `role | hex | usage` (extracted from the anchor)
-- **Pixel spec** — *only if style = pixel* (grid px, palette size, view angle, frame counts, outline)
+- **Palette** — a `role | hex | usage` table under a heading named `Palette` (extracted from the
+  anchor). The pixel scripts read exactly that with `--palette-file ART_DIRECTION.md`: every
+  `#RRGGBB` in the section, in order, the first column as the role
+- **Pixel spec** — *only if style = pixel*: **cells per frame N** (e.g. 64), **block scale F**
+  (e.g. 4, so a 256 px frame), the palette as **the fixed `Palette` table or K colours**, view
+  angle, frame counts, outline (`reference/pixel-grid.md` §3)
 - **Mood / keywords**; **Anchors** — path(s) to canonical reference image(s)
 - **STYLE PREAMBLE (inject verbatim)** — exact text prepended to every prompt
 - **Per-asset conventions** — sizes/format/transparency/tiling per type

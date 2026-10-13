@@ -2,6 +2,68 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.25.0
+
+`codex-visual` makes pixel art that is pixel art. A pixel-style brief returns blocks of a few
+source pixels that are uneven, anti-aliased and at a different phase in every cell, and
+point-sampling them at a fixed step reads block edges as often as block centres. Snapping fits a
+fixed number of cells to the image's own colour edges instead, holds every sheet and set of a
+character to one palette, and a new gate reads the lattice, the alpha and the colours back off the
+shipped files.
+
+- **`sheet_to_frames.py --pixel-method snap`.** With `--pixelate N` it cuts every cell into N cells
+  along its own block edges, takes each cell's centre colour — the median only when the centre is
+  an isolated speck, so a blended edge never becomes a new colour — makes alpha 0 or 255, applies
+  the palette to the small sheet and upscales by `--upscale F`. Every cut, pad, canvas and paste
+  offset is then a multiple of F, so registration moves frames by whole blocks. `--snap-warp on`
+  (the default) lets each cut move onto the colour edge beside it; `off` keeps one phase per cell
+  for a source whose blocks really are evenly spaced. The run prints how each cell was cut
+  (`warped`, `fitted`, `uniform`), `edge_fit` and `unit_gaps` — always from the unwarped fit —
+  and `native_block_px` and `native_cells`, the generator's own block and the count it implies,
+  to compare with N; none of them is gated. Snap is refused (exit 1, nothing written) without
+  `--pixelate`, with `--dither floydsteinberg`, with more cells than the frame has pixels and with
+  a `--canvas` that is not a multiple of F. `nearest` stays the default, and a run without the new
+  flags writes the same files as before.
+- **One palette across sheets.** `--palette K` under snap builds K colours from the small sheet;
+  `--palette-file` holds a sheet to a fixed palette — the `role | hex | usage` table under the
+  `Palette` heading of `ART_DIRECTION.md` (`--palette-section` names another), a `.hex` / `.txt`
+  or a palette `.png` — and `--palette-out` writes the palette used as a `.hex` for the next sheet.
+  The key colour is left out of a palette file whenever `--key-color` or `--bg-color` names it.
+  `--colour-metric lab` (CIEDE2000, the default) or `rgb` decides what nearest means. Every
+  `--pixelate` run adds a `pixel` block to `frames.json`: method, cells, block size, alpha
+  (`binary`, or `soft` for a nearest run without `--palette`), the lattice evidence and the palette.
+- **`scripts/pixel_snap.py`** is the last step of the static path: images already sliced and
+  normalised to their final canvas are snapped to `--cells N` along the long side (or
+  `--cells-wh NX NY`), one colour per cell, written as F px blocks, with the same palette and warp
+  flags. `--report` measures and writes nothing; `--sweep LO HI` prints the lattice evidence for
+  every cell count in a spacing range. A read-back of the written files — block lattice, binary
+  alpha, colour count, nothing empty — exits 3 when it fails (`--no-gate`: 0).
+- **`scripts/audit_pixel.py`** is the gate on either kind: one block size over the set, a canvas
+  that divides by it, blocks starting at 0,0 in every file, F x F tiles of one colour, no pixel
+  between alpha 0 and 255, at most K opaque colours per file and over the whole set, every one on
+  the palette; specks are printed, never gated. Expectations come from the sidecar's `pixel` block
+  or from `--block`, `--max-colours` and `--palette-file`, so several sheets can be held to one
+  palette. Exit 1 on a failed gate, 2 when there is nothing to read or nothing to check against.
+- **`scripts/pixel_ops.py`** is the module the three share, so the writer and the gate read one
+  definition of a cell, a block and "on the palette": the cut-line fit, the per-cell colour
+  recovery, the Lab / CIEDE2000 distance, the palette selection and the lattice read-back. It
+  carries code ported under the MIT licence, credited in `THIRD_PARTY_NOTICES.md`.
+- **`reference/pixel-grid.md`** holds the path: the five properties the gate reads, why the
+  generator's grid defeats point-sampling, the Pixel spec in `ART_DIRECTION.md` — cells per frame
+  N, block scale F, a fixed palette or K colours, now spelled out in
+  `reference/art-direction-schema.md` — both command sequences for the courier run, the derived and
+  the authored palette, the half-block budget a snapped asset needs in `audit_set.py`, and one N
+  and F per character in place of a resample. `SKILL.md`, `reference/image-model.md`,
+  `codex-runtime.md`, `animation-scripts.md` and `geometry-gate.md` point at it.
+- **`slice_grid.py` and `normalize_set.py` gain `--resample nearest`**, which keeps hard edges for
+  art that is already pixel art and warns when the scale is not an integer; `lanczos` stays the
+  default.
+
+What the pixel path does not do: choose N — the cell count is the caller's, read off the art
+bible, and an N far from the drawn grid aliases with no setting to repair it; dither under snap;
+redraw an outline thinner than a cell; check that a tile's edges wrap; or judge the drawing, so a
+dead sheet snaps into a dead pixel sheet and the animation gates still apply.
+
 ## 0.24.0
 
 Fifty-six skills. Five new ones carry the vertical slice and its polish: `unity-interaction`,

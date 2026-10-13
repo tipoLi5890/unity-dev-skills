@@ -56,6 +56,8 @@ Examples:
   slice_grid.py grid_keyed.png --rows 2 --cols 2 --report
   # plain equal split and plain alpha bbox, to reproduce a set normalised that way
   slice_grid.py grid_keyed.png --rows 2 --cols 2 --gutters nominal --inset-frac 0.06 --raw-bbox ...
+  # hard-edged art: scale with NEAREST instead of LANCZOS (warns when the factor is not an integer)
+  slice_grid.py grid_keyed.png --rows 2 --cols 2 --resample nearest --outdir OUT
 
 Requires Pillow (use codex's imagegen venv: ~/.codex/imagegen-venv/bin/python).
 """
@@ -65,6 +67,7 @@ from PIL import Image, ImageChops, ImageFilter
 THR = 16        # alpha above this counts as content (--alpha-thr)
 SOLID_THR = 96  # a pixel this opaque can seed the subject (--solid-thr)
 CORE_THR = 40   # the subject's core, which decides scale and centre (--core-thr)
+RESAMPLE = "lanczos"  # the filter place() scales with (--resample)
 
 
 def cv(xs):
@@ -141,7 +144,7 @@ def place(content, core, canvas_w, canvas_h, scale):
     """Scale the content, put the CORE's centre on the canvas centre, paste without a mask."""
     cw, ch = content.size
     nw, nh = max(1, round(cw * scale)), max(1, round(ch * scale))
-    content = content.resize((nw, nh), Image.LANCZOS)
+    content = content.resize((nw, nh), Image.NEAREST if RESAMPLE == "nearest" else Image.LANCZOS)
     cx0, cy0, cx1, cy1 = (v * scale for v in core)
     x = round(canvas_w / 2 - (cx0 + cx1) / 2)
     y = round(canvas_h / 2 - (cy0 + cy1) / 2)
@@ -199,7 +202,7 @@ def cell_rects(im, rows, cols, inset, gutters):
 
 
 def main():
-    global THR, SOLID_THR, CORE_THR
+    global THR, SOLID_THR, CORE_THR, RESAMPLE
     ap = argparse.ArgumentParser(description="Slice a keyed grid sheet into per-asset PNGs.")
     ap.add_argument("grid", help="keyed (transparent-bg) RGBA grid image")
     ap.add_argument("--rows", type=int, required=True)
@@ -225,9 +228,12 @@ def main():
                     help="plain alpha bbox, no subject isolation, nothing cleared")
     ap.add_argument("--no-normalize", action="store_true",
                     help="just isolate+centre each cell; keep relative content sizes")
+    ap.add_argument("--resample", choices=["lanczos", "nearest"], default="lanczos",
+                    help="filter the subject is scaled with (default lanczos); nearest keeps hard edges and "
+                         "warns when the scale factor is not an integer")
     ap.add_argument("--report", action="store_true", help="measure only; no writes")
     a = ap.parse_args()
-    THR, SOLID_THR, CORE_THR = a.alpha_thr, a.solid_thr, a.core_thr
+    THR, SOLID_THR, CORE_THR, RESAMPLE = a.alpha_thr, a.solid_thr, a.core_thr, a.resample
 
     grid = Image.open(a.grid).convert("RGBA")
     W, H = grid.size
@@ -280,6 +286,9 @@ def main():
         else:
             base = ch if a.fit == "height" else cw if a.fit == "width" else max(cw, ch)
             scale, cw_i, ch_i = target / max(1, base), canvas_w, canvas_h
+        if RESAMPLE == "nearest" and abs(scale - round(scale)) > 1e-9:
+            print(f"WARN: {label}: --resample nearest at a scale of {scale:.3f} — not an integer, so rows and "
+                  f"columns are dropped or doubled unevenly")
         out = place(content, core, cw_i, ch_i, scale)
         dest = os.path.join(a.outdir, f"{label}.png")
         out.save(dest)

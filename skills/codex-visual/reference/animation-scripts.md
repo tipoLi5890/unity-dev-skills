@@ -93,6 +93,11 @@ magenta) it reads 4–6% fringe and fails its own gate. The two definitions, and
 # 6. pixel-art post-process: one shared palette for the whole sheet, 64 px cells back up at 4x
 "$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 5 --cols 6 \
   --palette 24 --pixelate 64 --upscale 4 --register ground --outdir /abs/out/morph --names morph
+#    the same, snapped: each cell cut along its own block edges, the palette applied to the small
+#    sheet and written down for the next sheet (`reference/pixel-grid.md`)
+"$PY" "$S/sheet_to_frames.py" /abs/courier_run_keyed.png --rows 4 --cols 4 --key-color '#ff00ff' \
+  --pixelate 64 --pixel-method snap --upscale 4 --palette 16 --palette-out /abs/ArtDirection/courier.hex \
+  --register ground --outdir /abs/out/courier_run --names courier_run
 
 # 7. the strict duplicate test, and no sub-threshold tail left behind for a trimmer
 "$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 5 --cols 6 \
@@ -104,9 +109,10 @@ Full flag set: `sheet --rows --cols [--register ground|free|centroid|keep] [--re
 [--key-color HEX] [--bg-color HEX] [--bg-tol 40] [--force-key] [--alpha-thr 16]
 [--clear-below-thr] [--drop-strays] [--inset-frac 0] [--names frame]
 [--align none|baseline|centroid|both] [--max-shift PX] [--outdir DIR] [--canvas W H]
-[--pivot bottom-center|center] [--fps-hint 10] [--pixelate N] [--palette K]
-[--dither none|floydsteinberg] [--upscale F] [--dup-metric signature|pixel]
-[--dup-threshold 2.0] [--feet-max 3] [--fringe-max 0.5] [--tint-max 2] [--no-gate]
+[--pivot bottom-center|center] [--fps-hint 10] [--pixelate N] [--pixel-method nearest|snap]
+[--snap-warp on|off] [--palette K] [--palette-file PATH] [--palette-section Palette]
+[--palette-out PATH] [--colour-metric lab|rgb] [--dither none|floydsteinberg] [--upscale F]
+[--dup-metric signature|pixel] [--dup-threshold 2.0] [--feet-max 3] [--fringe-max 0.5] [--tint-max 2] [--no-gate]
 [--json PATH] [--report]`.
 Exit codes: 0 ok · 1 the cells cannot be formed / bad args / missing `--outdir` / **writing without
 `--register`** / `--bg-color` on an input that already carries alpha · 2 `--align` needed a shift
@@ -259,6 +265,13 @@ places every frame a whole number of F-px blocks from the reference, so the set 
 `--subject-px` and `--scale-search` resample and are refused with `--pixelate`. And it invents no
 motion: a nearly static sheet flags the same duplicate pairs before and after. Post-processing
 cannot rescue a dead sheet.
+
+That is `--pixel-method nearest`, the default: it point-samples the sheet at a fixed step. The
+generator's blocks are uneven and sit at a different phase in every cell, so `--pixel-method snap`
+cuts each cell along its own block edges instead, makes alpha binary and applies the palette to the
+small sheet; `--palette-file` / `--palette-out` hold several sheets to one palette, and
+`audit_pixel.py` reads the lattice, the alpha and the colours back off the frames. The spec, both
+commands, the report and the gate: `reference/pixel-grid.md`.
 
 **The pixel-style cell floor.** Take **128 px** per cell as the working floor for a big-head
 character — a starting point, the size the post-process above reduces a 314 px cell *to*: confirm

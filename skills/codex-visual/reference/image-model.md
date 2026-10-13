@@ -172,13 +172,13 @@ far wider. Grid holds a set together, chaining holds sets together over time, an
 
 `$imagegen` is strong on illustrations, concept and key art, textures, skyboxes and icons, and
 **weak at true pixel art**: a full pixel-art brief still returns tens of thousands of distinct
-colours per cell and almost no uniform blocks — post-process it (`reference/animation-scripts.md`
-§3).
+colours per cell and blocks that are uneven and anti-aliased — post-process it and gate the result
+with `audit_pixel.py` (`reference/pixel-grid.md`).
 
 | Choice | What it is | Who does it |
 |---|---|---|
 | codex `$imagegen` | ChatGPT auth, no API key, fixed pixel budget | this skill, PHASE 3 / 3S / 3A |
-| `$imagegen` + **pixelation post-process** | downscale NEAREST + quantise palette + snap to grid, applied to the WHOLE sheet at once | this skill, via `sheet_to_frames.py --pixelate/--palette/--upscale` |
+| `$imagegen` + **pixelation post-process** | snap to a fixed cell count + one shared palette + integer upscale, applied to the WHOLE sheet at once, then gated | this skill: `sheet_to_frames.py --pixelate N --pixel-method snap` for animation sheets, `pixel_snap.py` for static sets and singles, `audit_pixel.py` as the gate (`reference/pixel-grid.md`) |
 | **external pixel-specialised generator** | PixelLab, Retro Diffusion, Scenario — own API key, not codex | the spec's recipe; this skill follows it |
 | **curated CC0 / licensed packs** | Kenney, itch.io, OpenGameArt | a valid non-generative choice |
 | **hand-authoring** | Aseprite / LibreSprite | a valid non-generative choice |

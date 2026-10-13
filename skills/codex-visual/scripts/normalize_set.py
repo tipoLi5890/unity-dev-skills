@@ -37,6 +37,8 @@ Examples:
   normalize_set.py --recenter a.png b.png c.png
   # measure only (no writes) — per-file core size, centre offset, strays, and the set CV
   normalize_set.py --report a.png b.png c.png
+  # hard-edged art: scale with NEAREST instead of LANCZOS (warns when the factor is not an integer)
+  normalize_set.py --outdir OUT --content-frac 0.72 --resample nearest a.png b.png c.png
 
 Requires Pillow (use codex's imagegen venv: ~/.codex/imagegen-venv/bin/python).
 """
@@ -46,6 +48,7 @@ from PIL import Image, ImageChops, ImageFilter
 THR = 16        # alpha above this counts as content (--alpha-thr)
 SOLID_THR = 96  # a pixel this opaque can seed the subject (--solid-thr)
 CORE_THR = 40   # the subject's core, which decides scale and centre (--core-thr)
+RESAMPLE = "lanczos"  # the filter place() scales with (--resample)
 
 
 def cv(xs):
@@ -109,7 +112,8 @@ def measure(path, raw=False):
 def place(content, core, canvas_w, canvas_h, scale):
     cw, ch = content.size
     nw, nh = max(1, round(cw * scale)), max(1, round(ch * scale))
-    content = content.resize((nw, nh), Image.LANCZOS) if scale != 1.0 else content
+    resample = Image.NEAREST if RESAMPLE == "nearest" else Image.LANCZOS
+    content = content.resize((nw, nh), resample) if scale != 1.0 else content
     cx0, cy0, cx1, cy1 = (v * scale for v in core)
     out = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     out.paste(content, (round(canvas_w / 2 - (cx0 + cx1) / 2), round(canvas_h / 2 - (cy0 + cy1) / 2)))  # no mask
@@ -123,7 +127,11 @@ def normalize(path, canvas_w, canvas_h, target, fit, raw):
         return Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     cw, ch = core[2] - core[0], core[3] - core[1]
     base = ch if fit == "height" else cw if fit == "width" else max(cw, ch)
-    return place(c, core, canvas_w, canvas_h, target / max(1, base))
+    scale = target / max(1, base)
+    if RESAMPLE == "nearest" and abs(scale - round(scale)) > 1e-9:
+        print(f"WARN: {os.path.basename(path)}: --resample nearest at a scale of {scale:.3f} — not an integer, "
+              f"so rows and columns are dropped or doubled unevenly")
+    return place(c, core, canvas_w, canvas_h, scale)
 
 
 def recenter(path, raw):
@@ -133,7 +141,7 @@ def recenter(path, raw):
 
 
 def main():
-    global THR, SOLID_THR, CORE_THR
+    global THR, SOLID_THR, CORE_THR, RESAMPLE
     ap = argparse.ArgumentParser(description="Normalize an asset set to one visual size.")
     ap.add_argument("inputs", nargs="+")
     ap.add_argument("--outdir", help="write here (keeps basenames); else in place")
@@ -149,9 +157,12 @@ def main():
     ap.add_argument("--solid-thr", type=int, default=SOLID_THR)
     ap.add_argument("--core-thr", type=int, default=CORE_THR)
     ap.add_argument("--raw-bbox", action="store_true", help="plain alpha bbox, no subject isolation, nothing cleared")
+    ap.add_argument("--resample", choices=["lanczos", "nearest"], default="lanczos",
+                    help="filter the subject is scaled with (default lanczos); nearest keeps hard edges and "
+                         "warns when the scale factor is not an integer")
     ap.add_argument("--report", action="store_true", help="measure only; no writes")
     a = ap.parse_args()
-    THR, SOLID_THR, CORE_THR = a.alpha_thr, a.solid_thr, a.core_thr
+    THR, SOLID_THR, CORE_THR, RESAMPLE = a.alpha_thr, a.solid_thr, a.core_thr, a.resample
 
     if a.report:
         rows = [measure(p, a.raw_bbox) for p in a.inputs]
