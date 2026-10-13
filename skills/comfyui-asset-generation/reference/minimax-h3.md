@@ -6,7 +6,7 @@ the available inputs and the control wanted:
 | Mode | Node and model family | Use when |
 |---|---|---|
 | T2V | `MiniMaxH3ImageToVideo`, FL2VA | No image is supplied |
-| I2V / FL2V | `MiniMaxH3ImageToVideo`, FL2VA | A first frame, last frame, or both are supplied |
+| I2V / FL2V | `MiniMaxH3ImageToVideo`, FL2VA | A first frame, last frame, or both are supplied: `templates/minimax_h3_i2v_api.json` for a first frame, `templates/minimax_h3_fl2v_api.json` for both |
 | R2V | `MiniMaxH3ReferenceToVideo`, REF2VA | Images, videos, or audio are semantic identity/style/motion references |
 | Multi-frame | R2V plus `MiniMaxH3AddGuide`, REF2VA | Exact stills or clips must occur at particular output frames |
 
@@ -46,6 +46,10 @@ omit or discard audio downstream.
   soundscape, and exclusions.
 - I2V: state that the supplied first or last frame must be preserved, then specify
   the intended motion and camera behavior.
+- FL2V for a clip with several steps: one action per ~5 s segment between keyframes
+  drawn on one camera, then assembled. Read `h3-keyframe-segments.md` for the
+  keyframe camera check, path rules, wording that avoids motion on twos, and the
+  measurement and assembly scripts.
 - R2V: tag semantic inputs exactly as `<Picture 1>`, `<Video 1>`, or
   `<Audio 1>` in connection order.
 - R2V character motion transfer: assign identity and wardrobe authority to the

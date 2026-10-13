@@ -53,6 +53,7 @@ infer permission to upload private inputs unless the user authorizes those actio
 | Stable Audio 3 music or SFX | `reference/stable-audio3.md`, `templates/stable_audio3_medium_api.json` |
 | Any MiniMax H3 video mode | `reference/minimax-h3.md` and the matching H3 template |
 | H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
+| A multi-step clip from keyframes: first/last-frame segments, one camera across keyframes, stall and still-end measurement, assembly | `reference/h3-keyframe-segments.md`, `templates/minimax_h3_fl2v_api.json`, `scripts/video_motion.py`, `scripts/assemble_segments.py` |
 | A static 3D prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
 | A character to be rigged: multi-view only, four A-pose views at one scale, the close-up budget | `reference/image-to-3d.md` (A character); `templates/pixal3d_multiview_to_model_api.json` |
 | 3D budgets, node knobs, occlusion, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` |

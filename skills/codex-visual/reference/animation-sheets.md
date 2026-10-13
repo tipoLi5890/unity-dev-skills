@@ -121,7 +121,8 @@ codex exec … "$PROMPT" -i anchors/master.png -i anchors/characters/<name>.png 
 the previously approved sheet this one must match." With that labelling, identity holds across every
 cell of a 16-frame sheet even when the palette drifts — the labels carry *who*, not *which colours*:
 restate the palette as hexes in the prompt. Before passing more than these three, confirm on one
-test sheet that the extra reference changes the result.
+test sheet that the extra reference changes the result. The same action for a whole cast of
+characters, with a finished sheet as the animation reference: §4.
 
 ## 3. Three worked prompts
 
@@ -253,3 +254,50 @@ Splitting is not free, so it has rules:
   1 ended on, and repeats the same four locks verbatim.
 - **Measure each sheet on its own** (`--report`), then concatenate the frame directories in play
   order and renumber — a seam shows as one oversized step between sheets.
+
+## 4. A character family: one finished sheet as the animation authority
+
+When several characters need the same action, finish it once — generated, keyed, registered,
+approved — and pass that sheet as **Image 2, the animation reference**, for every sibling: "Copy
+from Image 2 the poses, the timing, the prop, the framing, the character size in the cell and the
+position of the feet exactly, but draw `{WHO}` instead." Image 1 stays the style anchor that shows
+the whole cast. Keep the locks and the time structure in one template with three placeholders,
+filled per character from a small file:
+
+- `{WHO}` — "the red team's round robot"; `{FEATURES}` — the identity lock, colours in words
+  and hexes (§1);
+- `{KEY_HEX}` — the key colour **per character**, not per project: a character carrying the
+  project key's hue gets another key. A character wearing pink was keyed on green instead of the
+  project's magenta, before its first try; that one sheet went through.
+
+One project, one run: three siblings of one approved 6-frame swing, all first try, identity steady
+across the six cells, all facing the side the reference faced. That is a small sample; gate each
+sheet exactly as a new one (`reference/animation-scripts.md` §2).
+
+## 5. Static pose sheets, motion made downstream, and anchors
+
+For a party-game or UI character that reacts more than it performs, a **3x3 sheet of nine static
+poses** can replace a dozen animation sheets: idle (front), lean left, cheer, stomp, walk A and
+walk B (side), freeze, pull, pull hard. Same locks 1–3 (one size, one baseline, nothing crosses a
+cell), identity chained to that character's existing animation sheet as Image 2 — 4 of 4
+characters first try in one project, two with a small pose slip that was accepted. The motion is
+then made where the game is drawn: squash and stretch, small jumps, a lean or a wobble applied as
+a transform **around the feet**, and a pose swap on the beat.
+
+That needs two anchors per pose, measured from the keyed cell, never asked of the model:
+
+- **Feet** — x is the mean x of the opaque pixels in the bottom 1/16 of the subject's height, y
+  its lowest row. Every scale and rotation turns about it, and it is the sprite's pivot.
+- **Grip**, for poses that reach forward (side view, facing right) — the rightmost opaque pixels
+  in the band from 30% to 68% of the subject's height, which keeps the ears above and the feet
+  below out of it. The opaque pixels within 26 px of that extreme (on a 300 px tall pose, about
+  9%) give the anchor: x their mean, y their median. A held prop or rope attaches there.
+
+**Check them on a dot sheet** — every pose with its feet and grip drawn on as dots, opened and
+looked at: in that project 36 feet anchors and 8 grip anchors, all on the feet and fists by eye,
+one run. Store them as proportions of the idle pose's height with the feet as origin, so they
+survive any resample; in the engine the feet become the sprite pivot (`unity-2d-sprites`) and the
+grip a child transform at that offset. A rope passed through the grips reads as held when it is
+drawn as sagging quadratic spans between them (a slice of a generated rope stamped along each
+span, turned to its direction) and a small soft-edged disc of each character is pasted back over
+its grip, so the fist covers the rope.

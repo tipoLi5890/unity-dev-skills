@@ -82,6 +82,12 @@ Writing `pivot` alone does nothing — `alignment` must be `SpriteAlignment.Cust
 importer keeps using the named alignment and your vector is ignored. This bites hardest on a
 re-run, where the rect already exists with `alignment = Center` from a previous pass.
 
+A pose whose weight sits off the rect's centre — a lean, a stride, a pull — is anchored at its
+measured feet, not at `(0.5, 0)`: the feet point as a fraction of the rect, measured from its
+bottom-left corner, is the pivot, and an attach point such as a grip becomes a child transform at
+its measured offset. Measuring both off
+a keyed pose sheet: `codex-visual`, animation-sheets.md §5.
+
 ## 4. A sprite that stretches to an arbitrary length wants a 9-slice border
 
 A beam, jet, rope or progress fill has to reach a distance decided at runtime. Scaling the whole

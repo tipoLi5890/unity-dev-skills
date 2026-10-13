@@ -60,6 +60,11 @@ Style exploration has no natural end, so it gets a budget before it starts:
 
 - **2–3 boards, deliberately different.** Three variations on one idea is one board shown three
   times; it tells you nothing and costs three generations.
+- **Boards are game screens, not posters.** Each board is a mockup of a screen the player will
+  see — the play space, the HUD, the characters at the size they ship — two or three key screens
+  per style, so the five checks below have something to measure. A poster — the hero beside a
+  swatch strip — leaves the distance, contrast and motion checks nothing to look at. The recipe
+  is `codex-visual`'s (image-model.md §7).
 - **The human picks.** Not "which do you prefer" alongside a recommendation the agent argues for —
   present them flat, one line each on what differs.
 - **At most two corrections.** If the third round is needed, the *brief* is wrong, not the image:
@@ -111,6 +116,13 @@ the opinion:
 
 Then ask for the yes, in one message, with the board attached and the five results listed. A yes
 given against these five is a yes that survives; a yes given to "do you like this?" is not.
+
+**"Will it look flat?" is not answered by a still.** When the art is layered — a background,
+characters, props, a foreground strip — composite the generated layers into a ten-second preview
+twice, once only pasted and once with contact shadows, squash and stretch, a hit stop, a shake and
+particles, and show the two side by side before any engine work. One project settled the question
+this way with no game code. When several players share one screen, the hit stop is per lane:
+`unity-game-feel` → `reference/hit-stop-and-time.md` §5.
 
 ---
 

@@ -2,6 +2,73 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.26.0
+
+`codex-visual` returns the image its own call rendered, and `comfyui-asset-generation` builds a
+multi-step clip from keyframes. Both come from one game project's concept and storyboard work, and
+the counts below are that project's.
+
+- **`codex_generate.py` no longer takes another job's image.** It took the newest PNG to appear
+  anywhere under `$CODEX_HOME/generated_images` during the call, so a concurrent codex session's
+  render could come back as the result (once: a storyboard keyframe returned as another job's
+  pixel-art character), and a call that rendered twice was silently resolved to one image (8 of 35
+  concept screens). Each call now runs under a private, temporary `CODEX_HOME` (`auth.json`
+  linked, `config.toml` copied, removed afterwards; `--shared-home` opts out, `--keep-home` keeps
+  it), and the capture reads the `session id:` line codex prints and takes only that session's
+  folder; under `--shared-home` with no id, only session folders created during the call. Every
+  new image is written (`DEST`, then `<stem>.2.png`, …) and listed under `images`, with exit 5
+  when there is more than one. `--expect-size WxH` exits 6 on a mismatch, the file written for a
+  look; `--size-tolerance` defaults to 1 px because one 16:9 ask came back both 1672x940 and
+  1672x941. Existing flags, JSON fields and exit codes 0, 2, 3 and 4 are unchanged.
+  **Behaviour change:** isolation is the default. With no `auth.json` (a keyring or API-key login)
+  the call falls back to the shared home and says so under `isolation_skipped`; if codex ever
+  replaces the `auth.json` link with a file, the private home is kept and flagged
+  (`auth_link_replaced`), not deleted. Tested offline in 11 scenarios against a stand-in `codex`,
+  and with one real generation in a private home (exit 0, 1254x1254, the session id matching the
+  folder, the user's `generated_images/` and `auth.json` untouched).
+- `reference/codex-runtime.md` §1–§3 and §9 and `reference/image-model.md` §6–§7 replace the
+  "copy the newest PNG" recipes with the script or a by-hand capture by session id.
+- **Candidate boards are game screens, not posters** (`image-model.md` §7, PHASE 1 step 3): style
+  x 2–3 key screens, each style's first screen chained with `-i` to its others, numbers the only
+  text, a Pillow contact sheet to present and the originals to judge, and a house-rules block that
+  grows by one line per recurring defect. One project chose and locked its style from 35 such
+  screens over four rounds, none re-rolled. `unity-game-brief`'s `visual-direction.md` says it in
+  one bullet, and names a flat-versus-juiced composited preview as the answer to "will it look
+  flat", pointing at per-lane hit stop in `unity-game-feel`.
+- **Character families and static pose sheets** (`animation-sheets.md` §4–§5): one finished action
+  sheet as the animation reference for its siblings, with `{WHO}`, `{FEATURES}` and `{KEY_HEX}`
+  filled per character and a key colour per character; nine static poses per character with the
+  motion made downstream, feet and grip anchors measured off the keyed cells and checked on a dot
+  sheet, the feet as the pivot and the grip as a child transform (`unity-2d-sprites`
+  `sprite-geometry.md` §3 points there). One project, one run each: 3 of 3 and 4 of 4 sheets
+  first try, 36 feet and 8 grip anchors right by eye.
+- **`comfyui-asset-generation`: MiniMax H3 keyframe segments.** `templates/minimax_h3_fl2v_api.json`
+  is the I2V template plus a second `LoadImage` on `last_frame`, at the upstream 768x768 default.
+  `reference/h3-keyframe-segments.md`: split a multi-step clip into ~5 s first/last-frame
+  segments; chain every keyframe to the first on one camera and re-roll one whose fixed scene
+  feature moved (27–37 px off produced an invented dolly, 21 px off showed nothing, and the 6 px
+  tolerance was chosen, not found); a drawn layout map as the layout authority; one action per
+  segment and no crossing paths, with the counter-example that non-crossing turns made all at
+  once still failed; wording that avoids motion on twos, and why every segment is measured
+  anyway; assembly, the audio caveat, and batching with the server redacted from logs. Evidence:
+  36 H3 generations on disk, 10 in the final cut. `minimax-h3.md` points at the template and the
+  reference; `multiframe-reference.md` records the one 362-frame multi-frame trial that failed,
+  as one trial.
+- **`scripts/video_motion.py`** (`profile`, `smooth`) **and `scripts/assemble_segments.py`**: a
+  clip's still head and tail, stall% and jerk from a 224x128 grayscale mean frame difference
+  (threshold 0.6, one project's value, to be retuned; `--max-stall` gates with exit 1); held
+  frames dropped and rebuilt by motion-compensated `minterpolate` at the same frame count;
+  segments trimmed to their moving span and crossfaded, with `:keep`, `:xN`, `:toN`, `:holdS`,
+  `:rA-B`, `|` chapter breaks and `--timeline`. A segment without audio gets silence; mismatched
+  sizes or frame rates are refused with exit 2. Run on synthetic clips (ffmpeg `testsrc` with a
+  sliding box): a clip on twos read 48.9% stalled and 0.0% after `smooth`, frame count kept, and
+  a seven-segment assembly used every suffix.
+
+Not done here: the FL2V template and the two video scripts were not run against a ComfyUI server
+in this change (the template differs from the project's working copy only in width and save
+prefix); the shared-home path was tested only against the stand-in; and nothing here makes the
+image model place objects to the pixel.
+
 ## 0.25.0
 
 `codex-visual` makes pixel art that is pixel art. A pixel-style brief returns blocks of a few

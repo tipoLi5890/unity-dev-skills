@@ -37,3 +37,12 @@ then send the final conditioning to `BasicGuider`.
 For a 362-frame video, practical still anchors include 0, 120, 240, and 354.
 Keep the prompt timeline consistent with those positions. Too many unrelated
 anchors can cause abrupt morphing even when validation succeeds.
+
+One failed trial to weigh before relying on this for a long sequence: a 362-frame
+run with four still guides at 0, 120, 240 and 354 and the REF2V 4-step LoRA
+returned the four guide frames intact and every frame between them darkened,
+speckled with white and recoloured. Only that configuration was tried once; the
+full-step path was not, so it is one data point, not a property of the node. In
+the same project, first/last-frame segments chained between the same stills
+worked (`h3-keyframe-segments.md`). Look at frames between the guides, not only
+at the guide positions, before building on a multi-frame result.

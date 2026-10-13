@@ -13,14 +13,20 @@ model is rejected and when the image tool never ran, so the script proves the re
 ```bash
 python3 <skill>/scripts/codex_generate.py --prompt-file prompt.txt --out "$DEST" \
     -i <repo>/ArtDirection/anchors/master.png        # [-m MODEL] [--no-probe] [--timeout 600]
+                                                     # [--expect-size 1672x941] [--shared-home]
 ```
 
 It probes the model with a one-word prompt (`--no-probe` once it has passed in a batch), runs from
-a scratch directory, copies the **original** out of `generated_images` (§2, §4), and prints its
-real `size` and whether it carries `alpha` (an RGBA render was keyed by the agent — ask again for
-an opaque one). **Exit 2** = `codex` missing, **3** = the model was rejected (pass another `-m`;
-a slug that worked yesterday can be refused today), **4** = the call ran and made no image. The
-rules below are what it does, and what a call made by hand has to do.
+a scratch directory under a private, temporary `CODEX_HOME` (§3), copies the **original** out of
+its own session's `generated_images` folder (§2, §4), and prints its real `size` and whether it
+carries `alpha` (an RGBA render was keyed by the agent — ask again for an opaque one). **Exit 2** =
+`codex` missing, **3** = the model was rejected (pass another `-m`; a slug that worked yesterday
+can be refused today), **4** = the call ran and made no image, **5** = it made more than one: all
+are written (`DEST`, then `<stem>.2.png`, `<stem>.3.png`, … in render order) and listed under
+`images`, and none is chosen — look at them, **6** = `--expect-size WxH` did not match (±1 px by
+default, because one 16:9 ask has come back both 1672x940 and 1672x941; the file is written so
+it can be looked at). 5 wins over 6. The rules below are what it does, and what a call made by
+hand has to do.
 
 - **Generation must be allowed to write:** `--sandbox workspace-write --skip-git-repo-check`. The
   `exec` default is read-only and **silently blocks the save**.
@@ -52,38 +58,56 @@ The built-in tool saves **only** to
 $CODEX_HOME/generated_images/<session-id>/exec-<uuid>.png
 ```
 
-`$CODEX_HOME` = `~/.codex`, and the directory name is the session id. `-C` moves the agent's shell
-cwd, not the save path. The image tool also leaves a copy under `output/` in the working
-directory — run from a scratch directory, never the project root — and a workspace copy appears
-on the flat-vector detour (§6). `codex_generate.py` does the capture; by hand:
+`$CODEX_HOME` = `~/.codex`, and the directory name is the session id — the one `codex exec` prints
+in its header as `session id: …` (the folder and the session's rollout file carry the same id).
+`-C` moves the agent's shell cwd, not the save path. The image tool also leaves a copy under
+`output/` in the working directory — run from a scratch directory, never the project root — and a
+workspace copy appears on the flat-vector detour (§6).
+
+**Never take "the newest PNG".** Every codex session on the machine writes under the same
+`generated_images/`, so the newest file is whatever any session rendered last, and a before/after
+diff of the whole folder still collects a concurrent job's render. In one project a storyboard
+keyframe came back as another job's pixel-art character (once; the size was the giveaway), and a
+call that rendered twice was silently resolved to one of the two (8 of 35 concept screens, all
+in the first two rounds). `codex_generate.py` does the capture by session; by hand:
 
 ```bash
-# simplest: copy the newest, then verify it is a PNG
-DEST=/abs/target.png
-codex exec --sandbox workspace-write --skip-git-repo-check "$PROMPT" < /dev/null
-cp "$(ls -t "$HOME/.codex/generated_images"/*/*.png | head -1)" "$DEST"
-file "$DEST"
+DEST=/abs/target.png; LOG=$(mktemp)
+codex exec --sandbox workspace-write --skip-git-repo-check "$PROMPT" -i "$MASTER" < /dev/null > "$LOG" 2>&1
+SID=$(sed -n 's/^session id: *//p' "$LOG" | head -1)
+set -- "${CODEX_HOME:-$HOME/.codex}/generated_images/$SID"/*.png
+if [ -n "$SID" ] && [ "$#" -eq 1 ] && [ -f "$1" ]; then cp "$1" "$DEST"; file "$DEST"
+else echo "expected one image in session '$SID', got: $*"; fi   # two: look at both, choose
 ```
+
+## 3. A private `CODEX_HOME` per call — the script's default
 
 ```bash
-# sequential and exact: snapshot before, diff after
-before=$(ls -1 "$HOME/.codex/generated_images"/*/*.png 2>/dev/null | sort)
-codex exec --sandbox workspace-write --skip-git-repo-check "$PROMPT" -i "$MASTER" < /dev/null
-NEW=$(comm -13 <(echo "$before") <(ls -1 "$HOME/.codex/generated_images"/*/*.png|sort) | xargs ls -t | head -1)
+CH=$(mktemp -d)                                 # one private CODEX_HOME per call or job
+ln -s ~/.codex/auth.json "$CH/auth.json"; cp ~/.codex/config.toml "$CH/"
+CODEX_HOME="$CH" codex exec …                   # then read "$CH/generated_images"; rm -rf "$CH"
 ```
 
-## 3. Parallel sets: a private `CODEX_HOME` per job
+Each call gets its own `generated_images/`, so nothing another session renders can be collected,
+and parallel jobs cannot race. `codex_generate.py` does exactly this on every call and removes the
+directory afterwards. Codex fills a fresh home on start (its bundled skills, `$imagegen` included,
+and its own state); one real generation (with its probe) and one separate probe ran this way, and
+the user's `generated_images/` and `auth.json` were untouched. The copy inherits the config's
+model pin.
 
-```bash
-CH=<scratch>/codex-job-1                        # one private CODEX_HOME per job
-mkdir -p "$CH"; ln -sf ~/.codex/auth.json "$CH/auth.json"; cp ~/.codex/config.toml "$CH/"
-CODEX_HOME="$CH" codex exec … -C "$CH/out"      # then read "$CH/generated_images"
-```
+- **The login is shared through the link.** Should codex ever replace the link with a file (a
+  token refresh written by rename), the fresh login would exist only in the private home: the
+  script checks the link after every call and, if it was replaced, keeps the directory, sets
+  `auth_link_replaced` and says so on stderr. Not observed so far.
+- **No `auth.json`** (a keyring or API-key login): the script runs under the shared home and says
+  so under `isolation_skipped`.
+- **`--shared-home`** runs under the real `CODEX_HOME`. Only the call's own session folder counts
+  then; when no `session id:` line can be read, only session folders that did not exist before the
+  call — a job started meanwhile can still land there, which is why it is not the default.
+  `--keep-home` keeps the private home for debugging.
 
-Each job gets its own `generated_images/`, so there is no race. With the grid method a whole set is
-ONE call, so parallelize *across* sets, not within one — rarely needed. The copy inherits the
-config's model pin, and codex writes its own session state into the directory; delete it when the
-job is done.
+With the grid method a whole set is ONE call, so parallelize *across* sets, not within one —
+rarely needed.
 
 ## 4. Take the original, never the agent's copy
 
@@ -231,12 +255,14 @@ subject lacks; the anchor holds the style:
 
 ```bash
 DEST=<project asset dir>/<name>.png      # path per ART_DIRECTION.md
-codex exec --sandbox workspace-write --skip-git-repo-check \
-'$imagegen <STYLE PREAMBLE verbatim>. Subject: <description>, centered, <size>,
+cat > <scratch>/prompt.txt <<'EOF'
+$imagegen <STYLE PREAMBLE verbatim>. Subject: <description>, centered, <size>,
 on a flat solid background in a key colour the subject lacks (#FF00FF, or the key
-colour ART_DIRECTION.md records).' \
--i <repo>/ArtDirection/anchors/master.png < /dev/null      # prompt FIRST, -i LAST
-cp "$(ls -t "$HOME/.codex/generated_images"/*/*.png | head -1)" "$DEST"   # then read its size
+colour ART_DIRECTION.md records).
+EOF
+python3 <skill>/scripts/codex_generate.py --prompt-file <scratch>/prompt.txt --out "$DEST" \
+    -i <repo>/ArtDirection/anchors/master.png --expect-size 1254x1254   # square: image-model.md §3
 ```
 
-Then read its real size (§4) and key it (§5).
+Exit 0 is one render of the expected size; after 5 or 6, open the files before deciding anything
+(§1). By hand, the capture is §2's session recipe. Then key it (§5).

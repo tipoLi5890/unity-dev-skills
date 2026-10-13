@@ -122,12 +122,11 @@ far wider. Grid holds a set together, chaining holds sets together over time, an
   MASTER=<repo>/ArtDirection/anchors/master.png
   FAMILY=<repo>/ArtDirection/anchors/sets/<family>.png    # omit if none yet
   OUT=<scratch>/set; mkdir -p "$OUT"
-  codex exec --sandbox workspace-write --skip-git-repo-check \
+  python3 <skill>/scripts/codex_generate.py --out "$OUT/grid.png" --expect-size 1254x1254 --prompt \
   '$imagegen <STYLE PREAMBLE, in ENGLISH>. <LOCKS 1-3 filled in for a 2x2 sheet>. Four <items>
    IDENTICAL in size, corner radius, outline weight, highlight and palette; one centered per
    cell (~65% of the cell), even gutters. Only <the symbol> differs — TL:..., TR:..., BL:...,
-   BR:....' -i "$MASTER" -i "$FAMILY" < /dev/null
-  # capture the original as "$OUT/grid.png" (codex-runtime.md §2), then key it (§5)
+   BR:....' -i "$MASTER" -i "$FAMILY"   # this call's original only (codex-runtime.md §1-§3)
   PY=$HOME/.codex/imagegen-venv/bin/python
   "$PY" <skill>/scripts/key_unmix.py "$OUT/grid.png" --out "$OUT/grid_keyed.png" --key-color '#ff00ff'
   "$PY" <skill>/scripts/slice_grid.py "$OUT/grid_keyed.png" --rows 2 --cols 2 --report
@@ -184,21 +183,50 @@ with `audit_pixel.py` (`reference/pixel-grid.md`).
 | **hand-authoring** | Aseprite / LibreSprite | a valid non-generative choice |
 | **CLI fallback** `gpt-image-2` / `gpt-image-1.5` | a real `size` and `quality` argument, and the only documented native-transparency route | needs `OPENAI_API_KEY` + a user decision; §3, §5 |
 
-**The candidate-board call** (PHASE 1 step 3) — one composite per style option, each captured out
-of `generated_images` under its own name:
+**The candidate boards** (PHASE 1 step 3) are **game screens, not posters.** A poster — hero,
+objects and a swatch strip side by side — shows a style; a mockup of the screen the player will
+see shows whether the style survives the HUD, the play space and the characters at play size,
+which is what the user is choosing between. In one project a direction was chosen and locked from
+35 such screens over four rounds (3 styles x 3 screens; the 2 styles still in play x 5 more; the
+chosen style x 12 covering the whole flow; 4 more after the lock), every one first try, none
+re-rolled. One project, so a method, not a guarantee:
+
+- **A matrix: style x 2–3 key screens** — the core moment, a second mode or a menu, a join or
+  results screen. Two screens already show what one cannot: whether the cast stays the same.
+- **Chain inside a style.** Each style's first screen is generated with no reference; every other
+  screen of that style passes it with `-i`, named in the prose: "Image 1 is the style and character
+  reference only; the layout of this screen is different." Later rounds keep that first screen as
+  a fixed anchor, never the previous output (§6).
+- **Numbers are the only text.** "No words and no letters anywhere; numbers are the only glyphs,
+  and only where the scene asks for them." The notes on the 35 record no garbled lettering, and
+  the numbers came out as asked. Labels and captions are added later, by the game.
+- **A house-rules block that grows.** After a round, each defect that recurred becomes one line in
+  a block appended to every prompt of the next round, stated to override anything above it: a
+  busy background → "simple, soft, low-detail, lower contrast than the foreground"; hazards drawn
+  as red cones → "rounded bumps, never red cones"; extra characters nobody asked for → "no
+  characters other than the ones named"; frowns → "friendly expressions". In the 12 screens of the next
+  round the cones, the extra characters and the frowns did not come back; a busier background than
+  asked still did on two, so a rule is a pressure, not a switch. When the style locks, the block
+  folds into the `STYLE PREAMBLE`.
+- **The overview is not the evidence.** Tile the round into a Pillow contact sheet (columns =
+  styles, rows = screens) to present it, but judge on the originals, and write one line per screen
+  in `manifest.md` — what matches, what the model added on its own.
 
 ```bash
-CAND=<repo>/ArtDirection/candidates
-codex exec --sandbox workspace-write --skip-git-repo-check \
-'$imagegen Produce a 1600x900 style reference board: theme <SCENARIO>. Show the hero, 2-3 key
-objects, one obstacle and a slice of environment side by side, with a palette swatch strip along
-the bottom. Render it in <STYLE A>. No text except the swatch labels.' < /dev/null
-cp "$(ls -t "$HOME/.codex/generated_images"/*/*.png | head -1)" "$CAND/optionA.png"
-# repeat per <STYLE> for optionB.png / optionC.png
+CAND=<repo>/ArtDirection/candidates/round1; GEN=<skill>/scripts/codex_generate.py; P=<scratch>/p.txt
+for s in A B C; do for n in 1 2 3; do
+  cat common.txt "style_$s.txt" house_rules.txt "screen_$n.txt" > "$P"   # house_rules: empty in round 1
+  ref=""; [ "$n" != 1 ] && ref="-i $CAND/style${s}_1.png"
+  python3 "$GEN" --prompt-file "$P" --out "$CAND/style${s}_$n.png" $ref --expect-size 1672x941 \
+    || echo "look at style $s screen $n"
+done; done
 ```
 
-The `1600x900` is an aspect ask, not a size ask (§3). On the pack / external-engine path, present
-curated samples instead of generating.
+`common.txt` opens with `$imagegen Produce a 1600x900 (16:9 landscape) in-game screenshot mockup for
+<the game in one line>. Show the actual game screen, full-frame, edge to edge. It is NOT a poster:
+no title, no logo, no device frame, no border, no caption.`, then the cast in words and the
+numbers-only rule. The `1600x900` is an aspect ask, not a size ask (§3): it came back 1672x941 or
+1672x940. On the pack / external-engine path, present curated samples instead of generating.
 
 > **Reality check:** never promise clean **true pixel art** from `$imagegen` alone. Recommend the
 > post-process, an external pixel engine, or packs — and record the choice in `ART_DIRECTION.md`.

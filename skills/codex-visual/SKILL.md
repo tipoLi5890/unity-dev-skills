@@ -51,8 +51,8 @@ uses the ChatGPT login (`codex login status`).
 > TUI), and never trust its exit code: it is 0 when the model was rejected and when no image was
 > made. `scripts/codex_generate.py --prompt-file P --out DEST -i <anchor>` makes the call and
 > proves it: probes the model, runs from a scratch directory, takes the **original** from
-> `$CODEX_HOME/generated_images` and reads its real size. By hand: `reference/codex-runtime.md`
-> §1–4.
+> its own session in a private `CODEX_HOME` and reads its real size. By hand:
+> `reference/codex-runtime.md` §1–4.
 
 ## Models — agent vs image
 
@@ -148,8 +148,8 @@ it earns them: `reference/image-model.md` §3.
 2. **Gather inputs — a scenario and/or reference images:** a 1–3 sentence brief (theme, hero, key
    objects, obstacles) and/or images → `ArtDirection/refs/`. **Inspiration only; never copy or
    ship them.** Analyze them (`reference/codex-runtime.md` §7).
-3. **Explore options:** 2–3 **distinct candidate boards** into `ArtDirection/candidates/`, one per
-   style unless the user pinned one (`reference/image-model.md` §7).
+3. **Explore options:** 2–3 styles x 2–3 key **game screens, not posters**, into
+   `ArtDirection/candidates/` unless the user pinned one (`reference/image-model.md` §7).
 4. **Present & pick.** Summarize each (`codex exec "描述每張的風格差異" -i optionA.png …`); the user
    picks or asks for another round.
 
