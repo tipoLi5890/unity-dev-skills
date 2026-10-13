@@ -97,7 +97,7 @@ run in an EditMode test or an Editor menu and never at runtime: `unity-2d-grid` 
   either the authoring tool that exports the data, or a view built from the data. Never both.
 - **Tactics: animating a whole enemy turn in sequence at 0.12 s a cell** makes a ten-unit turn
   take half a minute. Resolve the turn on the board at once, then play the animations
-  overlapped or at a multiple.
+  overlapped or at a multiple — `unity-game-ai` → `reference/tactics-ai.md` §6.
 
 ## Where each need is answered
 
@@ -105,7 +105,8 @@ run in an EditMode test or an Editor menu and never at runtime: `unity-2d-grid` 
 |---|---|
 | Step and undo actions, hold-to-repeat, pointer position | `unity-input` → `reference/reading-input.md` |
 | Tap and drag on a phone | `unity-input` → `reference/touch-and-on-screen.md` |
-| Coordinates, neighbours, range, paths, sight, occupancy, turn order, picking | `unity-2d-grid` — the table above |
+| Coordinates, neighbours, range, paths, sight, occupancy, turn order, picking | `unity-2d-grid` → `reference/coordinates.md` and the table above |
+| A pick-only collider for tall isometric tiles; the rules themselves ask no collider | `unity-2d-grid` → `reference/picking.md`, then `unity-physics-2d` → `reference/queries-2d.md` |
 | The mover that tweens a transform to the board's cell | `unity-2d-controller` → `reference/grid-step.md` |
 | A fixed or panning camera with bounds | `unity-camera` → `reference/follow-2d.md` |
 | Palettes for rectangular, hexagonal and isometric grids | `unity-tilemap` → `reference/palette-and-grid.md` |
@@ -117,6 +118,14 @@ run in an EditMode test or an Editor menu and never at runtime: `unity-2d-grid` 
 | Isometric sheets, per-cell pivots | `unity-2d-sprites` |
 | A step and a push as animation states | `unity-animation` → `reference/sprite-state-graph.md` |
 | Rules in an engine-free assembly, EditMode tests | `unity-game-brief` → `reference/sim-presentation-split.md` |
+| Enemy turns: enumerate reachable cells, score each, pick with a fixed tie-break, then animate | `unity-game-ai` → `reference/tactics-ai.md` |
+| A gate cell a switch opens; using the cell in front | `unity-interaction` → `reference/doors-and-switches.md`, then `unity-interaction` → `reference/detection-choice.md` §6 |
+| Pickups taken on a cell; an inventory as data | `unity-interaction` → `reference/pickups.md` |
+| Health and one damage event per attack; range stays on the board | `unity-combat` → `reference/damage-contract.md` |
+| Level select, the persistent Boot scene, boards loaded and unloaded | `unity-scene-flow` → `reference/bootstrap.md`, then `unity-scene-flow` → `reference/additive-scenes.md` |
+| Solved levels and a mid-level board across a quit; a version bump | `unity-scene-flow` → `reference/save-format.md` (`templates/SaveRoundTripTests.cs`) |
+| Board rules and level lists as assets | `unity-scene-flow` → `reference/scriptable-objects.md` |
+| A step that lands, a push that settles, a gate that opens: squash, easing, sound | `unity-game-feel` → `reference/flash-and-squash.md`, then `unity-game-feel` → `reference/sfx-events.md` |
+| Which events get which feedback, within one budget | `unity-game-feel` → `reference/feedback-stack.md` |
 | Journeys over a scripted move list | `unity-play-harness` → `reference/journeys.md` |
-| Enemy turns | this file: score every reachable cell (distance to target, cover, damage dealt) on the board, pick the best with a fixed tie-break, then animate. Expose `turn` and `actor` to the probe |
 | Move and action menus, range highlights | `unity-game-ui`; highlights are tiles on a third Tilemap, cleared and refilled per selection |

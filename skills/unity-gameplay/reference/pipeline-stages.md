@@ -93,20 +93,21 @@ python3 "$HARNESS/scripts/journey_report.py" --after "$JOURNEY_OUT/slice-fail/ti
 Then build for the target and run the slice there — the frame rate, the touch reach and the
 load time of the Editor are not the device's.
 
-Saving, briefly: the save is **one versioned document of
-facts** — flags, counts, the room or cell the player is in — never a snapshot of scene objects;
-it is written to a temporary file and moved over the old one so a crash cannot leave half a
-file; and an EditMode test writes it, reads it back and compares, including one file from the
-previous version.
+The save is one versioned document of facts, written so a crash cannot leave half a file —
+`unity-scene-flow` → `reference/save-format.md`; the round-trip test, with a migration from the
+previous version, is `unity-scene-flow` → `templates/SaveRoundTripTests.cs`.
 
 Exit when: both journeys pass; the round-trip test passes; the build installs and the slice is
 finished on the device by someone who did not make it.
 
-Skills: `unity-game-ui` and the UI system it routes to; `unity-audio`; `unity-navigation` for an
-opponent that paths; `unity-lighting` for the slice's final light in 3D (`unity-lighting` →
-`reference/bake-setup.md`); `unity-rigged-character` or `unity-2d-sprites` for the character art;
-`unity-android-release`, `unity-ios-build` or `unity-web-release` for the build;
-`unity-device-testing` to run it.
+Skills — the level: `unity-2d-level`, `unity-2d-grid`, `unity-tilemap` and `unity-2d-rendering`
+in 2D; `unity-3d-level` and `unity-lighting` in 3D (`unity-lighting` →
+`reference/bake-setup.md`). The loop: `unity-interaction` for the switch, the gate and pickups;
+`unity-combat` for the one opponent's damage; `unity-game-ai` for what it sees and decides, with
+`unity-navigation` when it paths on a NavMesh; `unity-scene-flow` for the Boot scene, loading,
+pause and the save; `unity-game-ui` and the UI system it routes to. Then `unity-audio`;
+`unity-rigged-character` or `unity-2d-sprites` for the character art; `unity-android-release`,
+`unity-ios-build` or `unity-web-release` for the build; `unity-device-testing` to run it.
 
 ## 4 · Production
 
@@ -138,9 +139,11 @@ Skills: `unity-2d-sprites`, `unity-sprite-atlas`, `unity-tilemap`, `unity-3d-mod
 
 Two different jobs that share a stage because both are judged against a number set earlier.
 
-Feel: a complaint becomes a situation, a sampled quantity, a threshold and a before/after table
-— `unity-play-harness` → `reference/complaint-to-test.md` — and the last step is a person
-saying whether the new value is the feel they meant. That judgement is not automated.
+Feel: each event gets one row of feedback — hit stop, flash, particles, shake, sound, rumble —
+inside a budget, in `unity-game-feel` → `reference/feedback-stack.md`. A complaint becomes a
+situation, a sampled quantity, a threshold and a before/after table — `unity-play-harness` →
+`reference/complaint-to-test.md` — and the last step is a person saying whether the new value is
+the feel they meant. That judgement is not automated.
 
 Frame budget: measure on the device, change one thing, measure again.
 
@@ -153,12 +156,13 @@ Exit when: every open feel report has a before/after table and a yes from the pe
 it; the counters named in the brief are inside budget on the slowest supported device; and the
 3C journeys from stage 2 still pass unchanged.
 
-Skills: `unity-profiling` for counters and comparisons, `unity-scene-optimisation` for the
+Skills: `unity-game-feel` for the feedback stack and its journey
+(`unity-game-feel` → `templates/FeelJourneyTest.cs`), `unity-render-urp` for post-processing on
+a budget, `unity-profiling` for counters and comparisons, `unity-scene-optimisation` for the
 change once a counter names the cost (LOD, occlusion, batching, culling distances, texture
 memory), `unity-lighting` → `reference/shadows.md` for shadow cost and
-`unity-lighting` → `reference/mobile-subset.md` for a phone, `unity-render-urp` for
-post-processing on a budget, `unity-2d-pixel-perfect` for shimmer, `unity-debug` for reading what
-a run actually did.
+`unity-lighting` → `reference/mobile-subset.md` for a phone, `unity-2d-pixel-perfect` for
+shimmer, `unity-debug` for reading what a run actually did.
 
 ## 6 · Ship
 

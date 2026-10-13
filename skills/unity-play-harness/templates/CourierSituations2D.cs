@@ -35,6 +35,7 @@ public sealed class CourierSituations2D : MonoBehaviour
     // RunController: owns the run's state machine and the commands the input funnel sends.
     // RooftopTrack, DepotLayout, YardGrid: own the level's visuals AND its 2D colliders.
     // SentryController, PickupPool: the two things the moment needs to be complete.
+    // The real ones: unity-game-ai's SentryBrain, unity-scene-flow's PickupObjectPool; swap them in.
     RunController _run;
     RooftopTrack _rooftops;
     DepotLayout _depot;

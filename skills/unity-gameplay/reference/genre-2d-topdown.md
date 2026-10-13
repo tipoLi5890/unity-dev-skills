@@ -83,20 +83,20 @@ things still draw in the wrong order, the precedence is `unity-2d-rendering` →
   pointer's world position every frame, so smooth the camera, not the aim —
   `unity-input` → `reference/pointer-and-aim.md`.
 - **Fast projectiles tunnel through thin walls.** A 14 units/s projectile moves 0.28 units per
-  step; continuous detection or a cast from the previous position to the next —
-  `unity-physics-2d` → `reference/bodies-and-simulation.md`.
-- **`Instantiate` per shot.** Pool projectiles (`UnityEngine.Pool.ObjectPool<T>`); size from the
-  numbers table.
-- **The sentry's cone drawn wider than it tests.** Draw the cone mesh from the same angle and
-  range the test uses. The test: distance under range, then angle between sentry facing and the
-  direction to the runner under half the cone, then one `Physics2D.Linecast` against `Obstacles`
-  for cover — cheapest check first, and at a fixed interval (0.1 s), not every frame.
+  step; cast from the previous position to the next — `unity-combat` →
+  `reference/projectiles.md` §2.
+- **`Instantiate` per shot.** Lend projectiles from a pool sized from the numbers table —
+  `unity-combat` → `reference/projectiles.md` §4, on `unity-scene-flow` → `reference/pooling.md`.
+- **The sentry's cone drawn wider than it tests.** Draw the cone from the angle and range the
+  sight test uses, and run the test on an interval, not every frame — `unity-game-ai` →
+  `reference/perception.md` §1, §4 and §8.
 - **Rooms that scroll one tile.** A room 1 tile wider than the screen scrolls by that one tile
   and reads as a bug. Either lock it to the screen or make it at least 1.5 screens.
 - **RPG: free movement on a tile-authored map without sub-tile collision** leaves the player
   snagging on every half-open doorway. If the map is authored to the cell, move by the cell.
 - **Interiors as additive geometry on the same map** put two rooms' sorting in one space. Give
-  each interior its own scene or its own far-away region and cut the camera.
+  each interior its own scene or its own far-away region and cut the camera — `unity-scene-flow`
+  → `reference/additive-scenes.md`.
 
 ## Where each need is answered
 
@@ -122,10 +122,21 @@ things still draw in the wrong order, the precedence is `unity-2d-rendering` →
 | Floor and shelving palettes, rule tiles | `unity-tilemap` |
 | Floor, shelving and overhead Tilemaps as one stack | `unity-2d-level` → `reference/layer-stack.md` |
 | Rooms and regions as data; maps from LDtk or Tiled | `unity-2d-level` → `reference/rooms-and-chunks.md`, then `unity-2d-level` → `reference/external-editors.md` |
-| A sentry that paths round shelving | `unity-2d-grid` → `reference/pathfinding.md` |
+| Sentry: patrol, see, chase; its state on the probe | `unity-game-ai` → `reference/patrol-and-chase.md` (`resources/SentryBrain.cs`, with `resources/Perception2D.cs`) |
+| The vision cone: range, angle, one cast against `Obstacles`, on a budget | `unity-game-ai` → `reference/perception.md` |
+| A sentry that paths round shelving: grid A*, a NavMesh on XY, or steering | `unity-game-ai` → `reference/pathfinding-2d.md`, on `unity-2d-grid` → `reference/pathfinding.md` |
 | Sight blocked by shelving, cell by cell | `unity-2d-grid` → `reference/line-of-sight.md` |
+| Waves in an arena; a live cap and a seed | `unity-game-ai` → `reference/spawners-and-waves.md` |
+| The sentry proved to chase only after it sees | `unity-game-ai` → `templates/SentryJourneyTest.cs` |
+| Pickups: one report, then back to `PickupObjectPool` | `unity-interaction` → `reference/pickups.md`, `unity-scene-flow` → `reference/pooling.md` (`resources/PickupObjectPool.cs`) |
+| Use a switch or a door in front of the runner; the prompt | `unity-interaction` → `reference/detection-choice.md`, then `unity-interaction` → `reference/prompts.md` |
+| Shots, the hit and the hurt circle; one damage event per hit | `unity-combat` → `reference/projectiles.md`, on `unity-combat` → `reference/damage-contract.md` |
+| A melee swing in the facing direction; knock-back off shelving | `unity-combat` → `reference/melee-queries.md`, then `unity-combat` → `reference/iframes-and-knockback.md` |
+| Interiors as their own scenes; the Boot scene | `unity-scene-flow` → `reference/additive-scenes.md`, then `unity-scene-flow` → `reference/bootstrap.md` |
+| Pause, saving the depot's state, checkpoints | `unity-scene-flow` → `reference/game-state-and-pause.md`, `unity-scene-flow` → `reference/save-format.md`, `unity-scene-flow` → `reference/checkpoints.md` |
+| The hit: flash, hit stop, sparks, sound | `unity-game-feel` → `reference/feedback-stack.md`, then `unity-game-feel` → `reference/flash-and-squash.md` |
+| Muzzle and impact particles drawn among Y-sorted sprites | `unity-game-feel` → `reference/particles.md` |
+| Shake on a hit; rumble on a pad | `unity-camera` → `reference/shake-and-blends.md`, `unity-game-feel` → `reference/haptics.md` |
 | Journeys; the 2D never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
-| Sentry: patrol, see, chase | this file, "Traps" for the sight test; the state machine is three states — Patrol (waypoints), Alert (hold and face for the reaction time), Chase (steer at the last seen position) — with the state exposed to the probe through `GameProbe.Register` |
-| Pickups | a trigger on its own layer; the pickup reports once and returns to `PickupPool` |
 | Dialogue boxes, inventory screens, HUD | `unity-game-ui` |
 | Text in more than one language | `unity-localization` |

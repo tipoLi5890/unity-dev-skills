@@ -168,9 +168,11 @@ built-in modules; the journeys need `com.unity.test-framework`.
 | Frames into clips, pivots | `unity-2d-sprites` |
 | Follow cameras, confiners, jitter | `unity-camera` |
 | Recorders, situations, the probe contract | `unity-play-harness` |
+| Pressing use on a switch, a gate or a pickup | `unity-interaction` |
+| Health, hurt, invincibility frames and when a hit asks for knock-back | `unity-combat` |
 | NavMesh agents and click-to-move | `unity-navigation` |
 | 3D characters and PhysX | `unity-physics-3d` |
 
 Enemy behaviour, combat and interaction are not controllers: a sentry that patrols a ledge uses
 `PlatformerMotor2D` with its own rules in place of `PlatformerController2D`, and what it decides
-is the game's.
+is `unity-game-ai`.

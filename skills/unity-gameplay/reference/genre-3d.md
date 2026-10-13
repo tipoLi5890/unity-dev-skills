@@ -146,7 +146,7 @@ column:
 | Foot IK | `unity-animation` → `reference/ik-and-rigging.md` |
 | A rigged, animated character in the project | `unity-rigged-character` |
 | Hit boxes and colliders on a rig | `unity-rigged-character` → `reference/gameplay-rig.md` |
-| Click-to-move, patrols, agents | `unity-navigation` → `reference/recipes.md` |
+| Click-to-move, agents, a NavMesh baked for the gate room | `unity-navigation` → `reference/recipes.md` |
 | Raycasts, ground checks, triggers that do not fire | `unity-physics-3d` → `reference/queries.md` |
 | Importing and budgeting models | `unity-3d-models` |
 | Post-processing on a frame budget | `unity-render-urp` |
@@ -169,7 +169,24 @@ column:
 | Batching: SRP Batcher, instancing, static | `unity-scene-optimisation` → `reference/batching.md` |
 | Per-layer culling distances | `unity-scene-optimisation` → `reference/culling-distances.md` |
 | Texture memory and mipmap streaming | `unity-scene-optimisation` → `reference/texture-streaming.md` |
-| The switch and the gate | this file: the switch is a trigger volume plus a "use" input; the runner asks the nearest interactable in front of it within 2 units (`Physics.OverlapSphere`, then the smallest angle to forward), the switch sets one flag, the gate reads the flag. Expose the flag to the probe |
-| The sentry | patrol and chase on a `NavMeshAgent` — `unity-navigation` → `reference/recipes.md` §3; sight is range, then angle, then one `Physics.Linecast` against `World` |
+| Which interactable is selected: overlap on a tick in third person, a ray from the view in first person | `unity-interaction` → `reference/detection-choice.md` |
+| The switch and the gate: a switch owns a bool, the gate a state machine and its collider | `unity-interaction` → `reference/doors-and-switches.md` (`resources/GateSwitch.cs`, `templates/InteractionJourneyTest.cs`) |
+| The use prompt, its glyph and hold ring | `unity-interaction` → `reference/prompts.md` |
+| Pickups counted once | `unity-interaction` → `reference/pickups.md` |
+| One swing, one damage event; hit and hurt layers | `unity-combat` → `reference/attack-windows.md`, then `unity-combat` → `reference/hit-and-hurt-layers.md` |
+| The sweep a blade or a fist makes, every step | `unity-combat` → `reference/melee-queries.md` |
+| Shots that stop at a thin wall; invincibility and knock-back through the controller | `unity-combat` → `reference/projectiles.md`, then `unity-combat` → `reference/iframes-and-knockback.md` |
+| The sentry: patrol, sight, chase, return | `unity-game-ai` → `reference/patrol-and-chase.md` (`resources/SentryBrain.cs` moved by `resources/NavMeshAgentMover.cs`) |
+| Sight as range, angle and one cast against `World`, on a budget | `unity-game-ai` → `reference/perception.md` |
+| A sentry with more than three states: a state machine or a tree | `unity-game-ai` → `reference/state-machine.md`, then `unity-game-ai` → `reference/behaviour-tree.md` |
+| Waves and hidden spawn points | `unity-game-ai` → `reference/spawners-and-waves.md` |
+| The Boot scene; rooms loaded additively; a loading screen | `unity-scene-flow` → `reference/bootstrap.md`, then `unity-scene-flow` → `reference/additive-scenes.md` |
+| Pause, and what stops with it | `unity-scene-flow` → `reference/game-state-and-pause.md` |
+| The save file; checkpoints and a respawn through the motor | `unity-scene-flow` → `reference/save-format.md`, then `unity-scene-flow` → `reference/checkpoints.md` |
+| Lane run: hazards and pickups from a pool | `unity-scene-flow` → `reference/pooling.md` |
+| A hit: hit stop, flash on a lit material, sparks, sound | `unity-game-feel` → `reference/feedback-stack.md`, then `unity-game-feel` → `reference/flash-and-squash.md` |
+| Impact particles; VFX Graph or not | `unity-game-feel` → `reference/particles.md` |
+| Footsteps and the gate's sound as named events, placed in 3D | `unity-game-feel` → `reference/sfx-events.md` |
+| Rumble on a pad | `unity-game-feel` → `reference/haptics.md` |
 | HUD placement around the vanishing point | `unity-game-ui` → `reference/hud-placement.md` |
 | Frame time on the target device | `unity-profiling` |

@@ -234,6 +234,7 @@ Framing, shake feel and pixel shimmer stay a person's judgement, from a windowed
 | The pixel-perfect camera component, reference resolution, import settings | `unity-2d-pixel-perfect` |
 | Input actions, control schemes, pointer and stick aim, rebinding | `unity-input` |
 | Which perspective and movement model the game's constraints imply | `unity-gameplay` |
+| Which game event triggers a shake or a hit stop, and how strongly; the impulse itself stays here | `unity-game-feel` |
 | The 3D character the camera follows: its controller, view-relative movement | `unity-3d-controller` |
 | The probe, situations, journeys and the timeline format themselves | `unity-play-harness` |
 | Timeline authoring, Animator states, root motion | `unity-animation` |

@@ -34,7 +34,7 @@ a painted stack ── Export JSON ───┘                      │
 | `resources/LevelData.cs` | size, layers of tile ids, spawn, gate, pickups, entities with fields, its version | `TileBase`, prefabs, scenes |
 | `scripts/level_validate.py` | the level file and three jump numbers | Unity |
 | `resources/TilemapLevelLoader.cs` | the id → tile table, the six layer names, a spawn delegate | what a sentry does |
-| the game's `PickupPool`, `SentryController` | an entity's type, position and fields | which editor the level came from |
+| the game's `PickupObjectPool` (`unity-scene-flow`), `SentryBrain` (`unity-game-ai`) | an entity's type, position and fields | which editor the level came from |
 
 Everything that holds levels to their word — "every pickup is reachable", "the same seed gives
 the same level", "the gate is never behind a gap wider than the jump" — is a statement about

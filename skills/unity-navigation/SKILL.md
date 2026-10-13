@@ -4,11 +4,11 @@ description: >-
   NavMesh pathfinding in Unity with the AI Navigation package — baking walkable
   surfaces, NavMeshAgent movement and steering, obstacles and carving, links
   across gaps, area costs and modifiers, and coupling an agent to its animation.
-  Load for "make the enemy chase the player", "click-to-move", patrol routes,
+  Load for "click-to-move", an agent that walks a patrol route or chases,
   "the agent won't move / walks through walls / stutters at corners", "the agent
-  slides instead of walking", NavMesh baking at runtime, or agents that ignore
-  an obstacle, or wanting a working chase / click-to-move / patrol script rather
-  than an explanation. Character rigs and Animator setup are
+  slides instead of walking", NavMesh baking at runtime, agents that ignore an
+  obstacle, or a working agent script rather than an explanation. What an enemy
+  sees and decides is unity-game-ai; rigs and Animator setup are
   unity-rigged-character; PhysX collision is unity-physics-3d.
 ---
 
@@ -247,12 +247,12 @@ completes in milliseconds from a batch-mode Editor and produces a live `navMeshD
 afterwards. So bake-and-query is a real automated test you can write, even though agent
 *movement* is not — build the surface from `CollectObjects.Children`, bake, call
 `NavMesh.CalculatePath`, and **assert on `path.status`, never on the bool**. The snippet:
-[`reference/recipes.md`](reference/recipes.md) §6. Time your own scene before treating any bake as
-free — the cost climbs with scene size and voxel size (§6).
+[`reference/recipes.md`](reference/recipes.md) §6. Time the bake on your own scene (§6).
 
 Driving the Editor to run it: `unity-debug` → `reference/editor-control.md`.
 
 ## Scope — what this skill does NOT do
 
 Rigs, Avatars and Animator layers (`unity-rigged-character`), PhysX collision and triggers
-(`unity-physics-3d`), and 2D grid pathfinding (`unity-2d-grid`).
+(`unity-physics-3d`), 2D grid pathfinding (`unity-2d-grid`), and enemy decisions: patrol,
+chase, perception, waves (`unity-game-ai`).

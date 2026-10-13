@@ -180,8 +180,10 @@ built-in modules; the journey needs `com.unity.test-framework`.
 | Animator graphs, blend trees, events, IK, root motion | `unity-animation` |
 | Importing a rigged character and building its Animator asset | `unity-rigged-character` |
 | Recorders, situations, the probe contract | `unity-play-harness` |
+| Pressing use on a switch, a gate or a pickup | `unity-interaction` |
+| Health, hurt, invincibility frames and when a hit asks for knock-back | `unity-combat` |
 | 2D characters | `unity-2d-controller` |
 
 Enemy behaviour, damage and switches are not controllers. A sentry that walks uses
 `CharacterMotor3D` with its own rules in place of a player controller, or an agent; a hazard
-calls `Push` and the bridge's `Hurt()`; what each decides is the game's.
+calls `Push` and the bridge's `Hurt()`; what a sentry decides is `unity-game-ai`.

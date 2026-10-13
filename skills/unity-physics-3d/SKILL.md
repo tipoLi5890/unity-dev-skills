@@ -235,7 +235,7 @@ Pathfinding, NavMesh baking and agent steering are `unity-navigation` — a coll
 absent at bake time still collides here and is still not pathed around there. Canvas hit-testing
 and the EventSystem are `unity-ui-ugui`. Stripping and `link.xml` are
 `unity-android-release`. A `CharacterController` motor — ground, slopes, steps — is
-`unity-3d-controller`.
+`unity-3d-controller`. Hit and hurt layers and damage events are `unity-combat`.
 
 2D physics — `Rigidbody2D`, `Collider2D`, `Physics2D` — is `unity-physics-2d`. DOTS / the Unity
 Physics package (`com.unity.physics`) is **not** this skill's subject either: it gets a

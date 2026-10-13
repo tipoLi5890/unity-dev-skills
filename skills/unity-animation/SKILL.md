@@ -87,6 +87,7 @@ assembly next to the harness files.
 | Strafe or walk/run trees; a 4-way or 8-way sprite set; feet sliding on in-place clips; a tree whose time stops | `reference/blend-trees.md` |
 | A 2D character's jump shows late; the hurt clip freezes on frame 0; the sprite flickers between facings; flipX versus directional clips | `reference/sprite-state-graph.md` |
 | Footsteps fire twice; an event never arrives; the hitbox stays on after a hit interrupts the swing; events on a clip inside a model | `reference/events-and-windows.md` |
+| The hitbox an attack window opens: one swing, one damage event | `unity-combat` → `reference/attack-windows.md` |
 | Weapon sets or skins on one graph; "swapping the controller reset the character" | `reference/override-controllers.md` |
 | `OnAnimatorIK` never called; feet floating on slopes; a hand that must reach a switch; whether Animation Rigging is worth adding | `reference/ik-and-rigging.md` |
 | A cutscene takes the character and the game never gets it back; signals; skipping | `reference/timeline.md` |

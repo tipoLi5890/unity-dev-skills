@@ -95,8 +95,12 @@ python3 scripts/level_metrics.py --apex … --time-to-apex … --run-speed … -
 | Draw order, 2D lights, parallax | <!-- `unity-2d-rendering` --> | |
 | Level geometry and level data | <!-- 2D: `unity-tilemap` for palettes, `unity-2d-level` for the level · 3D: `unity-3d-level` → reference/greybox.md, reference/modular-kit.md --> | |
 | Cells, range, turns | <!-- `unity-2d-grid` --> | |
-| Pathing for opponents | <!-- cells: `unity-2d-grid` → reference/pathfinding.md · NavMesh: `unity-navigation` --> | |
-| Pickups, switches, hazards | <!-- genre file --> | |
+| Pathing for opponents | <!-- cells: `unity-2d-grid` → reference/pathfinding.md · 2D free: `unity-game-ai` → reference/pathfinding-2d.md · NavMesh: `unity-navigation` --> | |
+| Switches, gates, pickups, prompts | <!-- `unity-interaction` → reference/doors-and-switches.md, reference/pickups.md · hotspots: reference/point-and-click.md --> | |
+| Damage, hazards, projectiles | <!-- `unity-combat` → reference/damage-contract.md, reference/iframes-and-knockback.md, reference/projectiles.md --> | |
+| Opponents: sight, patrol and chase, waves, enemy turns | <!-- `unity-game-ai` → reference/perception.md, reference/patrol-and-chase.md · waves: reference/spawners-and-waves.md · boards: reference/tactics-ai.md --> | |
+| Boot, scene loading, pause, save and checkpoints, pools | <!-- `unity-scene-flow` → reference/bootstrap.md, reference/save-format.md, reference/checkpoints.md, reference/pooling.md --> | |
+| Feedback per event: hit stop, flash, particles, sound, rumble | <!-- `unity-game-feel` → reference/feedback-stack.md --> | |
 | 3D lighting: modes, bake, probes, shadows | <!-- `unity-lighting` → reference/light-modes.md --> | |
 | HUD and menus | `unity-game-ui` | |
 | Probe, situations, journeys | `unity-play-harness` | |

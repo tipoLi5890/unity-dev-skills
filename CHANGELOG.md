@@ -2,6 +2,120 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.24.0
+
+Fifty-six skills. Five new ones carry the vertical slice and its polish: `unity-interaction`,
+`unity-combat`, `unity-game-ai`, `unity-scene-flow` and `unity-game-feel`. `unity-gameplay`'s
+genre files name an owner, by file, for every need of every view; the neighbours that left a
+switch, a hit, a sentry, a save or a shake to "the game" route to them; and the README lists the
+skills in the order a game needs them.
+
+- **`unity-interaction` — detection is chosen by perspective; the contract is the same
+  everywhere.** Finding what is in reach is the easy part; the complaints are about selecting one
+  target and keeping it, and about who owns the change. `resources/IInteractable.cs` is the
+  contract: the interactor selects and delivers a press, the interactable decides what the press
+  means and refuses on its own. `resources/Interactor2D.cs` finds candidates from a trigger list or
+  a circle on a tick with a facing cone, `Interactor3D.cs` from a sphere on a 0.1 s tick with a 60°
+  cone and one line of sight, or one ray from the camera in first person; cells are a board lookup
+  and pointer hotspots a hit, then a walk. `resources/GateSwitch.cs` is a one-shot, toggle or held
+  switch and a gate that is a four-state machine refusing a press while it moves, and
+  `resources/Pickup.cs` reports once on touch or on use. `templates/InteractionJourneyTest.cs`
+  opens the 3D gate once with one press and selects nothing behind the runner, and holds the 2D
+  selection between two switches without flicker; `INTERACTION_JOURNEY_BREAK` set to `range`,
+  `reentry`, `cone` or `flicker` turns one test red. Six reference files: the detection choice,
+  the interactable contract, prompts, pickups, doors and switches, and point-and-click.
+- **`unity-combat` — one swing is one damage event, and the engine will not enforce it.**
+  `OnTriggerEnter` counts collider pairs, not attacks, so the trigger is demoted to a question and
+  the attack keeps the list of who it has hit. `resources/DamageInfo.cs` is the message, a struct
+  carrying amount, team, direction, knock-back, stun, tags and the swing id;
+  `resources/Health.cs` decides whether it lands — alive, another team, not invincible — and
+  raises `Damaged` and `Died`, death being a state. `Hitbox3D.cs` and `Hitbox2D.cs` query their
+  volume every fixed step while a window is open and offer each hurtbox owner one hit per swing;
+  `Projectile3D.cs` and `Projectile2D.cs` cast from the last position to the next, so a fast shot
+  stops at a thin wall. Knock-back is a request the controller's motor carries out.
+  `templates/CombatJourneyTest.cs` asserts one damage event from one swing across a sentry with two
+  hurtboxes, none inside the invincibility window, and a shot covering 1.2 units a step stopped by
+  a wall 0.1 thick; `COMBAT_JOURNEY_BREAK` set to `hitlist`, `iframes` or `cast` turns a test red.
+  Six reference files: the damage contract, hit and hurt layers, attack windows, melee queries,
+  invincibility and knock-back, and projectiles with bullet patterns as data.
+- **`unity-game-ai` — perception on a budget, decisions on a tick, movement by whoever owns the
+  transform.** An enemy that re-plans every frame and moves itself is slow and it jitters, so the
+  brain is three layers on three clocks. `resources/Perception.cs` tests range, then angle, then
+  spends one cast from a shared budget, and remembers; `Perception2D.cs` is the same test on
+  Box2D. `resources/StateMachine.cs` evaluates transitions against a blackboard at most once per
+  decision tick, and `resources/SentryBrain.cs` patrols, notices, chases and returns, asking an
+  `IMover` for a destination and never writing a transform; `NavMeshAgentMover.cs` is that mover
+  on a NavMesh, and the 2D motors and the cell map take its place elsewhere.
+  `resources/WaveSpawner.cs` plans waves from a seed with a live cap.
+  `templates/SentryJourneyTest.cs` needs no NavMesh: the sentry ignores a runner outside its cone
+  or behind a wall, chases after its reaction time once it sees, and walks back to its post when
+  its memory runs out;
+  `SENTRY_JOURNEY_BREAK` set to `los`, `cone` or `memory` turns tests red. Seven reference files:
+  the state machine, a small behaviour tree, perception, patrol and chase, 2D pathfinding,
+  spawners and waves, and tactics AI that scores every reachable cell.
+- **`unity-scene-flow` — one scene that never unloads owns what must survive a load; everything
+  else is rebuilt from data.** `resources/Bootstrap.cs` is the root of a Boot scene that creates
+  the services once, in order, and hands them out from a registry; `resources/SceneLoader.cs`
+  loads and unloads additively with progress, a stall limit and one operation in flight;
+  `resources/GameState.cs` is seven phases and a table of legal transitions, pause being one of
+  them. `resources/SaveStore.cs` holds a versioned `SaveData`, a migration chain and a write that
+  leaves the old save or the new one and never neither, `PersistentId.cs` names a scene object to
+  the save, and `PickupObjectPool.cs` lives in Boot with the counters that show whether it is
+  working. `scripts/save_check.py` reads a save from outside Unity and exits 1 on a missing
+  version, a missing key or a serialised object reference. `templates/SaveRoundTripTests.cs`
+  reads back what it writes, migrates a version 1 file to version 2, recovers the backup from a
+  file cut short and never overwrites a save from a newer build; `templates/SceneFlowJourneyTest.cs`
+  keeps Boot alive under an unloading level, refuses an illegal transition and respawns the same
+  pooled pickups, and `SCENEFLOW_JOURNEY_BREAK` set to `illegal`, `boot` or `pool` turns one test
+  red. Seven reference files: bootstrap, additive scenes, game state and pause, the save format,
+  checkpoints, pooling, and ScriptableObject config.
+- **`unity-game-feel` — feedback is a stack per event with a budget.** Juice added effect by
+  effect makes every event loud and none of them important, so each gameplay event — hit, pickup,
+  launch, land, fail — gets one row: what plays on each channel, for how long, how strongly, at
+  what priority. `resources/Feedback.cs` plays a row's motion, flash, particles, shake, sound,
+  haptics and time under a global budget and the player's reduce-motion and reduce-flash settings,
+  and sends shake and rumble out as events so it compiles without Cinemachine or the Input System.
+  `resources/HitStop.cs` is the one owner of `Time.timeScale`, with a request queue;
+  `RendererFlash.cs` captures the look once and restores it on every way out; `Tween.cs` squashes
+  and eases with no library; `SfxPlayer.cs` pools voices with variance, cooldowns and per-event and
+  global caps; `resources/Editor/ParticlePresetBuilder.cs` builds hit, pickup, landing and launch
+  emitters and reports before it creates. `templates/FeelJourneyTest.cs` asserts time back at its
+  earlier scale after overlapping stops and a requester destroyed mid-stop, a flash that restores,
+  and thirty pickups in 0.1 s starting no more sounds than the cap; `FEEL_JOURNEY_BREAK` set to
+  `restore`, `flash` or `voices` turns tests red. Seven reference files: the feedback stack, hit
+  stop and time, flash and squash, particles, trails, SFX events, and haptics.
+- **`unity-gameplay`'s genre matrix is complete.** The hub's routing table gains a row for each of
+  the five, and every genre file ends on a table that names the owning skill and file for each
+  need — controller, camera, level, physics, draw order or light, animation, interaction, combat,
+  AI, scene flow and saving, feel, journeys. The essentials the genre files carried for want of an
+  owner go: the 3D switch and sentry, the side view's pickups and hazards, the top-down sentry's
+  state machine and cone, the grid's enemy turns, and the fixed screen's picking code now route to
+  `unity-interaction`, `unity-combat`, `unity-game-ai`, `unity-scene-flow` and `unity-game-feel`
+  by file. `reference/pipeline-stages.md` names the slice's level and loop skills and the polish
+  stage's feedback stack, and hands saving to `unity-scene-flow`; `templates/GAMEPLAY_RECIPE.md`
+  gains rows for interaction, damage, opponents, scene flow and feedback.
+- **Neighbours route to them.** `unity-2d-controller` and `unity-3d-controller` send use presses
+  to `unity-interaction`, health and knock-back requests to `unity-combat`, and what a sentry
+  decides to `unity-game-ai`, where it was "the game's". `unity-input` names `unity-interaction`
+  for the interact press and `unity-scene-flow` for pause; `unity-animation` names `unity-combat`
+  for the hitbox an attack window opens, and `reference/ik-and-rigging.md` reads `SentryBrain`.
+  `unity-camera` leaves which event shakes to `unity-game-feel`; `unity-audio` and
+  `reference/mixer-routing.md` send SFX events, voice caps and cooldowns there, in place of a line
+  that put mixing outside the library. `unity-navigation` no longer claims chase and patrol: its
+  description and Scope send what an enemy sees and decides to `unity-game-ai`. `unity-physics-3d`
+  and `unity-physics-2d` send hit and hurt layers to `unity-combat` and pickup and switch triggers
+  to `unity-interaction`. `unity-new-project` and `unity-game-brief`'s architecture proposal and
+  simulation/presentation split route the Boot scene, the save and an enemy's decisions to
+  `unity-scene-flow` and `unity-game-ai`. `unity-2d-level` and `unity-lighting`'s mobile subset
+  replace the placeholder `SentryController` and `PickupPool` with `SentryBrain` and
+  `PickupObjectPool`, and `unity-play-harness`'s courier situations point at both.
+- **The README follows the pipeline.** The skills table, in all four languages, is grouped by the
+  stage a game is in, top to bottom: every stage (terminal and search), concept, 3C prototype,
+  the vertical slice's 2D world, 3D world, systems and UI, production assets and AI asset
+  generation, polish and optimisation, shipping, and backend and commerce. A line above the table
+  says so and sends any gameplay request to `unity-gameplay` first. The plugin description lists
+  the skills under the same stages.
+
 ## 0.23.0
 
 Fifty-one skills. Four new ones are the 3D world: `unity-3d-controller`, `unity-3d-level`,

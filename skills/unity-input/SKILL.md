@@ -122,6 +122,8 @@ The funnel is the same in every branch; what changes is which bindings exist and
 | A button that will not click; focus; gamepad navigation between UI controls | `unity-ui-ugui` |
 | Look input that moves a camera; camera-relative movement axes | `unity-camera` |
 | Recording a run, readiness, the probe the journey samples | `unity-play-harness` → `reference/journeys.md` |
+| The interact press spent on one selected target | `unity-interaction` |
+| Pause as a game state; what stops while paused | `unity-scene-flow` → `reference/game-state-and-pause.md` |
 | Touch that works in the Editor and not on the phone | `unity-device-testing` |
 | Which controls this kind of game needs at all | `unity-gameplay` |
 

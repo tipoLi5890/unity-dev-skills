@@ -86,6 +86,11 @@ What the four-column table above collapses into, as a proposal:
 - **One open question.** At the gate: does the run stop, or pass through into a result screen?
   Default: pass through with a 0.5 s deceleration, which keeps the retry under two seconds.
 
+When a brief does force scenes, a save or enemies that decide, the derived decision routes on: the
+Boot scene, additive loading and the versioned save are `unity-scene-flow` →
+`reference/bootstrap.md`; what a sentry decides and on which tick is `unity-game-ai` →
+`reference/state-machine.md`.
+
 ---
 
 ## Floating origin, when real distances are in the brief

@@ -67,15 +67,17 @@ sits there.
 1. **Playfield and fit**, with four gizmo lines on its edges.
 2. **Controls**: a `move` vector and `fireHeld`, `focusHeld` — `unity-input`.
 3. **Character**: in `FixedUpdate`, `position += move × speed × dt`, then clamp to the playfield
-   inset by half the sprite. No `Rigidbody2D` is needed to move; register with
-   `GameProbe.SetPlayerVelocity(() => transform, () => _velocity);`.
+   inset by half the sprite. No `Rigidbody2D` is needed to move; when the ship needs walls, the
+   free motor's screen clamp — `unity-2d-controller` → `reference/topdown-free.md` §7. Register
+   with `GameProbe.SetPlayerVelocity(() => transform, () => _velocity);`.
 4. **Bullets** as data, below. Register `GameProbe.Count("bullets", () => _live);` and
    `GameProbe.Count("hits", () => _hits);`.
 5. **Journey**: a scripted driver holds still under one aimed pattern, then repeats while
    strafing. Assert `hits` is 1 in the first run and 0 in the second, `bullets` never exceeds the
    budget, and `pos` never leaves the playfield. Run it twice and compare the timelines — they
    must match sample for sample.
-6. **Camera**: nothing follows. Shake on a hit — `unity-camera` → `reference/shake-and-blends.md`.
+6. **Camera**: nothing follows. Shake on a hit — `unity-camera` → `reference/shake-and-blends.md`,
+   fired from the hit's feedback row — `unity-game-feel` → `reference/feedback-stack.md`.
 
 ### Bullets, in essentials
 
@@ -106,7 +108,11 @@ void Remove(int i) => _bullets[i] = _bullets[--_live];   // swap with the last: 
 
 Draw them from a pool of `SpriteRenderer` objects sized to the budget and positioned in
 `LateUpdate`, or with one `Graphics.RenderMeshInstanced` call per bullet sprite. Enemies and
-pickups are few: ordinary kinematic bodies with trigger colliders are fine for those.
+pickups are few: ordinary kinematic bodies with trigger colliders are fine for those. The
+pattern that fills the array is four numbers — `unity-combat` → `reference/projectiles.md` §7;
+the hit still ends in one damage event — `unity-combat` → `reference/damage-contract.md`; the
+waves that bring the sentries are data on a seed — `unity-game-ai` →
+`reference/spawners-and-waves.md`.
 
 ### Traps
 
@@ -145,47 +151,35 @@ pickups are few: ordinary kinematic bodies with trigger colliders are fine for t
    `reference/pointer-and-aim.md`.
 3. **Picking**, below. Register `GameProbe.Register("hover", () => _hover ? _hover.name : null);`
    and one probe key per flag the first puzzle uses.
-4. **Walking**: move in a straight line to the stand point, clamped inside the walkable area
-   with `Collider2D.ClosestPoint`; for a room with an obstacle in the middle, a hand-placed
-   waypoint graph and a shortest path over it. The AI Navigation package bakes from 3D geometry
-   and does not read 2D colliders.
+4. **Walking**: walk to the stand point, then act — `unity-interaction` →
+   `reference/point-and-click.md` §4. A straight line clamped inside the walkable area with
+   `Collider2D.ClosestPoint` serves an open room; round an obstacle, the three 2D routes and
+   how to choose — `unity-game-ai` → `reference/pathfinding-2d.md`.
 5. **Journey**: scripted pointer presses on switch, then gate. Assert the flag order
    (`switchOn` before `gateOpen`), that a press on the gate *before* the switch changes nothing,
    and that a press over a UI panel reaches no hotspot.
 
-### Picking, in essentials
+### Picking — which file
 
-```csharp
-// Called from Update when the pointer was pressed. REQUIRES com.unity.ugui for the
-// EventSystem check (using UnityEngine.EventSystems).
-Collider2D Pick(Vector2 screen)
-{
-    if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return null;
-    Vector2 world = _camera.ScreenToWorldPoint(screen);
-    int n = Physics2D.OverlapPoint(world, _hotspotFilter, _results);   // ContactFilter2D on the Hotspot layer
-    Collider2D best = null; int bestOrder = int.MinValue;
-    for (int i = 0; i < n; i++)                                        // front-most wins
-    {
-        int order = _results[i].TryGetComponent(out SpriteRenderer sr) ? sr.sortingOrder : 0;
-        if (order > bestOrder) { best = _results[i]; bestOrder = order; }
-    }
-    return best;
-}
-```
-
-A press is an *intent*: store the target, walk, and act on arrival only if the intent is still
-the current one. A second press replaces it — which is what cancels a walk.
+A point overlap on the hotspot layer, the front-most by sorting layer value and then order in
+layer, and nothing at all when the press began over UI — `unity-interaction` →
+`reference/point-and-click.md` §3. A press is an *intent*: store the target, walk, and act on
+arrival only if the intent is still the current one; a second press replaces it, which is what
+cancels a walk — the same file, §5.
 
 ### Traps
 
 - **Clicks passing through UI** open the door behind the inventory. The `EventSystem` check
   comes first, and from `Update`: called inside an Input System action callback it answers for
-  the previous frame.
+  the previous frame — `unity-input` → `reference/pointer-and-aim.md`.
 - **Hover as the only affordance.** There is no hover on a touch screen. Provide a
-  hold-to-reveal that outlines every hotspot.
+  hold-to-reveal that outlines every hotspot — `unity-interaction` →
+  `reference/point-and-click.md` §6.
 - **State stored on scene objects** is lost when the room unloads. Hotspots read and write the
-  flag table; on load, each one sets its own appearance from the flags.
-- **Acting on press instead of on arrival** lets the player use a switch from across the room.
+  flag table; on load, each one sets its own appearance from the flags. The table is the save —
+  `unity-scene-flow` → `reference/save-format.md`.
+- **Acting on press instead of on arrival** lets the player use a switch from across the room —
+  `unity-interaction` → `reference/point-and-click.md` §4.
 - **Depth without sorting.** A character scaled by Y must also sort by Y against props — pivot
   at the feet and a sort axis, `unity-2d-rendering` → `reference/y-sort.md`.
 - **A puzzle that can be put into an unwinnable state.** Enumerate the flag table: a breadth-
@@ -245,6 +239,7 @@ the current one. A second press replaces it — which is what cancels a walk.
 | Move, fire and pointer actions; a scripted driver | `unity-input` → `reference/reading-input.md` |
 | Pointer position, press and release; aim | `unity-input` → `reference/pointer-and-aim.md` |
 | Touch gestures, on-screen controls | `unity-input` → `reference/touch-and-on-screen.md` |
+| The ship as a free motor with walls; the screen clamp | `unity-2d-controller` → `reference/topdown-free.md` |
 | Screen shake and impulses | `unity-camera` → `reference/shake-and-blends.md` |
 | A wide room that scrolls on X inside bounds | `unity-camera` → `reference/follow-2d.md` |
 | Background layers at different speeds, one sorting layer each | `unity-2d-rendering` → `reference/parallax.md` |
@@ -260,6 +255,20 @@ the current one. A second press replaces it — which is what cancels a walk.
 | Pixel art on a fixed screen | `unity-2d-pixel-perfect` |
 | HUD outside the playfield; inventory; verb bar | `unity-game-ui` → `reference/hud-placement.md` |
 | Dialogue in more than one language | `unity-localization` |
+| Hotspots, picking under the pointer, walk there then act, cursor verbs | `unity-interaction` → `reference/point-and-click.md` |
+| A switch that opens the gate; the flag it sets | `unity-interaction` → `reference/doors-and-switches.md` |
+| Pickups shot loose or landed on | `unity-interaction` → `reference/pickups.md` |
+| Bullet patterns as data; pooled shots | `unity-combat` → `reference/projectiles.md` |
+| The ship's hit, lives and invincibility after a hit | `unity-combat` → `reference/damage-contract.md`, then `unity-combat` → `reference/iframes-and-knockback.md` |
+| Waves keyed to ticks, from a seed | `unity-game-ai` → `reference/spawners-and-waves.md` |
+| A sentry that turns and fires on a state machine | `unity-game-ai` → `reference/state-machine.md` |
+| Walking round an obstacle in a painted room | `unity-game-ai` → `reference/pathfinding-2d.md` |
+| The flag table as the save; versions and migration | `unity-scene-flow` → `reference/save-format.md` |
+| Rooms as scenes; the Boot scene; pause | `unity-scene-flow` → `reference/additive-scenes.md`, `unity-scene-flow` → `reference/bootstrap.md`, `unity-scene-flow` → `reference/game-state-and-pause.md` |
+| Enemies, pickups and effects from a pool | `unity-scene-flow` → `reference/pooling.md` |
+| A hit: hit stop, flash, sparks, sound, within one budget | `unity-game-feel` → `reference/feedback-stack.md`, then `unity-game-feel` → `reference/hit-stop-and-time.md` |
+| The launch: squash on release, a streak in flight | `unity-game-feel` → `reference/flash-and-squash.md`, then `unity-game-feel` → `reference/trails.md` |
+| Vibration on a phone | `unity-game-feel` → `reference/haptics.md` |
 | Journeys; comparing two runs sample for sample | `unity-play-harness` → `reference/timeline-format.md` |
 | Thumb reach and touch on a real phone | `unity-device-testing` |
-| Playfield fit, bullets, picking, the launch gesture | this file |
+| Playfield fit, bullets as one array of structs, the launch gesture | this file |

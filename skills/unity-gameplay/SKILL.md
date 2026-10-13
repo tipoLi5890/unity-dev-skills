@@ -114,6 +114,11 @@ row per need — open the genre file named above and build in its order.
 | 3D character: who owns the transform, third-person, first-person, overhead and lane controllers, the Animator bridge | `unity-3d-controller` |
 | 3D levels: greybox to metrics, modular kits, prefabs, collision proxies, terrain, splines | `unity-3d-level` |
 | 3D light modes, bakes, probes, shadows, environment, the mobile subset | `unity-lighting` |
+| Switches, gates, pickups, the use prompt, point-and-click hotspots | `unity-interaction` |
+| Damage events, hit and hurt boxes, attack windows, invincibility, projectiles | `unity-combat` |
+| The sentry: perception, patrol and chase, pathing in 2D, waves, enemy turns on a board | `unity-game-ai` |
+| The Boot scene, additive loading, pause, the save file, checkpoints, pools | `unity-scene-flow` |
+| Feedback per event: hit stop, flash and squash, particles, trails, sound events, rumble | `unity-game-feel` |
 | LOD, occlusion, batching, culling distances, texture streaming | `unity-scene-optimisation` |
 | Situations, journeys, timelines; a feel report with no number in it | `unity-play-harness` |
 | The brief, its perspective and movement block, simulation/presentation split | `unity-game-brief` |
@@ -122,21 +127,20 @@ row per need — open the genre file named above and build in its order.
 | Slicing sheets, pivots, clips from frames | `unity-2d-sprites` |
 | Pixel art that shimmers or blurs | `unity-2d-pixel-perfect` |
 | A collision or trigger that does not fire, in 3D · in 2D | `unity-physics-3d` · `unity-physics-2d` |
-| NavMesh agents, click-to-move, patrols | `unity-navigation` |
+| NavMesh baking, agents, click-to-move | `unity-navigation` |
 | Getting a rigged, animated character into the project | `unity-rigged-character` |
 | HUD and menus · frame time and counters | `unity-game-ui` · `unity-profiling` |
 
 ### Given inline here
 
-Every genre file routes its controller, physics, draw order, level, lighting and cell needs to
-the skills above, by file. What no skill owns, the genre files carry as essential method — enough
-for a 3C prototype that passes a journey:
+Every genre file ends on a table that names, by file, the skill owning each need — controller,
+camera, level, physics, draw order or light, animation, interaction, combat, AI, scene flow and
+saving, feel, journeys. What no skill owns is carried here as essential method:
 
 | Need | Where the method is |
 |---|---|
 | Door, corridor, step and ceiling numbers from the body | `reference/level-metrics.md` §5 |
-| Pickups, switches, hazards, a sentry that sees | the genre file for the view, its last table |
-| Playfield fit, bullets as data, hotspot picking, the launch gesture | `reference/genre-2d-fixed-screen.md` |
+| Playfield fit, bullets as one array of structs, the launch gesture | `reference/genre-2d-fixed-screen.md` |
 
 ---
 
@@ -187,6 +191,10 @@ for a 3C prototype that passes a journey:
 | Cell maths, pathfinding, turn order | `unity-2d-grid` |
 | Skeletal sprite art | `unity-2d-animation` |
 | The 3D controller · 3D levels · lighting · LOD and occlusion | `unity-3d-controller` · `unity-3d-level` · `unity-lighting` · `unity-scene-optimisation` |
+| Switches, gates, pickups, hotspots · damage, hitboxes, projectiles | `unity-interaction` · `unity-combat` |
+| What a sentry sees and decides, waves, enemy turns | `unity-game-ai` |
+| Boot, scene loading, pause, saving, checkpoints, pools | `unity-scene-flow` |
+| Hit stop, flash, particles, trails, sound events, rumble | `unity-game-feel` |
 | Trusting a test run, reading logs, screenshots | `unity-debug` |
 
 What is left is what no single-system skill can hold: **deciding which constraints this game

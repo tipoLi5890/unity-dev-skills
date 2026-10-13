@@ -129,5 +129,16 @@ exploration ability is a state of it, never a second motor.
 | Crisp pixels at the chosen PPU | `unity-2d-pixel-perfect` |
 | Situations, journeys, the 2D never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
 | Jump and reach numbers a level may contain | `reference/level-metrics.md` |
-| Pickups and hazards | this file: a trigger collider on its own layer; the handler lives on the pickup and calls the game state once, then returns itself to the pool — never `Destroy` in the hot path |
+| Pickups: a trigger on its own layer, counted once, back to the pool | `unity-interaction` → `reference/pickups.md` |
+| A switch that opens the gate; exploration gates keyed to an ability | `unity-interaction` → `reference/doors-and-switches.md` |
+| A hazard that costs one heart, not one per step; invincibility after a hit | `unity-combat` → `reference/damage-contract.md`, then `unity-combat` → `reference/iframes-and-knockback.md` |
+| A stomp or a swing that lands once | `unity-combat` → `reference/attack-windows.md` |
+| A sentry that patrols a ledge, sees the runner and chases | `unity-game-ai` → `reference/patrol-and-chase.md`, on `unity-game-ai` → `reference/perception.md` (`resources/Perception2D.cs`) |
+| Checkpoints on the roof and a respawn that rebuilds | `unity-scene-flow` → `reference/checkpoints.md` |
+| Rooms as additive scenes; the persistent Boot scene | `unity-scene-flow` → `reference/additive-scenes.md`, then `unity-scene-flow` → `reference/bootstrap.md` |
+| Which gates are open and which pickups are taken, across a quit | `unity-scene-flow` → `reference/save-format.md` |
+| Pools for pickups, chunks and effects | `unity-scene-flow` → `reference/pooling.md` |
+| Landing dust, the dash trail, hit stop and flash on a hit | `unity-game-feel` → `reference/feedback-stack.md`, then `unity-game-feel` → `reference/trails.md` |
+| Shake on a hard landing | `unity-camera` → `reference/shake-and-blends.md` |
+| Jump, land and pickup sounds as named events | `unity-game-feel` → `reference/sfx-events.md` |
 | HUD: distance, pickups | `unity-game-ui` |

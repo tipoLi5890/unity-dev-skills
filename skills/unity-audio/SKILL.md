@@ -225,7 +225,8 @@ setting a group's volume have no public API**, so those stay with the user in th
 window. Routing sources into groups that already exist is fully in scope —
 [`reference/mixer-routing.md`](reference/mixer-routing.md) draws the line. Adaptive
 music structure (cues on bar boundaries, layered stems) is a design job, not an import one: §5
-stops at "the next track starts without a seam".
+stops at "the next track starts without a seam". The SFX event layer — one cue per game event,
+voice caps, cooldowns — is `unity-game-feel` → `reference/sfx-events.md`.
 
 Git LFS and `.gitattributes` setup for the binaries this skill imports is `unity-new-project`;
 this skill only says to check that a **new** audio extension is actually covered before the first

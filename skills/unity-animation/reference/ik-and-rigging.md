@@ -160,7 +160,7 @@ public static class SentryRig
 Rules that carry over unchanged:
 
 - **`Rig.weight` is written by the bridge**, from game state, like any parameter. A sentry's aim
-  rig goes to 1 while `SentryController` says it is tracking and to 0 when it is not.
+  rig goes to 1 while `SentryBrain` (`unity-game-ai`) reports `Sees` and to 0 when it does not.
 - **Targets are transforms the game moves in `Update`.** Constraints read them when the
   animation evaluates, after `Update`.
 - **Constraints run after the Animator, in hierarchy order under the `Rig`.** Aim first, then

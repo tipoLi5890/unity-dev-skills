@@ -25,6 +25,7 @@ public sealed class CourierSituations : MonoBehaviour
     // RunController: owns the run's state machine and the three commands the gamepad sends.
     // TrackStreamer: owns the lane mesh, its collider and the hazard volume.
     // SentryController, PickupPool: the two things the moment needs to be complete.
+    // The real ones: unity-game-ai's SentryBrain, unity-scene-flow's PickupObjectPool; swap them in.
     RunController _run;
     TrackStreamer _track;
     SentryController _sentry;

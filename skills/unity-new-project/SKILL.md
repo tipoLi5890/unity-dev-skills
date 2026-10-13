@@ -165,7 +165,8 @@ with — with nothing left to ask, just wait.
   details come from the sensing layer; the funnel is universal). The action asset and the struct
   gameplay reads: `unity-input`.
 - Scenes: a bootstrap scene that loads content scenes additively beats one
-  mega-scene — merge conflicts on a single scene file are unresolvable.
+  mega-scene — merge conflicts on a single scene file are unresolvable. The Boot scene and its
+  services: `unity-scene-flow` → `reference/bootstrap.md`.
 - Art pipeline: if assets are AI-generated, set up the art bible + grid
   workflow before mass production (`codex-visual`); 3D import/decimation
   discipline lives in `unity-3d-models`.

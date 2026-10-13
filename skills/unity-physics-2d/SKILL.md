@@ -240,4 +240,5 @@ pathfinding are `unity-2d-grid`. Sprite physics outlines are `unity-2d-sprites`;
 `unity-2d-rendering`. A camera that stutters is `unity-camera`; pixel snapping is
 `unity-2d-pixel-perfect`. Asserting that a recorded run never entered geometry is
 `unity-play-harness`. PhysX — `Rigidbody`, `Physics.Raycast`, `CharacterController` — is
-`unity-physics-3d`.
+`unity-physics-3d`. Hit and hurt layers are `unity-combat`; pickup and switch triggers are
+`unity-interaction`.

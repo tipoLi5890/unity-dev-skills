@@ -125,7 +125,7 @@ a sentry watches from the far wall.
   indicator: Realtime point, Range 2, no shadows.
 - Lighting Mode Shadowmask, resolution 20, one 1024 lightmap and its shadowmask.
 - Walls, floor and ceiling contribute GI and receive lightmaps; pipes and the switch housing
-  contribute and receive probes; the gate, the runner, `SentryController`'s body and the pickups
+  contribute and receive probes; the gate, the runner, the body under `SentryBrain` and the pickups
   do not contribute.
 - 32 light probes in two layers, with pairs either side of the doorway's sun patch and either
   side of the gate.

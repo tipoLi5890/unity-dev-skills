@@ -32,7 +32,7 @@ It is not a style setting. The assembly genuinely cannot see UnityEngine, so the
 `JsonUtility` living on the wrong side of the boundary is the one that surprises people, because
 serialization is exactly what a rules assembly wants to do. Decide it knowingly: either hand-write a
 small writer inside the assembly (30 lines for a state object this size) or let the presentation
-layer serialize.
+layer serialize. A versioned save file with migrations: `unity-scene-flow` → `reference/save-format.md`.
 
 **`Unity.Mathematics` is available without the engine**, as a package assembly — `float3`,
 `math.*`, and a deterministic `Random` struct. Adding it costs a package dependency in a place whose
@@ -93,7 +93,8 @@ The split is not "the presenter does nothing". It owns everything that is *about
   the simulation stays silent.
 
 What it is not allowed to invent: anything the outcome depends on. If the presenter decides
-something, a test cannot reach it.
+something, a test cannot reach it. An enemy's decisions are outcome too, and run on a tick of their
+own in plain C#: `unity-game-ai` → `reference/state-machine.md`.
 
 ---
 

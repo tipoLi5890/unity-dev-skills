@@ -234,4 +234,6 @@ you asked.
 
 Volume, effects and re-parenting: no public route, so they are the user's job in the Audio Mixer
 window. Group depth and the cost of an effect on a silent group is the skill's §4. What each
-group *should* sound like is mixing, which the skill's Scope puts outside the library entirely.
+group *should* sound like is mixing: a listening judgement no file settles, made by ear on the
+target device. Which game event plays which cue, with voice caps and cooldowns, is
+`unity-game-feel` → `reference/sfx-events.md`.
