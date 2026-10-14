@@ -130,6 +130,15 @@ check a computed rect against what was actually drawn instead of trusting the ar
 
 ## Comparing before and after
 
+Two questions, two tools:
+
+| The question | The tool |
+|---|---|
+| Did my change do what I meant, and by how much? | Copy the set aside, measure one property on both sides |
+| Did anything change that nobody meant? | Golden images: accepted baselines, `scripts/golden_diff.py`, an exit code |
+
+### One change, measured
+
 Copy the screenshot set aside **before** changing anything:
 
 ```bash
@@ -146,6 +155,164 @@ score = sum(edges.getdata()) / (edges.width * edges.height)
 
 Enabling 4× MSAA and anisotropic filtering took the distant-scenery figure from 14.3 to 10.0, a 30%
 drop — a claim worth making because it has a number behind it.
+
+### Golden images: what must not change
+
+A golden image is a screenshot somebody looked at and accepted. Every later run is compared with
+it image by image, and the comparison ends in an exit code a loop can act on.
+
+> **A baseline is recorded on purpose, never on a first run.** With no baselines the gate exits 3,
+> nothing verified; recording is a separate command, run after reading the images. A gate that
+> accepts whatever it sees first has accepted whatever bug was on screen that day.
+
+```bash
+rm -rf /tmp/shots /tmp/heat; rm -f /tmp/tests.log /tmp/results.xml; START=$(date +%s)
+"$UNITY" -projectPath "<project>" -runTests -testPlatform PlayMode \
+  -testResults /tmp/results.xml -logFile /tmp/tests.log; echo "exit=$?"   # windowed: NO -batchmode
+
+# once, after reading every PNG in /tmp/shots:
+python3 scripts/golden_diff.py Goldens/osx-metal /tmp/shots --shots /tmp/tests.log --record
+
+# every run after:
+python3 scripts/golden_diff.py Goldens/osx-metal /tmp/shots --shots /tmp/tests.log \
+  --since "$START" --heatmap-dir /tmp/heat; echo "exit=$?"
+```
+
+Delete the log with the shots: `[SHOT]` lines in last run's log describe last run's images.
+`--since` refuses any image or log older than the run's start, the guard the results file gets.
+
+```
+  PASS     01_menu.png       mean=0.00 p99=0 max=0 changed=0.0000 masked=0.0%
+  SHOT     04_countdown.png  state: baseline Countdown, this run Playing
+  FAIL     05_run_hud.png    mean=3.41 p99=88 max=255 changed=0.0130 changed_px=26633 at=812,40,1108,136 masked=0.9%  over=mean,p99,changed
+  MISSING  06_result.png     baseline has it, this run wrote no such image
+  EXTRA    08_pickup.png     no baseline, not judged: look at it, then --record --only 08_pickup
+[GOLDEN] files=4 passed=1 failed=1 missing=1 extra=1 invalid=1 verdict=harness
+```
+
+| Exit | `verdict=` | Means | Next |
+|---|---|---|---|
+| 0 | `green` | Every baseline has an image from this run, inside all three thresholds | Read the `EXTRA` lines; those were not judged |
+| 2 | `failed` | An image moved past a threshold: a real verdict | Read its heatmap; fix the code or re-record that image. Never retry |
+| 3 | `harness` | Nothing verified: no baselines, a missing image, a size or `[SHOT]` mismatch, a stale or unreadable file, a bad mask | Fix the capture. **Never re-record to clear a 3** |
+
+3 wins over 2: a set with a hole in it is not a verdict. The `FAIL` lines still print.
+
+### Same conditions, or the numbers mean nothing
+
+A diff measures everything that differs between two runs, including what the test never meant to
+vary. Pin each of these, and print each on the `[SHOT]` line so the gate checks it instead of
+trusting it:
+
+```csharp
+Debug.Log($"[SHOT] {name} state={gm.State} settle={Mathf.RoundToInt(settle * 1000)}ms " +
+          $"screen={Screen.width}x{Screen.height} quality={QualitySettings.GetQualityLevel()} " +
+          $"gfx={SystemInfo.graphicsDeviceType}");
+```
+
+`--record --shots` stores those pairs in `shots.txt` beside the baselines. Later, an image whose
+pairs differ, has no `[SHOT]` line, or has two in one log reports `SHOT` and exits 3: a
+`state=Playing` frame is not a layout regression of a `state=Countdown` baseline. Values carry no
+spaces and no culture-formatted decimals, hence integer ms.
+
+| Pin | Why it moves | How |
+|---|---|---|
+| Resolution | The capture is the Game view's size, and the canvas scaler follows it | A fixed Game view resolution, not Free Aspect; `screen=` and the size check catch a reverted layout |
+| Settle time | Too short photographs a transition; too long steps over a transient state | The settle each shot had when its baseline was recorded |
+| Quality level | MSAA, shadows, LOD bias and render scale all change pixels | `QualitySettings.SetQualityLevel(i, true)` in `[SetUp]` |
+| Graphics API, GPU | Metal, Vulkan and D3D rasterise and filter differently | One baseline directory per platform and API (`Goldens/osx-metal/`); confirm two machines read `mean=0.00` against it before they share it |
+| Frame-dependent effects | Temporal AA and motion blur read earlier frames; film grain and particles read a seed or the clock | Off in the golden quality level or Volume; a fixed particle seed, or a mask |
+| Saved state | PlayerPrefs and `persistentDataPath` survive runs (`reference/harness-trust.md`) | Reset in `[SetUp]` |
+
+Confirm on your project before choosing thresholds: record one run into a scratch directory,
+compare a second run of the same build against it, and read the lines. Anything above
+`mean=0.00 p99=0` is your noise floor; find what moves before setting `--delta` above it. Confirm
+too that each name appears once per log (`grep -c '\[SHOT\] 04_countdown' /tmp/tests.log`).
+
+### Masks: the regions allowed to change
+
+A lap timer, a sparkle on a pickup, a sentry's idle loop: they differ every run and say nothing
+about layout. Declare them in `masks.json` beside the baselines (or pass `--masks`). Masked pixels
+leave all three numbers; they are not counted as equal.
+
+```json
+{
+  "*":              [{"box": [1760, 1048, 1920, 1080], "why": "build label"}],
+  "05_run_hud.png": [{"box": [1680, 24, 1880, 88], "why": "lap timer"}],
+  "07_launch.png":  [[600, 300, 1320, 700]]
+}
+```
+
+- A key is a file name, a relative path or an fnmatch pattern; every matching key applies. A box
+  is a bare `[x0, y0, x1, y1]` or an object with a `why`.
+- Boxes are **image pixels, top-left origin, `x1`/`y1` exclusive**: the box `im.crop()` takes, not
+  the bottom-up rows of a `Texture2D` (`reference/motion-and-timing.md`). A box outside the image
+  was drawn for another resolution: exit 3.
+- **Remove the change before masking it.** Drive the timer to a fixed value in the test; mask only
+  what cannot be pinned. `masked=` on each line says how much of the frame the gate stopped
+  looking at.
+
+### Three thresholds, three shapes of change
+
+`d` is the largest per-channel difference at a pixel, 0–255, alpha dropped.
+
+| Number | Fails above | Catches | Lets through |
+|---|---|---|---|
+| `mean` of d | `--mean 2.0` | A faint change everywhere: exposure, a colour grade, a tint | Anything small, diluted by the rest of the frame |
+| `p99` of d | `--p99 24` | A moderate change over more than 1% of the frame: a panel recoloured, a shadow moved | Anything under 1% of the frame |
+| `changed`, the share of pixels with d > `--delta 48` | `--changed 0.005` | A strong change too small for p99: an icon gone, a label moved | Faint changes; anything under 0.5% of the frame |
+
+- Keep `--delta` above `--p99`; at or below it p99 never fires alone, and the script warns.
+- At 1920×1080, 0.5% is about a 100 px square, so a missing 48 px icon passes all three. **Goldens
+  judge layout and look; a wrong digit is an assertion's job**, or a tighter `--changed` on that one
+  screen with `--only`.
+- Tighten masks, not thresholds. A threshold loosened for one noisy screen is loosened for all.
+
+### Before re-recording, read the heatmap
+
+`--heatmap-dir` writes `<name>.diff.png` per compared image: the difference ×4 in grey (black =
+equal, white = changed, as in `reference/motion-and-timing.md`), masks outlined blue with their
+change still drawn inside, the changed pixels' box outlined red. The `FAIL` line prints that box as
+`at=`.
+
+1. View the heatmap, downscaled: **where** is the change? Is each mask still on its timer?
+2. Crop baseline and current at the `at=` box with NEAREST (above): **what** is it?
+3. Unintended: fix the code and rerun. Intended: re-record **that image only**.
+
+```bash
+python3 scripts/golden_diff.py Goldens/osx-metal /tmp/shots --shots /tmp/tests.log \
+  --record --only 05_run_hud
+```
+
+`--record` prints how far each replaced image had moved, merges its `[SHOT]` line into `shots.txt`
+and never writes `masks.json`. Commit the new baseline with the change that moved it.
+
+> **Re-recording to turn a red run green is a retry that launders a failure.** The first verdict
+> stands until somebody has read why it failed (`reference/harness-trust.md`).
+
+### Symptom → cause
+
+| Symptom | Cause |
+|---|---|
+| Every image fails on `mean`, little `changed` | Something global moved: quality level, render scale, exposure or grading, another GPU or API |
+| `SIZE` on every image | The Game view's resolution changed, or the run was on another machine |
+| One image fails with a box over something mid-animation | Settle too short: the shot caught a transition |
+| A small region differs every run, never the same pixels | Something unseeded: particles, a shader reading time. Pin it or mask it |
+| `MISSING` on every image | A `-batchmode` run (no PNGs), or Unity never started: check the results file first |
+| `MISSING` from one image onward | A test failed part-way and later captures never ran: read the test verdict first |
+| `UNREAD … a git LFS pointer` | The checkout skipped LFS: `git lfs pull` |
+
+### Where the baselines live
+
+Never under `Assets/`: Unity imports each PNG there as a texture with a `.meta`, and the baselines
+become project content. `masks.json` and `shots.txt` travel with the PNGs.
+
+| Where | Gains | Costs |
+|---|---|---|
+| In the repo through git LFS (`git lfs track "Goldens/**/*.png"`) | Versioned with the code that drew them; a re-record shows in the same diff | Every clone and CI runner needs LFS, or the baselines are pointer files and the gate exits 3 |
+| Outside the repo (a shared drive, an artifact store), its path the first argument | The repo stays small; many platform sets cost nothing | The look no longer moves with the commit that changed it: write `git rev-parse HEAD` into the set when recording |
+
+Plain git suits a handful of small images; every re-record adds a full copy to history for good.
 
 ---
 

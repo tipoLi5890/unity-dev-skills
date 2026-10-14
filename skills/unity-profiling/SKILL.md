@@ -78,6 +78,7 @@ together, and a table that says why.
 | "did my change actually help"; building the before/after table; a comparison that refuses | `reference/compare.md` |
 | A window in hand and no cause yet: first-appearance hitch, GC, synchronous loads, distant geometry | `reference/where-the-time-goes.md` |
 | No counter names the cost and you need the marker inside the frame | `reference/raw-capture.md` |
+| A frame-time budget that a test fails on, every run, against this machine's recorded baseline | `reference/perf-tests.md` · `templates/PerfRegressionTest.cs` |
 | Booting straight into the moment to be measured, and driving it identically twice | skill `unity-play-harness` |
 | Running Unity, reading Editor.log, screenshots, proving the harness told the truth | skill `unity-debug` |
 | Deciding what the budget should be in the first place | skill `unity-game-brief` |

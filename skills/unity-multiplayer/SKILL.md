@@ -115,6 +115,13 @@ leave calls.
 
 - **Two builds on two devices, on different networks.** Two editor instances on one machine
   share a NAT and a clock and will not reproduce the failures that matter.
+- **Automate the first pass on two test lanes, one role per lane.** A batchmode host on one lane
+  and a client on another, the role from an environment variable or a role file; each waits on a
+  set of conditions — listening, connected, player spawned — with a timeout that names the one
+  missing, never a sleep. → `unity-debug` → `reference/parallel-runs.md`
+- **A green lane pair clears the first pass, nothing more.** It catches handshake, spawn and
+  ownership bugs on every change; it is still one machine, one NAT and a loopback that never
+  drops a packet, so the two-device run above stays the test that decides.
 - **Test with induced latency and packet loss**, not only on a good connection.
 - **Test the disconnect**: kill one client mid-session; kill the host; restore the network.
 - Voice: verify on device with real hardware. The editor's microphone path is not the device's,

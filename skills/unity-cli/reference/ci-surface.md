@@ -130,6 +130,16 @@ produce one — that is what `--shard-inventory` points at.
 > no assertions — `unity-debug` → `reference/harness-trust.md`. Use the flake label as a bug
 > report, not as a pass.
 
+**Splitting on one machine is a different job.** `--shard` slices a suite across CI jobs. Each
+job has its own checkout, and the CLI computes the slices from an inventory. Test lanes run
+several Editors on **one** checkout, each in a project folder whose `Assets` and
+`ProjectSettings` link back to the repo. You choose the split (EditMode beside PlayMode, or by
+category or assembly), and the lanes share whatever those links share. The merge is yours too:
+`unity-debug` → `scripts/merge_results.py` refuses a stale shard and a test that ran twice. Given
+a full unsplit NUnit report as its inventory (the role `--shard-inventory` plays for
+`unity test`; a JUnit report will not do), it also refuses a test that ran nowhere.
+`unity-debug` → `reference/parallel-runs.md`.
+
 ## 5. `unity build` — pick exactly one strategy
 
 | Strategy | Flags | Refusal if you get it wrong |

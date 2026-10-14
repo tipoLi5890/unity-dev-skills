@@ -41,6 +41,7 @@ directly still gets a usable signal:
 |---|---|---|
 | `0` | present, `failed="0"` | Ran, all passed |
 | `2` | present, `failed="N"` | Ran, some failed — **a real verdict, do not retry** |
+| `2` | present, `failed="0"`, `inconclusive="N"` | Ran, but a test skipped itself — a gate that did not run |
 | `1` (EditMode leg) | **absent** | Never got as far as running: compile error in a test assembly |
 | `3` (PlayMode leg) | **absent** | Same, on the PlayMode leg |
 | `0` | absent or stale | Unity never started — stale lockfile, licence, another Editor |

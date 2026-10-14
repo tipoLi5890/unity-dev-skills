@@ -62,6 +62,7 @@ month, and when it fails it tells you only that three seconds passed.
 | Writing the test that drives and samples; which invariants are worth asserting over a run | `reference/journeys.md` |
 | Reading, comparing or handing over a recorded run | `reference/timeline-format.md` |
 | A feel report with no number in it; deciding what stays a human judgement | `reference/complaint-to-test.md` |
+| Minutes of random but plausible input over every situation; a seed that replays a red run | `reference/soak.md` · `templates/SoakTest.cs` |
 | Frame-time counters, draw calls, GC, "did my change actually help" | `unity-profiling` |
 | What to build first, where a threshold comes from, simulation/presentation split | `unity-game-brief` |
 | A results file you are about to believe; exit codes; state leaking between runs | `unity-debug` → `reference/harness-trust.md` |

@@ -48,6 +48,9 @@ Catches everything assertions cannot: overlap, clipping, contrast, wrong aspect.
 Batchmode **cannot** screenshot (no end of frame). Windowed can, and IMGUI shows up in the capture.
 A live Editor can too, via `unity command screenshot` — which is loop 0's answer to loop 3.
 
+Loops 2 and 3 need not queue on one Editor: the lock is per project folder, so clone *lanes* run
+several Editors on one machine at once. → `reference/parallel-runs.md`
+
 ---
 
 ## Load what the situation needs
@@ -59,6 +62,9 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 | Running Unity headless; tests not found; asmdef errors | `reference/cli-harness.md` |
 | Iterating more than twice; want to poke a live Editor; `unity command` won't connect; Safe Mode | `reference/editor-control.md` |
 | Need to SEE a screen; layout, contrast or cropping suspected | `reference/visual-checks.md` |
+| The look changed and nobody meant it to; a screenshot diff against baselines, with an exit code | `reference/visual-checks.md` (golden images) · `scripts/golden_diff.py` |
+| The suite takes too long for one Editor; several agents want Unity at once; host and client in two Editors | `reference/parallel-runs.md` · `scripts/lanes.sh` |
+| Green in the Editor, broken in a build: stripping, platform defines, init order — tests run inside a player | `reference/player-tests.md` |
 | "It shakes / flickers / shimmers"; anything temporal | `reference/motion-and-timing.md` |
 | Runtime misbehaviour with a human pressing Play; device triage | `reference/log-triage.md` |
 | Phantom collisions, invisible objects, hitboxes, import weirdness | `reference/unity-gotchas.md` |
@@ -83,6 +89,8 @@ can read is a different thing — that one is `unity-play-harness`.
 - **List, never recall.** Command names, template ids and package ids are defined by the Editor
   and the registry, not by your memory of them. `unity command --format json`, `unity templates
   list`, `Client.SearchAll()` — one call is cheaper than one wrong guess.
+- **Clone lanes run read-only work; anything that writes assets runs on lane 0.** Two Editors
+  importing into one `Assets/` race on `.meta` files. → `reference/parallel-runs.md`.
 - **Delete the results file before every run.** A missing file is an obvious failure; a stale one
   is a silent lie.
 - **Never pipe a test driver into `tail` or `head`.** The shell then reports the *pipe's* exit

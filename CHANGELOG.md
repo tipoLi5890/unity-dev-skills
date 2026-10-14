@@ -2,6 +2,50 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.27.0
+
+Tests stop queueing on one Editor, and five more ways to test arrive. The Editor's lock is per
+project folder, so clone *lanes* beside the repository run several Editors on one machine at once.
+
+- **`unity-debug` → `reference/parallel-runs.md` and `scripts/lanes.sh`.** A lane links `Assets`,
+  `Packages` and `ProjectSettings` back to the repository, copies `Library` (`cp -cR`, an APFS
+  clone, with the two asset-database locks removed) and keeps its own `Temp` and `Logs`. Lane 0
+  is the repository itself. `lanes.sh setup [N] | status | clean | run [--main-only] [--lane K]
+  [--no-wait] -- <Unity args>` takes a free lane under a `mkdir` lock with a pid (a dead holder's
+  lock is reclaimed, a lane with an open Editor or a lockfile is skipped, a run queues by default),
+  substitutes `{project}` and `{lane}`, exports `LANE` and `GAME_DATA_DIR`, and returns Unity's own
+  exit code. Clone lanes run read-only work (compiles, EditMode and PlayMode tests); anything that
+  writes assets runs on lane 0. The page covers what each lane must keep to itself (results, logs,
+  save data through `resources/LaneDataPath.cs`, PlayerPrefs as a check step), the
+  `runInBackground` restore after every leg, compiling a new file on lane 0 first so two lanes
+  never write two `.meta` GUIDs, lanes per GB of RAM, Smoke/Full/Perf/Soak categories with the
+  `-testCategory` syntax (`;`-separated regexes, `!` to exclude), why the ParrelSync package's save
+  block argues for script-built lanes, and one multiplayer role per lane.
+- **`scripts/merge_results.py`** merges a suite split across lanes: every shard must be this
+  run's (`--since`), no test may appear twice, none may be missing against `--inventory`, and an
+  inconclusive test is a gate that did not run (`--allow-inconclusive` opts out). Exit 0 green,
+  2 a real failure, 3 the harness failed — do not retry.
+- **`reference/player-tests.md`** — tests run inside a macOS or Android player
+  (`-testPlatform StandaloneOSX` / `Android`, `-playerHeartbeatTimeout`) for what only a build
+  shows: stripping, platform defines, initialisation order. Builds write assets, so lane 0 only.
+- **Golden images:** `reference/visual-checks.md` gains a baseline flow, and
+  **`scripts/golden_diff.py`** judges a run's screenshots against accepted baselines by mean,
+  p99 and changed-pixel share, with per-image masks, heatmaps, `[SHOT]` state lines checked
+  against the log, and `--record` as the only way a baseline changes. Same 0/2/3 exit codes.
+- **`unity-profiling` → `reference/perf-tests.md` and `templates/PerfRegressionTest.cs`** — a
+  frame-time gate on the Performance Testing package, judged by the median against this machine's
+  recorded baseline plus a tolerance. It never asserts until a row for this machine is recorded,
+  and it owns the machine: no other lane runs beside it.
+- **`unity-play-harness` → `reference/soak.md` and `templates/SoakTest.cs`** — minutes of seeded
+  random input through the game's own input funnel over every situation, invariants checked by
+  `journey_report.py`, and the seed and step printed so a red run replays. `[Category("Soak")]`
+  keeps it out of every ordinary run; a soak suits a clone lane.
+- **`unity-multiplayer` §4** — a host and a client on two lanes as an automated first pass, and
+  why it never replaces two devices on two networks.
+- `unity-debug/reference/test-verdicts.md`: Unity also exits 2 when the only problem is an
+  inconclusive test. `unity-cli/reference/ci-surface.md` §4 contrasts local lanes with
+  `unity test --shard`.
+
 ## 0.26.0
 
 `codex-visual` returns the image its own call rendered, and `comfyui-asset-generation` builds a
