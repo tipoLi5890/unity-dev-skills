@@ -15,10 +15,11 @@
 | `MoveSpeed` | Float | Every frame, undamped | `ground speed / authoredSpeed`, at least `minPlayback` |
 | `Hurt` | Trigger | When the game calls `Hurt()` | The game's hit event |
 
-Those four names are the ones `unity-rigged-character` → `reference/editor-templates.md` builds
+Those four names are the ones `unity-rigged-character` → `reference/editor-scripts.md` builds
 into the character's controller: a `Move` state that is a 1D blend on `MoveBlend` when there are
 two gait clips, or one clip whose playback rate is `MoveSpeed` when there is one; a `Jump` state
-entered when `Grounded` is false; a masked `Hurt` layer. The bridge is the runtime half of that
+entered when `Grounded` is false; a `Hurt` override layer, masked to the upper body on a
+Humanoid rig. The bridge is the runtime half of that
 asset. Rename a field on the bridge only if the asset was built with other names.
 
 **Ground speed is planar.** `new Vector2(v.x, v.z).magnitude` of the mover's actual velocity.

@@ -3,7 +3,7 @@
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
 AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。コンセプトから検証済みのビルドまで、
-ゲーム制作のすべての段階をカバーする 57 個の skill で、Claude Code と OpenAI Codex のどちらにも
+ゲーム制作のすべての段階をカバーする 59 個の skill で、Claude Code と OpenAI Codex のどちらにも
 インストールできます。
 
 単なる Unity のメモの寄せ集めと違う点が三つあります。
@@ -66,16 +66,18 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 | **バーティカルスライス —— UI** | `unity-game-ui` | **UI の依頼はまずここから。** プロジェクトがどの UI システムを使っているか判定して振り分け、誰も書いていない領域 —— runtime の `OnGUI` HUD —— を自分で受け持ちます |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— そして uGUI が何も描かなくなる六つの原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— そして USS が黙って無視するプロパティ |
-| **量産 —— アセット** | `unity-3d-models` | 静的なプロップ：AI 生成メッシュのインポート——Unity が目にする前にまず検査し、予算を超えたものだけ減面する |
-| | `unity-rigged-character` | 操作できるキャラクター：原画 → image-to-3D → Mixamo → Avatar → Animator → ゲームプレイ用リグ。Mixamo がリグを付けられない体型は、`blender-character-rig` の FBX で置き換える |
+| **量産 —— アセット** | `art-asset-registry` | 生成したすべての 2D・3D アセットを追跡：プロジェクトごとに追記専用の台帳を一つ持ち、sha256 ハッシュ（`.blend` の各版も）、来歴、アートディレクションと生成ジョブへのリンク、人が証拠画像とともに設定するステータス、上流の変更で古くなったアセットを記録し、既存の `manifest.md` は読み取り専用で取り込む |
+| | `unity-3d-models` | 3D モデルをゲームに入れる：出所で振り分け——画像から 3D の GLB、FBX キャラクター、Blender のリグ、購入パック——検査し、クラスの目標まで減面し、インポートして監査する。クラスの予算は、同じアセットを各生成プリセットで作りゲームシーンで見比べて人が選ぶもので、固定の上限ではない |
+| | `unity-rigged-character` | リグ付きキャラクターの Unity 側の契約。FBX がどのルートから来ても——Auto-Rig Pro、Blender のリグ、Mixamo、自動リグサービス——インポート → Avatar（Blender でリターゲットしたクリップは Generic、部位マスクや IK が要るときだけ Humanoid）→ Animator → ゲームプレイ用リグ。Optimize Game Objects 下でもプロップのソケットを残し、FBX が落とす PBR マップを組み直す |
 | | `unity-2d-sprites` | スプライトシート、スライス、pivot、9-slice、コマ列を再生可能な `AnimationClip` に —— importer の内側にあるメタデータ |
 | | `unity-2d-animation` | 2D Animation と PSD Importer パッケージによるスケルタル 2D キャラクター：rig としてインポートする PSB、ボーン・ジオメトリ・ウェイトの順、`SpriteSkin` と CPU または GPU の変形、ランタイムで切り替える Sprite Library のスキンと装備、2D IK、そして rig のコストを示す監査 |
 | | `unity-2d-pixel-perfect` | ドット絵がぼける、カメラが動くとピクセルが這う、タイルの継ぎ目に髪の毛のような隙間 —— そして手元にあるのは `PixelPerfectCamera` という名の二つのコンポーネントのどちらなのか |
 | | `unity-sprite-atlas` | 同じ draw call に載せたいスプライト：スクリプトからの V2 アトラス、パッキングとプラットフォーム設定、そして焼いたテクスチャがプレイヤーに届くまで |
 | | `unity-audio` | メモリ、load type、サンプリングレート、mixer のコスト —— 再インポートの前に必ず報告します |
 | | `unity-localization` | 複数言語での出荷と、実際に破綻する CJK フォントのパイプライン |
-| **量産 —— AI アセット生成** | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化、そして納品ファイルから中心とサイズを読み戻す幾何ゲート |
-| | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画・画像から 3D プロップを生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free` |
+| **量産 —— AI アセット生成** | `game-character-pipeline` | **画像からリグ付きキャラクターを作るならまずここから。** Unity で承認されたキャラクターまでの工程順：ルート、品質目標、トラック（密なメッシュにそのままリグを付けるプレビュー、予算 → ゲームメッシュ → リグは一度だけの出荷）を先に決め、S0–S13 の各段を担当 skill と入口・出口のゲートとともに示す |
+| | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化、そして納品ファイルから中心とサイズを読み戻す幾何ゲート。画像から 3D のキャラクターが始まる四面図と、数値チェックが通ったときだけ合成するレビューシートも |
+| | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画・画像から 3D のプロップとキャラクターを生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free`。四面図はアップロード前に背景を除去し、調整の前にプロジェクトのグラフを公式テンプレートとノードごとに比べ、生成プリセットは目標ではなく段として見比べる |
 | | `blender-character-rig` | 起動中の Blender を MCP サーバー経由で操作し、画像から生成した 3D キャラクターにリグとアニメーションを付ける：計測したランドマークからボーンを配置、ウェイトは位置から計算、プロップは手のボーンに、アクションをキー入力してプレビューを出し、FBX は再インポートで確かめる |
 | | `blender-retarget` | 既製のクリップを Blender でリグを付けたキャラクターへ移す：Auto-Rig Pro か純粋な bpy のボーン対応表で各回転キーを二つのレストポーズの間で変換、クリップのマニフェスト、局所的なウェイト修正、NLA のレビュートラック付きアクションライブラリ、どのクリップでも手のボーンに対して確かめるプロップ、そして保存したファイルを開き直して確かめる監査 |
 | **仕上げと最適化** | `unity-game-feel` | 手応えのないヒット、ヒット後に止まったままのゲーム、フラッシュ後に白いままの敵、三十個のピックアップで鳴る三十の音、止まらない振動：ゲームプレイのイベントごとに予算付きのフィードバック行を一つ——`Time.timeScale` の唯一の持ち主によるヒットストップ、元に戻るフラッシュ、ライブラリ不要のスクワッシュと tween、パーティクル、トレイル、発音数上限付きのプール済み SFX、止まる振動 |
@@ -102,6 +104,7 @@ skills をプロジェクトへ直接置くこともできます —— `skills/
 ```bash
 python3 tools/lint-skills.py            # frontmatter、name とディレクトリ名の一致、サイズ上限、実行ファイルの構文
 python3 tools/check-consistency.py      # manifest の一致、外部依存の宣言
+python3 tools/check-registry.py        # アセット台帳の selftest とフィクスチャ、予算表は一か所だけ
 python3 tools/sync-codex-manifests.py   # Codex 用 manifest を再生成
 claude plugin validate .                # manifest の形
 ```

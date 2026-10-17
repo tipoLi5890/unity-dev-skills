@@ -39,6 +39,18 @@ probe failed (pass another -m); 4 the call ran and produced no new image;
 6 the image is not --expect-size (written anyway, so it can be looked at).
 5 wins over 6.
 
+Every object printed also carries `model` (the -m value, null for the
+config's), `record` (this call's partial ledger record for skill
+art-asset-registry: tool, params, inputs, files, verdict — green on exit 0,
+failed on 4/5/6, harness on 2/3), and, once the prompt has been read,
+`prompt_sha256` (of the prompt file's bytes, or of --prompt as given) and
+`inputs` (each -i with its sha256). A written image adds `out_sha256`.
+`--job-log PATH` appends that object as one JSON line, with `ts` and
+`exit_code` (this script's; `exit` on exit 4 is codex's own), and with the
+prompt text, and each of its lines, replaced by "<prompt>" wherever an ERROR
+line quoted it, and every URL by "<url>". The object carries the prompt's
+hash, not its text.
+
 Stdlib only. A private home needs `auth.json` in the real CODEX_HOME; with
 none (keyring or API-key login) the call falls back to the shared home and
 says so under "isolation_skipped".
@@ -46,6 +58,7 @@ says so under "isolation_skipped".
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -57,6 +70,7 @@ import tempfile
 import time
 from pathlib import Path
 
+URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'<>]*")
 SESSION_ID = re.compile(r"^session id:\s*([0-9A-Za-z][0-9A-Za-z_-]*)\s*$", re.MULTILINE)
 
 
@@ -181,6 +195,72 @@ def size_ok(size: list[int] | None, expect: tuple[int, int] | None, tolerance: i
     return abs(size[0] - expect[0]) <= tolerance and abs(size[1] - expect[1]) <= tolerance
 
 
+def sha256_file(path: Path) -> str | None:
+    """The file's sha256, or None when it cannot be read: a hash never fails a call."""
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def make_record(params: dict, inputs: list[dict], files: list[dict], verdict: str) -> dict:
+    """This call's partial ledger record (skill art-asset-registry, `record --json`)."""
+    return {"tool": {"skill": "codex-visual", "script": "codex_generate.py"},
+            "params": params, "inputs": inputs, "files": files, "verdict": verdict}
+
+
+def append_job_log(path: Path, entry: dict) -> None:
+    """One JSON line, appended in one write. A log that cannot be written is reported, never fatal."""
+    data = (json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            written = os.write(fd, data)
+            while written < len(data):
+                written += os.write(fd, data[written:])
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        print(f"codex_generate: job log {path} not written: {exc}", file=sys.stderr)
+
+
+def prompt_texts(raw: str, sent: str) -> list[str]:
+    """The prompt as given, as sent, and each of its lines of 12 characters or more: what a
+    log line must not carry. Longest first, so a line inside the whole is replaced after it."""
+    found = {text for text in (raw, raw.strip(), sent) if len(text) >= 4}
+    found.update(line.strip() for line in raw.splitlines() if len(line.strip()) >= 12)
+    return sorted(found, key=len, reverse=True)
+
+
+def redact(value, secrets: list[str]):
+    """`value` with each secret text replaced by "<prompt>", and any URL by "<url>", in every
+    string it holds."""
+    if isinstance(value, str):
+        for secret in secrets:
+            value = value.replace(secret, "<prompt>")
+        return URL.sub("<url>", value)
+    if isinstance(value, list):
+        return [redact(child, secrets) for child in value]
+    if isinstance(value, dict):
+        return {key: redact(child, secrets) for key, child in value.items()}
+    return value
+
+
+def emit(obj: dict, code: int, job_log: Path | None, secrets: list[str] | None = None, **dump) -> int:
+    """Print the call's one JSON object, log it when asked (without the prompt text, should an
+    ERROR line have quoted it), and pass the exit code through."""
+    print(json.dumps(obj, **dump))
+    if job_log is not None:
+        append_job_log(job_log, redact({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                        "exit_code": code, **obj}, secrets or []))
+    return code
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     source = parser.add_mutually_exclusive_group(required=True)
@@ -200,22 +280,36 @@ def main() -> int:
     parser.add_argument("--size-tolerance", type=int, default=1, metavar="PX",
                         help="Pixels either axis may differ from --expect-size (default 1: a 16:9 ask "
                              "has come back both 1672x940 and 1672x941)")
+    parser.add_argument("--job-log", type=Path, metavar="PATH",
+                        help="Append this call's JSON object to PATH as one line, with ts and exit_code")
     args = parser.parse_args()
 
     if shutil.which("codex") is None:
-        print(json.dumps({"error": "codex is not on PATH"}))
-        return 2
+        return emit({"error": "codex is not on PATH", "model": args.model,
+                     "record": make_record({"model": args.model}, [], [], "harness")}, 2, args.job_log)
     missing = [str(p) for p in args.image if not p.is_file()]
     if missing:
         parser.error(f"reference image not found: {', '.join(missing)}")
 
-    prompt = args.prompt if args.prompt is not None else args.prompt_file.read_text(encoding="utf-8")
+    raw_prompt = args.prompt if args.prompt is not None else args.prompt_file.read_text(encoding="utf-8")
+    prompt = raw_prompt
+    prompt_sha256 = hashlib.sha256(
+        args.prompt.encode("utf-8", "surrogateescape") if args.prompt is not None
+        else args.prompt_file.read_bytes()).hexdigest()
     prompt = prompt.strip()
     if "$imagegen" not in prompt:
         prompt = "$imagegen " + prompt
+    secrets = prompt_texts(raw_prompt, prompt)
     model = ["-m", args.model] if args.model else []
     out = args.out.resolve()
     images = [str(p.resolve()) for p in args.image]
+    inputs = [{"path": path, "sha256": sha256_file(Path(path))} for path in images]
+    params = {"prompt_sha256": prompt_sha256, "model": args.model}
+
+    def provenance(files: list[dict], verdict: str) -> dict:
+        """The keys every object printed after the prompt was read carries, after its own."""
+        return {"model": args.model, "prompt_sha256": prompt_sha256, "inputs": inputs,
+                "record": make_record(params, inputs, files, verdict)}
 
     real_home = codex_home()
     private_home = None if args.shared_home else make_private_home(real_home)
@@ -236,9 +330,9 @@ def main() -> int:
         if not args.no_probe:
             pcode, ptext = run_codex([*model, "--skip-git-repo-check", "Reply with the single word OK."], work, 120, env)
             if pcode != 0 or errors(ptext):
-                print(json.dumps({"error": "agent model probe failed", "model": args.model, "detail": errors(ptext),
-                                  "isolated": private_home is not None}))
-                return 3
+                return emit({"error": "agent model probe failed", "model": args.model, "detail": errors(ptext),
+                             "isolated": private_home is not None, **provenance([], "harness")}, 3, args.job_log,
+                            secrets)
 
         before_folders, before_files = snapshot(home)
         started = time.monotonic()
@@ -287,8 +381,9 @@ def main() -> int:
         detail = errors(text)
         if not session_id and capture != "private":
             detail.append("no 'session id:' line in the codex output; only new session folders were searched")
-        print(json.dumps({"error": "no new image in generated_images", "exit": code, "detail": detail, **common}))
-        return 3 if any("not supported" in line for line in detail) else 4
+        status = 3 if any("not supported" in line for line in detail) else 4
+        return emit({"error": "no new image in generated_images", "exit": code, "detail": detail, **common,
+                     **provenance([], "harness" if status == 3 else "failed")}, status, args.job_log, secrets)
 
     first = written[0]
     result = {
@@ -312,8 +407,11 @@ def main() -> int:
     elif first["size_ok"] is False:
         status = 6
         result["error"] = f"the image is {first['size']}, not {list(args.expect_size)}"
-    print(json.dumps(result, indent=2))
-    return status
+    files = [{"path": w["out"], "sha256": sha256_file(Path(w["out"])), "bytes": Path(w["out"]).stat().st_size}
+             for w in written]
+    result["out_sha256"] = files[0]["sha256"]
+    result.update(provenance(files, "green" if status == 0 else "failed"))
+    return emit(result, status, args.job_log, secrets, indent=2)
 
 
 if __name__ == "__main__":

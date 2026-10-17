@@ -8,19 +8,21 @@ skin on it, and clips keyed on that skeleton. Choose the contract first — whic
 runtime one, which file is the animation source, which side owns the hand and prop corrections —
 then export the smallest set that tests it.
 
-## Two routes, pick one
+## One route: the clips are baked onto the runtime skeleton
 
-| | (a) The rig exports the skeleton | (b) The source clips stay the animation |
-|---|---|---|
-| Character | deform skeleton and skin, exported from the rig | the same export, built into a Humanoid Avatar |
-| Clips | baked from the control rig onto the deform bones | the source clip FBX files, imported Humanoid; Unity retargets them |
-| Clip corrections made in Blender (rest conversion, wrist, mapping) | baked into every clip | not in the clips: the source files predate them |
-| A clip fixed later | re-bake and re-export that clip | nothing to export; the fix must be made in Unity, if it can be |
-| Bones outside the humanoid set | animate as keyed | outside the mapping; check in Play mode that they move |
-| Choose when | the Blender corrections matter, or the clips are few | the source clips are clean humanoid motion, and many |
+The rig exports the deform skeleton and the skin; every clip is baked from the control rig onto
+those deform bones and exported with them. Unity receives clips that already fit the character
+and never retargets them across skeletons. Every correction made in Blender — the rest
+conversion, the wrist, the mapping, the grip — is in every clip; a clip fixed later is re-baked
+and re-exported. Bones outside the humanoid set (a tail, ears) animate as keyed.
 
-**Do not mix the routes per clip.** The same move fixed in Blender and played raw from its source
-file behaves two ways, and nobody can tell which one a bug report means.
+Importing the source clip files raw and letting a Humanoid Avatar retarget them in Unity is not
+used: the Blender corrections are not in those files, and Humanoid alone moves the pose. On a
+22-bone rig playing a clip keyed on its own skeleton in Blender, Humanoid put bones 17–20° off the
+Blender pose and a hand socket 13–15 cm off; Generic matched Blender within its key reduction.
+So the clips import **Generic** unless the game needs what only Humanoid gives (a body-part mask,
+foot or hand IK, other avatars), and then only after that deviation is measured on the real clip
+(`unity-rigged-character` → `reference/unity-import.md` §1).
 
 ## A control rig is not a runtime skeleton
 
@@ -47,9 +49,12 @@ that deform nothing, IK that never evaluates there, and a hierarchy the Avatar c
 | Bake Into Pose, Root Transform Rotation | on for locomotion | no slow turn over a long run |
 | Bake Into Pose, Root Transform Position (Y) | on, except a clip whose height change the game wants (`HurdleVault` may) | read Based Upon (Original or Feet) per clip |
 | Bake Into Pose, Root Transform Position (XZ) | only on a clip authored in place | §3 of that reference says why |
-| Foot IK on the Animator state | decided per clip, in Play mode | Humanoid only |
+| Foot IK on the Animator state | off on Generic | Humanoid only; measure the pose deviation first |
 
-Confirm the exact option names in the installed Unity version before scripting any of them.
+On Generic, set Rig tab → Root node to the root bone first: the Root Transform and Bake Into
+Pose settings appear only then, and Based Upon offers Original or the root node — Feet is
+Humanoid only. Confirm the exact option names in the installed Unity version before scripting
+any of them.
 
 - **Root motion only with a single writer of position**: the Animator, or a script in
   `OnAnimatorMove` — never also a controller calling `Move` with its own velocity
@@ -65,13 +70,16 @@ Confirm the exact option names in the installed Unity version before scripting a
 |---|---|---|
 | a prop parented straight to a hand bone | a child of that bone | expected; confirm in Unity |
 | a prop held by an anchor Empty or a Child Of constraint | the constraint is not written; the Empty arrives as a bare node, and only when empties are exported | parent the prop to the bone for the export, or leave it out and build the socket in Unity |
-| a driver, on a shape key or a bone | nothing | key its result, or drive the value from game code |
+| a driver, on a shape key or a bone | nothing | bake it: step through the clip, key the driven value on every frame, remove the driver; or drive the value from game code |
 | bone constraints and IK | sampled into bone keys by the bake | expected; the constraint itself is gone |
-| a shape key | a BlendShape, only when the exporter writes shape keys | check that option on your exporter version: the stock FBX exporter documents that Apply Modifiers prevents shape keys. In Unity, Import BlendShapes on the Model tab |
+| a shape key, keyed | a BlendShape with a `blendShape.<name>` curve in the clip, only when the exporter writes shape keys | check that option on your exporter version: the stock FBX exporter documents that Apply Modifiers prevents shape keys. In Unity, Import BlendShapes on the Model tab |
 | a shape held through every clip | — | bake it into the mesh, but only if the open shape is never needed |
 
-A prop is its own mesh, parented at runtime to a hand socket: an empty GameObject under the hand
-bone that holds the grip offset read in Blender, the prop's rest transform relative to that bone.
+A prop is its own mesh, parented at runtime to a hand socket: an empty GameObject — or a socket
+bone exported with the skeleton — under the hand bone, holding the grip offset read in Blender,
+the prop's rest transform relative to that bone. A socket bone in a deform-only export must have
+its **Deform flag on**: the export drops every bone whose flag is off, weighted or not (a socket
+needs the flag, not weights).
 The grip point is the prop's origin, or `brt_grip_local` (a 4x4 in the prop's own space) when the
 origin sits elsewhere: the same point `brt_drift` checks. Swapping, dropping and handing over are
 then game code, not animation.
@@ -98,19 +106,34 @@ All of these read the file as Blender plays it; none reads the FBX.
 1. **Back into Blender.** Bone names and parents, scale 1, weights (groups present, at most 4
    influences, nothing unweighted), each action's frame range. `blender-character-rig` →
    `reference/fbx-export.md` runs it as snapshot → export → re-import → gate.
-2. **Into Unity.**
-   - Rig tab Humanoid; Configure: every required bone mapped, no left and right swapped.
-   - Pose: the Avatar's T-pose matches the character; Enforce T-Pose when it does not.
-   - Axes: the character faces +Z with the root at rotation (0, 0, 0). A −90° X on the root is an
-     axis conversion that was not baked.
-   - Scale (1, 1, 1) on the root and the authored height.
-   - Materials: textures found, no white mannequin.
+2. **Into Unity**, in a throwaway project first. Each check reads the imported asset:
+   - **Rig type.** Generic. Anim. Compression Off when a held prop must line up; the default
+     Keyframe Reduction costs about a degree. `avatar.isValid` is true.
+   - **Scale.** Exported with scale applied — on the stock exporter `apply_scale_options:
+     'FBX_SCALE_ALL'` with `apply_unit_scale`; on the rig's own exporter, its unit option — the
+     model imports at File Scale 1 with the root at (1, 1, 1). Read three bone positions and compare with the Blender
+     heads in metres under the axis change (Blender (x, y, z) reads as Unity (−x, z, −y)): they
+     match to the millimetre, or scale was not applied in the .blend.
+   - **Axes.** The character faces +Z with the root at rotation (0, 0, 0). A −90° X on the root is
+     an axis conversion that was not baked.
+   - **The socket.** It exists under the hand. With Optimize Game Objects on, it survives only when
+     listed in Extra Transforms to Expose, and then sits as a direct child of the model root, still
+     following the hand: at a mid-clip frame it is where the socket of an un-optimized copy is.
+   - **Clips.** Each clip has the expected name (`Scene`, or `<rig>|<action>` when all actions
+     were baked, until renamed) and frame range. The model's default pose is the first frame of
+     the clip, not the Blender rest pose; a Humanoid Avatar is set up with Enforce T-Pose or an
+     explicit skeleton, never on that default.
+   - **Pose against Blender.** Sample one clip at its contact frame and compare a hand or the
+     socket with the same frame in Blender: about a degree on Generic. A bigger gap is the rig
+     type or the compression, not the clip.
+   - **Materials.** Base colour and normal arrive bound; the metallic and roughness maps do not,
+     though the FBX carries them. Build the metallic/smoothness map in Unity
+     (`unity-rigged-character` → `reference/textures.md`); no white mannequin, no plastic.
+   - **Shape keys.** A held prop's shape key arrives as a BlendShape with a `blendShape.<name>`
+     curve in the clip, and moves in Play mode (Unity weights run 0–100).
    - The idle and the action play on the character, and the prop follows the hand.
-3. **Route (b) only.** Clip files from one source rig get one Humanoid Avatar built from that rig,
-   shared among them with Copy From Other Avatar; the character keeps its own Avatar, and Humanoid
-   retargets between the two. Clips from the A-pose rig and the T-pose rig need one Avatar each.
    The importer mechanics are `unity-rigged-character` → `reference/unity-import.md`.
-4. Only then the whole library.
+3. Only then the whole library.
 
 ## What retargeted clips do not know
 
@@ -133,6 +156,7 @@ Retargeting moves a pose from one skeleton to another. It knows nothing of the g
 | Need | Skill |
 |---|---|
 | The importer, the Avatar, Copy From Other Avatar, the Animator layout | `unity-rigged-character` |
+| Which stage comes next, and its exit gate | `game-character-pipeline` |
 | Animator states, blend trees, events and windows, root motion, IK | `unity-animation` |
 | Who moves the character, the Animator bridge, grounding | `unity-3d-controller` |
 | The FBX round trip from Blender | `blender-character-rig` |

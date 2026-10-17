@@ -1,0 +1,1 @@
+{"schema": 1, "id": "artdirection/palettes/courier", "rev": 1, "ts": "2026-03-02T10:00:00Z", "kind": "ref", "status": "candidate", "source": "authored", "files": [{"path": "ArtDirection/palettes/courier.hex", "sha256": "fdc8135ff06b1e84257a5fb96be9b377a71bdcbc0143303012028078c9c89e95", "bytes": 23}], "note": "the courier-run palette"}

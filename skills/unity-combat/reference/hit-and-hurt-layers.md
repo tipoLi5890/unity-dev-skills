@@ -93,8 +93,8 @@ Sentry                    Health, SentryBrain, Rigidbody (kinematic)           l
 ```
 
 - **A child does not inherit its parent's layer.** Set `Hurtbox` on each hurtbox object.
-- **Size from constants, never from `Renderer.bounds`.** A skinned mesh reports its bind pose,
-  arms out — `unity-rigged-character` → `reference/gameplay-rig.md`.
+- **Size from constants, never from `Renderer.bounds`.** A skinned mesh's culling box is fixed at
+  import and far looser than the body — `unity-rigged-character` → `reference/gameplay-rig.md`.
 - **One body at the root, none below it.** A second `Rigidbody` on a bone cuts every collider
   under it out of the character.
 - **A moved collider reaches PhysX at the next physics step**, whoever moved it: a bone, a

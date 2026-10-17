@@ -1,0 +1,3 @@
+# registry.py check: gate and latch are each other's parent; sentry and pickup supersede each other
+ERROR ArtDirection/palettes/gate.hex: parent-cycle: artdirection/palettes/gate -> artdirection/palettes/latch -> artdirection/palettes/gate
+ERROR ArtDirection/palettes/pickup.hex: superseded-cycle: artdirection/palettes/pickup -> artdirection/palettes/sentry -> artdirection/palettes/pickup

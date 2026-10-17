@@ -139,5 +139,9 @@ The brief points at the anchor path; it does not duplicate the bible. When the b
 bumps, the brief's line is checked against it — that check is one `grep` and it catches the case
 where the art moved on and the gameplay constants did not.
 
+A 3D game adds the asset classes and their budgets to `ART_DIRECTION.md` (`unity-3d-models` →
+`reference/budgets.md`); a rigged character's route, quality target and track are set once, at
+the start gate of `game-character-pipeline`.
+
 **If there is no `ART_DIRECTION.md` yet and the art is hand-made or bought**, the five decisions
 still get written into the brief. They are decisions about the game, not about the pipeline.

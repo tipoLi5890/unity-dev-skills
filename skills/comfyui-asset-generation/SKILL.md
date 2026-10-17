@@ -55,8 +55,10 @@ infer permission to upload private inputs unless the user authorizes those actio
 | H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
 | A multi-step clip from keyframes: first/last-frame segments, one camera across keyframes, stall and still-end measurement, assembly | `reference/h3-keyframe-segments.md`, `templates/minimax_h3_fl2v_api.json`, `scripts/video_motion.py`, `scripts/assemble_segments.py` |
 | A static 3D prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
-| A character to be rigged: multi-view only, four A-pose views at one scale, the close-up budget | `reference/image-to-3d.md` (A character); `templates/pixal3d_multiview_to_model_api.json` |
-| 3D budgets, node knobs, occlusion, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` |
+| Four views cleaned before upload: BiRefNet removal, RGBA + mask preview + black composite, mask polarity checked per tool, unique upload names | `reference/image-to-3d.md` (Background removal for four views) |
+| A character to be rigged: multi-view only, four A-pose views at one scale, the preset the class's row names | `reference/image-to-3d.md` (A character); `templates/pixal3d_multiview_to_model_api.json` |
+| Before tuning: the project graph against the official template, node by node | `scripts/graph_diff.py`; `reference/image-to-3d-tuning.md` (Diff against the official template) |
+| Generation presets (Small … Template … Showcase; none is a target), node knobs, occlusion, sheets or slabs diagnosed by stage, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` (`--class` + `--budgets ART_DIRECTION.md` for a class's row, which `unity-3d-models` sets) |
 | H3 character motion transfer, pace matching, or side-by-side QA | Also read `reference/h3-motion-transfer.md`; normalize non-24 fps sources with `scripts/prepare_h3_motion_reference.py` |
 
 Read only the references relevant to the current request.
@@ -90,14 +92,21 @@ with the Codex host — display name, one-line summary, and the
 - **Importing a GLB into Unity** — glTFast, scale, pivot and rotation on the `Model` child,
   prefab wiring, culling and the triangle budget: `unity-3d-models`.
 - **Rigging a character** — skeleton, skin weights, Avatar, animation clips. The 3D templates
-  here produce an unrigged mesh; a character takes the multi-view path and is rigged in
-  `blender-character-rig` or through Mixamo in `unity-rigged-character`.
+  here produce an unrigged mesh; a character takes the multi-view path, and its route (Auto-Rig
+  Pro and clips in `blender-retarget`, a custom body in `blender-character-rig`, Mixamo through
+  `unity-rigged-character` as an option) is chosen in `game-character-pipeline`.
+- **What a class of asset may cost** — the generation preset ladder and the `3D budgets` row:
+  `unity-3d-models`. This skill generates the presets it compares.
 - **Images and sprites** — reference art, icons, sprite sheets, chroma-key transparency and the
   art-bible discipline, and the source image or turnaround sheet an image-to-3D job starts from:
   `codex-visual`.
 - **Video playback inside a Unity build** (VideoPlayer, transcoding for mobile): not covered
   anywhere in this family yet; treat H3 output as a delivered media file.
 - **Installing or reconfiguring ComfyUI, models or ports**: left to the user, on request only.
+
+Related: `game-character-pipeline` (the stage order S0–S13), `codex-visual` (source images, the
+review sheet composer), `unity-3d-models`, `blender-retarget`, `blender-character-rig`,
+`art-asset-registry` (the ledger the client's `record` feeds).
 
 ## Boundaries
 

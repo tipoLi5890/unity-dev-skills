@@ -78,7 +78,7 @@ Per clip:
 | Motion sliders | defaults | they alter the performance; keep one setting across the library |
 
 The file-naming contract for using such clips on the library's own character in Unity is in
-`unity-rigged-character` → `reference/mixamo.md`. A stock library covers locomotion, idles,
+`unity-rigged-character` → `reference/unity-import.md` §2. A stock library covers locomotion, idles,
 reactions and warm-ups; a specialised action such as `GateLatchSwing` comes from a pack or is keyed.
 
 ## A purchased pack

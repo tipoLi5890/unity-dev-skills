@@ -128,7 +128,7 @@ row per need — open the genre file named above and build in its order.
 | Pixel art that shimmers or blurs | `unity-2d-pixel-perfect` |
 | A collision or trigger that does not fire, in 3D · in 2D | `unity-physics-3d` · `unity-physics-2d` |
 | NavMesh baking, agents, click-to-move | `unity-navigation` |
-| Getting a rigged, animated character into the project | `unity-rigged-character` |
+| A rigged, animated character from source art, stage by stage · its Unity import | `game-character-pipeline` · `unity-rigged-character` |
 | HUD and menus · frame time and counters | `unity-game-ui` · `unity-profiling` |
 
 ### Given inline here

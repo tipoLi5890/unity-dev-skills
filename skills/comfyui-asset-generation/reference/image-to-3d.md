@@ -69,10 +69,51 @@ Generating the source is `codex-visual`: its reference on source images for 3D c
 three-quarter brief and the one-row turnaround sheet, and its `turnaround_to_views.py` splits
 the sheet by content into four squares of one scale.
 
+### Background removal for four views
+
+The multi-view template does no background removal. A sheet drawn on pure black can still carry
+a soft halo, a contact shadow or near-black noise, and the model can rebuild any of it as thin
+sheets; removal can also eat dark hair, a dark shoe or a thin part. So clean the four views on
+the server first and keep three outputs per view: the **RGBA cut-out**, the **mask preview**, and
+the **black composite** — the file the generation job uploads.
+
+A removal graph, one block per view (node ids are an example; core nodes and the BiRefNet
+component of the single-image templates; check every class against `/object_info` first):
+
+| Node | Class | Inputs |
+|---|---|---|
+| `1` | LoadBackgroundRemovalModel | `bg_removal_name` `birefnet.safetensors` |
+| `2` | EmptyImage | width and height = the views' side (`turnaround_to_views.py --size`, default 1024), `color` 0: the black square |
+| `10` | LoadImage | `runner_front_r03.png` |
+| `11` | RemoveBackground | `bg_removal_model` ← `1`, `image` ← `10` |
+| `12` | InvertMask | `mask` ← `11` — **only if the polarity check below asks for it** |
+| `13` | JoinImageWithAlpha | `image` ← `10`, `alpha` ← `11` or `12` |
+| `14` | SaveImage | `13`, prefix `3d/clean/runner_front_r03_rgba` |
+| `15`, `16` | MaskToImage → SaveImage | `11`, prefix `3d/clean/runner_front_r03_mask` |
+| `17`, `18` | ImageCompositeMasked → SaveImage | `destination` ← `2`, `source` ← `10`, `mask` ← `11`, `x` 0, `y` 0; prefix `3d/clean/runner_front_r03_black` |
+
+Repeat `10`–`18` for left, back and right with their own ids and names, and run the graph with
+`scripts/comfy_asset_client.py` like any other.
+
+- **Check the mask polarity per tool, on the first view, before trusting the batch.** Nodes
+  disagree about whether a mask's 1 means keep or cut, and some invert on the way to alpha: an
+  `InvertMask` that one graph needs is wrong in another. Open the outputs: the mask preview
+  white on the subject, the RGBA transparent around it and opaque on it, the black composite
+  showing the subject, not a hole, at the view's own size (a black square of another size crops
+  the view or leaves it in a corner: set `2` to match). Wrong → add or drop `12`, rerun that view.
+- **Check what removal took.** Hair, hands, feet and thin parts present in the RGBA over a light
+  and a dark backdrop; a part that went missing is lost to the mesh too.
+- **Upload names are unique per asset, view and run** (`runner_front_r03.png`, then `_r04`): the
+  server serves an older file of the same name without an error
+  (`reference/image-to-3d-tuning.md`, Diagnosing a bad shell by stage). The names in the
+  generation job's `--set 801.image=…` are the black composites' names.
+- Removal is a checkpoint, not a cure: sheets can survive a clean mask (the diagnosis order in
+  the tuning reference).
+
 ## Run
 
 ```bash
-# one image → GLB at the pickup budget
+# one image → GLB at the small preset
 python3 scripts/comfy_asset_client.py --workflow templates/pixal3d_image_to_model_api.json \
   --output-dir out/crate --upload art/pickup_crate.png \
   --set 122.image=pickup_crate.png \
@@ -83,14 +124,17 @@ python3 scripts/inspect_glb.py out/crate/*.glb --max-triangles 2000 --texture-si
 # four views → upright GLB
 python3 scripts/comfy_asset_client.py --workflow templates/pixal3d_multiview_to_model_api.json \
   --output-dir out/crate_mv \
-  --upload views/crate_front.png --upload views/crate_left.png \
-  --upload views/crate_back.png --upload views/crate_right.png \
-  --set 801.image=crate_front.png --set 802.image=crate_left.png \
-  --set 803.image=crate_back.png --set 804.image=crate_right.png
+  --upload views/crate_front_r01.png --upload views/crate_left_r01.png \
+  --upload views/crate_back_r01.png --upload views/crate_right_r01.png \
+  --set 801.image=crate_front_r01.png --set 802.image=crate_left_r01.png \
+  --set 803.image=crate_back_r01.png --set 804.image=crate_right_r01.png
 ```
 
-An upload keeps its basename, and a second file of that name needs `--overwrite-uploads`: prefix
-views per asset. Budgets and every other knob: `reference/image-to-3d-tuning.md`.
+An upload keeps its basename, and the server keeps the first file of a name: name each upload by
+asset, view and run (`crate_front_r01.png`), and read the client's stderr for an upload stored
+under another name. Before a tuning run, diff the graph against the official template
+(`reference/image-to-3d-tuning.md`). Generation presets and every other knob: `reference/image-to-3d-tuning.md`. What
+a class of asset may cost is not set here: `unity-3d-models` → `reference/budgets.md`.
 
 ## What a job costs and reports
 
@@ -102,6 +146,17 @@ views per asset. Budgets and every other knob: `reference/image-to-3d-tuning.md`
   when it lists nothing, the whole graph ran again.
 - The GLB is reported under a `3d` key and the QA images as ordinary `images`; the client
   downloads both into `--output-dir`.
+- The client's JSON pins the run for skill `art-asset-registry`: `workflow_sha256` and
+  `workflow_name` (the template's hash and file name), `overrides` (each `--set` target with its
+  value: numbers, booleans and links as they are, any text as `sha256:` and 12 hex characters),
+  `server_label`, `output_files` (each download with its `sha256` and `bytes`; `outputs` stays a
+  list of paths), a `sha256` on each `uploads` entry, and `record`, the partial ledger record
+  (`tool`, `params`, `inputs`, `files`, `verdict`).
+- `--server-label NAME` names the machine (`studio-gpu`); a label holding `://` is refused. No
+  server address is written to the output or to the job log. `--job-log PATH` appends one JSON
+  line per run, success or failure, with `ts` and `exit_code`; a failed run's line carries its
+  `error`, with the address and any URL replaced, and a `record` whose verdict is `failed` once
+  the graph was submitted, `harness` before. A failure still exits 1.
 - The GLB holds one mesh, one material and three images: base colour, packed
   occlusion-roughness-metallic, normal. It is centred on the origin, largest extent a little
   under 1 unit; scale carries no real-world size.
@@ -109,11 +164,26 @@ views per asset. Budgets and every other knob: `reference/image-to-3d-tuning.md`
 ## Acceptance
 
 `scripts/inspect_glb.py` is the numeric gate: exit 0 pass, 1 gate failed, 2 unreadable. It fails
-a triangle count over 1.05× `--max-triangles` or under half of it, more than one material, an
-image over `--texture-size`, a missing `--require` slot, a file over `--max-bytes`. `--extract
-DIR` writes the embedded images out. Keep the printed `extents` to compare variants.
+a triangle count over 1.05× `--max-triangles` (the face target the graph was given) or under half
+of it, more than one material, an image over `--texture-size`, a missing `--require` slot, a file
+over `--max-bytes`. `--extract DIR` writes the embedded images out. Keep the printed `extents` to
+compare variants.
 
-The renders saved under `3d/qa/` are the visual gate. Look at every one before importing:
+```bash
+python3 scripts/inspect_glb.py out/crate/*.glb --class pickup --budgets ART_DIRECTION.md \
+  --json-out out/crate/inspect.json
+```
+
+`--budgets FILE --class CLASS` reads that class's row of the project's `3D budgets` table (rows
+chosen by `unity-3d-models` → `reference/budgets.md`); a file without the table only reports. The
+script's header says what each column gates. The JSON adds `gates` (one `{name, value, limit,
+pass}` per check), `warnings`, `sha256` and `record`, the partial ledger record for skill
+`art-asset-registry`; `--json-out PATH` writes the same object to a file.
+
+The renders saved under `3d/qa/` are the visual gate. Look at every one before importing, on
+one 8-view sheet (4 × 2 cells of 512 px: front, left, back, right, top, clay, occlusion,
+uv_atlas) composed by `codex-visual` → `scripts/contact_sheet.py` with `--require` on the gate's
+JSON, so a sheet exists only for a mesh whose numbers passed:
 
 | Image | Check |
 |---|---|
@@ -142,44 +212,53 @@ mesh or invent the back.
 
 - **Four views of one pose at one scale.** FRONT, LEFT, BACK, RIGHT of a strict symmetric
   A-pose: arms straight, about 45° down and clear of the hips, legs apart with a visible gap,
-  limbs chunky and evenly thick, thin parts (ears, a tail) thick and drawn the same in every
-  view. Drawing and gating the sheet is `codex-visual`, its reference on source images for 3D.
-- **No held prop.** Generate the prop as its own job and attach it after rigging.
-- **The close-up budget.** The visible surface gets half the triangles, and a joint that bends
-  needs them.
-- A-pose is what `blender-character-rig` takes. Mixamo wants a T-pose: read
-  `unity-rigged-character` before drawing the views for that route.
+  empty hands, true side views. A mascot has chunky limbs and thin parts (ears, a tail) drawn
+  thick and the same in every view; a realistic humanoid has separated fingers only where a close
+  grip matters. Drawing and gating the sheet is `codex-visual` → `reference/image-to-3d-input.md`
+  (§9); clean each view (Background removal for four views, above).
+- **No held prop.** Generate the prop as its own job, at the same scale, and attach it after
+  rigging.
+- **The ladder up to Showcase; the `character` row picks.** Generating each preset once is cheap
+  (`reference/image-to-3d-tuning.md`); which one ships is the `character` row of the budget,
+  `unity-3d-models` → `reference/budgets.md`. The visible surface gets half the triangles, and a
+  joint that bends needs them: below Large, look at the joints in an extreme pose before
+  accepting a rung; one that deforms badly goes to route B of `blender-character-rig` →
+  `reference/game-mesh.md`.
 
 ```bash
 python3 scripts/comfy_asset_client.py --workflow templates/pixal3d_multiview_to_model_api.json \
-  --output-dir out/runner \
-  --upload views/runner_front.png --upload views/runner_left.png \
-  --upload views/runner_back.png --upload views/runner_right.png \
-  --set 801.image=runner_front.png --set 802.image=runner_left.png \
-  --set 803.image=runner_back.png --set 804.image=runner_right.png \
+  --output-dir out/runner_r03 \
+  --upload clean/runner_front_r03_black.png --upload clean/runner_left_r03_black.png \
+  --upload clean/runner_back_r03_black.png --upload clean/runner_right_r03_black.png \
+  --set 801.image=runner_front_r03_black.png --set 802.image=runner_left_r03_black.png \
+  --set 803.image=runner_back_r03_black.png --set 804.image=runner_right_r03_black.png \
   --set 186.target_face_count=20000 --set 241.resolution=768 --set 288.value=2048
-python3 scripts/inspect_glb.py out/runner/*.glb --max-triangles 20000 --texture-size 2048
+python3 scripts/inspect_glb.py out/runner_r03/*.glb --max-triangles 20000 --texture-size 2048
 ```
 
 On `clay`, on top of the acceptance table: each arm separate from the torso, a gap between the
-legs, both ears and the tail present and not fused to the head or body. A limb fused to the body
+legs, every thin part present and not fused to the head or body. A limb fused to the body
 cannot be skinned apart: fix the views and regenerate.
 
 ## Hand-off
 
-The result is an unrigged mesh, and it leaves by one of two routes. A prop is imported as it is:
-`unity-3d-models`. A character is rigged first and reaches Unity as FBX: `blender-character-rig`
-for chibi or short-limbed proportions, extra parts (ears, a tail) or a custom action; Mixamo in
-`unity-rigged-character` for standard humanoid proportions and stock clips. These facts go with
-it either way:
+The result is an unrigged mesh. A prop is imported as it is: `unity-3d-models`. A character's
+route — body type, rigging tool, motion source, preview or ship track — is chosen once, at the
+start, in `game-character-pipeline`; in short: a standard humanoid with Auto-Rig Pro installed
+is rigged and gets its clips in `blender-retarget`; a custom body (short limbs, ears, a tail) is
+rigged in `blender-character-rig`; Mixamo through `unity-rigged-character` is an optional route.
+The preview track rigs the generated mesh as it is; the ship track makes the game mesh first and
+rigs once. These facts go with it either way:
 
-- The file is already at budget, with normal map and occlusion baked from the dense mesh onto
-  the decimated one. Simplifying it afterwards with gltf-transform breaks that match: set the
-  budget in the graph and regenerate.
-- That holds for a character too: welding or decimating the GLB in a glTF tool is still wrong.
-  The weld by position inside `blender-character-rig` is a different operation — it merges the
-  vertices split at UV seams, keeps every face and island, and has its own check (that skill's
-  import-and-survey reference).
+- The file is already at the face target the graph was given, with normal map and occlusion
+  baked from the dense mesh onto the decimated one. Simplifying it afterwards with gltf-transform
+  breaks that match: regenerate at the target preset, or retopologise and rebake from the dense
+  mesh (`blender-character-rig` → `reference/game-mesh.md`).
+- Any decimation happens before rigging: decimating a rigged mesh breaks its weights and UVs.
+- Welding or decimating a character's GLB in a glTF tool is still wrong. The weld by position
+  inside `blender-character-rig` is a different operation — it merges the vertices split at UV
+  seams, keeps every face and island, and has its own check (that skill's import-and-survey
+  reference).
 - The origin is the bounding-box centre, not the base: scale and offset the `Model` child, and
   rotate it for a Pixal3D single-image mesh.
 - One material, exported double-sided (`double_sided` in the gate's output). The mesh is a

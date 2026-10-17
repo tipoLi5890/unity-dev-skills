@@ -1,0 +1,2 @@
+# registry.py check: the second line jumps from rev 1 to rev 3 (a line was deleted or edited)
+ERROR bad_gap.jsonl:2: rev-gap: rev 3 where rev 2 comes next

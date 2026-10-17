@@ -121,7 +121,7 @@ First person is step 2 with `FirstPersonController` and a `Head` child; the depo
 | The parameter contract the bridge follows | `unity-animation` → `reference/parameter-contract.md` |
 | Locomotion and strafe blend trees | `unity-animation` → `reference/blend-trees.md` |
 | Root motion as the mover | `unity-animation` → `reference/root-motion.md` |
-| The Animator asset the bridge feeds | `unity-rigged-character` → `reference/editor-templates.md` |
+| The Animator asset the bridge feeds | `unity-rigged-character` → `reference/editor-scripts.md` |
 | A greybox room built to these numbers | `unity-3d-level` → `reference/greybox.md` |
 | Ramp colliders over stairs | `unity-3d-level` → `reference/collision-proxies.md` |
 | Journeys, the probe, the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |

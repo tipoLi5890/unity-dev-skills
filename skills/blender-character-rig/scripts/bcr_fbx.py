@@ -9,7 +9,8 @@ its own and takes the same snapshot there; `rig_gate.py` compares the two.
     before = bcr_fbx.run({"op": "snapshot", "armature": "RunnerRig", "meshes": ["Runner", "Mallet"],
                           "path": "/abs/path/before.json"})
     bcr_fbx.run({"op": "export", "objects": ["RunnerRig", "Runner", "Mallet"],
-                 "path": "/abs/path/runner.fbx", "options": {}})
+                 "path": "/abs/path/runner.fbx",
+                 "options": {"apply_scale_options": "FBX_SCALE_ALL", "apply_unit_scale": True}})
     after = bcr_fbx.run({"op": "reimport", "fbx": "/abs/path/runner.fbx", "scene": "FbxCheck",
                          "path": "/abs/path/after.json"})
     bcr_fbx.run({"op": "discard", "created": after["created"]})

@@ -208,8 +208,8 @@ re-rolled. One project, so a method, not a guarantee:
   round the cones, the extra characters and the frowns did not come back; a busier background than
   asked still did on two, so a rule is a pressure, not a switch. When the style locks, the block
   folds into the `STYLE PREAMBLE`.
-- **The overview is not the evidence.** Tile the round into a Pillow contact sheet (columns =
-  styles, rows = screens) to present it, but judge on the originals, and write one line per screen
+- **The overview is not the evidence.** Tile the round into one sheet with `scripts/contact_sheet.py`
+  (`cols` = styles, one row per screen; `reference/review-sheets.md`) to present it, but judge on the originals, and write one line per screen
   in `manifest.md` — what matches, what the model added on its own.
 
 ```bash

@@ -73,6 +73,7 @@
      perspective (FOV, distance, pitch); view axis is side, top, isometric, behind or eye;
      movement model is free, lane (lane width) or cell (cell size, layout), with the one owner
      of the transform named beside it.
+     A rigged 3D character's route, quality target and track: skill game-character-pipeline, G0.
      The art bible itself lives in ART_DIRECTION.md. -->
 
 | | |

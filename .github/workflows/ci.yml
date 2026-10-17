@@ -31,6 +31,11 @@ jobs:
       - name: Manifests and companions are consistent
         run: python3 tools/check-consistency.py
 
+      # The asset registry's selftests and negative fixtures, the default 3D
+      # budget table in one place only, and no fixed triangle budgets left.
+      - name: Registry and budgets gate
+        run: python3 tools/check-registry.py
+
       - name: Manifests are valid JSON
         run: |
           python3 - <<'PY'

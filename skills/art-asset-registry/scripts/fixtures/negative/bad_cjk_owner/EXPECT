@@ -1,0 +1,2 @@
+# registry.py check: two ids hold one palette file: a collapsed id and the CJK id
+ERROR ArtDirection/調色盤/信差.hex: dual-owner: named by the current records of artdirection, artdirection/調色盤/信差

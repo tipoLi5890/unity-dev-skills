@@ -56,7 +56,7 @@ game state. → `reference/parameter-contract.md`
 2. **Write the bridge.** One component, hashed ids, every parameter every frame, a check at
    `Awake` that each id exists in the controller. → `reference/parameter-contract.md` §3
 3. **Build the graph from script**, so its numbers match the numbers the bridge writes.
-   3D: `unity-rigged-character` → `reference/editor-templates.md` builds the locomotion
+   3D: `unity-rigged-character` → `reference/editor-scripts.md` builds the locomotion
    controller (`Grounded`, `MoveBlend`, `MoveSpeed`, `Hurt`); add directional trees with
    `DirectionalBlendTreeBuilder`. 2D: `SpriteStateGraphBuilder`. Both report first.
 4. **Mark the moments the game listens for** — events with `ClipEventWriter`, spans with
@@ -92,7 +92,7 @@ assembly next to the harness files.
 | `OnAnimatorIK` never called; feet floating on slopes; a hand that must reach a switch; whether Animation Rigging is worth adding | `reference/ik-and-rigging.md` |
 | A cutscene takes the character and the game never gets it back; signals; skipping | `reference/timeline.md` |
 | Animates on the spot, moves twice, or slides back each loop; a Rigidbody under root motion | `reference/root-motion.md` |
-| Import, Avatar, Humanoid versus Generic, Mixamo clips, the locomotion controller itself | `unity-rigged-character` → `reference/editor-templates.md` |
+| Import, Avatar, Humanoid versus Generic, Mixamo clips, the locomotion controller itself | `unity-rigged-character` → `reference/editor-scripts.md` |
 | Turning a frame set into a clip; pivots and ground line; the one end-of-clip event | `unity-2d-sprites` → `reference/sprite-animation.md` |
 | An agent and an Animator both moving one character; a head tracking the path | `unity-navigation` → `reference/recipes.md` |
 | The probe, the recorder, running the journey headless | `unity-play-harness` → `reference/journeys.md` |

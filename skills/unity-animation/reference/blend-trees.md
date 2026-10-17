@@ -5,8 +5,8 @@
 > numbers that have to match the numbers the bridge writes, and a tree dragged together by hand
 > matches them only until somebody retunes the speed.
 
-The 1D tree on `MoveBlend` is already built by `unity-rigged-character` →
-`reference/editor-templates.md` (`BuildCharacterAnimator.cs`). This file covers what that one
+The 1D tree on `MoveBlend` is already built by `CharacterAnimatorBuilder.cs`
+(`unity-rigged-character` → `reference/editor-scripts.md`). This file covers what that one
 leaves out: thresholds, the 2D types, in-place clips and sprite sets.
 
 ## 1. Which type
@@ -104,7 +104,7 @@ clip plays at the rate the ground is passing:
 MoveSpeed = ground speed / the speed the clip was authored for
 ```
 
-`BuildCharacterAnimator.cs` wires `MoveSpeed` as the state's `speedParameter` for the single-clip
+`CharacterAnimatorBuilder.cs` wires `MoveSpeed` as the state's `speedParameter` for the single-clip
 case. Three rules keep it honest:
 
 - Write `MoveSpeed` undamped. A playback rate that lags the ground speed is the slide.

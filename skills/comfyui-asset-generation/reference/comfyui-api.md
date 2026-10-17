@@ -68,10 +68,39 @@ names after the first dot: `--set 241.sign_mode.qef=false`.
 
 The client refuses to submit while any input still contains `REPLACE_WITH_`, and
 while the queue holds a running or pending job. An upload keeps its local
-basename; a second file of that name needs `--overwrite-uploads`.
+basename. Without `--overwrite-uploads`, a server that already holds a different
+file of that name stores the new one as `name (1).png`, and a graph input naming
+`name.png` reads the old file with no error; the client then warns on stderr.
+Name uploads per asset, view and run (`runner_front_r03.png`).
+
+```bash
+--server-label studio-gpu               # the machine's name, recorded instead of its address
+--job-log jobs.jsonl                    # one JSON line per run, success or failure
+```
 
 Its JSON result adds `elapsed_seconds` and `vram_free_min`, the lowest free VRAM
-seen while polling, to `prompt_id`, `uploads`, `outputs` and `vram_after_unload`.
+seen while polling, to `prompt_id`, `uploads`, `outputs` and `vram_after_unload`,
+then what pins the run for skill `art-asset-registry`: `workflow_sha256`,
+`workflow_name` (the file name only), `overrides` (each `--set` target with its
+value: a number, boolean, null or `["node", slot]` link as it is; any text, list
+or object as `sha256:` plus the first 12 hex characters of its hash, so a prompt
+or a key is never printed there), `server_label` (`null` without the flag), `output_files` (each
+download with its `sha256` and `bytes`; `outputs` stays a list of paths) and
+`record`, the partial ledger record. Each `uploads` entry gains the local file's
+`sha256`.
+
+No server address is written to the result or to the job log, and a
+`--server-label` holding `://` is refused. A log line is the result plus `ts` and
+`exit_code`; a failed run's line has `exit_code` 1, its `error` with the address
+and any URL replaced, the same pinning keys, and a `record` whose verdict is
+`failed` once the graph was submitted, `harness` before. In every log line each
+`--set` text, and each graph text holding whitespace (a prompt, a caption), is
+replaced by its short hash wherever it appears, so a server error that quotes
+the graph back does not carry the prompt into the log. A failure still prints
+its reason, unredacted, to stderr and exits 1.
+
+Before changing a knob, compare the graph with the official template:
+`scripts/graph_diff.py OFFICIAL.json PROJECT.json` (`reference/image-to-3d-tuning.md`).
 
 ## Saved workflows
 
@@ -83,7 +112,8 @@ GET /api/userdata?dir=workflows&recurse=true
 
 For `/userdata/{file}`, encode a nested path as one parameter, for example
 `workflows%2Fexample.json`. A saved UI workflow is not automatically an API graph;
-expand subgraphs or export it in API format before submitting it to `/prompt`.
+expand subgraphs or export it in API format before submitting it to `/prompt` or
+comparing it with `scripts/graph_diff.py`, which refuses a UI workflow (exit 3).
 
 ## Failure classes
 

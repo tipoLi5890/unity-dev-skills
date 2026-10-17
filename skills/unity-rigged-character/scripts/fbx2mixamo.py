@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Mixamo route only (reference/mixamo-route.md); the Blender and auto-rig-service routes do not use it.
 """Diagnose an FBX for Mixamo auto-rigger compatibility and emit a clean OBJ.
 
 usage:

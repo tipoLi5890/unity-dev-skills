@@ -150,3 +150,4 @@ A router, read against a window you already have. Depth for the first four rows 
 | Building, signing and reading a device artifact back | `unity-android-release` |
 | Audio memory, load types and mixer cost | `unity-audio` |
 | Deciding what the budget should be | `unity-game-brief` |
+| Where a character's frame windows fall: the budget ladder, the import check | `game-character-pipeline` |

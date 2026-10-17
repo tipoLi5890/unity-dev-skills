@@ -30,8 +30,8 @@ Bytes for one 2048 × 2048 texture, with its mip chain:
 Halving the size divides every row by four. Three rules cover most of a scene:
 
 - **Size by texels on screen.** A crate 1 m wide that never fills more than 400 px needs 512,
-  not 2048. Start generated props at 512 — `unity-3d-models` →
-  `reference/performance-budget.md`.
+  not 2048. A generated prop's size is its class's `target_tex_px` — `unity-3d-models` →
+  `reference/budgets.md`.
 - **Compress per platform, never "None".** ASTC 6×6 on Android and iOS, BC7 or DXT on desktop.
   An uncompressed UI atlas is the commonest single entry in a texture memory report.
 - **Turn Read/Write off.** A readable texture keeps a second copy in system memory.

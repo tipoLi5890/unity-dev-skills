@@ -174,7 +174,8 @@ T-pose stock rig and `GateLatchSwing` from a purchased pack.
 
 ## Related skills
 
-`blender-character-rig` for a rig built from measured landmarks and the FBX round trip ·
+`game-character-pipeline` · `blender-character-rig` for a rig built from measured landmarks and
+the FBX round trip ·
 `unity-rigged-character` for the importer and the Avatar once the FBX reaches Unity ·
 `unity-animation` for states, events, root motion and IK on the clips ·
 `comfyui-asset-generation` for the mesh, and for a shell that is wrong at the source ·

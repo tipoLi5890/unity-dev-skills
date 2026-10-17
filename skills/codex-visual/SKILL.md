@@ -20,7 +20,7 @@ visual work through **one canonical project spec**.
 
 > **This skill decides no art.** Style, dimensionality (2D / 2.5D / 3D), the generation engine,
 > asset formats, palette and folder layout all live in the project's `/ART_DIRECTION.md`, chosen
-> *with the user*; the skill provides only the *method* and the codex mechanics. Reference images a
+> *with the user*; the skill provides only the *method*. Reference images a
 > user shows you are **inspiration to characterize a target, never artwork to copy or ship.**
 
 ## Files this skill governs
@@ -32,7 +32,7 @@ visual work through **one canonical project spec**.
 | `/ArtDirection/candidates/` | Bootstrap explorations. |
 | `/ArtDirection/anchors/` · `anchors/sets/` | Locked reference image(s) fed via `-i`; `sets/` = per-set anchors (an approved first member). |
 | `/ArtDirection/manifest.md` | Registry of every generated asset. |
-| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Call:** `codex_generate.py` |
+| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py`. **Call:** `codex_generate.py` |
 | project asset dir | Shippable art, at the path the spec defines (e.g. `Assets/…` for Unity). |
 
 `<repo>` = the project root, as an **absolute path**.
@@ -44,15 +44,14 @@ command -v codex && codex --version
 ```
 
 Missing → **stop and ask the user** to install it; never auto-install. Generation needs no
-`OPENAI_API_KEY`: `$imagegen` — codex's bundled image skill, typed literally into the prompt —
+`OPENAI_API_KEY`: `$imagegen` — codex's bundled image skill, typed literally —
 uses the ChatGPT login (`codex login status`).
 
 > **Golden rule — always `codex exec`** (bare `codex "..."` hangs; the Bash tool cannot drive a
 > TUI), and never trust its exit code: it is 0 when the model was rejected and when no image was
 > made. `scripts/codex_generate.py --prompt-file P --out DEST -i <anchor>` makes the call and
-> proves it: probes the model, runs from a scratch directory, takes the **original** from
-> its own session in a private `CODEX_HOME` and reads its real size. By hand:
-> `reference/codex-runtime.md` §1–4.
+> proves it (model probe, scratch dir, the **original** from its own session, real size). By
+> hand: `reference/codex-runtime.md` §1–4.
 
 ## Models — agent vs image
 
@@ -82,6 +81,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 | "Off-centre", "one is smaller"; a crosshair template | `reference/geometry-gate.md` |
 | "The assets don't match / the style drifted" | PHASE 4 |
 | A source image for image-to-3D | `reference/image-to-3d-input.md` |
+| A review sheet (8-view QA, clips, before/after), gated on checks | `reference/review-sheets.md` |
 | Read a screenshot; compare two images | `reference/codex-runtime.md` §7 |
 | Which model rendered it; size and quality limits | `reference/image-model.md` |
 
@@ -121,9 +121,9 @@ via `-i` to the FIRST sheet (drift compounds down a chain): `reference/animation
 
 ### The CLI-fallback path — where the rule does hold
 
-`gpt-image-2` through the bundled `image_gen.py` takes a real `size` argument, so the canvas scales
-with the grid (2880x2880: 4x4 720 px cells). It costs an `OPENAI_API_KEY` and a user decision; when
-it earns them: `reference/image-model.md` §3.
+`gpt-image-2` via the bundled `image_gen.py` takes a real `size`, so the canvas scales with the grid
+(2880x2880: 4x4 720 px cells), for an `OPENAI_API_KEY` and a user decision:
+`reference/image-model.md` §3.
 
 ### Style floors — the smallest cell each style survives
 
@@ -242,8 +242,10 @@ PHASE 3S's stack, but the cells are **moments of one character**. The sheet deci
   animation: `unity-2d-sprites`. This skill stops at a normalised PNG, or at the frames,
   `frames.json` and a GIF/APNG/WebP preview — **Unity plays none of those three formats**.
 - **3D meshes** — this skill draws the source image (`reference/image-to-3d-input.md`); conversion:
-  `comfyui-asset-generation`; import: `unity-3d-models`; playable characters:
-  `unity-rigged-character` or `blender-character-rig`.
+  `comfyui-asset-generation`; import: `unity-3d-models`; a character's route:
+  `game-character-pipeline`.
 - **Audio and video**, a real moving-camera clip included — music, SFX and MiniMax H3 video through
   a self-hosted ComfyUI: `comfyui-asset-generation`.
 - **Where the art goes in a HUD**, type sizes, contrast: `unity-game-ui`.
+
+Related: `game-character-pipeline`, `comfyui-asset-generation`, `art-asset-registry`.

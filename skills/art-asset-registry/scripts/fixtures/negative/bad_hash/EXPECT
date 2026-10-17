@@ -1,0 +1,2 @@
+# registry.py check: the palette gained a line after it was recorded, and was not recorded again
+ERROR ArtDirection/palettes/courier.hex: hash-drift: the file differs from the bytes recorded

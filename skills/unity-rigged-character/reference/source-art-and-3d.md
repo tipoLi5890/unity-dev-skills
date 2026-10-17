@@ -1,107 +1,52 @@
-# Sourcing the mesh: T-pose art → image-to-3D
+# Choosing the route before the art
 
-Everything downstream is decided here. A rig cannot fix a mesh that arrived in the wrong pose,
-and no amount of cleanup rescues fused limbs.
+The route decides the art, so it is chosen first: a rig cannot fix a mesh that arrived in the
+wrong pose, and no cleanup rescues fused limbs. The route is chosen once per character, in
+`game-character-pipeline` (G0: body, rigging tool, clips, and what S1 draws); this table is the
+Unity side of that choice.
 
-## 1. Why characters go FBX, never GLB
+| Route (chosen in G0) | What reaches Unity | Read |
+|---|---|---|
+| Auto-Rig Pro in Blender (`blender-retarget`) | one FBX body, the clips already on its skeleton | `reference/unity-import.md` §1–§3 |
+| A Blender rig (`blender-character-rig`) | the same, plus its own extra bones (ears, a tail) and a prop on a bone | `reference/unity-import.md` §4 |
+| Mixamo — **optional** | a body and one FBX per clip, no materials | `reference/mixamo-route.md` |
+| An image-to-3D or rigging service | the service's skinned FBX | `reference/unity-import.md` §1: check the mapping before anything else |
 
-- **glTFast cannot produce an Avatar** ([glTFast#391](https://github.com/atteneder/glTFast/issues/391)).
-  You get a SkinnedMeshRenderer, but nothing settable to Humanoid or Generic. No Avatar
-  means **no animation retargeting and no humanoid AvatarMask**.
-- Only Unity's **native FBX importer** exposes the **Rig tab**.
-- **Mixamo accepts FBX / OBJ / ZIP only** — never GLB.
+Three questions settle it:
 
-Together these make FBX the only route, and most image-to-3D services hand you GLB.
-**`gltf-transform` cannot convert out of the glTF family**, and Blender or assimp are heavy
-installs for one format change — so use **`glb2mixamo.py`** in this skill: stdlib only, emits
-a Mixamo-ready OBJ, runs the humanoid sanity checks, and extracts the embedded maps you will
-need later with `--textures=DIR` (without the flag it only lists them).
-(`assimp export in.glb out.obj` works too if it happens to be installed.)
-A Blender that is already open does not change this: the reason to go through it is not the
-format change but a character Mixamo cannot rig — chibi or short limbs, non-human proportions,
-ears or a tail, a custom action. That route is skill `blender-character-rig`, and it exports
-the FBX itself.
+1. **Where do the clips come from?** In this pipeline every clip is retargeted onto the character's
+   own skeleton before Unity sees it — in Blender (`blender-retarget`), or by Mixamo on that route.
+   Unity imports clips that already fit; it does not retarget across skeletons
+   (`reference/unity-import.md` §1).
+2. **Can the rigging service you are considering take this body?** A service that rigs
+   automatically asks for a T- or A-pose, standard proportions and one piece; extra parts and
+   short limbs belong to the Blender route. Pose parameters, output formats and multi-view input
+   change between versions: confirm them on the service's own documentation before committing,
+   and test one character first.
+3. **Is the design legible at the size the converter reads it?** Pose, views, background and the
+   face's pixel count are decided in the image: `codex-visual` → `reference/image-to-3d-input.md`
+   (§9 A-pose, §10 T-pose).
 
-> **Never run index-level connectivity checks on glTF geometry.** FBX keeps a de-duplicated
-> vertex array and indexes UVs separately; **glTF binds every attribute to one vertex, so each
-> UV seam splits a vertex in two**. A perfectly solid body then reports as *thousands* of
-> disconnected fragments, and any stray-shell filter happily deletes real anatomy — e.g.
-> 33,296 vertices read as 3,679 "shells", the largest only 724 verts, and the filter silently
-> removes 4,369 vertices of body. Welding by position first collapses it to **1 shell**
-> (15,514 distinct positions). `glb2mixamo.py` does this; the OBJ still stores the split
-> vertices because they carry the UVs.
+The mesh itself — image to GLB, its multi-view path and the gate on what comes back — is
+`comfyui-asset-generation`. Its multi-view path, fed four level views of one character, returns an
+upright, unrigged mesh in the pose of the views: the input every route starts from. A GLB reaches
+FBX through the Blender route, which exports the FBX itself, or through `scripts/glb2mixamo.py` on
+the Mixamo route.
 
-## 2. T-pose reference art — the input that decides everything downstream
+## Multi-view input to a hosted service
 
-**T-pose is the precondition for Mixamo's auto-rigging**: arms fully horizontal, clearly separated
-from the torso, legs apart with a visible gap. A natural arms-down pose makes the
-auto-rigger weld arm and torso skin weights together, and nothing downstream fixes it.
-The Blender route places bones from measured landmarks and takes a symmetric **A-pose**
-instead; its art brief is the character section of `codex-visual`'s image-to-3D input reference.
+Hosted image-to-3D services that take several views share one shape of input, and two traps in it
+destroy the mesh without an error:
 
-- **No text anywhere in frame.** Turnaround sheets label views `FRONT` / `LEFT` / `BACK` /
-  `RIGHT`; image-to-3D treats those letterforms as **geometry to build**. Crop them out.
-- **Never feed a whole turnaround sheet.** The model reads "four figures side by side +
-  head close-up + accessories + colour swatch bar" as one silhouette and returns a fused
-  blob. Crop each view into its own image, one per array entry.
-- **Reconstruction quality is capped by the face's pixel count in the reference.**
-  A 340×930 crop leaves the face ~80 px and it melts; a 1254×1254 full-body
-  T-pose leaves 130–150 px and it comes out legible. **When the face collapses, check
-  input resolution before switching tools** — far cheaper, and usually the real cause.
-- Across views: identical character design, heights aligned in-frame, clean background.
-- **A T-pose side view shows the arms pointing at the camera**, foreshortened to a stub.
-  Geometrically inevitable, not a drawing error — but the model may misjudge arm length
-  from it. Front/back views, where the arms are fully extended, compensate.
-
-**Commissioning this art?** `reference/character-art-brief.md` is a ready-to-send
-specification — hand it to an artist verbatim or paste it into a generation prompt. It also
-carries the acceptance checklist to run *before* paying for a 3D generation, and the
-file-naming scheme that keeps alphabetical order identical to the upload array order (§4).
-
-## 3. Choosing an image-to-3D tool
-
-How they compare on quality (these tools move fast — test one character before committing):
-
-- **Rodin** — struggles with facial detail; eyebrows and similar elements break down.
-- **Tripo** — **adds unrequested realistic detail** to stylised characters, which actively hurts
-  anime faces.
-- **Hunyuan3D / Trellis** — best at preserving a smooth-shaded cartoon look, most consistent.
-- **Meshy** — best facial structure and proportion, least cleanup needed around the eyes, but it
-  **adds the same unrequested realistic detail** to stylised characters.
-- **Self-hosted ComfyUI (Pixal3D / TRELLIS.2, skill `comfyui-asset-generation`)** — outputs
-  GLB, so the GLB → OBJ step in §1 still applies, and the graph has no pose input, so the T-pose
-  rules in §2 decide the input. Its multi-view path, fed four level views of one character at
-  one scale, returns an upright, axis-aligned, unrigged mesh in the pose of the views: the
-  input the Blender route starts from.
-
-The parameters usually decide it before quality does:
-
-| Tool | Forced T/A-pose | Output formats | Multi-view input | Price/run |
-|---|---|---|---|---|
-| Rodin V2.5 | Yes, `ta_pose` | `geometry_file_format`: glb/fbx/obj/stl/usdz | up to 5 images | $0.40 (Extreme-High $0.80) |
-| Meshy 6 | Yes, `ta_pose` | GLB / FBX / OBJ / USDZ | single image | $0.80 |
-| Tripo H3.1 | No | no format param, GLB in practice | multiview endpoint, 2–4 | $0.20–0.65 |
-| Hunyuan3D V3 | No | GLB mainly | front/back/left/right | $0.375–0.675 |
-
-Confirm the current price, version and parameter names on the service's own docs before
-committing to one — all of them change faster than this table.
-
-**What `ta_pose` does is *correct* a non-T-pose input into a T-pose.** Image-to-3D
-otherwise reconstructs the input pose faithfully — so **a tool without that parameter
-still works if you supply a T-pose reference**. Tripo and Hunyuan3D stay viable; you just
-carry the T-pose requirement yourself. **Ask "can it output FBX/OBJ?" first**, because
-Mixamo won't take GLB and a GLB-only tool adds a conversion hop (§1).
-
-## 4. Multi-view parameters (Tripo `multiview-to-3d`; others share the shape)
-
-- **The `images` array is positional, not name-based**: `front, left, back, right`.
-  `front` required, 2–4 accepted.
-- **The trap:** pass `[front, back]` and **the back view is consumed as `left`** — the
-  model believes it is a profile and the result is destroyed. To place a back view
-  correctly you **must supply three entries**.
-- Recommended: `texture_quality: detailed`, `geometry_quality: detailed`, `quad: true`,
-  `pbr: true`, `texture_alignment: original_image`, `orientation: align_image`,
-  `auto_size: false`.
-- **Left/right semantics** (camera-left vs character-left) are rarely documented. Guess
-  wrong and the model mirrors: near-symmetric characters barely notice, asymmetric
-  accessories land on the wrong side.
+- **The views are read by position, not by name.** The array order is commonly
+  `front, left, back, right`, with `front` required and two to four accepted; confirm the order on
+  the endpoint's docs. Pass only `[front, back]` and **the back view is consumed as `left`**: the
+  service takes it for a profile and the result is ruined. To place a back view you **must supply
+  three entries** (front, left, back). Uploading by hand, name the files so alphabetical order is
+  upload order: `runner_1_front.png`, `runner_2_left.png`, `runner_3_back.png`.
+- **Left and right are rarely documented** — camera-left or the character's left. Guess wrong and
+  the mesh is mirrored: a near-symmetric character barely shows it, asymmetric accessories (a
+  satchel strap, a badge) land on the wrong side. Fix it by swapping the left and right entries.
+  The convention the image side uses is `codex-visual` → `reference/image-to-3d-input.md` §6
+  (`left.png` has the front pointing to the image's left); check one asymmetric character against
+  the service before a batch.

@@ -51,7 +51,8 @@ module in `scripts/` that returns a dict of gates.
 | The bone spec, radii, why automatic weights fail, the positional rule, gradient chains, symptom → fix | `reference/armature-and-skinning.md` |
 | A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting | `reference/prop-on-bone.md` |
 | Poses in armature axes, the key table, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
-| Exporter options, clip naming, the round trip, what Unity still has to confirm | `reference/fbx-export.md` |
+| The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake from the showcase | `reference/game-mesh.md` |
+| Exporter options, clip naming, the round trip, the Unity check | `reference/fbx-export.md` |
 | The call contract of each module (its docstring) | `scripts/bcr_*.py`, `scripts/rig_gate.py`, `scripts/frames_preview.py` |
 
 ## 1. The pipeline
@@ -171,6 +172,7 @@ mallet at the latch of a gate.
 | Retargeting stock or purchased clips onto a rig, a library of them, a grip held across clips | `blender-retarget` |
 | IK, foot planting, facial rigs, cloth or physics bones | Not covered — this is FK on a hand-specified skeleton |
 | Installing Blender, the add-on or the MCP server | The user's, on request only |
+| The character's stage order: preview or ship track, the game mesh before the rig | `game-character-pipeline` |
 
 ## Related skills
 

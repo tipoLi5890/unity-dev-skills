@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Mixamo route only (reference/mixamo-route.md); the Blender and auto-rig-service routes do not use it.
 """Convert a GLB into a Mixamo-ready OBJ and pull out its embedded textures.
 
 usage:

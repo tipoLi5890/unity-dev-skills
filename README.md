@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Fifty-seven skills covering every stage of
+Unity 6 game-development skills for AI coding agents. Fifty-nine skills covering every stage of
 making a game, from concept to a verified build — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -64,16 +64,18 @@ start at `unity-gameplay`: it reads the project and routes to the rest.
 | **Vertical slice — UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
 | | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
 | | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |
-| **Production — assets** | `unity-3d-models` | Static props: importing AI-generated meshes — inspect first, decimate what is over budget, before Unity ever sees them |
-| | `unity-rigged-character` | A playable character: art → image-to-3D → Mixamo → Avatar → Animator → gameplay rig — or, for proportions Mixamo cannot rig, an FBX from `blender-character-rig` in Mixamo's place |
+| **Production — assets** | `art-asset-registry` | Keeping track of every generated 2D and 3D asset: one append-only ledger per project with sha256 hashes (every `.blend` version too), lineage, links to the art direction and the job that made it, a status a person sets with its evidence image, what an upstream change left stale, and an existing `manifest.md` adopted read-only |
+| | `unity-3d-models` | A 3D model into the game, routed by where it came from — an image-to-3D GLB, an FBX character, a Blender rig, a purchased pack — inspected, decimated to its class's target, imported and audited; a class's budget is picked by a person from the same asset generated at every preset and seen in the game scene, never a fixed cap |
+| | `unity-rigged-character` | The Unity side of a rigged character, whichever route made the FBX — Auto-Rig Pro, a Blender rig, Mixamo, an auto-rig service: import → Avatar (Generic for clips retargeted in Blender, Humanoid when the game needs a mask or IK) → Animator → gameplay rig, a prop socket kept under Optimize Game Objects, the PBR maps an FBX drops rebuilt |
 | | `unity-2d-sprites` | Sprite sheets, slicing, pivots, 9-slice, and a set of frames turned into a playable `AnimationClip` — metadata that lives inside the importer |
 | | `unity-2d-animation` | Skeletal 2D characters with the 2D Animation and PSD Importer packages: a PSB imported as a rig, bones then geometry then weights, `SpriteSkin` and CPU or GPU deformation, Sprite Library skins and equipment swapped at runtime, 2D IK, and an audit of what a rig costs |
 | | `unity-2d-pixel-perfect` | Pixel art that renders soft, shimmers as the camera moves, or shows hairline seams — and which of the two components called `PixelPerfectCamera` you actually have |
 | | `unity-sprite-atlas` | Sprites that should share a draw call: V2 atlases from script, packing and platform settings, and how the packed texture reaches the player |
 | | `unity-audio` | Memory, load types, sample rates, mixer cost — reports before it reimports |
 | | `unity-localization` | Shipping in more than one language, and the CJK font pipeline where it goes wrong |
-| **Production — AI asset generation** | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files |
-| | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch |
+| **Production — AI asset generation** | `game-character-pipeline` | **Start here for a rigged character made from an image.** The stage order up to an approved character in Unity: the route, the quality target and the track (a preview rig on the dense mesh, or budget → game mesh → rig once) decided first, then stages S0–S13, each with the skill that owns it and its entry and exit gates |
+| | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files; also the four views an image-to-3D character starts from, and review sheets composed only when their numeric checks pass |
+| | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props and characters through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch; four views cleaned before upload, the project graph diffed against the official template before any tuning, generation presets compared as rungs, none of them a target |
 | | `blender-character-rig` | An image-to-3D character rigged and animated in a running Blender through its MCP server: bones from measured landmarks, weights computed by position, a prop on a hand bone, a keyed action, a preview, and an FBX proven by re-import |
 | | `blender-retarget` | Stock clips moved onto a character rigged in Blender: through Auto-Rig Pro or a pure-bpy bone map that converts each rotation key between the two rest poses, a clip manifest, a local weight repair, an action library with an NLA review track, a prop checked against its hand bone in every clip, and an audit that re-opens the saved file |
 | **Polish & optimisation** | `unity-game-feel` | A hit with no impact, a game left frozen after a hit, an enemy that stays white after its flash, thirty pickups playing thirty sounds, a pad that keeps vibrating: one feedback row per gameplay event with a budget — hit stop through one owner of `Time.timeScale`, flashes that restore, squash and tweens with no library, particles, trails, pooled SFX with a voice cap, rumble that stops |
@@ -100,6 +102,7 @@ start at `unity-gameplay`: it reads the project and routes to the rest.
 ```bash
 python3 tools/lint-skills.py            # frontmatter + name/dir match + size limits + executable syntax
 python3 tools/check-consistency.py      # manifests agree, companions declared
+python3 tools/check-registry.py        # asset registry selftests and fixtures, the budget table in one place
 python3 tools/sync-codex-manifests.py   # regenerate the Codex manifests
 claude plugin validate .                # manifest shape
 ```

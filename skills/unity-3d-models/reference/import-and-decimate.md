@@ -8,20 +8,25 @@
 - **gltf-transform CLI** (via `npx`; needs `node` on PATH) for
   inspect/optimize. **In zsh, don't stuff the command in a variable** (`$CLI foo` won't
   word-split) — call `npx --yes @gltf-transform/cli …` directly.
-- Assumes a URP project with models under `Assets/Models/` — substitute your own
-  path in the commands below.
+- Assumes a URP project with the source outside `Assets/` in `ArtDirection/raw/3d/<Name>/` and
+  shipped models in `Assets/Models/<Class>/<Name>/` (`reference/asset-classes.md`) — substitute
+  your own paths in the commands below.
 
 ## Pipeline (do these in order)
 
 ### 1. Inspect — see how bad it is
 ```bash
-npx --yes @gltf-transform/cli inspect Assets/Models/<file>.glb 2>&1 | grep -A4 MESHES
+npx --yes @gltf-transform/cli inspect ArtDirection/raw/3d/<Name>/<file>.glb 2>&1 | grep -A4 MESHES
 ```
 Look at `glPrimitives` (triangles). AI models: expect 6–7 figures.
 
-Then read the full output (drop the `grep`) and decide whether step 2 runs:
+Then read the full output (drop the `grep`) and decide whether step 2 runs. The comparison is
+with the class's row in `3D budgets` — `reference/budgets.md`. **Over** means the audit would
+warn or fail: more than `target_tris × 1.25`, or over `ceiling_tris`. A class with no
+`target_tris` yet has no budget, and nothing says what it can afford: run the preset ladder on
+this asset first (`reference/budgets.md`) and bring it to the rung a person picks.
 
-| Triangles vs. the budget table | `TEXTURES` slots | Step 2 |
+| Triangles vs. the class's target | `TEXTURES` slots | Step 2 |
 |---|---|---|
 | Over | base colour only, or none | Run it |
 | Within | base colour only, or none | Skip — nothing to remove |
@@ -29,30 +34,29 @@ Then read the full output (drop the `grep`) and decide whether step 2 runs:
 | Over | `normalTexture` and `occlusionTexture` present | Generated at a face target (the ComfyUI templates): do not simplify; lower the target there and regenerate. A dense mesh from a tool with no face target: run it |
 
 ### 2. Optimize — decimate mesh (the big win) + shrink textures
+Static props only. A mesh that will be skinned is decimated or retopologised in Blender
+**before rigging** — `blender-character-rig` → `reference/game-mesh.md`; which tool for which
+mesh is the table in `reference/budgets.md`.
+
 The **mesh** is almost the entire file/runtime cost, so `simplify` is what
 matters. Decimate from the **original** (not an already-decimated copy) for best
 quality. Skip this step when the step 1 table says so: `simplify` moves the surface out
 from under baked normal and occlusion maps.
 ```bash
-# --ratio = target fraction of ORIGINAL triangles; --error = max shape error (bbox fraction)
-npx --yes @gltf-transform/cli simplify ORIGINAL.glb Assets/Models/<file>.glb --ratio 0.0025 --error 0.05
+# --ratio = target_tris ÷ the ORIGINAL's triangles; --error = max shape error (bbox fraction)
+npx --yes @gltf-transform/cli simplify ArtDirection/raw/3d/<Name>/<file>.glb \
+    Assets/Models/<Class>/<Name>/<Name>.glb --ratio <R> --error 0.05
 ```
-Textures (secondary): compress/resize in Unity (select the model's textures →
-Max Size 512, compression on) or `npx … @gltf-transform/cli optimize in out
---texture-compress webp --texture-size 512`.
+Textures (secondary): compress/resize in Unity (select the model's textures → Max Size = the
+class's `target_tex_px`, compression on) or `npx … @gltf-transform/cli optimize in out
+--texture-compress webp --texture-size <target_tex_px>`.
 
-**Triangle budgets** (a runner; scale for your game):
-
-| Asset | Budget |
-|-------|--------|
-| Pickup (coin/gem) | 0.5–2k |
-| Small obstacle (rock/log) | 2–5k |
-| Character / hero | 3–10k |
-| Environment prop | 1–5k |
+What a class can afford is its row in `3D budgets`, picked from the generation preset ladder —
+`reference/budgets.md`. There is no fixed table of triangle counts.
 
 Verify: `inspect` again — confirm the new triangle count.
 
-### 3. Stage into `Assets/Models/` — glTFast imports it
+### 3. Stage into `Assets/Models/<Class>/<Name>/` — glTFast imports it
 Overwriting the same path keeps the asset GUID, so wired prefabs update in place
 (but re-run the swap in step 5 if the mesh hierarchy changed).
 
@@ -64,7 +68,7 @@ Swap a sprite/placeholder prefab's visual to the model **via Unity's API**
 (robust vs. hand-edited YAML). Pattern — write a one-off Editor script under
 `Assets/Scripts/Editor/` (e.g. `SwapModelIntoPrefab.cs`):
 ```csharp
-var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/x.glb");
+var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Obstacle/LaneBarrier/LaneBarrier.glb");
 var root  = PrefabUtility.LoadPrefabContents(prefabPath);
 DestroyImmediate(root.GetComponent<SpriteRenderer>());   // drop the 2.5D visual
 DestroyImmediate(root.GetComponent<Billboard>());
@@ -74,19 +78,28 @@ SetLayer(vis, root.layer);                                // ← critical, see b
 PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
 PrefabUtility.UnloadPrefabContents(root);
 ```
-Keep the root's collider + tag + gameplay scripts; the model is just the visual.
+Keep the root's collider + tag + gameplay scripts; the model is just the visual. Pivot, scale,
+collision and the prefab's name per class: `reference/asset-classes.md`.
+
+### 6. Audit the class folder, then record it
+`Tools/Unity Dev/3D Models/Audit Folder` on `Assets/Models/<Class>/` reads every model there
+against the class's row — triangles, materials, texture sizes, rig type, bones, clips — and
+prints one `[MODEL-AUDIT]` JSON line; it changes nothing — `reference/model-audit.md`. Then record
+the asset, its source and the audit in the project ledger: skill `art-asset-registry`, whose
+`art-asset-registry` → `reference/ingest.md` reads a tool's JSON output.
 
 ## A GLB generated by the ComfyUI templates
 
 The image-to-3D templates in skill `comfyui-asset-generation` decimate inside the graph and
 bake normal and occlusion maps from the dense mesh onto the result. Step 2 is skipped; steps
-3–5 apply unchanged, glTFast included.
+3–6 apply unchanged, glTFast included.
 
-- **Budget.** Pick the row of the triangle-budget table; that skill's presets carry the same
-  row names (pickup, obstacle / environment prop, hero) and sit inside them, and the templates
-  default to the hero row. The face target is a `--set` on the graph, and it moves together
-  with the remesh resolution, so take both from the preset. Confirm with step 1 (or that
-  skill's `inspect_glb.py --max-triangles N`); over the row → next preset down and regenerate.
+- **Budget.** Generate at the `preset` of the class's `3D budgets` row (`reference/budgets.md`).
+  The face target is a `--set` on the graph, and it moves together with the remesh resolution,
+  so take both from the preset. Confirm with step 1, or with that skill's
+  `inspect_glb.py --budgets ART_DIRECTION.md --class <class>`; more than 25% over `target_tris`
+  → the next preset down, regenerated. A class with no target yet runs the ladder
+  first: the same asset at every preset up to the class's baseline (`reference/budgets.md`).
 - **Thin double shell.** Every face has an inward-facing twin just behind it, so the
   visible surface carries about half the triangle count while Unity's budget counts all of
   them. Budget by the full count and accept the halved detail. The material arrives flagged

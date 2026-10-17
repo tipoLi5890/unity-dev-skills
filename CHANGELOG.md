@@ -2,6 +2,183 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.29.0
+
+Fifty-nine skills. A rigged character made from an image now has one stage order, from the
+quality target to an approved import, and every artefact on the way has a ledger record. The two
+new skills are `game-character-pipeline`, which holds the order and the gates and routes each
+stage to the skill that does it, and `art-asset-registry`, the ledger. In `unity-3d-models` a
+3D budget is a person's pick between real versions of one asset, never a fixed cap.
+`unity-rigged-character` becomes the Unity side of a rigged character, whichever route made the
+FBX. The generation skills gain four-view removal, a graph diff and one review-sheet composer.
+
+- **`game-character-pipeline` — the order, the gates, the artefacts; no scripts.** G0 is decided
+  once per character, by a person, before the first image. First the quality target. Then the
+  route: body proportions × rigging tool × clip source (Auto-Rig Pro for a standard body, the
+  positional rig of `blender-character-rig` for a custom one, Mixamo as an option). Then the
+  track:
+  - **Preview**: rig the dense mesh as it is, for a prototype only.
+  - **Ship**: budget → game mesh → rig once.
+
+  Stages S0–S13 run from the budget to the ledger. Each row gives the stage's owner, what it
+  enters with, the exit gate and what it leaves on disk, and where the gate needs a person.
+  Clips are all retargeted in Blender, and Unity never retargets across skeletons. Every
+  decimation, retopology and rebake of a mesh that will be skinned happens before the rig. A
+  table names the stage to go back to after each upstream change, and the courier run walks the
+  Runner with its Mallet down the ship track. The Scope tables and Related lines of the skills it
+  routes to point back to it, as do `unity-gameplay`, `unity-game-brief` (`visual-direction.md`,
+  `GAME_BRIEF.md`) and `unity-profiling`.
+- **`art-asset-registry` — one append-only ledger per project, `ArtDirection/assets.jsonl`,
+  schema 1.**
+  - **What a record holds:** an id made once from a path, a `rev`, `kind`, `status`, and
+    `files[]` with sha256 and bytes. Every `.blend` version is hashed: a working file is
+    `role: source, mutable: true`, and the Blender file an asset came out of is in `file`.
+    Lineage is `parent`, `inputs` and `links: [{rel, to, rev?}]` (rels `made-under`,
+    `made-by`, `evidence`, `explained-by`, `depends-on`; `to` is a ledger id or `ns:key` such as
+    `art:direction` or `job:<id>`). It also holds the producer's `tool` and `params` (a prompt's
+    file and hash, never its text; a `server_label`, never a URL), gates, a verdict, `source`
+    and `license`.
+  - **Vocabularies:** `kind` is an open slug with a documented vocabulary (`check --strict`
+    warns on other words). The statuses are `candidate`, `approved`, `rejected`, `superseded`,
+    `unused` and `diagnostic`. A diagnostic run is kept and never approved.
+  - **Ids and versions:** ids are NFC Unicode in any script, so `ArtDirection/角色/跑者.png`
+    keeps its own id; a name with no letter or digit falls back to `<folder>/<sha8>`. The current
+    version is the latest approved revision. `history` marks it and the previous good one, and
+    gives `current_version: null` after a rejected, superseded or unused last record.
+  - **`scripts/registry.py`:** `init`, `record`, `check [--strict]`,
+    `stale [--art-version N] [--at NS:KEY=N]`, `status ID STATE`, `history`, `mv`, `render`,
+    `adopt`, `ingest` and `selftest`, with exit codes 0 green, 2 failed or refused, 3 harness.
+    `status ID approved --approver NAME --evidence ID` is a person's act. It refuses whatever
+    `check` would fail: a failed verdict or gate, a missing or changed file, a file another id
+    holds, a cycle, the output of an unsaved Blender file (`--allow-dirty` overrides that one),
+    a diagnostic run. `status ID superseded --by X` refuses an unknown, dead or circular
+    successor.
+  - **`check`'s rules:** they include `parent-cycle`, `superseded-cycle` and `dual-owner`.
+    NaN and Infinity are never read or written. A torn last line is a warning and is moved
+    aside on the next write; a corrupt line in the middle stops every write.
+  - **`stale`:** it reads every link: an upstream id whose content rev moved, or an outside
+    version given on the command line.
+  - **References:** `reference/workflow.md` adds a change-record template (problem, source
+    version and sha, check, hypothesis, change, verification, result, rollback) and the order in
+    which evidence wins, starting from a re-opened saved file.
+- **Adopt and ingest.** `registry_adopt.py` reads a hand-written `manifest.md` once into records
+  and never writes it:
+  - Header words are matched in English and Chinese, `Filename` and `Asset` among them.
+  - A live row wins over a struck row of the same path.
+  - `not **unused**` is not unused.
+  - A numbered range stops at 10,000 names with a `range-capped` warning.
+  - A folder cell is not taken whole: it warns `folder-cell` and asks for a glob.
+
+  `registry_ingest.py` turns a producer's JSON into a partial record and `--write` records it.
+  It takes anything with a `record` key (the `bcr_*`/`brt_*` reports, the producer scripts
+  below), `frames.json` or a codex call. `tools/check-registry.py`, a new CI step, runs the
+  selftests and the negative fixtures. It also holds the default budget table to one file, which
+  `art-direction-schema.md` links to, and fails a skill file that still quotes a fixed triangle
+  band.
+- **`unity-3d-models` — routed by source, budgeted by a person.** `SKILL.md` routes an
+  image-to-3D GLB, a ship-track character (its game mesh before the rig), an FBX character, a
+  Blender rig and a purchased pack. `reference/budgets.md` is the generation preset ladder:
+  - The showcase is the baseline per class, biased to quality.
+  - The same asset is generated at every preset up to it, Small, Medium, Template, Large,
+    Showcase. The presets are generation settings and no class is held to them.
+  - The rungs are placed **static**, unrigged, in the real game scene at the class's instance
+    count. They are compared side by side under the game camera and timed with a `perf-window/1`
+    window on the target device.
+  - A person picks a rung, and the `3D budgets` row gets its `calibrated` date. Until then
+    every tool reports and fails nothing.
+
+  The two tables are `3D asset classes` and `3D budgets`, with six default rows to replace (the
+  character class keeps 2 LODs). A table says when to use `gltf-transform` and when Blender, and
+  anything skinned is decimated before it is rigged. `reference/asset-classes.md` gives each
+  class's pivot, scale, collision, LODs and prefab. `reference/model-audit.md` covers two Editor
+  scripts:
+  - `ModelAudit.cs` (read-only; `Tools/Unity Dev/3D Models/Audit Folder` or
+    `-executeMethod ModelAudit.AuditBatch`) logs one `[MODEL-AUDIT]` line per class folder,
+    with texture sizes as imported after Max Size.
+  - `ModelImportPolicy.cs` applies a folder's `.modelpolicy.json` on a model's first import
+    only.
+
+  The fixed triangle tables and the stock 512 px texture size are gone from
+  `import-and-decimate.md`, `performance-budget.md` and `unity-scene-optimisation` →
+  `reference/texture-streaming.md`. `unity-3d-level` and `unity-gameplay` route a class's
+  budget to `reference/budgets.md`.
+- **`blender-character-rig` → `reference/game-mesh.md`.** This is the ship track's mesh, made
+  before the rig. Route A regenerates at the picked preset. Route B, for joints that deform
+  badly, is retopology, UVs and a Selected-to-Active rebake from the showcase. The preview rig's
+  weights, carried over by Data Transfer, test the joints in extreme poses before the real rig;
+  used as a head start, they pass the same skinning gates and are never taken unseen. Gates check
+  the budget, silhouette, UVs, bake and joints, and a person approves the side-by-side. The FBX
+  example exports with `FBX_SCALE_ALL` and applied unit scale. `fbx-export.md`'s Unity check
+  reads three bones against Blender to the millimetre.
+- **`unity-rigged-character` — the Unity-side contract.** The order is import → Avatar →
+  Animator → gameplay rig, for any route: Auto-Rig Pro, a Blender rig, Mixamo (optional,
+  `reference/mixamo-route.md`) or an auto-rig service.
+  - **Rig type:** Generic for clips retargeted in Blender. Humanoid only for a body-part mask, IK
+    or other avatars, and measured first: on a test rig it moved bones up to 20° and a hand
+    socket 13–15 cm on the same clip.
+  - **A GLB's Avatar:** a GLB takes Humanoid clips through an Avatar built from bone names with
+    `AvatarBuilder.BuildHumanAvatar`.
+  - **`reference/unity-import.md`:** it gains a held prop's shape key as a BlendShape. A Blender
+    driver does not reach Unity, so its value is baked to keys.
+  - **`reference/textures.md`:** Blender's FBX carries metallic and roughness, but Unity binds
+    only base colour and normal, so the metallic/smoothness map is built from a staging folder.
+  - **`reference/gameplay-rig.md`:** it names the three bounds boxes and shows why a gameplay
+    volume is a constant.
+  - **`reference/source-art-and-3d.md`:** it holds the route table, the positional multi-view
+    trap (`[front, back]` reads back as left) and the mirrored left/right check.
+  - **`reference/troubleshooting.md`:** its symptom rows are by stage.
+  - **Editor scripts:** four parameterised files in `resources/Editor/`, configured by
+    `character-pipeline.json` (`reference/editor-scripts.md`): `CharacterImportSettings.cs`,
+    `CharacterAvatarLinker.cs`, `CharacterAnimatorBuilder.cs` and `MixamoTextures.cs`. The
+    prefab step is a snippet in the same page.
+- **Generation.**
+  - **`codex-visual`:** `reference/image-to-3d-input.md` gains a realistic humanoid A-pose
+    variant (straight elbows, true 90° profiles, empty hands, fingers apart only for a close
+    grip) and a T-pose variant for the Mixamo route. `art-direction-schema.md` gains a `## 3D`
+    chapter that links to the budget tables instead of copying them.
+    `scripts/contact_sheet.py` composes the 8-view QA sheet, animation contact sheets, preset
+    comparisons and before/after pairs, and writes nothing unless every `--require` file passes
+    (exit 0 written, 2 refused, 3 unreadable or unwritable; `reference/review-sheets.md`).
+  - **`comfyui-asset-generation`:**
+    - Four views are cleaned before upload with BiRefNet: an RGBA cut-out, a mask preview and a
+      black composite per view, with the mask polarity checked per tool and unique upload
+      names.
+    - `scripts/graph_diff.py` compares the project graph with the official template node by
+      node and input by input (exit 0 same, 1 differ, 3 unreadable) before any knob moves.
+    - The presets are Small, Medium, Template, Large and Showcase: generation settings, none a
+      target. Generating each once is cheap.
+    - Diagnosis is by stage and hedged, and its outcomes include "switch to a known-good
+      baseline graph" and "adopt the usable baseline and record its limits".
+- **Producers pin their output — added keys, the same exit codes.**
+  - `codex_generate.py` adds `model`, `prompt_sha256`, `inputs[]` with hashes, `out_sha256` and
+    a `record`. `--job-log PATH` writes one line per call, with the prompt and any URL replaced.
+  - `comfy_asset_client.py` adds `workflow_sha256`, `workflow_name`, `overrides` (text values as
+    a 12-hex hash), `server_label`, `output_files[]` with hashes, a hash per upload and a
+    `record`. It warns when the server renamed an upload, and takes `--server-label` and
+    `--job-log`. The server's address never reaches stdout or the log.
+  - `inspect_glb.py` adds `gates`, `warnings`, `sha256` and `record`, plus `--class` with
+    `--budgets ART_DIRECTION.md` (a file with no `3D budgets` table: report only) and
+    `--json-out`.
+  - `audit_3d_source.py` adds `--json-out`.
+
+**Changes a project must know.**
+- The Editor menus are `Tools/Unity Dev/Rigged Character/…` (Reimport Character Folder, Link
+  Animation Avatars, Build Animator, Apply Mixamo Textures) and `Tools/Unity Dev/3D
+  Models/Audit Folder`. Nothing answers on the old `Tools/Art/Character → …` items, and a project
+  that copied the old templates keeps its own copies.
+- `CharacterImportSettings` no longer forces Max Size to 512. Max Size is left alone unless
+  `character-pipeline.json` sets `maxTextureSize`, or `targetTexPx` from the character's budget
+  row.
+- `MixamoTextures` binds the mask only from a `*_MetallicSmoothness` map. It names a skipped raw
+  metallic map in `note`.
+- A status change is one command, `status ID STATE [--by ID] [--allow-dirty] [--approver NAME]
+  [--evidence ID]`. `--art-version N` writes a `made-under art:direction` link with `rev` N.
+- The pages `editor-templates.md`, `mixamo.md`, `mesh-prep.md` and `character-art-brief.md` are
+  gone from `unity-rigged-character`. Their content is in `editor-scripts.md`, `mixamo-route.md`
+  and `codex-visual` → `reference/image-to-3d-input.md`.
+- The image-to-3D presets are named Small, Medium, Template, Large and Showcase, where they were
+  Pickup, Obstacle, Hero, Close-up and Showcase. The budget class is `hero-prop`, not `hero`.
+
 ## 0.28.0
 
 Fifty-seven skills. The new one, `blender-retarget`, moves stock or purchased clips onto a

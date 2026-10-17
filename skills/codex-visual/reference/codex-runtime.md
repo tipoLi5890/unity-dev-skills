@@ -14,6 +14,7 @@ model is rejected and when the image tool never ran, so the script proves the re
 python3 <skill>/scripts/codex_generate.py --prompt-file prompt.txt --out "$DEST" \
     -i <repo>/ArtDirection/anchors/master.png        # [-m MODEL] [--no-probe] [--timeout 600]
                                                      # [--expect-size 1672x941] [--shared-home]
+                                                     # [--job-log PATH]
 ```
 
 It probes the model with a one-word prompt (`--no-probe` once it has passed in a batch), runs from
@@ -25,8 +26,18 @@ can be refused today), **4** = the call ran and made no image, **5** = it made m
 are written (`DEST`, then `<stem>.2.png`, `<stem>.3.png`, … in render order) and listed under
 `images`, and none is chosen — look at them, **6** = `--expect-size WxH` did not match (±1 px by
 default, because one 16:9 ask has come back both 1672x940 and 1672x941; the file is written so
-it can be looked at). 5 wins over 6. The rules below are what it does, and what a call made by
-hand has to do.
+it can be looked at). 5 wins over 6.
+
+Every object it prints also pins the call for skill `art-asset-registry`: `model` (the `-m`
+value, `null` for the config's) and `record` (the call's partial ledger record — tool, params,
+inputs, files and a verdict: `green` on exit 0, `failed` on 4, 5 and 6, `harness` on 2 and 3);
+once the prompt has been read, `prompt_sha256` (of the prompt file's bytes, or of `--prompt` as
+given; the object carries the hash, not the text) and `inputs` (each `-i` with its `sha256`). A
+written image adds `out_sha256`. `--job-log PATH` appends that object as one JSON line with `ts`
+and `exit_code` (this script's; `exit` on exit 4 is codex's own); should an `ERROR` line in
+`detail` quote the prompt, the log line has `<prompt>` in its place, and any URL (an endpoint
+with its query string) reads `<url>` there; stdout keeps both. The rules below are what it
+does, and what a call made by hand has to do.
 
 - **Generation must be allowed to write:** `--sandbox workspace-write --skip-git-repo-check`. The
   `exec` default is read-only and **silently blocks the save**.
@@ -261,8 +272,11 @@ on a flat solid background in a key colour the subject lacks (#FF00FF, or the ke
 colour ART_DIRECTION.md records).
 EOF
 python3 <skill>/scripts/codex_generate.py --prompt-file <scratch>/prompt.txt --out "$DEST" \
-    -i <repo>/ArtDirection/anchors/master.png --expect-size 1254x1254   # square: image-model.md §3
+    -i <repo>/ArtDirection/anchors/master.png --job-log <scratch>/jobs.jsonl \
+    --expect-size 1254x1254                                            # square: image-model.md §3
 ```
 
 Exit 0 is one render of the expected size; after 5 or 6, open the files before deciding anything
-(§1). By hand, the capture is §2's session recipe. Then key it (§5).
+(§1). By hand, the capture is §2's session recipe. Then key it (§5). The printed object is what
+skill `art-asset-registry` turns into a ledger record (its `ingest` command); it refuses the
+output of an exit 5, since none of the images was chosen.

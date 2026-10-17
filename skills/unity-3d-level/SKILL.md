@@ -84,7 +84,7 @@ GameObject room = GreyboxBuilder.Build(m);       // then build
 | The capsule, grounding, step offset and slope limit the sheet is derived from | `unity-3d-controller` → `reference/grounding-and-slopes.md` |
 | The jump that sets the gap and the ledge | `unity-3d-controller` → `reference/jump-and-air.md` |
 | Corridor width against a camera boom; a camera through the wall | `unity-camera` → `reference/follow-3d.md` |
-| Importing and budgeting the model that becomes a kit piece or a prop | `unity-3d-models` → `reference/import-and-decimate.md` |
+| Importing the model that becomes a kit piece or a prop · its class's budget, the generation preset ladder | `unity-3d-models` → `reference/import-and-decimate.md` · `unity-3d-models` → `reference/budgets.md` |
 | MeshCollider rules, scaled colliders, tunnelling | `unity-physics-3d` |
 | A cast or a ground check that misses the level | `unity-physics-3d` → `reference/queries.md` |
 | Baking the NavMesh from the proxies; runtime baking | `unity-navigation` → `reference/recipes.md` |
@@ -151,7 +151,7 @@ GameObject room = GreyboxBuilder.Build(m);       // then build
 |---|---|
 | The capsule, grounding, jumping, third- and first-person controllers | `unity-3d-controller` |
 | Reach formulas, genre recipes, which skills a game needs | `unity-gameplay` |
-| Importing, decimating and budgeting a model; glTFast | `unity-3d-models` |
+| Importing and decimating a model; glTFast · what a class may cost | `unity-3d-models` · `unity-3d-models` → `reference/budgets.md` |
 | Rigged characters; rigging in Blender | `unity-rigged-character`, `blender-character-rig` |
 | Collisions and triggers that misbehave; query faults | `unity-physics-3d` |
 | NavMesh baking, agents, links | `unity-navigation` |

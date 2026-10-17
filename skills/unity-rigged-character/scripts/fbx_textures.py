@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Any FBX with embedded maps (reference/textures.md); the Mixamo route needs it on the ORIGINAL export.
 """Extract embedded textures from an FBX, keeping their original file names.
 
 usage:

@@ -2,7 +2,7 @@
 
 [繁體中文](README.zh-TW.md) · **简体中文** · [日本語](README.ja.md) · [English](../README.md)
 
-面向 AI 编码代理的 Unity 6 游戏开发 skills。五十七个 skill，覆盖做一款游戏的每个阶段，从概念到可验证的构建，
+面向 AI 编码代理的 Unity 6 游戏开发 skills。五十九个 skill，覆盖做一款游戏的每个阶段，从概念到可验证的构建，
 可安装到 Claude Code 或 OpenAI Codex。
 
 有三点让它不只是一堆 Unity 笔记：
@@ -61,16 +61,18 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | **垂直切片 —— UI** | `unity-game-ui` | **任何 UI 需求都从这里开始。** 检测项目使用的是哪套 UI 系统并导流；并且承担没人写的那一块 —— runtime `OnGUI` HUD |
 | | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什么都画不出来的六种原因 |
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 会静默忽略的那些属性 |
-| **量产 —— 资源** | `unity-3d-models` | 静态道具：导入 AI 生成的网格——在 Unity 看到它们之前先检查，超出预算的才减面 |
-| | `unity-rigged-character` | 可操作的角色：原画 → image-to-3D → Mixamo → Avatar → Animator → gameplay rig；Mixamo 绑不了的比例，改由 `blender-character-rig` 出 FBX 接手 |
+| **量产 —— 资源** | `art-asset-registry` | 追踪每一件生成的 2D 与 3D 资源：每个项目一份只增不改的账本，记下 sha256 哈希（每个 `.blend` 版本也记）、来源血缘、指向美术规格与产出任务的链接、由人设定并附证据图的状态、上游改动后过期的资源，并以只读方式接手已有的 `manifest.md` |
+| | `unity-3d-models` | 把 3D 模型带进游戏，按来源分路——图生 3D 的 GLB、FBX 角色、Blender 绑好的骨架、购买的素材包——检查、减面到类别的目标、导入并审计；类别的预算由人选定：同一件资源在每个生成预设各产一版，放进游戏场景比较，从来不是固定上限 |
+| | `unity-rigged-character` | Unity 端的绑骨角色契约，不论 FBX 从哪条路线来——Auto-Rig Pro、Blender 骨架、Mixamo、自动绑骨服务：导入 → Avatar（在 Blender 重定向的 clip 用 Generic，游戏需要部位遮罩或 IK 时才用 Humanoid）→ Animator → gameplay rig，在 Optimize Game Objects 下保住道具 socket，并重建 FBX 丢掉的 PBR 贴图 |
 | | `unity-2d-sprites` | Sprite sheet、切图、pivot、9-slice、把一组逐帧做成可播放的 `AnimationClip` —— 那些住在 importer 里的元数据 |
 | | `unity-2d-animation` | 用 2D Animation 与 PSD Importer 包做骨骼式 2D 角色：把 PSB 导入成 rig、先骨骼再几何再权重、`SpriteSkin` 与 CPU 或 GPU 变形、运行时切换 Sprite Library 的造型与装备、2D IK，以及一份 rig 成本的审计 |
 | | `unity-2d-pixel-perfect` | 像素画发虚、镜头一动像素就爬、tile 之间出现发丝缝 —— 以及你手上到底是哪一个叫 `PixelPerfectCamera` 的组件 |
 | | `unity-sprite-atlas` | 该共用一次 draw call 的 sprite：用脚本产 V2 atlas、打包与平台设置，以及打包好的贴图怎么到玩家手上 |
 | | `unity-audio` | 内存、load type、采样率、mixer 开销 —— 它会先报告再重新导入 |
 | | `unity-localization` | 用一种以上的语言发布，以及真正会出问题的 CJK 字体管线 |
-| **量产 —— AI 素材生成** | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸 |
-| | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效、MiniMax H3 视频与图生 3D 道具：一次一件、只信 `/history`、切模型前先 `/free` |
+| **量产 —— AI 素材生成** | `game-character-pipeline` | **从一张图做出绑骨角色，从这里开始。** 直到 Unity 里核准的角色为止的阶段顺序：先决定路线、质量目标与轨道（预览轨直接绑密网格，出货轨先定预算 → 游戏网格 → 只绑一次），再走 S0–S13，每个阶段标出负责的 skill 与进出关卡 |
+| | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸；也画图生 3D 角色起手的四面图，以及只在数值检查通过时才合成的审阅表 |
+| | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效、MiniMax H3 视频与图生 3D 的道具和角色：一次一件、只信 `/history`、切模型前先 `/free`；四面图上传前先去背，调参前先把项目 graph 和官方模板逐项比对，生成预设当成阶梯来比较，没有一个是目标 |
 | | `blender-character-rig` | 通过 MCP server 在运行中的 Blender 里，给图生 3D 角色绑骨架、做动画：骨骼按量到的特征点摆放、权重按位置计算、道具挂在手骨上、key 出一段 action、渲染出预览，再把 FBX 重新导入验证 |
 | | `blender-retarget` | 把现成的动作 clip 套到在 Blender 里绑好骨架的角色上：通过 Auto-Rig Pro 或纯 bpy 的骨骼对照表，按两边的 rest pose 转换每个旋转 key、一份 clip 清单、局部修权重、带 NLA 审阅轨的动作库、每段 clip 都对手骨检查的道具，以及重新打开存盘文件来验证的审计 |
 | **打磨与优化** | `unity-game-feel` | 没有打击感的命中、命中后整个游戏停住不动、闪白之后一直白着的敌人、三十个拾取物播出三十个音效、停不下来的手柄震动：每个 gameplay 事件一行有预算的反馈——由唯一持有 `Time.timeScale` 的组件做 hit stop、会还原的闪白、不需要插件的挤压与 tween、粒子、拖尾、有发声数上限的池化音效、会停下来的震动 |
@@ -97,6 +99,7 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 ```bash
 python3 tools/lint-skills.py            # frontmatter + name 与目录名一致 + 大小上限 + 可执行文件语法
 python3 tools/check-consistency.py      # manifest 一致、外部依赖已声明
+python3 tools/check-registry.py        # 资源账本的 selftest 与 fixture、预算表只存一份
 python3 tools/sync-codex-manifests.py   # 重新生成 Codex manifest
 claude plugin validate .                # manifest 形状
 ```
