@@ -2,6 +2,102 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.28.0
+
+Fifty-seven skills. The new one, `blender-retarget`, moves stock or purchased clips onto a
+character already rigged in Blender and turns a batch of them into a library the saved file can be
+trusted to hold: a manifest of clips before any retarget, each clip converted onto the rig through
+an installed Auto-Rig Pro or a pure-bpy bone map, a local weight repair where a moving joint shows a
+fault, a prop checked against its hand bone in every clip, one NLA review track, and an audit that
+re-opens the file. Four neighbours gain the route that leads to it.
+
+- **Six `brt_*` modules over a shared `brt_common.py`, called like the `bcr_*` ones.** Each is
+  `run(params) -> dict` behind a short stub sent through the Blender MCP server's code tool, and
+  returns `ok`, `gates`, `created`, the Blender version, `schema`, the loaded file's path and save
+  state, `warnings` and a `record` that an asset ledger can take as it is. A call that raises removes what it created.
+  Actions are Blender 5 layered actions, played only through `animation_data.action` and its slot.
+- **`reference/rest-pose-and-conjugation.md` and `brt_retarget` — a key is a turn from its
+  bone's own rest.** Two skeletons rest differently, so copying the four numbers turns the target
+  the wrong way. Each mapped bone's rotation is conjugated, q_t = K·q_s·K⁻¹, with one constant
+  built from both rests; every key is normalised and kept in the hemisphere of the one before. A
+  `reference_frame` where the source stands in the target's rest rebases the clip, so a T-pose
+  source fits an A-pose target. The bones the reference walk aims (`reference_map`, less
+  `no_aim`) are separate from the bones written (`map`), so a wrist converts with its arm aimed
+  and the hand itself unaimed when a rig's hand tail does not lie along the palm. Translation is
+  not retargeted, and the result says so (`translation_keyed` names the source bones that move).
+  Output goes to a new action (refused on a taken name unless `overwrite_action`) or, with
+  `into_action`, into one that exists, such as the action an Auto-Rig Pro retarget baked: only
+  the mapped rotation curves are added, a channel already there refuses unless `replace`, and
+  every other curve is left as it was. `max_step` is reported, not gated: conjugation keeps
+  angles, so it measures how fast the clip moves, never whether the map is right. K, the bones
+  aimed for each K and a hash of both rests are stored on the action. Stock bpy only.
+- **`reference/arp-route.md` and `brt_arp`** — the route through an Auto-Rig Pro the user has
+  installed: ops `probe`, `markers`, `match`, `bind`, `retarget`, plus `source_bones`, which needs
+  no add-on and reads an FBX's skeleton so the bone map is built from the bones that file has,
+  never from another skeleton's map. Nothing of the add-on lives in this repository: each call
+  finds the enabled copy, drives only the operators it registered, and refuses, changing nothing,
+  when one it needs is missing. Before anything bakes, every clip's file, map, switches and
+  metadata are checked, so a missing metadata key fails the batch before the first bake. Then, per
+  clip: the rig's active action cleared (fake user kept) and every pose bone back to identity; the
+  IK/FK switches set from the rig's own bones (hands FK, feet IK by default, the add-on's value
+  convention) and keyed at the first frame; hand and finger sources dropped with `exclude`; the
+  previous clip's rest offset removed before the rest is redefined. Each clip reports its `bake`
+  and its `metadata` phase apart, and each action is stamped with provenance properties
+  (`brt_clip`, `brt_source_file`, `brt_origin`, `brt_family`) for lookups that never go by name.
+  `dry_run: True` runs the first clip end to end and puts it back; the armature modifiers' viewport
+  display is paused for the batch. The page adds the bind on the exact source mesh (no weld: the
+  add-on binds through a voxel proxy), marker search windows labelled as one body's example, a
+  deform-only weight-sum check right after binding, and what to do before a long session: a
+  smoke test on a cube (a localised UI renames nodes), `PoseBone.select` in Blender 5, Python
+  references that go stale when an operator replaces an object, and a client timeout sized by job
+  class with Blender inspected before anything is resubmitted.
+- **`reference/clip-sources.md`** — clips from an online stock library, fetched one at a time in
+  the user's own browser, or from a purchased pack end in one manifest, one entry per clip, written
+  before downloading and checked before any retarget starts; only what it lacks is downloaded.
+- **`reference/weight-repair.md` and `brt_weights`** — a dent or a pull that shows only when a
+  joint moves is repaired where it shows, not by re-skinning: `probe` a region (a mask by distance
+  from the mid-plane and a height band given as fractions of the rig's height, both feathered;
+  read-only), `snapshot` it, `transfer` part of an over-reaching limb's weight onto the spine
+  bones, split between them by height (a reach-based share is optional), normalise the deform
+  groups only, and `restore` exactly what changed; a restore onto changed topology refuses. Any
+  move made to fit a prop is capped at about a quarter of the handle's radius.
+- **`reference/action-library.md`, `brt_library` and `brt_drift`.** Every action carries the
+  rig's slot, a fake user and an asset mark, and plays alone with finite values at its first,
+  middle and last frame; one NLA track holds one strip per clip with a marker at each start; a
+  catalog is written as JSON and CSV. Names are not identifiers: an action is found by its
+  provenance property or the manifest's `action`, a stale take of the exact name beside it is an
+  error, and a `.NNN` name is a warning, not a failure. `brt_drift` reads a carried prop against
+  its anchor bone at rest and checks evenly spaced samples of every clip for both slip (2e-5 m)
+  and turn (0.5°), since a prop spinning about its grip point moves no grip point.
+- **`brt_audit` — a library call that passed is evidence about the session, not the file.** It
+  re-opens the saved .blend in a background Blender from the host shell and compares it with what
+  the caller expects: the library's own actions (those `brt_library` registered, not every action
+  in the file) and their slots, NLA strips, invalid and Python drivers, unpacked and unused images,
+  shape keys, finite bones as the file plays, and with `--props` each prop's parent and parent
+  bone. One `BRT_AUDIT_JSON` line; exit 0 pass, 1 fail, 2 refused input (an empty `{}` checks
+  nothing, so it never passes). It never saves.
+- **`reference/defect-triage-and-stop.md`** — the quality target agreed with the user first; then
+  four layers a rigged, retargeted character can be wrong in (geometry, skinning, animation,
+  material) and the tests that separate them, one layer changed at a time at the same camera and
+  frame. Stop rules: a failed call is never sent again unchanged, and a limit with no gain is
+  recorded while the working baseline is kept.
+- **`reference/unity-handoff.md`** — the contract chosen before export: the rig exports the
+  skeleton and the clips are baked onto it, or the source clips stay the animation and Unity
+  retargets them, never mixed per clip; then the smallest export that tests it.
+- **One copy of shared code, checked.** A skill stays self-contained, so code two skills need is
+  pasted into each between `# >>> shared:<name>` and `# <<< shared:<name>`. The canonical copy is
+  `tools/shared-blocks/<name>.py`, whose first line names its targets, and
+  `tools/check-consistency.py` fails on any drift. The first block, `blender_common`, sits in
+  `bcr_common.py` and `brt_common.py`, so `blender-character-rig` results gain the same `schema`,
+  `file`, `warnings` and `record` keys and the same `destructive_guard`.
+- **`blender-character-rig`** routes retargeting stock clips to `blender-retarget`, and
+  **`reference/prop-on-bone.md`** gains a section on a grip that stays stable across clips: one
+  fixed local offset on an anchor Empty under the hand bone, checked by `brt_drift` and, in the
+  saved file, `brt_audit --props`, and an optional grip shape key.
+- **`unity-rigged-character`, `unity-animation` and `unity-3d-models`** each gain one routing row
+  to `blender-retarget` for clips retargeted onto a character already rigged in Blender; in
+  `unity-rigged-character` the character comes back at stage 4 with its FBX.
+
 ## 0.27.0
 
 Tests stop queueing on one Editor, and five more ways to test arrive. The Editor's lock is per

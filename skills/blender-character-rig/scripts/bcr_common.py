@@ -16,18 +16,36 @@ What every `run` returns:
     {"ok": bool,                      # every gate passed
      "gates": [{"name", "value", "limit", "pass"}, ...],
      "created": {"objects": [...], ...},   # datablocks this call added
-     "blender": [major, minor, patch], ...}
+     "blender": [major, minor, patch], ...,
+     "schema": 1,
+     "file": {"path", "saved", "dirty"},   # the loaded .blend; path "" before the first save
+     "warnings": [...],               # notes that do not fail the call
+     "record": {"tool": {"skill", "script"}, "params", "gates", "verdict"}}
 
-`report_path` in params also writes that dict as JSON.
+`report_path` in params also writes that dict as JSON. `record` is a partial
+ledger row: its params leave out every key naming a path except `backup_path`,
+and verdict is "green" or "failed".
 
 A call that raises removes the datablocks it had created before re-raising, so
 a failed step leaves no orphan collection or material behind. Edits to
 datablocks that already existed are not undone: each module says which it makes.
+An op that overwrites existing data can call `destructive_guard` first: on a
+file with unsaved edits it adds a warning, `acknowledge_destructive: True`
+silences it, and `strict: True` raises before anything is written.
 """
 from __future__ import annotations
 
+# Named in the record of every result (report() reads it).
+SKILL = "blender-character-rig"
+
+# Between the shared:blender_common markers: a copy of tools/shared-blocks/blender_common.py
+# in the repository, which tools/check-consistency.py keeps equal to it. Edit that file,
+# then copy it here and into the other skill's copy.
+# >>> shared:blender_common
 import functools
 import json
+import os
+import sys
 
 import bpy
 from mathutils import Matrix, Vector
@@ -117,9 +135,57 @@ def gate(name: str, value, limit, passed) -> dict:
     return {"name": name, "value": safe(value), "limit": safe(limit), "pass": bool(passed)}
 
 
+def file_state() -> dict:
+    """The loaded .blend: its path ('' before the first save) and whether it has unsaved edits."""
+    dirty = bool(bpy.data.is_dirty)
+    return {"path": bpy.data.filepath, "saved": bool(bpy.data.filepath) and not dirty, "dirty": dirty}
+
+
+def destructive_guard(params: dict, label: str):
+    """Call before an op overwrites existing data. Returns a warning string, or None.
+
+    Edits that were never saved cannot be got back by reopening the file, so an
+    overwrite on top of them is reported: the op puts the string in its result's
+    `warnings`. `acknowledge_destructive: True` means the caller knows (None);
+    `strict: True` raises instead of warning, before anything is written.
+    """
+    if params.get("acknowledge_destructive") is True:
+        return None
+    if not bpy.data.is_dirty:
+        return None
+    if params.get("strict"):
+        raise RuntimeError(f"{label} refused: the file has unsaved edits and strict is set; "
+                           "save first or pass acknowledge_destructive")
+    return f"{label} on a dirty file: pass acknowledge_destructive or strict"
+
+
+def _script_name(module_globals: dict) -> str:
+    name = module_globals.get("__name__", "")
+    if name == "__main__" and module_globals.get("__file__"):
+        return os.path.splitext(os.path.basename(module_globals["__file__"]))[0]
+    return name
+
+
 def report(params: dict, gates: list[dict], **extra) -> dict:
-    out = {"ok": all(g["pass"] for g in gates), "gates": gates, "blender": list(bpy.app.version)}
+    """The dict every op returns. A `warnings` list in `extra` becomes the result's warnings.
+
+    schema, file and record are set after the extras, so an extra with one of
+    those names cannot replace them. `record` is this call's partial ledger row:
+    the tool, the params without any key naming a path (`backup_path` is kept),
+    the gates and the verdict.
+    """
+    ok = all(g["pass"] for g in gates)
+    warnings = [str(w) for w in extra.pop("warnings", None) or []]
+    out = {"ok": ok, "gates": gates, "blender": list(bpy.app.version)}
     out.update(safe(extra))
+    kept = {k: v for k, v in safe(params).items() if "path" not in k or k == "backup_path"}
+    out.update({
+        "schema": 1,
+        "file": file_state(),
+        "warnings": warnings,
+        "record": {"tool": {"skill": SKILL, "script": _script_name(sys._getframe(1).f_globals)},
+                   "params": kept, "gates": gates, "verdict": "green" if ok else "failed"},
+    })
     return out
 
 
@@ -158,9 +224,13 @@ def step(fn):
             removed = tracker.rollback()
             raise RuntimeError(f"{fn.__module__}: {exc} (rolled back: {removed or 'nothing created'})") from exc
         out["created"] = tracker.created()
+        if isinstance(out.get("record"), dict):
+            # the entry point, also when report() was called from a helper module
+            out["record"]["tool"]["script"] = _script_name(fn.__globals__)
         if params.get("report_path"):
             with open(params["report_path"], "w", encoding="utf-8") as handle:
                 json.dump(out, handle, indent=2)
         return out
 
     return run
+# <<< shared:blender_common

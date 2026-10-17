@@ -74,7 +74,7 @@ In order. A row is done when its gates pass or, where it says picture, when some
 Numbers cannot close steps 6 and 9: a mesh passes every weight gate and still tears; a swing
 lands on a target that stands between the camera and the character.
 
-## 2. Running a shipped script through the server
+## 2. Running a module through the server
 
 The modules run inside Blender, not on a command line. Send this through the server's code tool:
 
@@ -168,12 +168,14 @@ mallet at the latch of a gate.
 | Mixamo for standard proportions; the Unity FBX importer, Avatar, Animator, PBR maps | `unity-rigged-character` |
 | Static props that need no skeleton | `unity-3d-models` |
 | Moving the character in Unity: controller, grounding, the Animator bridge | `unity-3d-controller` |
-| IK, foot planting, facial rigs, cloth or physics bones, retargeting stock clips | Not covered — this is FK on a hand-specified skeleton |
+| Retargeting stock or purchased clips onto a rig, a library of them, a grip held across clips | `blender-retarget` |
+| IK, foot planting, facial rigs, cloth or physics bones | Not covered — this is FK on a hand-specified skeleton |
 | Installing Blender, the add-on or the MCP server | The user's, on request only |
 
 ## Related skills
 
 `comfyui-asset-generation` for the GLB this starts from · `codex-visual` for the image and
 four-view sheet that job is fed · `unity-rigged-character` for the Mixamo route and everything
-after the FBX reaches Unity · `unity-3d-models` for props that stay static · `unity-debug` for
-proving the action plays in the running game.
+after the FBX reaches Unity · `blender-retarget` for stock or purchased clips moved onto this rig
+and kept as a library · `unity-3d-models` for props that stay static · `unity-debug` for proving
+the action plays in the running game.

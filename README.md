@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Fifty-six skills covering every stage of
+Unity 6 game-development skills for AI coding agents. Fifty-seven skills covering every stage of
 making a game, from concept to a verified build — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -75,6 +75,7 @@ start at `unity-gameplay`: it reads the project and routes to the rest.
 | **Production — AI asset generation** | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files |
 | | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch |
 | | `blender-character-rig` | An image-to-3D character rigged and animated in a running Blender through its MCP server: bones from measured landmarks, weights computed by position, a prop on a hand bone, a keyed action, a preview, and an FBX proven by re-import |
+| | `blender-retarget` | Stock clips moved onto a character rigged in Blender: through Auto-Rig Pro or a pure-bpy bone map that converts each rotation key between the two rest poses, a clip manifest, a local weight repair, an action library with an NLA review track, a prop checked against its hand bone in every clip, and an audit that re-opens the saved file |
 | **Polish & optimisation** | `unity-game-feel` | A hit with no impact, a game left frozen after a hit, an enemy that stays white after its flash, thirty pickups playing thirty sounds, a pad that keeps vibrating: one feedback row per gameplay event with a budget — hit stop through one owner of `Time.timeScale`, flashes that restore, squash and tweens with no library, particles, trails, pooled SFX with a voice cap, rumble that stops |
 | | `unity-render-urp` | Post-processing that will not appear, the mobile subset, Render Graph review |
 | | `unity-urp-migration` | Moving a Built-in project to URP in five gated phases read back from the saved project, and diagnosing one that was half-moved: magenta materials, PPv2 into a Volume, lightmaps that never rebaked, `GrabPass`/`OnRenderImage` |

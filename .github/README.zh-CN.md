@@ -2,7 +2,7 @@
 
 [繁體中文](README.zh-TW.md) · **简体中文** · [日本語](README.ja.md) · [English](../README.md)
 
-面向 AI 编码代理的 Unity 6 游戏开发 skills。五十六个 skill，覆盖做一款游戏的每个阶段，从概念到可验证的构建，
+面向 AI 编码代理的 Unity 6 游戏开发 skills。五十七个 skill，覆盖做一款游戏的每个阶段，从概念到可验证的构建，
 可安装到 Claude Code 或 OpenAI Codex。
 
 有三点让它不只是一堆 Unity 笔记：
@@ -72,6 +72,7 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | **量产 —— AI 素材生成** | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸 |
 | | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效、MiniMax H3 视频与图生 3D 道具：一次一件、只信 `/history`、切模型前先 `/free` |
 | | `blender-character-rig` | 通过 MCP server 在运行中的 Blender 里，给图生 3D 角色绑骨架、做动画：骨骼按量到的特征点摆放、权重按位置计算、道具挂在手骨上、key 出一段 action、渲染出预览，再把 FBX 重新导入验证 |
+| | `blender-retarget` | 把现成的动作 clip 套到在 Blender 里绑好骨架的角色上：通过 Auto-Rig Pro 或纯 bpy 的骨骼对照表，按两边的 rest pose 转换每个旋转 key、一份 clip 清单、局部修权重、带 NLA 审阅轨的动作库、每段 clip 都对手骨检查的道具，以及重新打开存盘文件来验证的审计 |
 | **打磨与优化** | `unity-game-feel` | 没有打击感的命中、命中后整个游戏停住不动、闪白之后一直白着的敌人、三十个拾取物播出三十个音效、停不下来的手柄震动：每个 gameplay 事件一行有预算的反馈——由唯一持有 `Time.timeScale` 的组件做 hit stop、会还原的闪白、不需要插件的挤压与 tween、粒子、拖尾、有发声数上限的池化音效、会停下来的震动 |
 | | `unity-render-urp` | 设了却不出现的后处理、移动端负担得起的子集、Render Graph 审查 |
 | | `unity-urp-migration` | 把 Built-in 项目分五个带闸的阶段搬到 URP，每一阶段都从存盘后的项目读回来验证；也用来诊断搬到一半的项目：整片洋红、PPv2 转成 Volume、从来没重烤的 lightmap、`GrabPass`／`OnRenderImage` |

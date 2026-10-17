@@ -99,10 +99,108 @@ def check_external_routing_is_declared() -> list:
     return errors
 
 
+# A skill is self-contained, so code that several skills need is pasted into
+# each of them between these two markers. The canonical copy is
+# tools/shared-blocks/<name>.py, whose first line names every file that carries it.
+SHARED_BLOCKS = ROOT / 'tools' / 'shared-blocks'
+SHARED_MARKER = re.compile(r'^\s*# (>>>|<<<) shared:([A-Za-z0-9_.-]+)(?:\s.*)?$')
+TARGETS_LINE = re.compile(r'^# targets:(.*)$')
+
+
+def _trim_blank_ends(lines: list) -> list:
+    start = next((i for i, line in enumerate(lines) if line.strip()), len(lines))
+    end = next((i for i in range(len(lines), start, -1) if lines[i - 1].strip()), start)
+    return lines[start:end]
+
+
+def _shared_regions(path: pathlib.Path, errors: list) -> dict:
+    """{name: [(first line number, body lines), ...]} for the marked regions in one file."""
+    rel, regions, open_name, open_at, body = path.relative_to(ROOT), {}, None, 0, []
+    for n, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+        m = SHARED_MARKER.match(line)
+        if not m:
+            if open_name:
+                body.append(line)
+            continue
+        kind, name = m.groups()
+        if kind == '>>>':
+            if open_name:
+                errors.append(f'{rel}:{n}: `# >>> shared:{name}` opens inside '
+                              f'`shared:{open_name}`, which line {open_at} opened and never closed')
+            open_name, open_at, body = name, n, []
+        elif name != open_name:
+            errors.append(f'{rel}:{n}: `# <<< shared:{name}` closes a region that was never opened')
+        else:
+            regions.setdefault(name, []).append((open_at, _trim_blank_ends(body)))
+            open_name = None
+    if open_name:
+        errors.append(f'{rel}:{open_at}: `# >>> shared:{open_name}` is never closed')
+    return regions
+
+
+def check_shared_blocks() -> list:
+    """Every pasted copy of a tools/shared-blocks/<name>.py equals the canonical file.
+
+    The canonical body is everything after its `# targets:` line, without leading
+    or trailing blank lines; a copy is what sits between `# >>> shared:<name>` and
+    `# <<< shared:<name>`, trimmed the same way. A listed target that does not exist
+    yet is skipped; one that exists without the region is an error, and so is a
+    region in a file the canonical does not list, since nothing keeps it in step.
+    """
+    canon = sorted(SHARED_BLOCKS.glob('*.py')) if SHARED_BLOCKS.is_dir() else []
+    errors, blocks = [], {}
+    for f in canon:
+        rel, lines = f.relative_to(ROOT), f.read_text(encoding='utf-8').splitlines()
+        m = TARGETS_LINE.match(lines[0]) if lines else None
+        targets = [pathlib.PurePosixPath(t.strip()).as_posix()
+                   for t in m.group(1).split(',') if t.strip()] if m else []
+        if not targets:
+            errors.append(f'{rel}: the first line must be `# targets: <path>, <path>` naming '
+                          'the repo-relative files that carry a copy')
+            continue
+        body = _trim_blank_ends(lines[1:])
+        if not body:
+            errors.append(f'{rel}: nothing after the `# targets:` line')
+            continue
+        blocks[f.stem] = (rel, targets, body)
+
+    files = {p for p in (ROOT / 'skills').rglob('*.py') if '__pycache__' not in p.parts}
+    files |= {ROOT / t for _, targets, _ in blocks.values() for t in targets if (ROOT / t).is_file()}
+    found = {p.relative_to(ROOT).as_posix(): _shared_regions(p, errors) for p in sorted(files)}
+
+    for name, (rel, targets, body) in blocks.items():
+        for t in targets:
+            if t not in found:
+                continue                       # not written yet: nothing to drift
+            copies = found[t].get(name, [])
+            if len(copies) != 1:
+                errors.append(f'{t}: listed as a target of {rel}, but carries {len(copies)} '
+                              f'`# >>> shared:{name}` regions, expected 1')
+                continue
+            at, copy = copies[0]
+            if copy == body:
+                continue
+            i = next((i for i, (a, b) in enumerate(zip(copy, body)) if a != b), min(len(copy), len(body)))
+            errors.append(f'{t}:{at}: the shared:{name} region differs from {rel} at block line '
+                          f'{i + 1} (len {len(copy)} vs {len(body)}): '
+                          f'{copy[i] if i < len(copy) else "<end>"!r} vs '
+                          f'{body[i] if i < len(body) else "<end>"!r} — copy the canonical back in')
+    for t, regions in found.items():
+        for name in regions:
+            if name not in blocks:
+                errors.append(f'{t}: carries `# >>> shared:{name}`, but there is no '
+                              f'tools/shared-blocks/{name}.py to check it against')
+            elif t not in blocks[name][1]:
+                errors.append(f'{t}: carries a copy of shared:{name}, but {blocks[name][0]} does '
+                              'not list it under `# targets:` — add it there')
+    return errors
+
+
 def main() -> int:
     checks = (
         ('manifests agree', check_manifests_agree),
         ('external routing is declared', check_external_routing_is_declared),
+        ('shared blocks match their canonical copy', check_shared_blocks),
     )
     total = 0
     for label, fn in checks:

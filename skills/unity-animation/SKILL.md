@@ -161,6 +161,7 @@ assembly next to the harness files.
 |---|---|
 | Importing a model, Avatars, Humanoid versus Generic, Mixamo, the base locomotion controller | `unity-rigged-character` |
 | Rigging and skinning a character that has no skeleton yet | `blender-character-rig` |
+| Retargeting stock or purchased clips onto a rig in Blender, before they reach Unity | `blender-retarget` |
 | Slicing sheets, frames into AnimationClips, pivots and the ground line | `unity-2d-sprites` |
 | Bones, skinning weights, PSB rigs, Sprite Library and 2D IK on a sprite | `unity-2d-animation` |
 | Generating the sprite frames or the sheet in the first place | `codex-visual` |

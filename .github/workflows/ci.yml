@@ -72,14 +72,20 @@ jobs:
           import pathlib, re, sys
           root = pathlib.Path('skills')
           names = {d.name for d in root.iterdir() if d.is_dir()}
+          # A cross-skill pointer is written `skill` → `reference/x.md`; it is checked
+          # against the named skill. A bare `reference/x.md` is checked against its own skill.
+          arrow = re.compile(r'`([a-z0-9-]+)`\s*(?:→|->)\s*`(reference/[a-z0-9-]+\.md)`')
+          bare = re.compile(r'`(reference/[a-z0-9-]+\.md)`')
           missing = []
           for sk in root.iterdir():
               if not sk.is_dir(): continue
               for f in sk.rglob('*.md'):
                   txt = f.read_text(encoding='utf-8')
-                  for r in set(re.findall(r'`(reference/[a-z0-9-]+\.md)`', txt)):
-                      if re.search(r'`unity-[a-z0-9-]+`\s*(?:→|->)\s*`' + re.escape(r) + '`', txt):
-                          continue
+                  for skill, r in set(arrow.findall(txt)):
+                      if skill not in names or not (root / skill / r).exists():
+                          missing.append(f'{f} -> {skill} {r}')
+                  rest = arrow.sub('', txt)
+                  for r in set(bare.findall(rest)):
                       if not (sk / r).exists():
                           missing.append(f'{f} -> {r}')
           if missing:

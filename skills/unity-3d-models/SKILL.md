@@ -56,6 +56,7 @@ Two hard truths this skill exists for:
 | Numbers for the lag before touching a mesh: triangle and draw-call counters, a before/after window | skill `unity-profiling` |
 | Textures and meshes are bloating memory or the build | skill `unity-android-release`, its size-and-stripping reference |
 | A **rigged, animated character** rather than a prop | skill `unity-rigged-character` (Mixamo, stock clips), or skill `blender-character-rig` for chibi proportions, extra parts or a custom action |
+| Clips retargeted onto a character already rigged in Blender | skill `blender-retarget` |
 | 2D sprite sheets, slicing, pivots, 9-slice borders | skill `unity-2d-sprites` |
 | Verifying any of it visually | skill `unity-debug` |
 

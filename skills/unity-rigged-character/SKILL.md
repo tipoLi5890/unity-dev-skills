@@ -32,6 +32,7 @@ If the asset is scenery, stop here and use `unity-3d-models` instead.
 |---|---|
 | Standard humanoid proportions, animated with stock clips | Mixamo — this skill, the pipeline below |
 | Chibi or short limbs, non-human proportions, extra parts (ears, a tail), or a custom action | skill `blender-character-rig`; come back at stage 4 with its FBX |
+| Already rigged in Blender, and must play many stock or purchased clips | skill `blender-retarget`; come back at stage 4 with its FBX |
 
 The two routes want different inputs on purpose: Mixamo takes a T-pose and a mesh with stray
 shells removed; the Blender route takes an A-pose and keeps every island and the inner shell.

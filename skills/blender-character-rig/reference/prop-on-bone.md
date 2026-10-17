@@ -115,6 +115,39 @@ prop.matrix_world = Matrix.Identity(4)     # the origin is already the grip
 - The call edits the prop's mesh data (origin, scale). A mesh shared with another object moves
   there too: make it single-user first.
 
+## Keeping the grip stable across clips
+
+A prop that has to ride through many clips (keyed here, or retargeted onto the rig) keeps one fixed
+local offset to the hand bone. Nothing is re-solved per frame, so every clip carries it the same way.
+
+- **The anchor Empty.** An Empty parented to the hand bone at the rest pose, placed at the grip, in
+  the order under Parenting above. The prop is parented to the Empty with an identity local matrix
+  (`matrix_parent_inverse` and `matrix_basis` both identity), so its origin, the grip point, sits on
+  the Empty.
+- **The grip angle lives on the Empty's local offset**, and only there. Change it in a copy of the
+  file; never move the prop's geometry, key the prop on its own, or add a constraint beside the
+  parent.
+- **Check it after each set of clips** with `brt_drift` (skill `blender-retarget`). It reads the
+  prop against the anchor bone once at rest, samples every action, and gates `drift.max_drift`
+  (the grip point's slip, `tolerance` 2e-5 m by default) and `drift.max_rotation` (the prop's turn
+  against the hand, `rotation_tolerance` 0.5° by default: a prop spinning about its grip moves no
+  grip point); a failure names the action and frame in `worst` or `worst_rotation`. The usual causes
+  are a prop keyed on its own, a clip that left the arm in IK, or a parent on the wrong bone. In the
+  saved file, `brt_audit --props` checks each listed parent: the anchor on the hand bone, the prop
+  on the anchor.
+- **After moving the anchor, look at several clips at their extreme frames**, not one: a grip that
+  suits an idle can put the prop through the head on an overhead swing.
+
+**A grip shape key is optional.** When the open hand reads badly around the handle, add a shape key
+on the character mesh that moves only the finger vertices near the handle, smoothed toward a closed
+shape. A shape key moves vertices and nothing else: topology, UVs and the vertex count are kept, and
+value 0 gives the open hand back. Cap every vertex's move at about a quarter of `handle_radius`: a
+finger pushed farther than that toward the handle becomes a spike, however few intersections are
+left. If its value must follow whether the prop is shown, drive it from
+the prop's hide flag with a simple expression such as `1 - hidden`, or key the value. An expression
+outside Blender's simple-expression subset does not run while the file's Python auto-run is off,
+and no driver survives the FBX export: key the result there.
+
 ## Limits
 
 - **A static hand does not close.** The mitten stays open and the handle passes through the
