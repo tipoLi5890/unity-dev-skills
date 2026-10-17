@@ -8,7 +8,8 @@ description: >-
   invariants, then build ONE interaction the human can play and react to. Load
   for "I want to make a game where…", "here's my game idea", "propose an
   architecture", "what should we build first", "new feature — where do we
-  start", "write the brief", "is this ready to build". Editor pinning, asmdef
+  start", "write the brief", "is this ready to build", "preview it before
+  code". Editor pinning, asmdef
   mechanics and folders are unity-new-project; art generation is codex-visual.
 ---
 
@@ -79,6 +80,24 @@ the way.* A third round means the brief is wrong, not the image.
 
 Generating the boards, the art bible and the anchor is `codex-visual` — that skill generates, this
 one decides. → `reference/visual-direction.md`
+
+## 2b. Preview before code
+
+When the person wants to see the game before it is built, make these in order, each only after the
+one before it is agreed: a **flow diagram** (screens and story beats, each node with an id) → **key
+art** (§2's anchor) → **screen mockups at the target resolution** → **layout and keyframes**
+(`comfyui-asset-generation`) → a **timed simulated-gameplay preview** → then §5's greybox playable. A polished image is not proof of gameplay; a preview shows
+intent and timing, and its timings are constants written down, the same numbers the brief and the
+invariants use.
+
+```bash
+python3 scripts/examples/courier_run_preview.py --out preview/   # rules → timeline.json → preview.mp4
+python3 scripts/preview_compose.py TIMELINE.json --out preview.mp4 --sfx-dir sfx/
+python3 scripts/preview_reel.py REEL.json --out reel.mp4          # title cards, music, -16 LUFS
+```
+
+The compositor writes its events and a contact sheet next to the video; the reel writes its
+timeline. → `reference/preview-before-code.md`
 
 ## 3. Constraints → architecture proposal
 
@@ -158,6 +177,7 @@ take if nobody answers.**
 |---|---|
 | An idea with no page yet; a new feature on a shipping game | `reference/experience-brief.md` |
 | The look is unsettled; deciding what to lock and when it is accepted | `reference/visual-direction.md` |
+| Seeing the game before code: flow, mockups, a timed gameplay preview, a reel | `reference/preview-before-code.md` |
 | Deriving the proposal, or critiquing one | `reference/architecture-proposal.md` |
 | Where the assembly boundary goes and what it costs; copying the skeleton | `reference/sim-presentation-split.md` |
 | A non-negotiable that has to become a test | `reference/invariants.md` |

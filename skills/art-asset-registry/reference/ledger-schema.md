@@ -63,6 +63,8 @@ nothing writes one.
 | **rel** `evidence` | a recorded `qa-sheet` the status rests on |
 | **rel** `explained-by` | the recorded change record behind this revision |
 | **rel** `depends-on` | an upstream asset (a ledger id) whose content this one was made from |
+| **rel** `flow-node` | the node of the game's flow diagram it shows (a mockup, a screen): `flow:<node>`. A node may carry its own status `planned` `mocked` `approved` in the flow document; nothing validates it |
+| **rel** `beat` | the story beat or timed moment it shows (a keyframe, a preview clip): `beat:<id>` |
 
 Other words for a version map onto these: *current* and *previous good* are derived (above), a
 *source* file is `role: source`, and a *diagnostic* run is the status of that name.

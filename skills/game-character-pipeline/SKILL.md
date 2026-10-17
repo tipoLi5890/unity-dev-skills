@@ -62,6 +62,8 @@ A person decides the three answers below, and they are written down (the brief o
    A preview that turns into the shipping character goes back to S0 and S5 and is rigged again;
    its rig, weights, wrist correction and grip do not carry over (S5 may borrow its weights as a
    starting point — `blender-character-rig` → `reference/game-mesh.md`).
+   The preview track ends in a timed gameplay preview and reel: `unity-game-brief` →
+   `reference/preview-before-code.md`.
 
 ## The stages
 

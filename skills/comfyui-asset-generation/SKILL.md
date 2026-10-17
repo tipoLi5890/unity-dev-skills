@@ -54,6 +54,7 @@ infer permission to upload private inputs unless the user authorizes those actio
 | Any MiniMax H3 video mode | `reference/minimax-h3.md` and the matching H3 template |
 | H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
 | A multi-step clip from keyframes: first/last-frame segments, one camera across keyframes, stall and still-end measurement, assembly | `reference/h3-keyframe-segments.md`, `templates/minimax_h3_fl2v_api.json`, `scripts/video_motion.py`, `scripts/assemble_segments.py` |
+| Keyframe layout maps drawn from ground coordinates, crossing moves found before generating, a camera gate with a reject-and-retry loop | `reference/h3-keyframe-segments.md` §2–3, `scripts/layout_map.py`, `scripts/camera_gate.py` |
 | A static 3D prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
 | Four views cleaned before upload: BiRefNet removal, RGBA + mask preview + black composite, mask polarity checked per tool, unique upload names | `reference/image-to-3d.md` (Background removal for four views) |
 | A character to be rigged: multi-view only, four A-pose views at one scale, the preset the class's row names | `reference/image-to-3d.md` (A character); `templates/pixal3d_multiview_to_model_api.json` |

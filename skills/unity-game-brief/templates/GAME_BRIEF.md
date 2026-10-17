@@ -89,6 +89,7 @@
 | — aspect | |
 | — input devices | |
 | Anchor image | |
+| Previews (flow diagram, mockups, timeline and reel paths; the timing constants they were made from) | |
 
 ## Not in the first version
 

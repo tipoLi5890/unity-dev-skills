@@ -54,7 +54,7 @@ SCHEMA = 1
 KINDS = ("sprite", "sheet", "frames", "preview", "ref", "texture", "mesh", "rig", "clip", "audio",
          "qa-sheet", "change", "other")
 # `links[].rel` is an open slug too; the documented words.
-RELS = ("made-under", "made-by", "evidence", "explained-by", "depends-on")
+RELS = ("made-under", "made-by", "evidence", "explained-by", "depends-on", "flow-node", "beat")
 STATUSES = ("candidate", "approved", "rejected", "superseded", "unused", "diagnostic")
 ROLES = ("source", "derived", "shipped", "preview", "ref")
 VERDICTS = ("green", "failed", "harness")

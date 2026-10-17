@@ -32,7 +32,7 @@ visual work through **one canonical project spec**.
 | `/ArtDirection/candidates/` | Bootstrap explorations. |
 | `/ArtDirection/anchors/` · `anchors/sets/` | Locked reference image(s) fed via `-i`; `sets/` = per-set anchors (an approved first member). |
 | `/ArtDirection/manifest.md` | Registry of every generated asset. |
-| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py`. **Call:** `codex_generate.py` |
+| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py` · `overview_sheet.py` (`reference/overview-sheets.md`). **Call:** `codex_generate.py` |
 | project asset dir | Shippable art, at the path the spec defines (e.g. `Assets/…` for Unity). |
 
 `<repo>` = the project root, as an **absolute path**.
@@ -112,8 +112,8 @@ cols / rows))`). The square sheet is 1254x1254:
 |---|---|---|---|---|---|---|
 | Cell (px) | 418 | **313** | 250 | 209 | 179 | 157 |
 
-> **"Bigger grid → ask for more resolution" does NOT work here.** A 4x4 sheet asked at 2048x2048
-> comes back 1254x1254, no error. **Bigger grid = smaller cells.**
+> **"Bigger grid → ask for more resolution" does NOT work here:** 2048x2048 comes back 1254x1254,
+> no error. **Bigger grid = smaller cells.**
 
 So: frame (or member) count → grid → cell → against the style floor → below it, split into sheets
 of the same cell size and aspect, each at most the style's maximum grid, every later sheet chained
@@ -121,9 +121,8 @@ via `-i` to the FIRST sheet (drift compounds down a chain): `reference/animation
 
 ### The CLI-fallback path — where the rule does hold
 
-`gpt-image-2` via the bundled `image_gen.py` takes a real `size`, so the canvas scales with the grid
-(2880x2880: 4x4 720 px cells), for an `OPENAI_API_KEY` and a user decision:
-`reference/image-model.md` §3.
+`gpt-image-2` via the bundled `image_gen.py` takes a real `size`, so the canvas scales with the grid,
+for an `OPENAI_API_KEY` and a user decision; cell sizes: `reference/image-model.md` §3.
 
 ### Style floors — the smallest cell each style survives
 

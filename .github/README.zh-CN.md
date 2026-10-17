@@ -36,7 +36,7 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 |---|---|---|
 | **每个阶段 —— 终端与搜索** | `unity-cli` | 从终端驱动 Unity：editor、许可、template、CI、MCP，以及能告诉你"重试是否诚实"的 exit code |
 | | `unity-search` | 把"找一下／在哪里／谁引用了它"变成一条 Unity Search 查询：类型 filter、文件夹、label、`ref=` 关系、场景组件查询 —— 先把查询写给你看，Editor 还活着时顺手帮你打开窗口 |
-| **概念** | `unity-game-brief` | 动 Unity 之前的第一个小时：一行想法变成一页体验简报、用图锁定视觉、由约束推导出架构提案、写成可测试的不变量，以及一个人能真的玩到的交互 |
+| **概念** | `unity-game-brief` | 动 Unity 之前的第一个小时：一行想法变成一页体验简报、用图锁定视觉、由约束推导出架构提案、写成可测试的不变量，以及一个人能真的玩到的交互；写代码前先看到游戏：按游戏自己的规则常量合成、每个音效都记成事件的定时模拟游玩预览，再接成带片头卡、音乐与统一响度的 reel |
 | | `unity-new-project` | 事后补救代价很高的决策：editor 版本锁定、`.meta`/LFS、UPM 锁 tag、IL2CPP/ARM64、asmdef 边界 |
 | | `unity-gameplay` | **任何没有指明视角的 gameplay 需求都从这里开始。** 为项目做指纹识别——2D 或 3D、投影、视角、移动模型——并把操控、相机、动画与验证导流到各自的 skill；并且承担写成约束的类型配方、由控制器数值推导出的关卡度量，以及带有退出检查的制作阶段 |
 | **3C 原型** | `unity-input` | 让 gameplay 只读一个 struct、永远不读设备的玩家输入：覆盖键盘、手柄与触控的 actions asset，按下在 `Update` 锁存、在 `FixedUpdate` 只消费一次——解决时有时无或连跳两次的跳跃——再加上输入缓冲、屏幕摇杆、指针瞄准与重新绑定 |
@@ -71,8 +71,8 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | | `unity-audio` | 内存、load type、采样率、mixer 开销 —— 它会先报告再重新导入 |
 | | `unity-localization` | 用一种以上的语言发布，以及真正会出问题的 CJK 字体管线 |
 | **量产 —— AI 素材生成** | `game-character-pipeline` | **从一张图做出绑骨角色，从这里开始。** 直到 Unity 里核准的角色为止的阶段顺序：先决定路线、质量目标与轨道（预览轨直接绑密网格，出货轨先定预算 → 游戏网格 → 只绑一次），再走 S0–S13，每个阶段标出负责的 skill 与进出关卡 |
-| | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸；也画图生 3D 角色起手的四面图，以及只在数值检查通过时才合成的审阅表 |
-| | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效、MiniMax H3 视频与图生 3D 的道具和角色：一次一件、只信 `/history`、切模型前先 `/free`；四面图上传前先去背，调参前先把项目 graph 和官方模板逐项比对，生成预设当成阶梯来比较，没有一个是目标 |
+| | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸；也画图生 3D 角色起手的四面图，只在数值检查通过时才合成的审阅表，以及按主题分页、每格标出来源路径并记下哈希的概览页 |
+| | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效、MiniMax H3 视频与图生 3D 的道具和角色：一次一件、只信 `/history`、切模型前先 `/free`；四面图上传前先去背，调参前先把项目 graph 和官方模板逐项比对，生成预设当成阶梯来比较，没有一个是目标；由地面坐标画出关键帧的布局图并在生成前找出交叉的移动，以及地平线一动就退回关键帧的镜头闸门 |
 | | `blender-character-rig` | 通过 MCP server 在运行中的 Blender 里，给图生 3D 角色绑骨架、做动画：骨骼按量到的特征点摆放、权重按位置计算、道具挂在手骨上、key 出一段 action、渲染出预览，再把 FBX 重新导入验证 |
 | | `blender-retarget` | 把现成的动作 clip 套到在 Blender 里绑好骨架的角色上：通过 Auto-Rig Pro 或纯 bpy 的骨骼对照表，按两边的 rest pose 转换每个旋转 key、一份 clip 清单、局部修权重、带 NLA 审阅轨的动作库、每段 clip 都对手骨检查的道具，以及重新打开存盘文件来验证的审计 |
 | **打磨与优化** | `unity-game-feel` | 没有打击感的命中、命中后整个游戏停住不动、闪白之后一直白着的敌人、三十个拾取物播出三十个音效、停不下来的手柄震动：每个 gameplay 事件一行有预算的反馈——由唯一持有 `Time.timeScale` 的组件做 hit stop、会还原的闪白、不需要插件的挤压与 tween、粒子、拖尾、有发声数上限的池化音效、会停下来的震动 |

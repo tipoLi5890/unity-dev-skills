@@ -2,7 +2,7 @@
 """contact_sheet.py — compose labelled images into one review sheet, refusing when the numbers disagree.
 
 The one composer for review sheets: the 8-view QA sheet of a generated mesh,
-an animation contact sheet (one still per clip), an overview page. A sheet is
+an animation contact sheet (one still per clip); overview_sheet.py reuses its grid. A sheet is
 for a person to judge; it proves nothing by itself, so `--require` puts the
 numeric checks first: every file named must pass, or no sheet is written.
 
@@ -154,28 +154,42 @@ def compose(spec: dict[str, Any], items: list, base: Path) -> Image.Image:
     if not isinstance(items, list) or not items:
         raise SpecError("a sheet needs at least one item")
     loaded = [load_item(item, base, k) for k, item in enumerate(items)]
-    label_px = max(14, min(32, ch // 20))
-    strip = label_px + 10
     title = spec.get("title")
     if title is not None and not isinstance(title, str):
         raise SpecError("title must be text")
+    return lay_out([(picture, [(caption, WHITE)]) for picture, caption in loaded], cols, (cw, ch), bg, title)
+
+
+WHITE = (255, 255, 255)
+
+
+def lay_out(cells: list, cols: int, cell: tuple[int, int], bg: tuple[int, int, int],
+            title: str | None, face_for=font) -> Image.Image:
+    """The grid every sheet of this skill uses. `cells` = [(RGBA picture, [(text, fill), ...])]:
+    the text lines sit in a strip above the picture, one line per entry; `face_for(px)` gives
+    the font at a size."""
+    cw, ch = cell
+    label_px = max(14, min(32, ch // 20))
+    lines = max(len(text) for _, text in cells)
+    strip = label_px + 10 + (lines - 1) * (label_px + 6)
     title_h = (label_px + 18) if title else 0
-    rows = -(-len(loaded) // cols)
+    rows = -(-len(cells) // cols)
     sheet = Image.new("RGB", (cols * cw, title_h + rows * (ch + strip)), bg)
     draw = ImageDraw.Draw(sheet)
-    face, title_face = font(label_px), font(label_px + 4)
+    face, title_face = face_for(label_px), face_for(label_px + 4)
     if title:
-        draw.text((10, 7), title, fill=(255, 255, 255), font=title_face)
-    for k, (picture, caption) in enumerate(loaded):
+        draw.text((10, 7), title, fill=WHITE, font=title_face)
+    for k, (picture, text) in enumerate(cells):
         x, y = (k % cols) * cw, title_h + (k // cols) * (ch + strip)
         if picture.width > cw or picture.height > ch:
             picture.thumbnail((cw, ch), Image.LANCZOS)
         backing = Image.new("RGBA", picture.size, bg + (255,))
         backing.alpha_composite(picture)
         sheet.paste(backing.convert("RGB"), (x + (cw - picture.width) // 2, y + strip + (ch - picture.height) // 2))
-        while caption and draw.textlength(caption, font=face) > cw - 16:
-            caption = caption[:-1]
-        draw.text((x + 8, y + 4), caption, fill=(255, 255, 255), font=face)
+        for n, (caption, fill) in enumerate(text):
+            while caption and draw.textlength(caption, font=face) > cw - 16:
+                caption = caption[:-1]
+            draw.text((x + 8, y + 4 + n * (label_px + 6)), caption, fill=fill, font=face)
     return sheet
 
 
@@ -218,6 +232,41 @@ def image_format(out: Path) -> str | None:
     return fmt if fmt in Image.SAVE else None
 
 
+def commit(staged: list[tuple[Path, Path]]) -> None:
+    """Rename each (temp, target). A failure part way puts back what every target held before
+    and removes this run's files, so the folder is left as it was."""
+    done: list[tuple[Path, Path | None]] = []
+    try:
+        for temp, path in staged:
+            bak = None
+            if path.is_file():               # a folder in the way is not moved: the rename fails on it
+                bak = path.with_name(f".{path.name}.bak")
+                path.replace(bak)
+            done.append((path, bak))
+            temp.replace(path)
+    except OSError:
+        for path, bak in reversed(done):
+            try:
+                if bak is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    bak.replace(path)
+            except OSError:
+                pass
+        for temp, _ in staged:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+    for _, bak in done:
+        if bak is not None:
+            try:
+                bak.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def run(spec: Path, out: Path, required: list[Path]) -> tuple[int, dict[str, Any]]:
     fmt = image_format(out)
     if fmt is None:
@@ -230,23 +279,19 @@ def run(spec: Path, out: Path, required: list[Path]) -> tuple[int, dict[str, Any
         built = build(spec, out)
     except SpecError as exc:
         return 3, {"error": str(exc), "required": checks}
-    # every sheet to a temporary name first, renamed only once all are saved: a failure part
-    # way leaves nothing behind
+    # every sheet to a temporary name first, renamed only once all are saved
     staged: list[tuple[Path, Path]] = []
-    renamed: list[Path] = []
     try:
         for path, image, _ in built:
             path.parent.mkdir(parents=True, exist_ok=True)
             temp = path.with_name(f".{path.name}.part")
             staged.append((temp, path))
             (image.convert("RGB") if fmt == "JPEG" else image).save(temp, format=fmt)
-        for temp, path in staged:
-            temp.replace(path)
-            renamed.append(path)
+        commit(staged)
     except (OSError, ValueError) as exc:
-        for leftover in [temp for temp, _ in staged] + renamed:
+        for temp, _ in staged:
             try:
-                leftover.unlink(missing_ok=True)
+                temp.unlink(missing_ok=True)
             except OSError:
                 pass
         return 3, {"error": f"cannot write {out}: {exc}", "required": checks}

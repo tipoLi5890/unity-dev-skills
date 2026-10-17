@@ -1,20 +1,15 @@
 # MiniMax H3 keyframe segments — a multi-step clip as a chain of first/last-frame shots
 
 A clip with several steps — objects regrouped in stages, a tutorial, a short choreography — is
-built here as ~5 s first/last-frame (FL2V) segments, one step each, generated between keyframes
-drawn on one camera, measured, then assembled. The evidence is one project: a ~30 s clay-style
-clip of nine coloured blocks being regrouped in stages, then four characters stepping in. Its
-disk holds 36 H3 generations (35 FL2V segments and one 362-frame multi-frame attempt; its log
-counts 37 runs because one segment was run twice into one folder), 10 of them in the final cut,
-about 135 s each at 1344x768 x 124 frames. Thresholds below are that project's and are
-labelled where nothing was swept.
+built as ~5 s first/last-frame (FL2V) segments, one step each, between keyframes drawn on one
+camera, measured, then assembled. Thresholds below are starting points; re-tune per resolution.
 
 ## 1. When to split, and the call
 
-Split when the clip has more than one action. The one attempt to get a whole 15 s sequence from
-one R2V multi-frame generation failed (§8). An FL2V segment of 124 frames (~5.2 s) between two
-keyframes did one simple action reliably. `templates/minimax_h3_fl2v_api.json` is the I2V
-template with a second `LoadImage` (node 17) wired to `last_frame`:
+Split when the clip has more than one action: a whole 15 s sequence from one R2V multi-frame
+generation failed (§8); an FL2V segment of 124 frames (~5.2 s) did one simple action reliably.
+`templates/minimax_h3_fl2v_api.json` is the I2V template with a second `LoadImage` (node 17)
+wired to `last_frame`:
 
 ```bash
 python3 <skill>/scripts/comfy_asset_client.py --workflow <skill>/templates/minimax_h3_fl2v_api.json \
@@ -29,33 +24,45 @@ before upload, so the first and the last frame frame the scene identically.
 
 ## 2. Keyframes: one camera, chained from the first
 
-Generate the first keyframe from the style anchor and its layout map (§3); every later keyframe
-passes **the first keyframe** as Image 1 ("keep the room, the camera, the lighting and the look of
-every object identical to it") plus its own layout map, never the previous keyframe — drift
-compounds down a chain. The failure to watch is the **camera**: measure one fixed scene feature
-on every keyframe against the first — here the row where the back wall meets the floor, read in a
-column no object crosses — and re-roll when it moves.
+Generate the first keyframe from the style anchor and its layout map (§3); it becomes the
+reference. Every later keyframe passes **the first keyframe** as Image 1 ("keep the room, the
+camera, the lighting and the look of every object identical to it") plus its own layout map,
+never the previous one — drift compounds down a chain. Watch the **camera**: the model invents a
+dolly and the objects drift with it (a 3–4% horizon shift ruins the segments made from that
+keyframe; about 2% can pass unseen). Re-roll over ~0.6% of the height. A re-roll costs one
+image, a bad segment a GPU run and a look.
 
-- 27 to 37 px off (on 941 px tall keyframes) in three tries of one keyframe: H3 invented a dolly
-  between the frames and the objects drifted with it; both segments made from it were discarded.
-- 21 px off on another keyframe; its two segments showed no visible effect.
-- The project re-rolled anything over 6 px (4 of its 17 keyframe generations). That number was
-  chosen, not found: between 6 and 21 px nothing was tested. Keep it tight anyway — a re-roll
-  costs one image, a bad segment costs a GPU run and a look.
+`scripts/camera_gate.py --ref kf/k01.png cand.png` reads the row where wall or sky meets floor in
+one column (`--column 0.1`, picked by eye where nothing stands): exit 0 pass, 2 moved past
+`--tol` or a different size, 3 no horizon, 64 a usage error. Only a `cand` verdict rejects the
+roll; a crash, a bad option or a bad reference stops the loop (`keyframe.sh` = one image call):
+
+```bash
+mkdir -p rejected; ok=
+for try in 1 2 3 4; do                                # N tries, then stop and look
+  ./keyframe.sh kf/k01.png maps/k04.png prompts/k04.txt cand.png > k04.log 2>&1 < /dev/null \
+    || { tail -3 k04.log | sed -E 's#https?://[^/" ]+#<server>#g'; break; }
+  python3 <skill>/scripts/camera_gate.py --ref kf/k01.png cand.png > gate.json; rc=$?
+  [ "$rc" -eq 0 ] && { mv cand.png kf/k04.png; ok=1; break; }
+  { [ "$rc" -eq 2 ] || [ "$rc" -eq 3 ]; } && grep -q '"which": "cand"' gate.json \
+    || { echo "gate exit $rc"; cat gate.json; break; }
+  mv cand.png "rejected/k04_$try.png"; mv gate.json "rejected/k04_$try.json"
+done
+[ -n "$ok" ] || echo "k04: nothing passed; see rejected/"
+```
 
 ## 3. A drawn layout map as the layout authority
 
-Draw each keyframe's arrangement by program: object positions on the ground plane, projected
-through one fixed camera, flat colours, a mark for which way each object faces. It is the
-storyboard that cannot be wrong, and it is Image 2 of the keyframe prompt: "Image 2 is the LAYOUT
-MAP: the same number of objects, each in the same place, with the same colour and facing. Take
-ONLY positions, colours and facing from it; do not copy its flat diagram look."
+Each keyframe's arrangement drawn by program — ground positions through one fixed camera, flat
+colours, a mark for facing — is Image 2 of the keyframe prompt: "Image 2 is the LAYOUT MAP: the
+same number of objects, each in the same place, with the same colour and facing. Take ONLY
+positions, colours and facing from it; do not copy its flat diagram look."
 
-`codex-visual`'s image-model.md §6 says a crosshair template buys no pixel placement, and that
-still holds: this map carries *which object, roughly where, which colour, which way*. All 13
-accepted keyframes matched their map by eye, one with slightly looser spacing; the 4 rejections
-were camera drift (§2). Exact geometry comes from measuring, never from the prompt. The same
-coordinates drive §4's check.
+`scripts/layout_map.py SCENE.json --out maps --check-paths` writes `maps/<frame>.png` and
+`maps/layouts.json` (each object's pixel box), exiting 2 when moves cross (§4). Keep the horizon
+in frame (pitch < fov/2): it is the line the gate reads. A map buys no pixel placement, only
+*which object, roughly where, which colour, which way*; every accepted keyframe matched its map
+by eye. Exact geometry comes from measuring the keyframe against the boxes.
 
 ## 4. One action per segment; paths that never cross
 
@@ -63,14 +70,11 @@ coordinates drive §4's check.
   or a character entering. "Slide the group across and close it into a new shape" in one segment
   spun and wandered on 3 of 3 tries; as two segments ("slide", then "close up") both were usable.
 - **No crossing paths.** Steps whose straight-line paths crossed tumbled and overlapped on 6 of
-  7 tries (new prompts and seeds included); the seventh was marginal. Before generating, move
-  every object in a straight line between consecutive layouts, test every pair for overlap along
-  the way, and re-order until no step overlaps; an object boxed in on all sides *jumps* and is left
+  7 tries; the seventh was marginal. `layout_map.py --check-paths` lists every pair whose swept
+  footprints touch; re-order until it exits 0. An object boxed in on all sides *jumps*: leave it
   out. Re-choreographed so, every step gave a usable take, some on the second seed.
-- **Non-crossing is necessary, not sufficient.** Four pairs turning on the spot, swept circles
-  checked clear, all at once: wild spinning on 2 of 2 seeds, the pair meant to stay still
-  included. The same turns one after another: 1 of 2 seeds usable (the other grew a dark ring on
-  the floor; the usable one over-turned one pair by half a turn).
+- **Non-crossing is necessary, not sufficient.** Four pairs turning on the spot at once, swept
+  circles clear: wild spinning on 2 of 2 seeds. One after another: 1 of 2 seeds usable.
 - Between the first and the last keyframe change only what moves.
 
 ## 5. Prompt wording
@@ -78,38 +82,32 @@ coordinates drive §4's check.
 Open with "The supplied first frame and last frame must be preserved exactly", then the timeline
 in seconds ("for the first second nothing moves", "finished by about the 1.5 s mark; after that
 everything rests"), the invariants (how many objects, rigid, never change colour; fixed camera:
-no zoom, no pan, no cut), and the audio line. **Do not name the style "stop-motion"**: the first
-segments did ("clay stop-motion animation") and came back on twos, each drawing held for two
-frames. Later prompts said "smooth, fluid and continuous at the full 24 frames per second, with
-gentle ease-in and ease-out; it is NOT stop-motion: no stepping, no held frames, no jitter; the
-clay look is only in the materials and lighting". Twos still came back on 3 of the 25 runs with
-that wording, two of them clean on another seed with the same prompt: wording lowers the rate,
-measuring catches it.
+no zoom, no pan, no cut), and the audio line. **Do not name the style "stop-motion"**: it came
+back on twos, each drawing held two frames. "Smooth, fluid and continuous at the full 24 frames
+per second, with gentle ease-in and ease-out; it is NOT stop-motion: no stepping, no held
+frames; the clay look is only in the materials and lighting" still gave twos on 3 of 25 runs:
+wording lowers the rate, measuring catches it.
 
 ## 6. Check every segment
 
 `ffprobe` for the basics; a contact sheet of every 8th frame against the layout map for wrong
 objects; then `scripts/video_motion.py profile seg.mp4 --curve` for the motion — still head and
-tail, stall% and jerk — and `smooth` to rebuild a segment on twos. Its 0.6 threshold is one
-project's, to be retuned for another resolution or subject (the script's header). The first cut
-was checked on contact sheets alone; on playback it dragged, and the profile read 62% and 46%
+tail, stall% and jerk — and `smooth` to rebuild a segment on twos (retune its 0.6 threshold per
+resolution or subject). A cut checked on contact sheets alone dragged on playback: 62% and 46%
 stalled frames inside the moving spans.
 
 ## 7. Assemble, and the audio
 
 `scripts/assemble_segments.py OUT seg1 seg2:keep '|' seg3:hold2.5 …` trims each segment's still
 ends (a few frames kept), crossfades over 6 frames, and takes per-segment suffixes: `:keep` for a
-segment already right (the character entrances were never touched), `:holdS` to hold the opening
-(a viewer needed 2–3 s to read the starting arrangement), `:x0.8` for a motion-compensated
-slow-down, `:rA-B` to cut a still middle out, `|` for a longer chapter fade, `--timeline` for
-where each segment lands. With re-choreography and these, the cut went from 41.5 s to 31.7 s and
-the stalled share from 62% / 46% to 7% / 20%. Never crossfade a segment generated from an old
-version of a keyframe into one generated from its replacement: the objects show twice through
-the fade — regenerate the neighbour. Even matched segments ghost briefly where positions differ.
+segment already right, `:holdS` to hold the opening (a viewer needs 2–3 s to read it), `:x0.8`
+for a motion-compensated slow-down, `:rA-B` to cut a still middle out, `|` for a longer chapter
+fade, `--timeline` for where each segment lands. With re-choreography and these, the stalled
+share fell to 7% / 20%. Never crossfade a segment made from an old version of a keyframe into one
+made from its replacement: the objects show twice through the fade — regenerate the neighbour.
 
-**Audio:** every segment brings its own music, different in tune and loudness (mean −26 to −14
-dB across one project's segments), so the assembled track changes at every seam. Treat it as a
-scratch track and re-score the final cut as one piece, cues placed from `--timeline`.
+**Audio:** every segment brings its own music, different in tune and loudness, so the track
+changes at every seam. Treat it as scratch and re-score the cut as one piece from `--timeline`.
 
 **Batching:** one job at a time (`reference/operations.md`); `--keep-loaded` on every segment of
 a run but the last, which frees the GPU. `segment.sh` stands for the keyframe crop plus the §1
@@ -128,6 +126,6 @@ done < batch.txt
 
 ## 8. What did not work
 
-One 362-frame R2V multi-frame run with four still guides (frames 0, 120, 240, 354) and the REF2V
-4-step LoRA: the four guide frames came out right, every frame between them dark, speckled with
-white and recoloured. One trial, and the full-step path was not tried (`multiframe-reference.md`).
+One 362-frame R2V multi-frame run with four still guides and the REF2V 4-step LoRA: the guide
+frames came out right, every frame between them dark, speckled and recoloured. One trial; the
+full-step path was not tried (`multiframe-reference.md`).

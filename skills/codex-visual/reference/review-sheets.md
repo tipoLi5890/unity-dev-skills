@@ -44,7 +44,7 @@ python3 <skill>/scripts/contact_sheet.py --selftest
 | preset comparison | one `clay` or textured render per generation preset, labelled by preset | each preset's gate JSON |
 | before / after | the same camera and frame, two cells, labelled with the two versions | the after version's checks |
 | animation contact sheet | one still per clip at a named `frame`, labelled by clip; `sheets` per family | the retarget and library reports (`ok`) |
-| overview page | one cell per asset or per stage, `sheets` per page | the checks each page stands for |
+| overview page | themed pages of a project's pictures, ungated | none: `scripts/overview_sheet.py` (`reference/overview-sheets.md`) |
 
 Label every cell with what differs (`r03`, `Large`, `before`), never with a file name only.
 

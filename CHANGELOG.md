@@ -2,6 +2,105 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.30.0
+
+Fifty-nine skills. A game can now be seen before its first gameplay script, and every picture
+and clip on the way is made from a JSON spec that can be run again, so a changed rule is a
+re-run, not a redraw. `unity-game-brief` sets the order (flow diagram, key art, screen mockups at
+the target resolution, layout and keyframes, a timed simulated-gameplay preview, then the greybox
+playable) and ships the compositor and the reel; `codex-visual` groups the pictures into themed
+overview sheets; `comfyui-asset-generation` draws the keyframes' layout maps and gates their
+camera. Every script depends only on the Python standard library, Pillow, numpy and
+ffmpeg/ffprobe, has a `selftest`, and skills exchange only JSON on disk.
+
+- **`unity-game-brief` → `reference/preview-before-code.md` and a "Preview before code" section
+  in SKILL.md.** What to make, in order, each only after the one before it is agreed, what each
+  answers and what a person says yes to. A polished image is not proof of gameplay: a preview
+  shows intent and timing, and its timings are constants written down, the same numbers the brief
+  and the invariants use. A timeline keyed by hand is a drawing, and nothing can be checked
+  against it. `templates/GAME_BRIEF.md` gains a row for the previews and the constants they were
+  made from.
+- **`scripts/preview_compose.py TIMELINE.json --out preview.mp4 [--sfx-dir DIR] [--guides]`** —
+  a timed preview from layered sprites. The timeline lists `assets` (a path, anchor `c` or `bc`,
+  scale, cells in a horizontal strip), layers with keys (`t`, `x`, `y`, `scale`, `alpha`, `rot`,
+  `frame`) eased `linear`, `in_out`, `out` or `step`, timed text with an optional `color` kept
+  inside the title-safe inset, and events (`t`, `sfx`, `vol`). Frame i is drawn at i / fps,
+  composited in `z` order and piped raw to ffmpeg (libx264 -crf 18, yuv420p, faststart). Next to
+  the video: `<stem>.events.json` (every event with its frame number, and one sha256 over all raw
+  frames, so two runs can be compared) and `<stem>.contact.png` (eight frames with their times).
+  With `--sfx-dir` each event's sound is placed with `adelay`, mixed with `amix` (normalize=0)
+  over a silent track of the exact length and normalised in two passes to −16 LUFS integrated,
+  −1.5 dBTP, falling back to a fixed gain and a limiter when linear gain has no room. An event
+  with no sound file is still logged and listed under `sfx_missing`. On-screen text uses Pillow's
+  built-in face, so it draws Latin letters, digits and ASCII punctuation only. Exit 0 written,
+  2 an invalid timeline, 3 an unreadable input or an ffmpeg failure.
+- **`scripts/preview_reel.py REEL.json --out reel.mp4`** — previews joined into one reel: an
+  opening title card, a card before each segment with a `title` or `sub`, every clip scaled and
+  padded to one size and fps, one music bed looped to the length and faded over the last second,
+  and each clip's logged events placed again from `sfx_dir` at the clip's start in the reel (or,
+  without it, each clip's own audio). The mix is normalised to −16 LUFS as in the compositor.
+  Cards take a `font`; without one they draw Latin letters, digits and ASCII punctuation only.
+  `<stem>.timeline.json` lists every card, clip and event in reel time, `sfx_missing`, and the
+  integrated loudness read back with ebur128.
+- **`scripts/examples/courier_run_preview.py --out DIR`** — the worked case, written from its
+  rules. The Runner runs three lanes past pickups and a patrolling sentry toward two gates that
+  open on a fixed rhythm. Lane width, run speed, the lane plan, pickup spacing, the gate period
+  and open window and the sentry's sweep sit in one constants block, and every position, switch
+  and sound follows from it. It draws its own placeholder sprites and tones, writes
+  `timeline.json`, runs `preview_compose.py` as a subprocess, and emits a `pickup` event for each
+  pickup in the Runner's lane and a `gate_pass` or `gate_hit` when it reaches a gate, with an
+  on-screen label for each gate outcome ("gate open: through", "gate closed: hit"). Its selftest
+  checks the frame count against fps × duration, the encoded duration within one frame, one event
+  per rule trigger against a count worked by hand, and the same events and frame hashes on two
+  runs.
+- **`codex-visual` → `scripts/overview_sheet.py SPEC.json --out DIR [--cell 480]` and
+  `reference/overview-sheets.md`.** A project's scattered pictures on a few themed pages, one
+  question per sheet (style and brand, flow screens in player order, modes, game screens at the
+  target aspect). Each sheet is `DIR/<name>.png`: a title band, then per cell the caption and,
+  under it in grey, the source path as the spec wrote it. Sources are only read, never moved;
+  an absolute path is refused. A path that is not a file becomes a red "missing" cell and one
+  Pillow cannot open a red "unreadable" cell, and either exits 2 with the rest of the page drawn.
+  `DIR/overview.json` records each sheet's `png_sha256` and, for every present item, its
+  `sha256` and size; the same spec over the same files gives the same bytes. Non-Latin captions
+  take a `font` shipped with the project. An overview page is ungated, so a decision that rests
+  on numbers still goes through `contact_sheet.py --require`; `reference/review-sheets.md` says
+  which is which.
+- **`contact_sheet.py`** — the grid is one function both composers use, with any number of
+  caption lines per cell, and a write that fails part way puts back the sheets an earlier run
+  left under the same names and removes this run's files. Its CLI and exit codes are unchanged.
+- **`comfyui-asset-generation` → `scripts/layout_map.py SCENE.json --out DIR [--check-paths]
+  [--margin 0]`.** Each keyframe's arrangement drawn by program from ground coordinates in
+  metres through one fixed camera (vertical fov, eye height, pitch, target): flat colours, boxes,
+  discs and standing figures far to near, a mark on top and a wedge on the ground for facing, no
+  text. A box's width runs along its facing and its depth across it. `DIR/layouts.json` holds the
+  resolved camera, the horizon row and each placed object's pixel box, centre and depth.
+  `--check-paths` moves every object in a straight line between consecutive frames and reports
+  each pair whose swept footprints touch, with `clearance_m` (negative is the overlap depth);
+  objects moving together by the same displacement are one group, and pairs where neither moves
+  are skipped. Exit 0 no crossings, 2 crossings found, 3 an invalid scene or an unwritable
+  folder (every frame is drawn before the first file is written).
+- **`scripts/camera_gate.py --ref K1.png CAND.png [--column 0.1] [--tol 6] [--size WxH]
+  [--dist 40] [--run 3]`** — rejects a keyframe whose camera moved. It walks down a 3-pixel
+  strip at one column, takes the median colour of the top 5% of rows, and reads the horizon as
+  the first row that stays more than `--dist` from it for `--run` rows. Pass when the sizes match
+  and the rows differ by at most `--tol`. One JSON line whose `which` (`ref`, `cand`, `both`,
+  `args`) tells a bad roll from a bad setup; exit 0 pass, 2 fail, 3 no horizon or an unreadable
+  image, 64 a usage error.
+- **`reference/h3-keyframe-segments.md`** — keyframes chained from the first on one camera, with
+  the loop written out: generate, gate, move a `cand` reject and its verdict to `rejected/`, retry
+  up to N, and stop on a crash or a bad reference instead of rolling again. Layout maps come from
+  `layout_map.py` with the horizon kept in frame (pitch under fov / 2), and crossing moves are
+  re-ordered until `--check-paths` exits 0. Its thresholds are starting points to retune per
+  resolution. SKILL.md gains one routing row for maps, crossings and the gate.
+- **`art-asset-registry` → `reference/ledger-schema.md`** gains the link words `flow-node`
+  (`flow:<node>`, for a mockup or a screen) and `beat` (`beat:<id>`, for a keyframe or a preview
+  clip). A flow node may carry `planned`, `mocked` or `approved` in the flow document, and nothing
+  validates it. `registry_ledger.py check --strict` accepts both words without a vocabulary
+  warning.
+- **`game-character-pipeline`** — the preview track ends in a timed gameplay preview and reel:
+  `unity-game-brief` → `reference/preview-before-code.md`. `unity-game-brief` loads for "preview it
+  before code".
+
 ## 0.29.0
 
 Fifty-nine skills. A rigged character made from an image now has one stage order, from the
