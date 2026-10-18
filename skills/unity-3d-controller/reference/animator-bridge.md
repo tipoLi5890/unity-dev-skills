@@ -45,6 +45,25 @@ Set the three speeds from the clips, not from the controller:
    accept that `MoveSpeed` plays the clip at `runSpeed / authoredSpeed`. Between 0.8 and 1.2
    reads as natural; beyond that the gait is wrong and a different clip is needed.
 
+### When the mover is faster than every clip
+
+Step 3 assumes a clip exists for the top speed. A tennis game's simulated player ran at 7 m/s
+(p95 of all frames) against a fastest usable run loop of 2.7 m/s; feet slid 109–225 cm (p95
+per plant) with the rate clamped at 1.25. Three things close a gap like that, in this order:
+
+1. **Lower the mover's speed toward the clips** if the design allows. That project ended with
+   the top speed capped at 6.0 m/s, after measuring what the clips could follow.
+2. **Expose what the picture needs to anticipate**, beside `Velocity`: acceleration, so gait is
+   chosen from `v + a · 0.12 s` and starts and stops show a step early; and the **predicted stop
+   time** from the mover's own top speed, acceleration and deceleration, so an action that must
+   be performed standing (a swing, an interaction) begins 0.2 s before the stop instead of while
+   the body still slides.
+3. **Warp the rest in the animation**: the sprint rate up to 1.8, stride warping 0.3–1.8×,
+   pelvis drop, orientation warping, then a foot lock. These need Animation Jobs, not
+   parameters — `unity-animation` → `reference/sim-driven-animation.md` §6.
+
+The mover stays the owner throughout: none of this feeds back into its position.
+
 `minPlayback` at 0 freezes a single-clip `Move` state when the runner stands still. That is
 right for the lane run, which never stops, and wrong for the gate room: add an idle clip as the
 tree's 0 end instead of raising `minPlayback`, which makes a standing runner jog on the spot.
@@ -134,6 +153,8 @@ two is `unity-animation` → `reference/parameter-contract.md`, section 5.
 | T-pose, or frozen on one frame of the run | `MoveSpeed` is never written (it defaults to 0) — the bridge is missing, or its name is cleared |
 | Jump pose flickers on slopes and stairs | `Grounded` fed from `isGrounded`; feed the motor's |
 | Feet slide | `authoredSpeed` is not the clip's stride speed; or `MoveSpeed` is damped somewhere |
+| Feet skate only at top speed | The mover is faster than the fastest clip at the rate clamp — section 2, "When the mover is faster than every clip" |
+| The swing or interaction plays while the body still slides to a stop | Started on a timer, not from the mover's predicted stop — the same subsection |
 | Gait snaps between walk and run | `MoveBlend` written undamped, or written by two scripts |
 | The model drifts off the capsule and snaps back | Translation left in the clip — section 4 |
 | Runs on the spot against a wall | Ground speed taken from the wish, not from `Velocity` |

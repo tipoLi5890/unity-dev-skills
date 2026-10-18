@@ -93,6 +93,59 @@ Assert what you captured, or the loss stays silent:
 [SHOT] 04_countdown state=Playing       ← the shot is worthless, and nothing failed
 ```
 
+## A fixed resolution, and no shader placeholders in the shot
+
+Two Editor-only facts decide whether a windowed capture shows what a build would:
+
+- **The Game view's size is whatever the window was.** Set it before the first shot with the public
+  `PlayModeWindow.SetCustomRenderingResolution(w, h, label)`, then read it back with
+  `PlayModeWindow.GetRenderingResolution(out w, out h)` and log it. A window smaller than the
+  resolution scales the view down on screen, but the render target, `Screen.width/height` and the
+  capture all have the size you set.
+- **Shaders compile asynchronously.** A capture taken while `ShaderUtil.anythingCompiling` is true
+  shows cyan placeholders that no build draws (`unity-gotchas.md` §22). Wait until it is false,
+  capped at 30 s so a stuck compile cannot hang the suite.
+
+Both APIs live in `UnityEditor`, and the situation code that takes the shots lives in a Runtime
+assembly that cannot reference it. Put static hooks in the Runtime code and fill them from an
+`[InitializeOnLoad]` class in an Editor assembly, which re-runs after every domain reload:
+
+```csharp
+// Runtime assembly, next to the situations
+public static Func<int, int, bool> SetResolutionHook;   // null in a player
+public static Func<bool> RenderReadyHook;               // null in a player: always ready
+
+// Editor assembly
+[InitializeOnLoad] static class ShotHooks {
+    static ShotHooks() {
+        Shots.SetResolutionHook = (w, h) => {
+            PlayModeWindow.SetCustomRenderingResolution((uint)w, (uint)h, $"shots {w}x{h}");
+            PlayModeWindow.GetRenderingResolution(out uint rw, out uint rh);
+            Debug.Log($"[SHOT] game view {rw}x{rh}");
+            return rw == w && rh == h;
+        };
+        Shots.RenderReadyHook = () => !ShaderUtil.anythingCompiling;
+    }
+}
+```
+
+In a player the hooks are null, and the runtime falls back to `Screen.SetResolution`.
+
+## Every image gets opened
+
+A suite of 22 situations writes several PNGs per situation. The test can assert that each file exists and
+is bigger than 10 KB (a black or failed capture is usually smaller); only reading it says the
+moment is the right one. **The agent that ran the shots opens every image it reports on**, and a
+hand-back that says "screens verified" names the files it opened. For a batch too big to open
+one by one, tile it into a contact sheet first and open that, then open full size whatever the
+sheet makes doubtful:
+
+```bash
+ffmpeg -y -pattern_type glob -i 'shots/*.png' -vf "scale=480:-1,tile=4x6" -frames:v 1 sheet.png
+```
+
+A sheet proves each frame was drawn; it cannot show motion between frames (`motion-and-timing.md`).
+
 ---
 
 ## Reading the image

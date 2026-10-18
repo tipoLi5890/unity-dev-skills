@@ -96,7 +96,7 @@ Two things the flags do not change:
 | The situation | Read |
 |---|---|
 | Setting up a repeatable build; writing the script; shell traps that bite | `reference/build-automation.md` |
-| `minSdk`/`targetSdk`, the 16 KB page-size rule, launcher icons from code | `reference/player-settings-android.md` |
+| `minSdk`/`targetSdk`, the 16 KB page-size rule, launcher icons from code; a 3D game's baseline, quality tiers, skin weights per tier | `reference/player-settings-android.md` |
 | An artifact exists — is it signed, what does it declare, what ABIs? | `reference/artifact-verification.md` |
 | Keystore, credentials, versionCode, build history, package name | `reference/signing-and-versioning.md` |
 | **Works in the editor, wrong on the device** | `reference/device-triage.md` |

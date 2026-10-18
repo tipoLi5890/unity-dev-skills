@@ -68,6 +68,7 @@ Connecting to the Editor: `unity-debug` → `reference/editor-control.md`.
 | Latency / crackle | §4 DSP buffer |
 | New audio files keep importing on the defaults | [`reference/import-automation.md`](reference/import-automation.md) |
 | `-executeMethod` aborts with "Scripts have compiler errors" after audio work | The contract above, then [`reference/import-automation.md`](reference/import-automation.md) |
+| Effects made in code; no game sound may carry energy above a cutoff (e.g. 16 kHz); a loop clicks at its seam | [`reference/synth-and-band-limits.md`](reference/synth-and-band-limits.md), `scripts/spectrum_check.py` |
 | Music freezes mid-fade while paused, or a playlist goes silent for good | §5 |
 
 ## 1. Load Type — the single biggest memory lever
@@ -218,7 +219,8 @@ Then say what you did **not** change and why.
 
 ## Scope — what this skill does NOT do
 
-Mixing and sound design decisions, DSP authoring, and middleware (FMOD, Wwise) — those bring
+Mixing and sound design decisions, DSP authoring beyond the small synthesis rules in
+`reference/synth-and-band-limits.md`, and middleware (FMOD, Wwise) — those bring
 their own memory model and their own import path, and the numbers here do not transfer. Nor does
 this skill author mixer structure: **creating a mixer or a group, re-parenting a group and
 setting a group's volume have no public API**, so those stay with the user in the Audio Mixer

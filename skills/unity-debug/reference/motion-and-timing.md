@@ -95,3 +95,42 @@ the `.meta` fix belong to `unity-3d-models` → `reference/texture-filtering.md`
 > **Enabling MSAA changes frame timing**, which can tip a timing-sensitive gameplay test into
 > failing. It also makes `WaitForEndOfFrame` mandatory before any texture capture. Both are
 > covered in `harness-trust.md`.
+
+## Capturing costs time, so never time the frame you captured
+
+`ScreenCapture.CaptureScreenshotAsTexture()` plus `EncodeToPNG` and a file write stalled the frame
+by about 100 ms in a tennis game's situations. Any timing metric taken on that frame is wrong: the
+racket measured on the frame after a shot sits a capture's worth of time past the hit tick, and
+that gap is the capture, not the animation. Two rules:
+
+- **Measure an event by interpolating between the two frames that straddle it**, not on the frame
+  that happens to be drawn after it, and log which one you used (`interp` or `frame`). A test then
+  rejects a late measurement only when it was not interpolated.
+- **Keep shots and timing apart.** A smoke test that asserts on frame time takes no screenshots; a
+  shots run asserts on nothing timing-related.
+
+## Recording motion: one readback per frame, resampled to a fixed rate
+
+A contact sheet cannot show a pop between frames. To review motion, record a clip from inside the
+run:
+
+1. Render the review camera into a `RenderTexture` and request `AsyncGPUReadback.Request(rt, 0,
+   TextureFormat.RGBA32, callback)` once per frame after `WaitForEndOfFrame`. It does not stall the
+   frame the way a PNG capture does.
+2. **Resample by game time, not by frame count.** When the game's clock is real time (a simulation
+   on a stopwatch), `Time.captureFramerate` cannot slow it down. Stamp each readback with the
+   game's render time, and in the callback write the frame as many times as the fixed output rate
+   needs (repeat when frames are sparse, drop when they are dense). Log captured frames, written
+   frames and readback errors: `captured 412 frames over 7.00 s (58.9 fps), written 420, errors 0`.
+3. Write raw RGBA to one file, wait for pending requests (capped) before closing it, then encode.
+   **The readback comes back upside down**; flip it in ffmpeg:
+
+```bash
+ffmpeg -f rawvideo -pix_fmt rgba -s 640x360 -r 60 -i review.rgba -vf vflip \
+       -c:v libx264 -pix_fmt yuv420p -crf 18 review.mp4
+ffmpeg -i review.mp4 -vf "select='not(mod(n\,6))',scale=256:-1,tile=10x7" -frames:v 1 review_every6.png
+```
+
+The second command is a contact sheet of every sixth frame, which an agent can open; the clip is
+for the human. Log the game tick of the first frame, so frame *n* of the video maps back to a tick
+and a metric spike at tick *t* can be found in the clip.

@@ -103,6 +103,8 @@ a `record` the registry ingests unchanged (`art-asset-registry` → `reference/i
 | A character's game mesh: regenerate at the preset, or retopology and a rebake, before rigging | `blender-character-rig` → `reference/game-mesh.md` |
 | Checking a folder of imported models against its class | `reference/model-audit.md` |
 | Generate the mesh on a self-hosted ComfyUI at the class's preset, so no decimation pass is needed | skill `comfyui-asset-generation` |
+| Lighter levels will not decimate (spikes, a floor far above the target), a hidden inner body, a prop in shards, blotchy normals | `reference/import-and-decimate.md` (three faults) |
+| A level vanished on one quality tier; the importer made a LODGroup nobody asked for | `reference/asset-classes.md` (LOD names) |
 | "Shows in Scene, invisible in Game"; culling masks; layers | `reference/culling-and-layers.md` |
 | Distant surfaces shimmer or look blurry; aniso; MSAA | `reference/texture-filtering.md` |
 | The game lags/stutters with 3D assets; draw calls; the order to fix it in | `reference/performance-budget.md` |

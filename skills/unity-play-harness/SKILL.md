@@ -60,6 +60,8 @@ month, and when it fails it tells you only that three seconds passed.
 | Designing the one-line snapshot; a value you need is not in it; reading it from eval, a command, the log or a test | `reference/probe-contract.md` |
 | "boot straight into the boss"; "how would a test reach this screen"; a wait that times out | `reference/situations.md` |
 | Writing the test that drives and samples; which invariants are worth asserting over a run | `reference/journeys.md` |
+| A screenshot pass over every situation; situations that must not write the player's saves; the same ids in a built player | `reference/situations.md` → "A shot list over every situation" |
+| A match that has to play itself; an autoplayer through the real input funnel; the smoke run that rides on it | `reference/situations.md` → "the autoplayer" · `reference/journeys.md` → "The autoplayer smoke run" |
 | Reading, comparing or handing over a recorded run | `reference/timeline-format.md` |
 | A feel report with no number in it; deciding what stays a human judgement | `reference/complaint-to-test.md` |
 | Minutes of random but plausible input over every situation; a seed that replays a red run | `reference/soak.md` · `templates/SoakTest.cs` |

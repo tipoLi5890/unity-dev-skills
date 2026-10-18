@@ -104,6 +104,7 @@ The funnel is the same in every branch; what changes is which bindings exist and
 | Touch and on-screen controls (mobile casual) | An on-screen stick **is** a gamepad to the action system, so `Touch` shares the gamepad bindings; taps and swipes are a separate gesture layer | `reference/touch-and-on-screen.md` |
 | Pointer aim (twin-stick depot) | `Aim` is PassThrough over a stick and a pointer position; the reader resolves it to a direction on the play plane | `reference/pointer-and-aim.md` |
 | Click-to-move | A world click is not a UI click; the pointer becomes a destination, not a direction | `reference/pointer-and-aim.md` |
+| A timing press graded in milliseconds on a device with latency and coarse timestamps (strike timing, rhythm) | The press carries the device's own timestamp, converted to match time across pauses, plus the tick it arrived; windows no narrower than one timestamp quantum; the ideal press placed ahead of contact by the capture latency | `reference/timing-press.md` |
 | Grid step with key repeat (sorting yard) | A held direction becomes steps: one at once, 0.25 s, then every 0.10 s — `StepRepeater` in `resources/RunInput.cs`, not the OS key repeat and not a Hold interaction | `reference/reading-input.md` |
 
 ## Load what the situation needs
@@ -116,6 +117,8 @@ The funnel is the same in every branch; what changes is which bindings exist and
 | Rebinding UI, saving overrides, "show the right button prompt", scheme switching, two players on one machine | `reference/rebinding-and-devices.md` |
 | Aim at the mouse, stick aim and dead zones, pointer to world in 2D and 3D, a click that went through the UI | `reference/pointer-and-aim.md` |
 | `Input.GetKey` throws; Active Input Handling; replacing `GetAxis` / `GetButtonDown` | `reference/legacy-migration.md` |
+| "Presses read late" or early after a pause; PERFECT narrower than the device resolves; where the ideal press goes when input arrives 90 ms late; one press per player when two sensors fire | `reference/timing-press.md` |
+| The clock those timestamps convert onto; the sim thread that consumes them | `unity-gameplay` → `reference/sim-host-and-clock.md` |
 | The zero-package keyboard stand-in for the first hour | `unity-game-brief` → `resources/Presentation/RunLegacyInput.cs` |
 | Turning a screen point into a hit on a 3D collider | `unity-physics-3d` → `reference/queries.md` |
 | Sending an agent to the clicked point | `unity-navigation` → `reference/recipes.md` |
@@ -161,6 +164,9 @@ to `Unity.InputSystem`), `resources/Editor/CreateRunActions.cs` into an Editor o
   action; the journey proves a press arrives once. Neither proves the other.
 - **Test through the funnel, not around it.** A journey that calls `Launch()` directly passes on
   a build where no button reaches it. `ScriptedRunInput` presses what the player presses.
+- **A graded press keeps the device's timestamp.** Stamping it when gameplay reads it adds a
+  frame of jitter and the whole capture latency to the player's error; a pause between press and
+  conversion must not move it (`reference/timing-press.md` §1).
 - **The human keeps the feel verdict.** Whether 0.12 s of buffer feels generous or sloppy, and
   whether the stick has too much slack, is a judgement; the harness only shows the number moved.
 

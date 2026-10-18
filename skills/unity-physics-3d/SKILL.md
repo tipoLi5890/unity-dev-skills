@@ -40,6 +40,7 @@ ladder is for when that check comes back clean.
 | Things pass out through a concave mesh they should sit inside | §5 — inverted normals |
 | Works in the editor, not in the build | §6 |
 | Collisions stopped after a respawn or a return to the pool | §6 — per-instance ignore pairs |
+| A sports ball must curve, bounce with spin, replay and be predicted exactly | [`reference/own-ball-physics.md`](reference/own-ball-physics.md): no PhysX for the ball |
 
 ## 0. Before diagnosing
 
@@ -74,8 +75,7 @@ Work down. First match wins.
    because the checkbox is the only difference. Check `Collider.enabled` *and*
    `gameObject.activeInHierarchy` — `Collider` declares its own `enabled` rather than inheriting
    one from `Behaviour`, and `activeInHierarchy` is read-only, so a parent
-   switched off two levels up reads as the child's own fault. This is the cheapest step on the
-   ladder and the one most often skipped.
+   switched off two levels up reads as the child's own fault.
 3. **Layer Collision Matrix** — `Project Settings → Physics`. An unchecked pair is silent.
 4. **Trigger vs collision.** If either collider `isTrigger`, you get `OnTrigger*` and **never**
    `OnCollision*`.
@@ -94,10 +94,8 @@ Work down. First match wins.
 > Assigning velocity is ignored without warning, the body does not move, and the broadphase
 > never updates — which then reads as "collisions stopped working".
 
-> **In Unity 6 the property is `Rigidbody.linearVelocity`.** `velocity` still exists (both are
-> present and read-write), so old code compiles — but new code and anything you paste
-> from a Unity 6 sample will use `linearVelocity`, and mixing the two in one file reads as a
-> bug that is not there.
+> **In Unity 6 the property is `Rigidbody.linearVelocity`.** `velocity` still exists and old code
+> compiles; mixing the two in one file reads as a bug that is not there.
 
 ## 2. Tunnelling
 
@@ -120,14 +118,13 @@ Choose by what the fast thing hits, not by how fast it is.
   hits before it touches" meets `Continuous Speculative`, the mode *is* the finding; do not hunt
   for an oversized collider.
 
-Write the mode out in full every time. The enum is
-`CollisionDetectionMode = Discrete, Continuous, ContinuousDynamic, ContinuousSpeculative` —
-three distinct continuous behaviours, and the bare word "continuous" in a bug report has meant
-each of them.
+Write the mode out in full (`ContinuousDynamic`, `ContinuousSpeculative`): the bare word
+"continuous" in a bug report has meant each of three modes.
 
 > **For a bullet or any projectile, raise `Physics.SphereCast` as well** — sweeping rather than
 > stepping removes tunnelling entirely, independently of the physics step:
 > [`reference/queries.md`](reference/queries.md).
+> A ball the rules own, swept in substeps by your own code: [`reference/own-ball-physics.md`](reference/own-ball-physics.md).
 
 ## 3. Raycast misses
 
@@ -193,9 +190,8 @@ screen-point call and the `MovePosition` alternative:
 - **Ragdoll explosion = colliders overlapping in the start pose.** One frame of depenetration
   becomes velocity. **Shrink the colliders.** Joint limits, projection, mass ratios and Enable
   Collision are the standard misdiagnoses. Confirm with `Window > Analysis > Physics Debugger`.
-  **`Rigidbody.detectCollisions = false` in `Start()`, back on a frame later, is a holding
-  measure and is reported as one** — it postpones the spike while the colliders are re-fitted;
-  the overlap returns with the collisions.
+  **`detectCollisions = false` in `Start()`, back on a frame later, is a holding measure and is
+  reported as one**: the overlap returns with the collisions.
 - **A visible gap when objects rest is Contact Offset.** `Physics.defaultContactOffset` is
   **`0.01`** by default. **Never set it to 0** — PhysX requires a positive value and 0 is unstable.
   Inset the visual mesh instead.
@@ -235,7 +231,9 @@ Pathfinding, NavMesh baking and agent steering are `unity-navigation` — a coll
 absent at bake time still collides here and is still not pathed around there. Canvas hit-testing
 and the EventSystem are `unity-ui-ugui`. Stripping and `link.xml` are
 `unity-android-release`. A `CharacterController` motor — ground, slopes, steps — is
-`unity-3d-controller`. Hit and hurt layers and damage events are `unity-combat`.
+`unity-3d-controller`. Hit and hurt layers and damage events are `unity-combat`. A ball the game
+integrates itself (drag, spin, swept contact, a shot solver) is
+[`reference/own-ball-physics.md`](reference/own-ball-physics.md).
 
 2D physics — `Rigidbody2D`, `Collider2D`, `Physics2D` — is `unity-physics-2d`. DOTS / the Unity
 Physics package (`com.unity.physics`) is **not** this skill's subject either: it gets a

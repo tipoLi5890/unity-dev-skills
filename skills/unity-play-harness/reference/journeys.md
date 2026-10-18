@@ -209,3 +209,31 @@ Confirm on your version: that `Object.FindAnyObjectByType` is the lookup your Ed
 replaced `FindObjectOfType`), and that your test assembly definition references both the runtime
 assembly holding `GameProbe` and `UnityEditor.TestRunner` — a journey that cannot see
 `EditorSceneManager` fails to compile rather than failing to load a scene.
+
+## The autoplayer smoke run
+
+The cheapest journey that covers boot, flow, input, rules, presentation and audio together: start
+a match with the autoplayer on seat 0 (`situations.md`), let it play 22 s of match time, then
+assert. From a tennis game, every assertion earned its place by catching something:
+
+| Assert | Catches |
+|---|---|
+| No error or exception logged (collected from `logMessageReceived`) | Everything nothing else asserts on |
+| The session is still running on every frame; the simulation thread reported no fault | A worker thread that died silently while the last snapshot stayed on screen |
+| Points scored > 0, hits ≥ 5 | A match that runs but never plays |
+| **The autoplayer's own seat hit the ball at least once** | A green run in which the input path did nothing and the bots played each other |
+| Worst frame < 250 ms, after the first 30 frames | Gross stalls; not a performance test |
+| Frames where the simulation was more than 2 ticks behind the clock ≤ 3 | The ball freezing at contact (the first-use JIT stall, `unity-debug` → `reference/unity-gotchas.md` §23) |
+
+Log every number on one line whether or not it passed:
+
+```
+[SMOKE] <mode>: points <a>:<b> hits=<n> humanHits=<n> accepted=<n> frames=<n> maxDt=<ms> lagFrames(>2)=<n> maxLag=<ticks>
+```
+
+Two rules from running it on a machine shared with other agents: the lag counter is the first
+assertion that load trips (red 5 > 3 under load, green alone with a worst lag of 1 tick), so a red
+smoke run is rerun alone before it is called a regression; and the smoke run takes no
+screenshots, because a capture stalls the frame for about 100 ms (`unity-debug` →
+`reference/motion-and-timing.md`). Tag it `Smoke` and run it on every change; it took about a
+minute.

@@ -75,6 +75,13 @@ other directional is an additional light and casts none.
   used by scenes in the build. Fog enabled from code, or a mode switched at runtime, is
   stripped. Set Fog Modes to Custom and tick the modes the code uses.
 - Fog is not volumetric: it does not light shafts and it ignores shadows.
+- **Keep fog off the play area.** Linear fog with its start beyond the far edge of play (60 m and
+  more for a tennis venue seen from 16 m behind the baseline) tints only the scenery. Paint a
+  procedural gradient sky whose horizon colour equals `fogColor`, so the fogged hills meet the sky
+  without a line. A fog particle effect ("mist over the lake") obeys the same rule: place it from
+  known limits, not from the bounds of a merged water mesh; one tennis venue's two lake halves
+  merged into one mesh whose bounds centre was the court, and the mist covered the match until
+  the emitter was split into one system per half, starting 38 m out.
 
 ## A scene that looks unlit — the checklist
 

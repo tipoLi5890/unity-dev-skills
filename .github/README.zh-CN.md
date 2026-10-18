@@ -36,16 +36,16 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 |---|---|---|
 | **每个阶段 —— 终端与搜索** | `unity-cli` | 从终端驱动 Unity：editor、许可、template、CI、MCP，以及能告诉你"重试是否诚实"的 exit code |
 | | `unity-search` | 把"找一下／在哪里／谁引用了它"变成一条 Unity Search 查询：类型 filter、文件夹、label、`ref=` 关系、场景组件查询 —— 先把查询写给你看，Editor 还活着时顺手帮你打开窗口 |
-| **概念** | `unity-game-brief` | 动 Unity 之前的第一个小时：一行想法变成一页体验简报、用图锁定视觉、由约束推导出架构提案、写成可测试的不变量，以及一个人能真的玩到的交互；写代码前先看到游戏：按游戏自己的规则常量合成、每个音效都记成事件的定时模拟游玩预览，再接成带片头卡、音乐与统一响度的 reel |
-| | `unity-new-project` | 事后补救代价很高的决策：editor 版本锁定、`.meta`/LFS、UPM 锁 tag、IL2CPP/ARM64、asmdef 边界 |
-| | `unity-gameplay` | **任何没有指明视角的 gameplay 需求都从这里开始。** 为项目做指纹识别——2D 或 3D、投影、视角、移动模型——并把操控、相机、动画与验证导流到各自的 skill；并且承担写成约束的类型配方、由控制器数值推导出的关卡度量，以及带有退出检查的制作阶段 |
-| **3C 原型** | `unity-input` | 让 gameplay 只读一个 struct、永远不读设备的玩家输入：覆盖键盘、手柄与触控的 actions asset，按下在 `Update` 锁存、在 `FixedUpdate` 只消费一次——解决时有时无或连跳两次的跳跃——再加上输入缓冲、屏幕摇杆、指针瞄准与重新绑定 |
-| | `unity-camera` | 会抖动、拍到关卡外面或穿墙的相机：抖动背后的那两个时钟、Cinemachine 的 2D 跟随与房间 confiner、pixel-perfect 跟随、第三人称环绕与第一人称 rig、震动与 blend、2.x → 3.x 名称对照表，以及证明 rig 站得住的 journey |
+| **概念** | `unity-game-brief` | 动 Unity 之前的第一个小时：一行想法变成一页体验简报、用图锁定视觉、由约束推导出架构提案、写成可测试的不变量，以及一个人能真的玩到的交互；写代码前先看到游戏：按游戏自己的规则常量合成、每个音效都记成事件的定时模拟游玩预览，再接成带片头卡、音乐与统一响度的 reel；第一个交互之后：只有人能关闭的里程碑关卡、多个 agent 各自的简报（`templates/AGENT_BRIEF.md`、`templates/DECISION_LOG.md`） |
+| | `unity-new-project` | 事后补救代价很高的决策：editor 版本锁定、`.meta`/LFS、UPM 锁 tag、IL2CPP/ARM64、asmdef 边界；不开 Editor、几秒跑完不依赖引擎的测试（`scripts/pure_tests.py`），以及对照配额的 LFS 账本 |
+| | `unity-gameplay` | **任何没有指明视角的 gameplay 需求都从这里开始。** 为项目做指纹识别——2D 或 3D、投影、视角、移动模型——并把操控、相机、动画与验证导流到各自的 skill；并且承担写成约束的类型配方、由控制器数值推导出的关卡度量，以及带有退出检查的制作阶段；球拍与球棒类游戏先测动作库、再定模拟数值，模拟跑在自己的线程、用绝对时钟（`SimHost.cs`、`SimClock.cs`） |
+| **3C 原型** | `unity-input` | 让 gameplay 只读一个 struct、永远不读设备的玩家输入：覆盖键盘、手柄与触控的 actions asset，按下在 `Update` 锁存、在 `FixedUpdate` 只消费一次——解决时有时无或连跳两次的跳跃——再加上输入缓冲、屏幕摇杆、指针瞄准与重新绑定；以设备自己的时间戳、按毫秒评分的时机按压 |
+| | `unity-camera` | 会抖动、拍到关卡外面或穿墙的相机：抖动背后的那两个时钟、Cinemachine 的 2D 跟随与房间 confiner、pixel-perfect 跟随、第三人称环绕与第一人称 rig、震动与 blend、2.x → 3.x 名称对照表，以及证明 rig 站得住的 journey；球场运动的转播式构图 |
 | | `unity-2d-controller` | 会沿斜坡滑下去、粘在墙上、每次跳的高度都不一样的 2D 角色：向物理引擎询问地面在哪里的 kinematic 平台跳跃 motor——斜坡、单向与移动平台、coyote time、可变跳跃高度、冲刺、蹬墙跳——瞄准与移动分离的俯视自由移动、以 tween 呈现的格子步进、Animator 桥接，以及证明跳跃顶点、coyote 与缓冲的 journey |
 | | `unity-3d-controller` | `isGrounded` 一直闪烁、沿斜坡滑下去、上不了台阶、换个帧率跳的高度就不一样的 3D 角色：只让一个组件拥有 transform、用自己的 cast 找地面的 `CharacterController` motor——斜坡、台阶、移动平台——读同一个输入 struct 的第三人称、第一人称、俯视与分道跑酷控制器、Animator 桥接，以及证明斜坡、台阶、跳跃顶点与换道的 journey |
-| | `unity-animation` | 跟游戏状态对不上的 Animator——卡在某个状态、攻击自己播出来、hitbox 一直开着：每个参数只有一个写入者、用脚本构建 blend tree 与 sprite 状态图、被打断也不会丢的事件与攻击窗口、IK、Timeline 交接、root motion |
+| | `unity-animation` | 跟游戏状态对不上的 Animator——卡在某个状态、攻击自己播出来、hitbox 一直开着：每个参数只有一个写入者、用脚本构建 blend tree 与 sprite 状态图、被打断也不会丢的事件与攻击窗口、IK、Timeline 交接、root motion；跟着模拟走的手建 PlayableGraph、用 Animation Job 做的脚锁与道具 IK，以及会统计跳变的动作度量（C# 在 `resources/`） |
 | | `unity-physics-2d` | 永远不触发的 `OnCollisionEnter2D` 或 `OnTriggerEnter2D`、穿过 tilemap 墙的子弹、打到玩家自己的地面检测、卡在 tile 接缝上的角色：用 Box2D 自己的词汇写成的分诊阶梯、双边探针，以及只读的场景审计 |
-| | `unity-physics-3d` | 永远不触发的碰撞或 trigger、高速穿透、明明就在正前方却打不到的 raycast |
+| | `unity-physics-3d` | 永远不触发的碰撞或 trigger、高速穿透、明明就在正前方却打不到的 raycast；游戏自己积分的运动用球，含旋转与扫掠碰撞（`BallFlight.cs`） |
 | | `unity-play-harness` | 把游戏做成 agent 能驱动、能读懂的样子：一行 probe 快照、直接开进某个时刻并等待"就绪集合"的具名 situation、采样成时间线并断言不变量的 journey test，以及把一句手感抱怨变成可复现的测试——3D 或 2D 游戏皆可 |
 | **垂直切片 —— 2D 世界** | `unity-2d-level` | 把 2D 关卡当成数据来组装：可序列化的关卡画进固定的 Tilemap 图层堆叠、运行时改 tile、房间与门、接成无尽跑道的 chunk、Tiled 与 LDtk 导入、SpriteShape 地形，以及逐关检查可达性的种子生成 |
 | | `unity-2d-grid` | 战棋与方块解谜在矩形、等角与六角网格上的棋盘逻辑，纯 C#、不需要场景：六角 offset、axial 与 cube 转换、移动范围、A* 路径、视线、单一占位表、推动规则、回合顺序、undo、指针对应到格子 |
@@ -63,24 +63,24 @@ Codex 读取的是同一棵树：把它指向 `.agents/plugins/marketplace.json`
 | | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 会静默忽略的那些属性 |
 | **量产 —— 资源** | `art-asset-registry` | 追踪每一件生成的 2D 与 3D 资源：每个项目一份只增不改的账本，记下 sha256 哈希（每个 `.blend` 版本也记）、来源血缘、指向美术规格与产出任务的链接、由人设定并附证据图的状态、上游改动后过期的资源，并以只读方式接手已有的 `manifest.md` |
 | | `unity-3d-models` | 把 3D 模型带进游戏，按来源分路——图生 3D 的 GLB、FBX 角色、Blender 绑好的骨架、购买的素材包——检查、减面到类别的目标、导入并审计；类别的预算由人选定：同一件资源在每个生成预设各产一版，放进游戏场景比较，从来不是固定上限 |
-| | `unity-rigged-character` | Unity 端的绑骨角色契约，不论 FBX 从哪条路线来——Auto-Rig Pro、Blender 骨架、Mixamo、自动绑骨服务：导入 → Avatar（在 Blender 重定向的 clip 用 Generic，游戏需要部位遮罩或 IK 时才用 Humanoid）→ Animator → gameplay rig，在 Optimize Game Objects 下保住道具 socket，并重建 FBX 丢掉的 PBR 贴图 |
+| | `unity-rigged-character` | Unity 端的绑骨角色契约，不论 FBX 从哪条路线来——Auto-Rig Pro、Blender 骨架、Mixamo、自动绑骨服务：导入 → Avatar（在 Blender 重定向的 clip 用 Generic，游戏需要部位遮罩或 IK 时才用 Humanoid）→ Animator → gameplay rig，在 Optimize Game Objects 下保住道具 socket，并重建 FBX 丢掉的 PBR 贴图；套到动作包骨架上的角色以 Generic 导入（`SharedSkeletonClipImporter.cs`） |
 | | `unity-2d-sprites` | Sprite sheet、切图、pivot、9-slice、把一组逐帧做成可播放的 `AnimationClip` —— 那些住在 importer 里的元数据 |
 | | `unity-2d-animation` | 用 2D Animation 与 PSD Importer 包做骨骼式 2D 角色：把 PSB 导入成 rig、先骨骼再几何再权重、`SpriteSkin` 与 CPU 或 GPU 变形、运行时切换 Sprite Library 的造型与装备、2D IK，以及一份 rig 成本的审计 |
 | | `unity-2d-pixel-perfect` | 像素画发虚、镜头一动像素就爬、tile 之间出现发丝缝 —— 以及你手上到底是哪一个叫 `PixelPerfectCamera` 的组件 |
 | | `unity-sprite-atlas` | 该共用一次 draw call 的 sprite：用脚本产 V2 atlas、打包与平台设置，以及打包好的贴图怎么到玩家手上 |
-| | `unity-audio` | 内存、load type、采样率、mixer 开销 —— 它会先报告再重新导入 |
+| | `unity-audio` | 内存、load type、采样率、mixer 开销 —— 它会先报告再重新导入；在频率上限之下合成的音效，由 `scripts/spectrum_check.py` 检查 |
 | | `unity-localization` | 用一种以上的语言发布，以及真正会出问题的 CJK 字体管线 |
-| **量产 —— AI 素材生成** | `game-character-pipeline` | **从一张图做出绑骨角色，从这里开始。** 直到 Unity 里核准的角色为止的阶段顺序：先决定路线、质量目标与轨道（预览轨直接绑密网格，出货轨先定预算 → 游戏网格 → 只绑一次），再走 S0–S13，每个阶段标出负责的 skill 与进出关卡 |
+| **量产 —— AI 素材生成** | `game-character-pipeline` | **从一张图做出绑骨角色，从这里开始。** 直到 Unity 里核准的角色为止的阶段顺序：先决定路线、质量目标与轨道（预览轨直接绑密网格，出货轨先定预算 → 游戏网格 → 只绑一次），再走 S0–S13，每个阶段标出负责的 skill 与进出关卡；动作全来自一套动作包时，把网格套到它的骨架上，clip 原样播放 |
 | | `codex-visual` | 用 `codex` 图像模型出 2D 美术，靠一份美术圣经与一张锚定图锁住风格：grid one-shot 整组、短动画生成成一张 sprite sheet 再切成量测过的逐帧并输出 GIF 预览、去背、尺寸归一化，并以几何验收闸门读回交付文件的居中与尺寸；也画图生 3D 角色起手的四面图，只在数值检查通过时才合成的审阅表，以及按主题分页、每格标出来源路径并记下哈希的概览页 |
 | | `comfyui-asset-generation` | 用自建 ComfyUI 出音乐、音效、MiniMax H3 视频与图生 3D 的道具和角色：一次一件、只信 `/history`、切模型前先 `/free`；四面图上传前先去背，调参前先把项目 graph 和官方模板逐项比对，生成预设当成阶梯来比较，没有一个是目标；由地面坐标画出关键帧的布局图并在生成前找出交叉的移动，以及地平线一动就退回关键帧的镜头闸门 |
-| | `blender-character-rig` | 通过 MCP server 在运行中的 Blender 里，给图生 3D 角色绑骨架、做动画：骨骼按量到的特征点摆放、权重按位置计算、道具挂在手骨上、key 出一段 action、渲染出预览，再把 FBX 重新导入验证 |
-| | `blender-retarget` | 把现成的动作 clip 套到在 Blender 里绑好骨架的角色上：通过 Auto-Rig Pro 或纯 bpy 的骨骼对照表，按两边的 rest pose 转换每个旋转 key、一份 clip 清单、局部修权重、带 NLA 审阅轨的动作库、每段 clip 都对手骨检查的道具，以及重新打开存盘文件来验证的审计 |
-| **打磨与优化** | `unity-game-feel` | 没有打击感的命中、命中后整个游戏停住不动、闪白之后一直白着的敌人、三十个拾取物播出三十个音效、停不下来的手柄震动：每个 gameplay 事件一行有预算的反馈——由唯一持有 `Time.timeScale` 的组件做 hit stop、会还原的闪白、不需要插件的挤压与 tween、粒子、拖尾、有发声数上限的池化音效、会停下来的震动 |
-| | `unity-render-urp` | 设了却不出现的后处理、移动端负担得起的子集、Render Graph 审查 |
+| | `blender-character-rig` | 通过 MCP server 在运行中的 Blender 里，给图生 3D 角色绑骨架、做动画：骨骼按量到的特征点摆放、权重按位置计算、道具挂在手骨上、key 出一段 action、渲染出预览，再把 FBX 重新导入验证；同一批模块也能无头运行成带关卡的阶段：把动作包骨架套到网格、蒙皮 LOD、字节完全相同的 FBX |
+| | `blender-retarget` | 把现成的动作 clip 套到在 Blender 里绑好骨架的角色上：通过 Auto-Rig Pro 或纯 bpy 的骨骼对照表，按两边的 rest pose 转换每个旋转 key、一份 clip 清单、局部修权重、带 NLA 审阅轨的动作库、每段 clip 都对手骨检查的道具，以及重新打开存盘文件来验证的审计；套骨架还是重定向，用测量对比决定（`scripts/clip_metrics.py`、`scripts/bakeoff_report.py`） |
+| **打磨与优化** | `unity-game-feel` | 没有打击感的命中、命中后整个游戏停住不动、闪白之后一直白着的敌人、三十个拾取物播出三十个音效、停不下来的手柄震动：每个 gameplay 事件一行有预算的反馈——由唯一持有 `Time.timeScale` 的组件做 hit stop、会还原的闪白、不需要插件的挤压与 tween、粒子、拖尾、有发声数上限的池化音效、会停下来的震动；让又小又快的球在画面上看得清、走得顺（`MinScreenSize.cs`、`scripts/screen_smoothness.py`） |
+| | `unity-render-urp` | 设了却不出现的后处理、移动端负担得起的子集、Render Graph 审查、会被验证去掉的材质关键字（`UrpMaterialValidation.cs`） |
 | | `unity-urp-migration` | 把 Built-in 项目分五个带闸的阶段搬到 URP，每一阶段都从存盘后的项目读回来验证；也用来诊断搬到一半的项目：整片洋红、PPv2 转成 Volume、从来没重烤的 lightmap、`GrabPass`／`OnRenderImage` |
-| | `unity-profiling` | 慢帧或不稳定的帧背后到底在做什么工作：不开 Profiler 窗口的 counter、90 帧窗口的 median/p95/worst、工作量计数，以及一张前后对照表 |
+| | `unity-profiling` | 慢帧或不稳定的帧背后到底在做什么工作：不开 Profiler 窗口的 counter、90 帧窗口的 median/p95/worst、工作量计数，以及一张前后对照表；分阶段的 GC 分配与运行时资源泄漏（`GcAllocProbe.cs`、`OwnedAssets.cs`、一个浸泡测试） |
 | | `unity-scene-optimisation` | 性能 counter 已经指出成本之后该改什么：各条 batching 路径以及为什么 GPU instancing 在 URP 下毫无作用、`LODGroup` 与 Mesh LOD、烘焙式与 GPU occlusion culling、逐 layer 的剔除距离、纹理尺寸与 mipmap streaming、sprite 与粒子的 overdraw——每个手段先用一个窗口测试，再在同一个 counter 上读回 |
-| | `unity-debug` | 你需要验证一个看不见的改动 —— 并且在相信测量工具之前，先证明它说的是真话 |
+| | `unity-debug` | 你需要验证一个看不见的改动 —— 并且在相信测量工具之前，先证明它说的是真话；多个 agent 共用一台机器时最多两个 Editor（`lanes.sh` 在 `MAX_UNITY` 排队） |
 | **发布** | `unity-device-testing` | 在**真机**上做验收（Android／iOS）：探针场景每次状态变化打印一行带标签的 log、驱动脚本对 log 断言并替你点系统对话框、真人一次只做一个物理动作且由设备端验证、用 exit code 区分"真的失败"和"测试工具坏了" |
 | | `unity-android-release` | 构建完之后**证明**它：把产物读回来、keystore 与 versionCode 纪律 |
 | | `unity-ios-build` | 不打开 Xcode，把 Unity 项目变成 iPhone 上运行的进程：headless build、免签名的编译关卡、用这台 Mac 真正拥有的东西签名、`devicectl` 安装、console 是唯一的 log 通道、native `.mm` plugin 30 秒迭代 |

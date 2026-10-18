@@ -152,6 +152,7 @@ active tier uses, not in Quality settings.
 | Edges crawl when the camera turns | Texels too large | Max Distance down (default 50), then a cascade, then resolution |
 | Shadows end at a distance | Max Distance, faded by Last Border | Raise it, or bake far shadows with Shadowmask |
 | A point or spot light casts none | Additional Lights → Cast Shadows is off by default | `additional-shadows-off`; Per Pixel or Forward+ as well |
+| The far player has no shadow under a fixed long view; split screen doubles the shadow cost | Distance too short for the view; one shadow map per camera | Per-tier table in the reference, "A long fixed view" |
 | A second directional casts none | Only the main light has cascades | Assign the sun as Sun Source |
 
 All point and spot shadows share one atlas (2048); a point light takes six slices. When they do

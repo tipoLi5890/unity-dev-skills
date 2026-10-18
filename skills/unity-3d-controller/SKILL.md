@@ -110,6 +110,8 @@ First person is step 2 with `FirstPersonController` and a `Head` child; the depo
 | Yaw on the body and pitch on the head; pointer counts against stick rates; eye height; crouch; footstep cadence | `reference/first-person.md` |
 | World-axis movement under a fixed or overhead camera; pointer aim; click-to-move; the lane runner | `reference/topdown-and-fixed.md` |
 | The script that writes `Grounded`, `MoveBlend`, `MoveSpeed` and `Hurt`; damping; root motion off | `reference/animator-bridge.md` |
+| Feet skate only at top speed because the mover outruns every clip; a swing that starts while the body still slides to a stop; what the mover must expose (acceleration, predicted stop) | `reference/animator-bridge.md` §2 |
+| Stride and orientation warping, pelvis drop, foot lock — the animation side of a fast mover | `unity-animation` → `reference/sim-driven-animation.md` |
 | Reach tables, door and corridor numbers, the measuring scripts | `unity-gameplay` → `reference/level-metrics.md` |
 | The input struct, the press latch and its buffer, a scripted driver | `unity-input` → `reference/reading-input.md` |
 | Pointer and stick aim; mouse delta against stick rate | `unity-input` → `reference/pointer-and-aim.md` |

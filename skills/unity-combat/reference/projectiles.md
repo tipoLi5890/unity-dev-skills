@@ -46,6 +46,10 @@ transform.position = from + Direction * (hit ? nearestDistance : distance);
   origin of the world). The shot is treated as having hit where it stands.
 - **The position is written once per step, by the projectile.** Nothing else moves it.
 - **Range is `speed × lifetime`**: 30 × 2 = 60 units, 14 × 1.2 = 16.8.
+- **A projectile your own simulation integrates** (drag, spin, curved flight, no physics query)
+  needs the same no-tunnelling rule in another form: substeps each shorter than the thinnest
+  thing it must hit, and the earliest contact found by bisection. `unity-physics-3d` →
+  `reference/own-ball-physics.md`.
 
 | Field | 3D default | 2D default |
 |---|---|---|

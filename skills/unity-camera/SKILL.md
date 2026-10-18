@@ -43,6 +43,7 @@ First match wins.
 | Lock on to an enemy | §4 — a second target |
 | Shake does nothing, or ten small shakes add up to one huge one | §5 |
 | The camera cuts where it should blend, or drifts after a cutscene | §5 |
+| A court or pitch sport: broadcast framing, follow, between-point and end moves | `reference/broadcast-sports.md` |
 | "It looks fine to me" — proving a rig holds on every frame | §6 |
 
 ## 0. Read the lock before naming a component

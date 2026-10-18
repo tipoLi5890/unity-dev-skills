@@ -51,6 +51,9 @@ description: >-
   file, the text-YAML exception that grows (a dynamic CJK TMP font asset can grow from ~202 KB to
   1.3–1.6 MB over a day of Editor sessions), and publishing an already-large repo to a remote:
   `reference/version-control-setup.md`.
+- **Keep an LFS ledger**: each binary commit states what it adds against the plan's quota, a
+  push of several hundred MB or of purchased assets waits for the person, and when agents share
+  a checkout, check `git log origin/main..HEAD` before pushing → `reference/version-control-setup.md` §5–§7.
 - Three hosting shapes, and the choice is the user's, not a default: **GitHub/GitLab + LFS**;
   **UVCS**, which handles large binaries natively and needs no LFS at all; or plain local `git`.
 - Push the first commit **after** packages are installed and the Editor has generated `.meta`
@@ -160,6 +163,10 @@ with — with nothing left to ask, just wait.
   constructor, even when they live in an engine-referencing assembly. Then the only tests that
   cannot run under `dotnet test` are the ones touching `ScriptableObject`, `AssetDatabase`,
   `RectTransform`/`Canvas` or `JsonUtility` — which is what the boundary is *for*.
+- **Run the pure assemblies' tests without the Editor**, with the compiler, runtime and NUnit the
+  Editor already ships: `scripts/pure_tests.py run --tests <folder>` compiles each pure asmdef
+  under its own name, excludes (and names) every test file that touches the engine, and exits
+  0/2/3 in seconds. → `reference/pure-test-lane.md`
 - **Single input funnel from day one**: gameplay depends on abstract actions, never on device
   specifics — touch, keyboard, gamepad and a sensing SDK all converge on one router (device
   details come from the sensing layer; the funnel is universal). The action asset and the struct

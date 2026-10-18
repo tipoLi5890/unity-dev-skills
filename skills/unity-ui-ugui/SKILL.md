@@ -39,6 +39,7 @@ Not sure the project is uGUI? `unity-game-ui` §0 has the detection ladder.
 | Transitions freeze on the pause screen | `reference/no-mask-lists-and-motion.md` §3 |
 | The UI is built from C# with no prefabs | `reference/code-built-ui.md` |
 | Ambiguous-type compile errors on `Image` / `Button` | §0 |
+| Material count grows each rebuild; TMP outlines | `reference/text-and-image-traps.md` §6 |
 | Making it readable at distance, contrast, type size | skill `unity-game-ui` |
 
 ## 0. Working rules

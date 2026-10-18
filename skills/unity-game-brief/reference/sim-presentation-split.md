@@ -80,6 +80,10 @@ Either way, **cap the catch-up**. Without a cap, one long frame (a domain reload
 window drag) produces hundreds of ticks in one frame, and what the player sees is the run teleporting
 to its end.
 
+A third choice, for a simulation that is heavy on some ticks or graded against a real clock (a
+timing press judged in milliseconds): run it on its own thread against an absolute clock and draw
+one tick behind it. `unity-gameplay` → `reference/sim-host-and-clock.md`.
+
 ---
 
 ## Two things the presenter is allowed to invent

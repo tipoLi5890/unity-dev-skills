@@ -57,6 +57,10 @@ is 184 KB in ninety frames, and the collection that eventually frees it is the s
 - **Physics query methods that return arrays** rather than the `NonAlloc` variants that fill one.
 - **`GetComponent` in a loop** returning a new array from the plural overloads.
 
+**Then find the phase.** The counter is per frame; `reference/gc-per-phase.md` splits it into
+Update and LateUpdate, which usually names the owning system. Do not use
+`GC.GetAllocatedBytesForCurrentThread` for this: under Unity's Mono it returns 0.
+
 **Record the GC mode with the window.** `run.gcMode` says whether incremental collection is on.
 Incremental spreads the cost across frames, which turns one visible spike into a raised median —
 a real improvement in feel and a *worse*-looking median in the table. Say which mode both sides

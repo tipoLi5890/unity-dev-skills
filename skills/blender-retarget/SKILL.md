@@ -8,8 +8,8 @@ description: >-
   clips that needs previews and one NLA review track, a shoulder or upper back
   that collapses when the arm lifts (local weight repair), a prop that must
   stay on the hand bone in every clip, handing the library to Unity. Auto-Rig
-  Pro route when the user has it installed; building a rig by position:
-  blender-character-rig; Unity import: unity-rigged-character.
+  Pro when installed. One pack's clips: fit, not retarget (measured bake-off);
+  rig by position: blender-character-rig; Unity: unity-rigged-character.
 ---
 
 # blender-retarget — map the rest pose, then move the clips
@@ -58,6 +58,7 @@ in `scripts/` that returns a dict of gates.
 | A shoulder or upper back that dents or drags in a pose: probe, mask, transfer, deform-only normalising, backup and restore | `reference/weight-repair.md` |
 | The quality target first; which layer is wrong (geometry, skinning, animation, material), a fixed grip, stop rules, the failure log | `reference/defect-triage-and-stop.md` |
 | The export contract for Unity: which skeleton, which clips, what survives the FBX, the minimal validation | `reference/unity-handoff.md` |
+| Fit or retarget: the measured bake-off, added foot slide, late-starting and missing curves, a clip from another skeleton converted once | `reference/route-bakeoff.md` |
 | The parameters of one module | its docstring, `scripts/brt_*.py` |
 
 | Module | Does | Gates |
@@ -69,6 +70,8 @@ in `scripts/` that returns a dict of gates.
 | `brt_library` | slots, fake users, asset marks, one review track, a catalog; actions found by name, provenance property or manifest | `library.every_action_has_slot`, `library.finite_at_3_frames`, `library.strips_equal_clips` |
 | `brt_drift` | a carried prop against its anchor bone, sampled over every clip, position and rotation | `drift.max_drift`, `drift.max_rotation` |
 | `brt_audit` | the saved .blend read back in a fresh Blender; exit 0 pass, 1 fail, 2 refused input | `audit.expect_matches`, `audit.props_parented` (with `props`) |
+| `clip_metrics.py` (host, numpy) | a clip on the character against the same clip on the reference body: plants, added foot slide, limb direction, arm pose; exit 0/1/2 | `added_slide_p95_m`, `added_slide_max_m`, `limb_direction_p95_deg` |
+| `bakeoff_report.py` (host, stdlib) | `clip_metrics` reports per route → one markdown table, misses in bold; exit 0/1/2 | — |
 
 **Calling a module.** Through the Blender MCP server's code tool, put this skill's `scripts`
 directory on `sys.path`, import `brt_common` and the module, reload both (Blender keeps
@@ -88,7 +91,7 @@ In order. A row is done when its gates pass or, where it says picture, when some
 | # | Step | Module or reference | Passes when |
 |---|---|---|---|
 | 1 | Probe | `brt_arp` op `probe`; the server's blend-file and objects summaries | `arp.addon_present` read, true or false; file path, save state, active object, mode and the rig's actions with their slots known before any write |
-| 2 | Choose the route | `reference/arp-route.md` | Auto-Rig Pro: standard proportions and the add-on installed. Otherwise `brt_retarget` onto the rig the character has; no rig yet and short limbs, ears or a tail: `blender-character-rig` first |
+| 2 | Choose the route | `reference/route-bakeoff.md`; `reference/arp-route.md` | One pack supplies the motion: no retarget, fit the mesh to its skeleton (`blender-character-rig` → `reference/fit-to-clip-skeleton.md`). Auto-Rig Pro: standard proportions and the add-on installed. Otherwise `brt_retarget` onto the character's rig |
 | 3 | Clip sources in a manifest | `reference/clip-sources.md`; `brt_arp` op `source_bones` per skeleton | every entry's file exists and is not empty, names unique, every `fps` equals the scene's; one representative clip checked: skeleton, units, fps, range; the map built from that skeleton |
 | 4 | One-clip retarget | `brt_retarget`, or `brt_arp` op `retarget` with `dry_run: True`, then that clip without it | `retarget.output_is_new`, `retarget.finite_keys` 0; `max_step` read; `retarget.first_equals_last` for a loop only. Through `brt_arp`: on the real run `arp.retarget_clips` and `arp.metadata_clips` 1 of 1 |
 | 5 | Rest and wrist check | stills, target beside source; `reference/rest-pose-and-conjugation.md` | **Picture** at the first, middle and last frame, front and side: arms at the source's angle, no constant twist about a bone, an FK-baked arm keyed FK; a wrist converted alone, with `into_action`, only once its forearm is right, the hand unaimed (`reference_map`) |
@@ -105,19 +108,15 @@ the wrong way, and a repaired region passes every weight gate while it still loo
 
 ## Worked example
 
-`Runner`, already rigged as `RunnerRig` with an A-pose rest, takes two clips: `HurdleVault` from a
-T-pose stock rig and `GateLatchSwing` from a purchased pack.
+`Runner`, rigged as `RunnerRig` with an A-pose rest, takes `HurdleVault` from a T-pose stock rig
+and `GateLatchSwing` from a purchased pack. No Auto-Rig Pro and short limbs: `brt_retarget`.
 
-1. **Probe.** `arp.addon_present` is false and the runner has short limbs anyway: the route is
-   `brt_retarget` onto `RunnerRig`.
-2. **Manifest.** Two entries, each with its file, fps and direction. The pack's two-person
-   `GateLatchSwing` holds one file per actor; only `Courier`, the one who swings, goes onto
-   `Runner`. `Partner` would be a second character, which is not covered.
-3. **One clip.** `HurdleVault` is imported and its armature named `HurdleVaultRig`. Its frame 1
-   stands with the arms down, near `RunnerRig`'s rest, so it is the `reference_frame`; without it
-   every arm in the vault would hang lower by the difference between a T-pose and an A-pose. The
-   map runs from the root outward and by role: `arm_l` is the upper arm, while `shoulder_l` is a
-   clavicle `RunnerRig` does not have; the hands stay out of the first map.
+1. **Manifest.** Two entries with file, fps and direction; of the pack's two-person take only the
+   actor who swings goes onto `Runner`.
+2. **One clip.** `HurdleVaultRig`'s frame 1 stands arms down, near `RunnerRig`'s rest, so it is
+   the `reference_frame`; without it every arm hangs lower by the T-to-A difference. The map runs
+   root outward and by role (`arm_l` is the upper arm; `shoulder_l` is a clavicle the target lacks);
+   hands stay out of the first map.
 
    ```python
    import sys, importlib
@@ -130,23 +129,15 @@ T-pose stock rig and `GateLatchSwing` from a purchased pack.
                               "reference_frame": 1, "output_action": "Runner_HurdleVault"})
    ```
 
-   It returns `retarget.output_is_new` passing and `retarget.finite_keys` 0; `max_step` equals
-   `source_max_step`: how fast the vault moves, not whether the map is right. No seam gate
-   without `loop`. `translation_keyed` names `hips`: the rise over the hurdle is not
-   converted, so it is keyed on `Hips` or left to the game's controller.
-4. **Look.** Stills at the first, middle and last frame beside the source. The wrists hold still
-   while the forearms move, and stay out of the map: `RunnerRig`'s `Hand` tails do not lie along
-   the palm, so a hand aimed at its tail would swing onto the wrong direction. The grip comes from the
-   prop's anchor instead.
-5. **The pack clip.** `Courier`'s skeleton rests in an A-pose and names its bones differently:
-   `L_Shoulder` is its upper arm and `L_Collar` its clavicle. It gets its own map and its own `K`,
-   never the vault's.
-6. **Batch, library, prop.** The rest of the manifest, one clip at a time; a rerun onto a kept
-   name refuses (`retarget.output_is_new`) unless `overwrite_action`. Each `output_action` goes
-   into the manifest's `action`, and `brt_library` runs with `manifest`. `brt_drift`
-   checks `Mallet` against `Hand.R` over every clip, position and rotation; then the save when
-   asked, `brt_audit` with `--props` for `Mallet`, and the minimal export: the character,
-   `Mallet`, the idle and `GateLatchSwing`.
+   `retarget.output_is_new` passes, `retarget.finite_keys` 0; `max_step` equal to
+   `source_max_step` says how fast the vault moves, not whether the map is right;
+   `translation_keyed` names `hips`, whose rise is not converted.
+3. **Look**, first, middle and last frame beside the source. A hand aimed at a tail that does not
+   lie along the palm swings wrong, so the grip comes from the prop's anchor instead.
+4. **The pack clip** rests in another A-pose with other names: its own map, its own `K`.
+5. **Batch, library, prop.** One clip at a time; each `output_action` into the manifest's
+   `action`; `brt_library` with `manifest`; `brt_drift` for `Mallet` on `Hand.R`; save when asked,
+   `brt_audit --props`, then the minimal export.
 
 ## Discipline
 

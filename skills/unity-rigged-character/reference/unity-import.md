@@ -5,14 +5,15 @@ it: `reference/editor-scripts.md` runs every step below from one config file.
 
 ## 1. Rig type and the Avatar
 
-Every clip reaches Unity already on the character's own skeleton: retargeting between skeletons
-happens in Blender (`blender-retarget`), or at Mixamo on that route. Unity never retargets across
-skeletons in this pipeline, so the rig type follows from what the game needs, not from where the
-clips came from.
+Every clip reaches Unity already on the character's skeleton: retargeted in Blender
+(`blender-retarget`), at Mixamo on that route, or, on the fit route, because the character was
+fitted to the clip pack's own skeleton and the purchased files play unchanged
+(`reference/shared-skeleton-generic.md`). Unity never retargets across skeletons in this pipeline,
+so the rig type follows from what the game needs, not from where the clips came from.
 
 | Animation Type | Choose when | Gives up |
 |---|---|---|
-| **Generic** — the default for clips retargeted or keyed in Blender | the clips were baked onto this skeleton | the body-part AvatarMask (a Generic mask lists transform paths), Humanoid foot and hand IK |
+| **Generic** — the default for clips retargeted or keyed in Blender, and for a pack's clips on characters fitted to its skeleton | the clips were baked onto this skeleton, or this skeleton is the clips' own | the body-part AvatarMask (a Generic mask lists transform paths), Humanoid foot and hand IK |
 | **Humanoid** | the game needs a body-part AvatarMask, foot or hand IK, or the clips must also play on other avatars | exactness: muscle space re-solves every pose (below) |
 | **Legacy** | the old `Animation` component only | the Animator: no blend tree, no layers, no mask |
 
@@ -24,7 +25,12 @@ compression off (`ModelImporter.animationCompression = Off`) or tighten the rota
 **Humanoid moves the pose, so measure it on the real clip.** On a 22-bone courier rig playing a
 jog keyed on its own skeleton in Blender, Humanoid put bones 17–20° off the Blender pose at the
 worst frames and a hand socket 13–15 cm away from where Blender had it; compression made no
-difference. A clip
+difference. Even with character and clips on **the same skeleton** (a fitted character playing
+its pack's mocap), the muscle-space round trip moved limbs 1.5–4.4° and the head up to 5.3°, put
+the arm pose 8% off and pushed added foot slide to 2.7 cm on a forehand, where Generic stayed at
+0.0002°; foot IK pulled the slide back to 1.2 cm but bent the knees 5–9° more
+(`blender-retarget` → `reference/route-bakeoff.md`). The automatic mapping took all 22 body bones
+and no finger: a Humanoid with fingers needs an explicit finger map. A clip
 whose pose is outside the muscle limits (a knee bent backwards) is clamped, and that joint ends far
 off. Before choosing Humanoid:
 
@@ -130,6 +136,10 @@ reconciling with what is there. Re-exports happen constantly.
   that passes there needs nothing here. **Custom** (`ModelImporter.skinWeights`,
   `maxBonesPerVertex`) raises the count at a skinning cost; read that cost with `unity-profiling`
   before choosing it.
+- **The quality tier's Skin Weights cap wins over the import.** A tier at 2 Bones skins a 4-weight
+  character with its two largest weights: new self-intersections rose 6.2 → 6.8%, 3.7 → 4.6% and
+  5.5 → 6.4% on three clips, joints unchanged. Set every tier to what the skin stage gates, or
+  gate the skin stage at the tier's count (`reference/shared-skeleton-generic.md`).
 
 ## 4. An FBX authored in Blender
 

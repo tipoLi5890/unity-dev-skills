@@ -2,15 +2,15 @@
 name: unity-rigged-character
 description: >-
   The Unity-side contract for a rigged character: FBX import → Avatar (Generic
-  for clips retargeted in Blender, Humanoid when the game needs it) → Animator →
-  gameplay rig, whichever route made the FBX (Auto-Rig Pro, a Blender rig,
-  Mixamo, an auto-rig service). Load for rig type and Configure, Copy From
-  Other Avatar, `@Clip` naming and loopPose, a prop socket under Optimize Game
-  Objects, a 1D blend tree with an upper-body mask, PBR maps an FBX drops, a
-  hitbox. Symptoms: T-poses in place, clips named mixamo.com, a held prop off
-  the hand, a white mannequin or plastic look, a hitbox far wider than the body. Props:
-  unity-3d-models; rigging: blender-character-rig; clip libraries:
-  blender-retarget.
+  for clips retargeted in Blender or a clip pack played on characters fitted
+  to its skeleton, Humanoid when the game needs it) → Animator → gameplay rig.
+  Load for rig type and Configure, Copy From Other Avatar, `@Clip` naming and
+  loopPose, a prop socket under Optimize Game Objects, clips whose root names
+  differ, curveless bones, an upper-body mask, PBR maps an FBX drops, a
+  hitbox, batchmode sampling. Symptoms: T-poses in place, clips named
+  mixamo.com, a held prop off the hand, a white mannequin, BakeMesh stuck in
+  bind pose. Props: unity-3d-models; rigging: blender-character-rig; clip
+  libraries: blender-retarget.
 ---
 
 # unity-rigged-character — the Unity-side character contract
@@ -20,8 +20,9 @@ A skinned FBX reaches Unity; this skill makes it a character the game can drive:
 upstream route has its own skill. An asset with no skeleton belongs to `unity-3d-models`.
 
 > **Unity never retargets across skeletons here.** Every clip arrives already on the character's
-> skeleton — retargeted in Blender, or by Mixamo on that route — so the rig type follows from what
-> the game needs. Generic reproduces the Blender pose; on a test rig, Humanoid moved bones by up
+> skeleton — retargeted in Blender, by Mixamo on that route, or played as bought on a character
+> fitted to the clip pack's own skeleton (`reference/shared-skeleton-generic.md`) — so the rig
+> type follows from what the game needs. Generic reproduces the Blender pose; on a test rig, Humanoid moved bones by up
 > to 20° and a hand socket by 13–15 cm on the same clip. Choose Humanoid only for a body-part mask, IK or
 > other avatars, and measure it first (`reference/unity-import.md` §1).
 >
@@ -36,6 +37,7 @@ upstream route has its own skill. An asset with no skeleton belongs to `unity-3d
 | Route | Unity receives | Read first |
 |---|---|---|
 | **Auto-Rig Pro and a clip library** — standard humanoid, Auto-Rig Pro installed | a deform skeleton with clips baked onto it | skill `blender-retarget` (`blender-retarget` → `reference/unity-handoff.md`), then `reference/unity-import.md` |
+| **Fitted to a clip pack's skeleton** — one pack supplies the motion | character FBX on the pack's skeleton; the pack's own clip files, unedited | `reference/shared-skeleton-generic.md` |
 | **A custom Blender rig** — chibi or short limbs, extra bones (ears, a tail), a custom action | one FBX: mesh, armature, the action | skill `blender-character-rig`, then `reference/unity-import.md` §4 |
 | **Mixamo** — optional; standard humanoid, stock clips | `<name>.fbx` with skin, one `<name>@<Clip>.fbx` per clip | `reference/mixamo-route.md` |
 | **An auto-rig service's export** — rigged by the image-to-3D or rigging service | one skinned FBX, sometimes with clips | `reference/unity-import.md` §1: check the mapping before anything else |
@@ -58,6 +60,7 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 | 4 | Animator: 1D blend tree, upper-body mask on an override layer | `reference/unity-import.md` §5 |
 | 5 | PBR maps back onto URP Lit — a Blender or Mixamo FBX never arrives with metallic bound | `reference/textures.md` |
 | 6 | Hit box, culling bounds, the Animator to drive, pooling | `reference/gameplay-rig.md` |
+| — | Characters sharing a clip pack's skeleton: RemapRoot, StripNonRootPositions, BakeNodeDefaults, `display_scale` on the prefab root, sampling and skinning in batchmode | `reference/shared-skeleton-generic.md` |
 | — | It went wrong | `reference/troubleshooting.md` |
 
 ## Editor scripts
@@ -72,6 +75,7 @@ prefab snippet and an API cheat sheet: `reference/editor-scripts.md`. Menu
 | `CharacterAvatarLinker.cs` | Link Animation Avatars: Copy From Other Avatar for every `<name>@<Clip>.fbx` |
 | `CharacterAnimatorBuilder.cs` | Build Animator: the controller, with parameter names from the config |
 | `MixamoTextures.cs` | Apply Mixamo Textures: the URP Lit material from the source maps, on any FBX route (needs URP) |
+| `SharedSkeletonClipImporter.cs` | Postprocessor for the fit route, two folders only: Generic characters and the pack's clips, then root aliases renamed, non-root positions stripped, curveless bones given the file's default. Keep `CharacterImportSettings` off those folders |
 
 Stdlib Python: `scripts/fbx2mixamo.py` and `scripts/glb2mixamo.py` (Mixamo route: cleanup,
 axes, a Mixamo-ready OBJ); `scripts/fbx_textures.py` (maps out of any FBX, the original export on

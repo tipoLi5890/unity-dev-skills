@@ -64,6 +64,10 @@ several Editors on one machine at once. → `reference/parallel-runs.md`
 | Need to SEE a screen; layout, contrast or cropping suspected | `reference/visual-checks.md` |
 | The look changed and nobody meant it to; a screenshot diff against baselines, with an exit code | `reference/visual-checks.md` (golden images) · `scripts/golden_diff.py` |
 | The suite takes too long for one Editor; several agents want Unity at once; host and client in two Editors | `reference/parallel-runs.md` · `scripts/lanes.sh` |
+| Other agents, Blender or a second project share the machine; a timing test red only sometimes; pipeline work that needs an Editor but not the game | `reference/parallel-runs.md` → "The machine is shared", "A lab project" |
+| Cyan materials or a frozen object on the first Play only; a capture that skews a timing number; a motion clip to review | `reference/unity-gotchas.md` §22–23 · `reference/motion-and-timing.md` |
+| A batchmode or EditMode tool samples a clip and every frame reads the bind pose | `reference/unity-gotchas.md` §24 |
+| Briefing several agents: who owns lane 0, the Editor cap, push and hook rules | skill `unity-game-brief` → `templates/AGENT_BRIEF.md` |
 | Green in the Editor, broken in a build: stripping, platform defines, init order — tests run inside a player | `reference/player-tests.md` |
 | "It shakes / flickers / shimmers"; anything temporal | `reference/motion-and-timing.md` |
 | Runtime misbehaviour with a human pressing Play; device triage | `reference/log-triage.md` |
@@ -105,6 +109,9 @@ can read is a different thing — that one is `unity-play-harness`.
   that photographed the wrong moment cannot pass unnoticed.
 - **Print the numbers a test asserts on.** A green tick says a test passed; a logged
   `world width=0.50 laneSpacing=1.30` says why, and keeps saying it after the next change.
+- **At most two Editors on the machine, whatever project they belong to**, and look at the load
+  (`uptime`, top of `ps`) before believing any millisecond. Another agent's Blender job made frame
+  times 2 to 5 times high and turned a smoke test red. `lanes.sh` queues at `MAX_UNITY`.
 - **Median and worst, never just worst** — one spike and a constant vibration are different faults.
 - **When a measurement contradicts the code, suspect the measurement.** Dump the pixels. Take a
   whole-frame diff. The constants are rarely the liar.

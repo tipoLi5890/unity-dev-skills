@@ -86,3 +86,38 @@ overlay.transform.SetSiblingIndex(9);   // after the nine cells, before objects 
 
 When a Canvas child is present in the hierarchy but invisible, check its sibling index against the
 opaque elements *before* touching materials or colours.
+
+## 6 · Setting a TMP outline copies the font material, per label, per rebuild
+
+`tmp.outlineWidth = …`, `tmp.outlineColor = …` and reading `tmp.fontMaterial` each give that label
+its own copy of the font's material. Nothing destroys the copies when the label goes. A HUD rebuilt
+every match with outlined timing labels left **sixteen font materials per match** in a tennis game,
+found by a soak test that counts materials across nine matches (`unity-profiling` →
+`reference/runtime-asset-leaks.md`).
+
+Build one outlined material per (source material, width), cache it, and share it:
+
+```csharp
+static readonly Dictionary<(int, int), Material> outlineMats = new();
+
+[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+static void ResetStatics() => outlineMats.Clear();   // Enter Play Mode without a domain reload
+
+static void Outline(TMP_Text t, float width, Color color)
+{
+    var src = t.fontSharedMaterial;
+    var key = (src.GetInstanceID(), Mathf.RoundToInt(width * 1000));
+    if (!outlineMats.TryGetValue(key, out var m) || m == null)
+    {
+        m = new Material(src) { name = src.name + " Outline " + width };
+        m.SetFloat(ShaderUtilities.ID_OutlineWidth, width);
+        m.SetColor(ShaderUtilities.ID_OutlineColor, color);
+        outlineMats[key] = m;
+    }
+    t.fontSharedMaterial = m;
+}
+```
+
+The colour is fixed per material here; a second outline colour is a second key. A label that
+needs its own animated outline is the exception, and its copy belongs to the label's owner
+(`unity-profiling` → `resources/OwnedAssets.cs`).

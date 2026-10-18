@@ -29,6 +29,7 @@ Read the row off a window you already have. First match wins.
 | SetPass calls or draw calls high, triangles ordinary | §1 — batching |
 | Draw calls rose after a tint, a flash or a per-object colour was added | §1 — a property block left the batch |
 | Triangles high looking down the lane, lower looking at the floor | §2 — LOD |
+| Low-tier trees or props missing after an FBX import; a fixed camera never switches level | §2 — `reference/lod.md`, the importer's `LODGroup` |
 | Triangles high at every distance | `unity-3d-models` → `reference/import-and-decimate.md` |
 | Draw calls and triangles stay high facing a wall | §3 — occlusion |
 | Draw calls climb with view distance, and what is added is a few pixels tall | §4 — culling distances |
@@ -105,6 +106,8 @@ the share of triangles under a `LODGroup`, and `lod.heaviestWithout` the ten mes
 - **A level earns its place when it halves the triangles.** The last level is a different
   object: one material, no shadow casting.
 - **The collider never needs a LOD.** One collider on the root; none on the level children.
+- **A fixed camera picks the level by quality tier**, not screen height, and the FBX importer's
+  automatic `LODGroup` (from `_LODn` names) has to be removed at prefab build.
 - **Mesh LOD** is the import-time alternative for dense single-material meshes: no extra
   renderers, no culling.
 - **`lodBias` and `maximumLODLevel` are per quality tier**: 0.6 and 1 on the low tier, 1.0 and

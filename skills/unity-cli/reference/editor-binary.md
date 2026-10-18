@@ -152,6 +152,16 @@ silently unrun. If nothing matches the correct pattern but
 `Temp/UnityLockfile` exists, the lockfile is a corpse — `unity-debug` →
 `reference/harness-trust.md`.
 
+**Per project is not per machine.** This guard asks whether *this* project is open. Memory asks
+how many Editors run at all: on a 16 GB machine shared by several agents, three Editors made a
+watchdog time out. Count every Editor with the same pattern, without `-projectPath`, before
+starting one: `unity-debug` → `reference/parallel-runs.md` ("How many lanes").
+
+**The Editor install also ships a .NET runtime and a C# compiler** (`Scripting/NetCoreRuntime/dotnet`,
+`Scripting/DotNetSdkRoslyn/csc.dll`). With the NUnit build in `Library/PackageCache`, they run a
+project's engine-free tests with no Editor at all: `unity-new-project` →
+`reference/pure-test-lane.md`.
+
 ## 7. The wrapper is written in bash 3.2
 
 macOS ships **bash 3.2.57**, and `#!/usr/bin/env bash` still finds it first. Two traps that both

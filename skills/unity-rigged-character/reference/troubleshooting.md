@@ -40,6 +40,14 @@
 | The exposed socket is found nowhere under the hand | an exposed transform is re-parented under the model root | find it by name, not by path (`unity-import.md` §3) |
 | A socket bone is missing after a deform-only export | its Deform flag was off | flag it Deform; it needs no weights (`unity-import.md` §4) |
 | A held prop's shape key does not move in Unity | a Blender driver is not exported | bake the driven value to keys, Import BlendShapes on (`unity-import.md` §4) |
+| Some clips of a pack play nothing on the character, the rest are fine | their root node is named differently and Generic binds by path | rename the path prefix at import, RemapRoot (`shared-skeleton-generic.md`) |
+| Limbs stretch or shrink to the pack body's proportions in a few clips | stray translation curves on non-root bones | strip every position and scale curve except the root bone's (`shared-skeleton-generic.md`) |
+| A head or hand sits a few to 70° off in one clip only, on your character but not on the pack's body | keyframe reduction deleted that bone's curve; the bone holds the model's default | write the clip file's default as a constant curve, BakeNodeDefaults (`shared-skeleton-generic.md`) |
+| The opening frames of a clip differ between Blender and Unity (a whole body 1.2 m apart at frame 0) | a curve starts late: Unity holds its first key, Blender uses the node's static value | measure the opening frames in Unity; play the purchased files rather than Blender re-bakes (`blender-retarget` → `reference/route-bakeoff.md`) |
+| A fitted character is the wrong height in the scene | the skeleton is at the pack's scale by design | the prefab root takes `display_scale` from the fit's manifest (`shared-skeleton-generic.md`) |
+| A batchmode tool samples a clip and every frame reads the default pose | `PlayableGraph.Evaluate` does not pose the Animator in a batchmode editor | `AnimationMode.SamplePlayableGraph` inside Begin/EndSampling (`shared-skeleton-generic.md`) |
+| `BakeMesh` returns the same mesh at every frame in batchmode | it keeps returning the bind pose | compute linear blend skinning from the weights and bind poses (`shared-skeleton-generic.md`) |
+| More clothing pokes through on the low quality tier only | the tier's Skin Weights is 2 Bones; the asset was skinned with 4 | one count for both (`unity-import.md` §3) |
 | GLB character, Humanoid clip does nothing | no Avatar on the glTFast import | build one with `AvatarBuilder.BuildHumanAvatar`, then `Rebind()` (`unity-import.md` §1) |
 
 ## Materials

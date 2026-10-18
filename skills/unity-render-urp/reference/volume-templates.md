@@ -214,6 +214,39 @@ threshold selects nothing. Every number in these rows sits inside its parameter'
 [`effect-reference.md`](effect-reference.md) before inventing a fifth grade, because a
 `Clamped*Parameter` clamps in silence.
 
+## A grade per venue, effects per tier
+
+A game with several venues and three quality tiers needs two axes: the look belongs to the venue,
+the cost belongs to the tier. Keep them apart.
+
+- **The pipeline asset's default profile holds the tier.** Each tier's URP asset points its
+  Volume Profile field at a tier profile: `Neutral` tonemapping on every tier, `Bloom` only in the
+  high tier's profile. Medium and low get tonemapping and grading only, baked into the LUT.
+- **A runtime global Volume holds the venue**, at priority 10, built when the venue loads:
+  `WhiteBalance` temperature and tint, `ColorAdjustments` exposure, contrast and saturation. Add
+  a component only on the tiers that keep it, so the low tier never pays for bloom it would not
+  show.
+- **Ask the tier by name, not index.** `QualitySettings.names[GetQualityLevel()]`, with names the
+  render-settings builder wrote. Read it when the scene is built, not per frame: `names` allocates
+  a new array on every call.
+
+The tennis game's values, tuned on screenshots in the Editor and not yet confirmed on a phone:
+
+| Tier | Render scale, MSAA, HDR | Post-processing |
+|---|---|---|
+| High | 1.0, 4×, HDR | Neutral tonemap; venue grade; `Bloom` threshold 1.05, intensity 0.22, scatter 0.6, high-quality filtering off; `Vignette` 0.16 (smoothness 0.5, dark blue) in full-screen only |
+| Medium | 0.85, 2×, no HDR | Venue grade (LUT); tonemapping set, but with HDR off check on screen what it does (§1 step 2 of the router); vignette in full-screen only |
+| Low | 0.7, 2×, no HDR | As medium, no vignette; FXAA; dithering off |
+
+Venue grades were small: temperature −7 to +6, tint −2 to +4, exposure +0.2 to +0.25, contrast
++8 to +12, saturation +4 to +10. No vignette in split screen: each half would darken its own
+centre seam.
+
+Measure post-processing as a pair of windows with the camera's `renderPostProcessing` on, then
+off, in the same situation (`unity-profiling` → `reference/frame-hygiene.md`). In the Editor the
+whole stack cost 0.1 to 0.45 ms a frame, about 0.2 ms on the low tier; whether the low tier keeps
+post-processing at all was left for the device measurement.
+
 ## Report shape
 
 After building or changing a grade, say all six of these or the report is not checkable:

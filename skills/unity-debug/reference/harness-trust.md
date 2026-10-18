@@ -87,6 +87,13 @@ you use:
 
 A suite that silently reruns until green is indistinguishable from a suite with no assertions.
 
+**Load on the machine is a named, checkable cause of flakiness, not a guess.** A timing test that
+went red once (a worker-thread simulation more than 2 ticks behind on 5 frames, limit 3) was
+green on a quiet rerun. Record `uptime` and the top of `ps -axo %cpu=,comm= | sort -rn` with the
+first run, so the report can say "red under load, with a Blender job at the top of `ps`; green alone" and
+not "flaky". Then fix the cause or the threshold; a test that only passes alone is still a
+finding. → `parallel-runs.md`, "The machine is shared".
+
 ## Median versus worst
 
 One number cannot tell a spike from a vibration. Report both:

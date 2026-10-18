@@ -117,3 +117,41 @@ Check these before theorising. Each one has been paid for.
 
 21. **A runtime `Screen.autorotate*` assignment overrides ProjectSettings.** Locking an orientation
     needs both changed, or the runtime call quietly re-enables what the asset forbids.
+
+## The Editor's first Play is not the game
+
+22. **For about a second after the first Play, materials draw as cyan placeholders.** The Editor
+    compiles shader variants asynchronously and draws a placeholder until each one is ready. A
+    built player never shows them. Two consequences: a screenshot taken in those frames shows a
+    cyan court that a build would never draw, and a person play-testing judges feel from the first
+    rally while the Editor is still compiling. Before a capture, wait on `!ShaderUtil.anythingCompiling`
+    (Editor-only API, so install it as a hook from an Editor assembly, `visual-checks.md`); tell a
+    play-tester to judge from the third point, not the first.
+
+23. **The first pass through a code path stalls under Mono's JIT, and on a background thread it
+    shows up as a frozen object.** A tennis game ran its simulation on a worker thread at 120 Hz
+    and the presentation read the latest snapshot. The first time the shot solver and the trajectory
+    predictor ran was on a hit tick, and the JIT made that tick take long enough that the
+    presentation clock overtook the newest snapshot. The ball sat still at the contact point for
+    25 to 50 ms on the first few strikes. The fix was a throwaway warmup: one bot match played
+    headless through the same code (about 40 ms), once per process, before the match clock starts.
+    After that, a smoke run's worst lag was 1 tick over 22 s and no frame was more than 2 ticks
+    behind; the smoke test asserts it. **The first attempt raced:** it warmed up after the host
+    existed, so the worker thread was already stepping against the old clock while the warmup ran
+    and the match started with a backlog. Warm up first, then restart the clock, then construct the
+    host. IL2CPP compiles ahead of time and does not show this stall on a device,
+    but the Editor still needs the warmup, and the device needs its own measurement anyway.
+    Do not "fix" it by clamping the render tick to the snapshot tick: that slowed the timing cue
+    and shifted every press late. The host and clock design: `unity-gameplay` →
+    `reference/sim-host-and-clock.md`.
+
+## Batchmode and EditMode do not animate
+
+24. **A batchmode or EditMode tool that samples animation reads the bind pose on every frame.**
+    A manually updated `PlayableGraph` does not pose the Animator there: after `graph.Evaluate()`
+    the bones stay where they were. Sample inside `AnimationMode.StartAnimationMode()` with
+    `BeginSampling()`, `SamplePlayableGraph(graph, 0, t)`, `EndSampling()` per frame. Then
+    `SkinnedMeshRenderer.BakeMesh` keeps returning the bind pose although the bones moved, so a
+    tool that measures the skinned surface computes linear blend skinning itself from the weights
+    and bind poses. A gate that compares frames and finds them identical is reporting this, not a
+    still clip. `unity-rigged-character` → `reference/shared-skeleton-generic.md`.

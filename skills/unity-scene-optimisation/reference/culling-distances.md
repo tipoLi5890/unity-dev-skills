@@ -92,6 +92,21 @@ Under URP an Overlay camera in a stack culls again too. The opposite fault — a
 in the Scene view and not in the Game view because its layer is missing from the mask — is
 `unity-3d-models` → `reference/culling-and-layers.md`.
 
+### The zone behind a fixed camera
+
+A camera behind one end of a court never sees the fence and scenery at its back, but it still
+culls and, with shadows on, may draw them into the shadow map. Split the venue at export into
+zones (`Main`, `Far`, and one `Near<n>` per camera for what stands behind it), put each `Near<n>`
+mesh on its own layer, and clear that bit from camera n's mask. In split screen each camera
+removes its own back zone and keeps the other's, which is in front of it. Two rules from the
+tennis game that did this:
+
+- **Assert the layers in a test**, by name suffix: a re-export that renames a zone silently puts
+  the back fence in front of the lens.
+- **Reopen the zone for a shot that turns round.** The match-end close-up faces the winner, with
+  the camera's back zone now in frame: add the bit back for that camera only while the shot is
+  on, and restore the saved mask after (`unity-camera` → `reference/broadcast-sports.md`).
+
 ## Hiding the cut
 
 - **Fog that reaches full density at the far plane** makes the far cut invisible. Per-layer cuts

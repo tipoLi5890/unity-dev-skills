@@ -1,15 +1,16 @@
 ---
 name: blender-character-rig
 description: >-
-  Rig and animate an image-to-3D character in a running Blender driven through
-  its MCP server: import the GLB, measure landmarks, build an armature from
-  them, skin by position (bone heat fails on a double shell), parent a prop to
-  a hand bone, key an action, render a preview, export FBX and prove it by
-  re-import. Load for: "rig this GLB in Blender", "chibi / short limbs, Mixamo
-  cannot rig it", "automatic weights failed", "the ears tear when posed",
-  "attach the prop to the hand", "make a swing animation", "drive Blender over
-  MCP", KeyError 'Principled BSDF'. Judge weights in an extreme pose. Mixamo
-  and Unity import: unity-rigged-character; the GLB: comfyui-asset-generation.
+  Rig and animate an image-to-3D character in Blender, interactively through
+  its MCP server or headless as stages (blender -b, gates JSON, exit 0/1/2,
+  byte-identical FBX): measure landmarks, build an armature or fit a clip
+  pack's skeleton to the mesh, skin by position (bone heat fails on a double
+  shell), prop on a hand bone, key an action, skinned LODs, export FBX and
+  prove it by re-import. Load for: "rig this GLB", "chibi / short limbs",
+  "automatic weights failed", "the ears tear when posed", "fit my character to
+  the mocap pack's skeleton", "run Blender headless", "LOD spikes", KeyError
+  'Principled BSDF'. Unity import: unity-rigged-character; clips from other
+  skeletons: blender-retarget.
 ---
 
 # blender-character-rig — measure the mesh, compute the weights, prove the file
@@ -22,8 +23,14 @@ weights want a surface every bone can see. A short-limbed mascot with long ears 
 > are computed from where each vertex is, the swing is measured at the contact frame before it is
 > rendered, and the FBX is imported back and compared.
 
-Every step is one call, through the MCP server of a Blender the user already has open, to a
-module in `scripts/` that returns a dict of gates.
+Every step is one call to a module in `scripts/` that returns a dict of gates: through the MCP
+server of a Blender the user already has open, for one character explored by hand; or from a stage
+script under `blender -b --factory-startup --python`, for a character rebuilt the same way every
+time. Every module runs unchanged headless (`reference/headless-pipeline.md`).
+
+> **One clip pack supplies the motion? Fit, do not build.** Move the pack's skeleton onto the
+> mesh once (names, parents and rest rotations kept) and the clips play unchanged:
+> `reference/fit-to-clip-skeleton.md`. Building a skeleton from landmarks is for a custom body.
 
 ## Working contract
 
@@ -40,6 +47,9 @@ module in `scripts/` that returns a dict of gates.
   and `bcr_attach` reuse what exists and ignore new parameters: remove the object, or put the
   prop back, before a rerun. A call that raises
   removes what it created; edits to datablocks that already existed are not undone.
+- **Headless, the stage owns its files.** It reads the previous stage's output and writes its own
+  `.blend` and gates JSON; it never opens the user's file for writing. Exit 0 pass, 1 a gate
+  failed, 2 refused input; two runs give the same mesh hashes and FBX bytes.
 
 ## Load what the situation needs
 
@@ -53,6 +63,9 @@ module in `scripts/` that returns a dict of gates.
 | Poses in armature axes, the key table, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
 | The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake from the showcase | `reference/game-mesh.md` |
 | Exporter options, clip naming, the round trip, the Unity check | `reference/fbx-export.md` |
+| Running the modules as headless stages: stage layout, gates JSON, exit codes, deterministic FBX, a Unity lab outside the repo | `reference/headless-pipeline.md` |
+| Fitting a clip pack's skeleton to the mesh: what may change, canonical scale and display scale, soles on the floor, hip width, the skin method by measured intersection | `reference/fit-to-clip-skeleton.md` |
+| Lighter skinned levels on one skeleton: hidden shells, shard props, normals, boundary weights, names Unity will not turn into a LODGroup | `reference/skinned-lod.md` |
 | The call contract of each module (its docstring) | `scripts/bcr_*.py`, `scripts/rig_gate.py`, `scripts/frames_preview.py` |
 
 ## 1. The pipeline

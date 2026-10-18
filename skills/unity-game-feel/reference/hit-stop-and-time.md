@@ -18,6 +18,13 @@ Numbers: 50–80 ms for a light hit, 100–120 ms for a heavy one, never above 1
 hang). Scale 0.05, not 0: a deltaTime of exactly zero is a divide-by-zero in somebody's code, and
 0.05 is indistinguishable from a freeze for 100 ms.
 
+> **When not to stop at all.** In a game where the player times the next input against an object
+> in flight (a returned ball, a falling note), any freeze or slow motion during play moves that
+> object off the beat they are reading, and a simulation clock that ignores `timeScale` makes the
+> picture and the clock disagree. A tennis game kept the rally at full speed and spent its impact
+> on flashes, rings, speed lines and a 4 cm camera dip instead:
+> `reference/sports-readability.md` §3.
+
 ## 2. Why the call-site version breaks
 
 The version everybody writes first, on the thing that was hit:

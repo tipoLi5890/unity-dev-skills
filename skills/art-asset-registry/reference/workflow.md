@@ -60,6 +60,25 @@ file's sha256, so every version of the `.blend` that produced something is pinne
 crate is `--source purchased --license purchased:courier-pack` with `vendor: true` on its file.
 Turning a producer's own JSON output into this shape is `reference/ingest.md`.
 
+**A headless character pipeline** (`blender-character-rig` → `reference/headless-pipeline.md`)
+records one row per shipped output: the character FBX (with its LOD levels inside), the prop FBX,
+the textures, each with the stage's `.blend` as `role: source`. The stage's gates JSON already
+carries `{name, value, limit, ok}` and the input and output hashes: copy its gates with `ok`
+renamed `pass`, and `--link made-by=job:<character>-<stage>`. A purchased clip pack is one
+record, `--source purchased`, `vendor: true`; the clips played unchanged from it need no row per
+clip, while a clip converted from another skeleton is its own record with `depends-on` both
+packs. A change to the fit (a new canonical scale) is a new revision of the character, and
+`stale` then names everything measured on the old one.
+
+**Git LFS is a budget, per character and per clip set.** Measured in a tennis game against a
+1 GB free tier: about 9 MB per character (a 1.6 MB FBX with two LOD levels, three 1024 base
+textures and a normal map), 105 MB for 75 purchased clips, 104 MB more for the pack's second
+variant kept beside them, and about 450 MB used in total after two characters. Before tracking a
+pack's second variant, or the original archive beside its extracted files (byte-identical in
+that pack), decide whether it can be re-extracted instead. A project that keeps purchased files
+in a private repository is overriding this skill's default (`vendor: true` stays out of git):
+write that decision down, and expect `check --strict` to flag the tracked vendor files.
+
 - **The id comes from the first file**, or from the id that already holds it. List the shipped
   file first, or pass `--id`.
 - **Regenerating at the same path** adds a revision of the same id, back to `candidate`; `kind`,

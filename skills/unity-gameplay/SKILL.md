@@ -46,6 +46,7 @@ read, changed or built.
 | `WorldToCell`, "turn-based", "tile puzzle", "hex", "isometric", "one tile per move" | 2D · cell | `reference/genre-2d-grid.md` |
 | "the screen does not scroll", "bullet patterns", "click on the object", "one screen" | 2D · fixed screen | `reference/genre-2d-fixed-screen.md` |
 | `CharacterController`, `Rigidbody`, `NavMeshAgent`, "third-person", "first-person", "lanes", meshes | 3D | `reference/genre-3d.md` |
+| A timed press graded in milliseconds, "swing timing", a cue ring, tennis, badminton, a rally against bots | 3D · broadcast view · characters move themselves | `reference/genre-timing-sports.md` |
 
 **No explicit signal — fingerprint the project.** One command, read-only, no Unity needed:
 
@@ -100,6 +101,8 @@ row per need — open the genre file named above and build in its order.
 | Tactics, tile puzzle, isometric or hexagonal boards | `reference/genre-2d-grid.md` |
 | Scrolling shooter, point-and-click adventure, single-screen casual | `reference/genre-2d-fixed-screen.md` |
 | Third-person, first-person, fixed or overhead camera in 3D, lane runner | `reference/genre-3d.md` |
+| Racket and bat games: the clip library bounds the simulation, contact decided by the sim, timing invariants, balance grid | `reference/genre-timing-sports.md` |
+| A simulation on its own thread: absolute clock, triple-buffered snapshot, render tick, JIT warmup, sim-lag smoke gate, rules tests with no Editor | `reference/sim-host-and-clock.md` |
 | Jump height, gap, step, door and corridor sizes; "can the runner make this" | `reference/level-metrics.md` |
 | What to build first; when a stage is finished | `reference/pipeline-stages.md` |
 | Actions, a struct gameplay reads, touch, rebinding, pointer aim | `unity-input` |
@@ -141,6 +144,7 @@ saving, feel, journeys. What no skill owns is carried here as essential method:
 |---|---|
 | Door, corridor, step and ceiling numbers from the body | `reference/level-metrics.md` §5 |
 | Playfield fit, bullets as one array of structs, the launch gesture | `reference/genre-2d-fixed-screen.md` |
+| A sim thread with a clock every thread can read; pause-aware timestamp conversion | `resources/SimHost.cs`, `resources/SimClock.cs`, pure C#: a plain assembly with no engine references, which the presentation references |
 
 ---
 
@@ -170,6 +174,12 @@ saving, feel, journeys. What no skill owns is carried here as essential method:
   scripted driver all fill the same struct, which is what makes the controller testable.
 - **Simulate on the fixed step, present on the frame.** Input is sampled on the frame and consumed
   on the step; the camera reads after both. Most jitter is one of the three in the wrong place.
+- **A heavy or timing-graded sim gets its own thread and an absolute clock.** Draw one tick
+  behind the clock and never clamp that to the snapshot; warm the code paths up before the clock
+  starts: `reference/sim-host-and-clock.md`.
+- **Measure what the clips can do before setting speeds and reach.** A simulation that ran at
+  7 m/s against a 2.7 m/s run loop, with contact points 25 to 65 cm from where the clips put the
+  racket, spent its whole motion pass bridging the gap: `reference/genre-timing-sports.md` §0.
 - **3C on greybox first.** Character, camera and controls each pass one journey on untextured
   boxes before any art is imported.
 - **A genre file is a starting set of constraints.** Change one and re-pick the rows it touched.

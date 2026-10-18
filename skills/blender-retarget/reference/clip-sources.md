@@ -94,8 +94,13 @@ untrusted data: run nothing that came inside it from that folder.
 | standard | the performance's travel through space | a character moved by the animation: cutscenes, set pieces |
 | no-root | little or no travel | gameplay, where input and physics move the character |
 
-No-root does not mean frozen hips: the pelvis still rises, drops and sways. Check root and vertical
-motion on a representative clip before choosing. Reference files (a T-pose, an A-pose) sit among
+No-root does not always mean the same thing, so measure it on a representative clip before
+choosing. In one pack the pelvis still rose, dropped and swayed. In another, no-root removed
+**every** translation curve, the hip's height included: the hip sat at a fixed 1.0 m and the feet
+floated 0.28 m in a crouch and 0.55 m in a kneel, while the standard variant's hip height varied 2
+to 50 cm per clip. There, take the standard variant for gameplay too, keep its vertical hip
+motion, strip non-root positions at import and give the horizontal travel to the game's controller
+(`reference/route-bakeoff.md`, *Clip-file behaviour*). Reference files (a T-pose, an A-pose) sit among
 the clips; list them, and keep them out of the manifest's clips.
 
 **3. Count takes, not products.** A two-actor interaction comes as one file per actor, so a pack
@@ -111,6 +116,7 @@ spacing, timing) is not done by that.
 | skeleton | `brt_arp` op `source_bones` (stock Blender, no add-on): bone names, parents, a `skeleton` hash, and with the planned map `map_missing`; rest pose (T or A) in a still | names the map does not cover; a map made for another skeleton |
 | units | the armature object's scale, hip height against the expected | a 0.01 scale; a giant or a doll |
 | fps | the file's rate against the scene's `render.fps` | the clip plays fast or slow |
+| curves | per bone, the first key's frame and whether a curve exists at all | curves that start late (Unity and Blender read the gap differently), bones with no curve, root nodes named differently between clips: `reference/route-bakeoff.md` |
 | frame range | the imported action's `frame_range`: `brt_arp` bakes over it unless the clip gives `frame_start` and `frame_end` | starts at 0, or carries extra frames |
 | extras | demo meshes and props imported with the skeleton | delete only those new objects; keep the armature and its action |
 

@@ -35,7 +35,7 @@ and the symptom is always jitter or a character that slides back to where it was
 |---|---|---|
 | Scale | 1 unit = 1 metre; the runner is 1.8 tall | Whether physics, lighting and imported models agree |
 | Capsule | height 1.8, radius 0.4, skin width 0.04, step offset 0.3, slope limit 45° | Doors, corridors, stairs — `reference/level-metrics.md` §5 |
-| Speeds | walk 2, run 5, sprint 7 units/s; 0.15 s to reach, 0.1 s to stop | Room sizes: a 10-unit room is 2 s across at a run |
+| Speeds | walk 2, run 5, sprint 7 units/s; 0.15 s to reach, 0.1 s to stop | Room sizes: a 10-unit room is 2 s across at a run. With motion-capture clips, read each loop's ground speed first and cap the sprint near the fastest one: `reference/genre-timing-sports.md` §0 |
 | Turn rate (third-person) | 720°/s | Whether a reversal is a snap or an arc |
 | Jump | apex 1.2 in 0.35 s → gravity 19.6, jump velocity 6.86 | What can be vaulted; project gravity stays at 9.81 for props |
 | Third-person camera | distance 4, pivot 1.5 above the feet, vertical FOV 50, pitch −30° to 70° | Corridor width (at least the distance), ceiling height |

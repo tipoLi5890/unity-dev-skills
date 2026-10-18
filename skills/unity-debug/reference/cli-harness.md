@@ -23,6 +23,9 @@ it is the usual reason a run exits instantly with a clean exit code.
 
 ---
 
+Tests in assemblies with no engine references do not need the Editor at all: `unity-new-project`
+→ `reference/pure-test-lane.md` runs them in seconds with the compiler and NUnit the Editor ships.
+
 ## Compile verification in ~20 seconds
 
 Commit a trivial entry point:

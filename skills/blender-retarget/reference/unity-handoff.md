@@ -24,6 +24,14 @@ So the clips import **Generic** unless the game needs what only Humanoid gives (
 foot or hand IK, other avatars), and then only after that deviation is measured on the real clip
 (`unity-rigged-character` → `reference/unity-import.md` §1).
 
+**The other route needs no hand-off from here.** When one pack supplies the motion, the character
+is fitted to the pack's skeleton and Unity plays the purchased files themselves, Generic
+(`blender-character-rig` → `reference/fit-to-clip-skeleton.md`). That route is not "importing the
+source clips raw and retargeting in Unity": the skeleton already is the clips' skeleton, so
+nothing is retargeted anywhere. Baking those same clips per character in Blender measured 6.7×
+larger in Unity and carried Blender's reading of late-starting curves
+(`reference/route-bakeoff.md`).
+
 ## A control rig is not a runtime skeleton
 
 An Auto-Rig Pro control rig — like any control rig — carries controllers, IK targets, poles and

@@ -160,3 +160,56 @@ keeps one test's parameters out of the next.
 
 Confirm on your version: that `EditorSceneManager.LoadSceneAsyncInPlayMode` resolves from your
 test assembly (it is `UnityEditor.SceneManagement`, so the call sits inside `#if UNITY_EDITOR`).
+
+## A shot list over every situation
+
+The same ids drive a screenshot pass that an agent which cannot see the screen uses to accept a
+layout. In a 3D tennis game, 22 situations (four menu screens, matches in each venue and quality
+tier, the pause panel, match end per venue, characters, a motion review) each played to a few
+named moments and captured them:
+
+- **One parameterised test over the whole list**, `[UnityTest] Situation([ValueSource(nameof(Ids))] string id)`,
+  in its own category (`Shots`), never in Smoke: it is slow, and its output is pictures, not
+  verdicts. An environment variable narrows it (`SITUATIONS=match/solo,shell/modes`) so a change
+  to one screen re-shoots one screen.
+- **Each shot is named for the moment**, `<id with / as _>-NN-<tag>.png` (`match_solo-04-contact.png`),
+  and logged with its size: `[SHOT] <path> 1920x1080`. The test asserts every file exists and is
+  over 10 KB, and that no error was logged. Opening the images is the agent's job, not the test's
+  (`unity-debug` → `reference/visual-checks.md`).
+- **Shots wait on the moment, not on time.** "Contact" waits for the hit event from the game's
+  event stream and captures on that frame; "between points" waits for the phase. A fixed delay
+  is used only for an animation that has no event (a menu focus slide).
+- **Before every capture, wait for the render to be real**: a fixed resolution and no shader
+  compiling (`unity-debug` → `reference/visual-checks.md`, hooks installed from an Editor assembly).
+- **Situations never write the player's saved settings.** A static `ReadOnly` switch on the
+  preferences store, set by the harness and by the command-line boot, makes every `Save` a no-op.
+  This is a different tool from resetting prefs in `[SetUp]` (`unity-debug` →
+  `reference/test-verdicts.md`): resetting protects the test from the developer's saves; read-only
+  protects the developer's saves (a calibration done by hand in the Editor) from the tests.
+- **Each run lives inside a harness object** that subscribes to `Application.logMessageReceived`
+  for errors and exceptions, and on `Dispose` ends the match and destroys every persistent
+  singleton the boot created, so the next id starts from nothing.
+- **The built player takes the same ids**: `-situation <id> [-screenshotDir DIR] [-quit]`, plus
+  `-autoplay` (below) and a switch that skips the physical input device. A build can
+  then be checked with the same shot list as the Editor.
+
+## Matches play themselves: the autoplayer
+
+A moment deep in a match ("the contact frame of the third rally") is only reachable if someone
+plays. **An autoplayer stands in for the human by injecting into the same input funnel the
+device uses** (the router's `Down` / `Up`), never by calling the rules directly, so a situation
+exercises the real path from input to judgement. Give it:
+
+- one switch per seat, so a test can autoplay seat 0 against a bot;
+- a key in the Editor (F8 here) that toggles it for player 1, so a person can watch a rally
+  without a device attached;
+- **timing noise**: it presses at the ideal moment plus a Gaussian offset (σ 40 ms here, drawn once
+  per shot from a seeded generator), so it produces the range of judgements a person does, not
+  only perfect hits, and the same seed gives the same match;
+- a varied choice of command (a weighted random shot type), so every branch of the rules gets
+  played;
+- a press *and* a release a few frames later, because a device that ignores a held input needs
+  the release before the next press counts.
+
+It is test equipment that ships, like the probe: the command-line `-autoplay` uses it in a player.
+The smoke test that rides on it is in `journeys.md`.

@@ -36,6 +36,9 @@ description: >-
 | Effect is suspected of costing too much, and no number says so | §3, then a before/after frame-time window — `unity-profiling` |
 | Reviewing a `ScriptableRendererFeature` | §4 |
 | Turning an HLSL function into a Shader Graph node | §5 |
+| A script-made material changes again after it was saved; an emissive lost its glow; every rebuild leaves a `.mat` diff | [`reference/material-validation.md`](reference/material-validation.md) |
+| A see-through fence or mesh shimmers or vanishes at distance; fog missing only in the player | [`reference/material-validation.md`](reference/material-validation.md) §3–4 |
+| A grade per level or venue, and bloom only on the high tier | [`reference/volume-templates.md`](reference/volume-templates.md) — per venue, per tier |
 | Moving a built-in project to URP; everything went magenta; converting an old `PostProcessVolume` to a URP Volume | `unity-urp-migration` |
 
 ## 1. Pre-flight — five checks, in this order

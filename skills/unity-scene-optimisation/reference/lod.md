@@ -150,6 +150,62 @@ Set them per level in Project Settings → Quality, or after the tier is chosen 
 build target can reach is left out of the build, so `maximumLODLevel = 1` on every mobile tier
 also removes LOD0 meshes from the download.
 
+## A fixed camera: pick the level by tier, and strip the group the importer adds
+
+A broadcast camera over a court, a fixed side view, a camera on rails: every object sits at one
+screen height for the whole match, so a screen-height switch never switches. Worse, scenery
+exported as merged meshes (one object per material per zone) has bounds covering half the venue,
+and its "screen height" means nothing. Choose the level from the quality tier instead: build both
+levels into the prefab, and at scene build enable the objects whose names carry `_LOD0_` on the
+high tier and `_LOD1_` on the others.
+
+> **The FBX importer adds a `LODGroup` by itself.** Child names carrying `_LOD0`, `_LOD1` … make
+> `ModelImporter` put a `LODGroup` on the root, selecting by screen height. It happened with the
+> marker in the middle of the name too (`Venue_Blossom_LOD1_Main`). In a tennis game
+> the trees' LOD1 set was meant for the medium and low tiers; the importer's group, seeing the
+> whole venue large on screen, selected LOD0 and culled LOD1, so on those tiers the tree line
+> vanished. Nothing logged it. Remove every `LODGroup` when the builder makes the prefab, and
+> assert there are none:
+
+```csharp
+// builder, after instantiating the imported model and before saving the prefab
+foreach (var g in inst.GetComponentsInChildren<LODGroup>(true))
+{
+    Debug.Log("[VENUE] removed importer LODGroup on " + g.gameObject.name);
+    Object.DestroyImmediate(g);
+}
+
+// EditMode test
+Assert.AreEqual(0, prefab.GetComponentsInChildren<LODGroup>(true).Length,
+    "the importer's LODGroup is back: it culls the low-tier level");
+Assert.AreEqual(lod0Objects > 0, lod1Objects > 0, "levels come in pairs");
+```
+
+### A per-tier triangle budget, counted from the one camera
+
+With a fixed camera the budget can be checked without running the game: sum the index counts of
+every `MeshFilter` in the prefab that the camera draws on that tier. Skip the other level, and
+skip the zone behind the camera that its culling mask removes (`reference/culling-distances.md`
+§"The culling mask"). The builder logs the count on every rebuild; an EditMode test fails when a
+tier goes over the row chosen in the project's art direction. In the tennis game the chosen row
+was 150 000 for high and 50 000 for medium and low. The densest venue measured 103 020 on high (LOD0
+trees, about 6 700 triangles each) and 39 516 on medium and low (LOD1 trees, 1 434 each, the
+blossom clusters replaced by fitted icosahedra grown from the same seed).
+
+```csharp
+int high = 0, low = 0;
+foreach (var f in prefab.GetComponentsInChildren<MeshFilter>(true))
+{
+    if (f.sharedMesh == null || f.name.EndsWith("_Near0")) continue;   // behind camera 0
+    int t = 0;
+    for (int i = 0; i < f.sharedMesh.subMeshCount; i++) t += (int)f.sharedMesh.GetIndexCount(i) / 3;
+    if (!f.name.Contains("_LOD1_")) high += t;
+    if (!f.name.Contains("_LOD0_")) low += t;
+}
+```
+
+Count index buffers, not `mesh.triangles.Length`: the latter allocates a copy and needs Read/Write.
+
 ## Read it again
 
 Same situation, same camera path, three windows a side — `unity-profiling` →

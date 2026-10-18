@@ -52,6 +52,30 @@ crawls.
   distance; cascades buy nothing.
 - `cascadeBorder` 0.2 fades the last fifth of the distance. At 0 shadows end on a hard line.
 
+### A long fixed view, and split screen
+
+"A fixed camera needs one cascade" holds when everything is at one distance. A broadcast camera
+behind one baseline of a tennis court is fixed (6.5 m up, about 16 m behind the near baseline)
+and looks down the whole court, so a player behind the far baseline is about 45 m away. The first
+setting, 25 m on high and 20 m on medium, reached only the net: the far player had no shadow.
+What the tennis game moved to, tuned in the Editor:
+
+| Tier | Main light shadows | Why |
+|---|---|---|
+| High | 2048, 52 m, 2 cascades, `cascade2Split` 0.36, `cascadeBorder` 0.15, soft | The first cascade (0 to about 19 m) covers the near half, so the near player's shadow does not crawl; the far baseline is inside the second |
+| Medium | 2048, 50 m, 1 cascade, hard | 1024 over 50 m (about 5 cm texels) was too coarse to read; one cascade keeps it to one pass |
+| Low | None; blob shadows only | |
+
+- **Each camera renders its own shadow map.** Split screen with two cameras doubles the shadow
+  passes. The tennis game kept realtime shadows on both halves on high and switched them off per
+  camera on medium (`UniversalAdditionalCameraData.renderShadows = false`), leaving blob shadows.
+- **Some shadows are information, not decoration.** The ball's blob shadow is the player's depth
+  cue for where it will land; it exists on every tier, drawn as a soft quad on the ground whose size
+  grows and alpha falls with height. Characters keep a small contact shadow under the feet as well,
+  so they do not float on tiers without realtime shadows.
+- **Turn casting off for what nobody reads**: distant scenery zones, the see-through fence (a
+  wire shadow is noise on the court), particles.
+
 ## Per light
 
 | Field | API | Notes |

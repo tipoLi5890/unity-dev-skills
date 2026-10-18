@@ -135,3 +135,34 @@ shows `application-icon-*` pointing at the adaptive XML. Two practical notes:
 - **Keep the icon sources out of any folder your importer rules act on.** For example, keep them in
   `Assets/AppIcon/` when an `AssetPostprocessor` converts everything under `Assets/Art/` into
   sprites, which is the wrong texture type for an icon source.
+
+## A 3D game's baseline, and the quality tiers that go with it
+
+What a 3D tennis game for phones set on day one, from one re-runnable setup method, before it had
+a test device:
+
+| Setting | Value | Why, and who decided |
+|---|---|---|
+| Scripting backend, architecture | IL2CPP, ARM64 only | Required by Play for 64-bit; IL2CPP also removes the Editor's first-use JIT stalls, which the Editor still needs a warmup for (`unity-debug` → `reference/unity-gotchas.md` §23) |
+| `minSdk` | 29 | Recorded as an **open question for the person**: it drops devices without Vulkan 1.1. A minSdk is a market decision, not a technical default |
+| `targetSdk` | 36, set explicitly | Not `Auto`: Auto follows whichever SDKs are installed on the build machine, so two machines build two targets. 36 matched Play's target-API requirement at the time; check the current one before each release |
+| Graphics APIs | Vulkan, then OpenGLES3; automatic selection off | So an Editor upgrade cannot change the default order |
+| Quality tiers | Low, Medium, High, chosen per device | One URP asset per tier, written by the same setup method and read back in the log |
+
+The three tiers, as first tuned in the Editor (numbers to re-tune on devices):
+
+| Tier | Render scale, MSAA | Real-time shadows | Post-processing |
+|---|---|---|---|
+| High | 1.0, 4×, HDR | 2048, 52 m, 2 cascades, soft | Tonemapping, grading, light bloom |
+| Medium | 0.85, 2× | 2048, 50 m, 1 cascade, hard; off in split screen (URP renders a shadow map per camera) | Tonemapping and grading |
+| Low | 0.7, 2× | None; blob shadows only (the ball's shadow is a depth cue, so every tier keeps one) | Tonemapping and grading, FXAA |
+
+**Skin weights: 4 bones on every tier, Android included.** The Low and Medium tiers first used
+2 bones, a common mobile saving. Measured on the game's characters, 2 bones raised the share of
+self-intersecting geometry by 0.6 to 0.9 percentage points, because the characters were skinned
+for up to 4 influences. The person chose 4 on all tiers. Measure your own rig in an extreme pose
+before taking the saving (`unity-rigged-character`); and when a tier lowers it, it is a quality
+setting (`QualitySettings.skinWeights`), so check it per tier in the setup method's read-back.
+
+Without a device, every number above is an Editor number. Put "reference test devices: low,
+mid and high" in the open questions on day one; the tiers are a guess until they exist.

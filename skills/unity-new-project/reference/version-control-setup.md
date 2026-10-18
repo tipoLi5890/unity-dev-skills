@@ -103,7 +103,64 @@ Two things that bite:
 - A release you already shipped can be tagged retroactively:
   `git tag -a v0.1.0 <sha> -m "…" && git push origin v0.1.0`.
 
-## 5. Related
+## 5. An LFS budget, kept as a ledger
+
+LFS storage on a hosted plan has a quota, and a day of asset imports can take most of it. A 3D
+tennis game budgeted against a 1 GB free tier (check your plan's current figure in the host's
+billing page; it is a number, not a feeling). What one day added:
+
+| Import | LFS added |
+|---|---|
+| A purchased mocap pack (75 clips), as imported for the game | 105 MB |
+| Each rigged character FBX with textures | about 9 MB |
+| Two more LOD levels per character | 3.2 MB |
+| Three venues | about 21 MB |
+| Source files staged for the character pipeline (`.blend`, FBX, the vendor archive, image masters) | about 292 MB |
+
+The rules that kept it inside the budget:
+
+- **Every commit that adds binaries states its LFS cost** in the message or the hand-back
+  (`git lfs ls-files -s` before and after), and the handoff keeps a running total.
+- **Decimate before committing.** A racket from an image-to-3D tool arrived at 19,994 triangles;
+  the pipeline cut it to 1,491 before export. The oversized source is regenerable and stays out of
+  git (`unity-3d-models`).
+- **Regenerable outputs are ignored, not stored.** Candidates, previews, raw generator output,
+  pipeline `out/` folders and throwaway lab projects can all be rebuilt by a script; four
+  converted clips (about 5 MB) were left out of git because the same inputs reproduce them byte
+  for byte.
+- **A push over a set size (300 MB here) waits for the person.** One agent declined to push
+  about 318 MB because it included another agent's unpushed commits and a purchased pack whose
+  licence was unconfirmed. That was the right call.
+
+## 6. Pushing from a shared working tree
+
+- **A push publishes every commit between `origin/main` and `HEAD`**, whoever made them. One
+  agent's push published six commits by another. Look first:
+  `git log origin/main..HEAD --format='%h %an %s'`.
+- **A large first push can be declined by the host** (`! [remote rejected] main -> main
+  (pre-receive hook declined)`). Here a plain retry went through with 318 MB of LFS; the cause was
+  never confirmed. Retry once, then confirm the push landed with `git ls-remote origin main`
+  matching `git rev-parse main`, rather than reading the absence of an error. If it keeps
+  failing, push in smaller pieces (`git push origin <older-sha>:main` first).
+- **A pre-commit hook usually checks the working tree, not the staged diff.** When several agents
+  share one checkout, another agent's uncommitted changes fail the hook on your docs-only commit.
+  Make the hook check what is staged: export the index with
+  `git checkout-index -a --prefix="$tmp/"` and run the check there, or limit it to
+  `git diff --cached --name-only`. Never `git stash` in a shared checkout: it takes the other
+  agents' edits out from under them. Or give each agent its own worktree (`unity-cli` → `reference/version-control.md` §8). Do not `--no-verify` past it:
+  once one agent bypasses, the hook no longer guarantees anything.
+
+## 7. Purchased and borrowed material
+
+- **Purchased assets go in a private repo only**, with a licence note beside them (what was
+  bought, what the licence says about redistribution) and an open question in the handoff:
+  "does the licence cover shipping this in the product?" until someone confirms it for release.
+- **Never copy a paid tool's files or code into the repo**, even when its output is used; record
+  which tool made an output instead.
+- **A prior project used as reference is read-only.** Copy what you need in, with its origin noted;
+  never write into it.
+
+## 8. Related
 
 - Settings that this file's rules assume — `Force Text` serialization and `Visible Meta Files` —
   belong inside the re-runnable setup method, not in a wiki page: `reference/generated-assets.md`.

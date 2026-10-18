@@ -46,6 +46,11 @@
 #   LANE_WAIT_SECONDS  how long run and setup queue for a lane   default: 3600
 #   LANE_POLL_SECONDS  how often a queued run looks again        default: 10
 #   UNITY              the Editor binary     default: the Hub install of ProjectVersion.txt's version
+#   MAX_UNITY          Editors allowed on the WHOLE MACHINE, any project   default: 2 (0 = no cap)
+#                      run waits (or, with --no-wait, exits 6) while that many Editors are running.
+#                      A lane lock only counts this project; a lab project's Editor, another agent's
+#                      or a person's does not take a lane and still takes the memory. Three Editors
+#                      on a 16 GB machine made a run's watchdog time out.
 #
 # Exit: run returns the Editor's code whenever the Editor ran. Otherwise 3 = the harness could not
 # run anything (bad arguments, not a Unity project, no Editor binary, lane K not set up, a copy
@@ -76,10 +81,12 @@ LANE_DATA_VAR="${LANE_DATA_VAR:-GAME_DATA_DIR}"
 LANE_LINKS="${LANE_LINKS:-Assets Packages ProjectSettings}"
 LANE_WAIT_SECONDS="${LANE_WAIT_SECONDS:-3600}"
 LANE_POLL_SECONDS="${LANE_POLL_SECONDS:-10}"
+MAX_UNITY="${MAX_UNITY:-2}"
 
 case "$LANE_DATA_VAR" in ''|[0-9]*|*[!A-Za-z0-9_]*) die "LANE_DATA_VAR='$LANE_DATA_VAR' is not a variable name" ;; esac
 case "$LANE_WAIT_SECONDS$LANE_POLL_SECONDS" in *[!0-9]*) die "LANE_WAIT_SECONDS and LANE_POLL_SECONDS are whole seconds" ;; esac
 [ "$LANE_POLL_SECONDS" -gt 0 ] || die "LANE_POLL_SECONDS must be at least 1"
+case "$MAX_UNITY" in ''|*[!0-9]*) die "MAX_UNITY='$MAX_UNITY' is not a whole number" ;; esac
 
 default_unity() {
   local v
@@ -129,6 +136,12 @@ editor_on() {
 # An Editor launched without -projectPath on its command line is invisible to pgrep; its lockfile
 # is not. A lockfile with no Editor behind it is a corpse — `status` says which.
 lockfile_in() { [ -e "$1/Temp/UnityLockfile" ]; }
+# Every Editor on the machine, whatever project it has open. The binary, not a looser "Unity":
+# the Hub, the compiler server and the licensing client are not Editors.
+editors_running() {
+  pgrep -f '(Contents/MacOS/Unity|/Editor/Unity)( -|$)' 2>/dev/null | wc -l | tr -d ' '
+}
+machine_full() { [ "$MAX_UNITY" -gt 0 ] && [ "$(editors_running)" -ge "$MAX_UNITY" ]; }
 
 # ── locks: mkdir is atomic, the pid file says whether the holder still lives ──────────────────
 
@@ -168,6 +181,9 @@ pick_lane() { # pick_lane <order> <wait 0|1>
   local order="$1" wait="$2" waited=0 said="" k d why
   while :; do
     why=""
+    if machine_full; then
+      why=" machine=$(editors_running)/${MAX_UNITY}-editors"
+    else
     for k in $order; do
       d="$(lane_dir "$k")"
       if try_lock "$(lane_lock "$k")"; then
@@ -179,6 +195,7 @@ pick_lane() { # pick_lane <order> <wait 0|1>
       fi
       why="$why lane$k=busy"
     done
+    fi
     if [ "$wait" != 1 ]; then echo "[LANE] no lane free:$why" >&2; return 1; fi
     if [ "$waited" -ge "$LANE_WAIT_SECONDS" ]; then
       echo "[LANE] no lane free after ${waited}s:$why  (lanes.sh status)" >&2; return 1
@@ -281,6 +298,7 @@ lane_state() { # one word-ish description of lane $1
 cmd_status() {
   local k d
   echo "[LANE] project=$PROJECT lanes=$LANES_ROOT locks=${LANE_LOCK_PREFIX}<K>.lock $LANE_DATA_VAR=${LANE_DATA_PREFIX}_data_lane<K>"
+  echo "[LANE] machine: $(editors_running) Editor(s) running, cap MAX_UNITY=$MAX_UNITY (0 = none)"
   for k in 0 $(clone_lanes); do
     printf 'lane%-3s %s  %s\n' "$k" "$(lane_state "$k")" "$(lane_dir "$k")"
   done

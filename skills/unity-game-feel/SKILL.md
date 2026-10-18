@@ -108,6 +108,7 @@ or `MaterialSwap`, squashes with `is2D` on, and plays every sound with spatial b
 | A flash that sticks or restores the wrong colour; white on a lit material; batching cost; squash about the feet; tweens, easing, springs | `reference/flash-and-squash.md` |
 | Burst presets; shared emitter or pooled instances; stop actions; simulation space; 2D sorting of particles; VFX Graph or not | `reference/particles.md` |
 | Dash trail, launch streak; a streak across the screen after a respawn or pool reuse; tracers and beams with LineRenderer | `reference/trails.md` |
+| A small fast ball or puck: minimum on-screen size, outline, trail; a ball that stops for a frame and jumps; hit, bounce and net feedback in a timing game; no hit stop mid-rally | `reference/sports-readability.md` · `resources/MinScreenSize.cs` · `scripts/screen_smoothness.py` |
 | Named sound events, variance, cooldown, voice cap, stealing; mixer output; 2D and 3D spatial settings | `reference/sfx-events.md` |
 | Gamepad rumble that ends; pause, focus loss, quit; phone vibration and its limits | `reference/haptics.md` |
 | The impulse source, listener, shake budget and tiers; shake during a hit stop | `unity-camera` → `reference/shake-and-blends.md` |

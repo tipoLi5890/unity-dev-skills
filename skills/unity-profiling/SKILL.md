@@ -79,13 +79,18 @@ together, and a table that says why.
 | A window in hand and no cause yet: first-appearance hitch, GC, synchronous loads, distant geometry | `reference/where-the-time-goes.md` |
 | No counter names the cost and you need the marker inside the frame | `reference/raw-capture.md` |
 | A frame-time budget that a test fails on, every run, against this machine's recorded baseline | `reference/perf-tests.md` · `templates/PerfRegressionTest.cs` |
+| "is it the GC" and whose: allocation calls per Update and LateUpdate phase; `GetAllocatedBytesForCurrentThread` reads 0 | `reference/gc-per-phase.md` · `resources/GcAllocProbe.cs` |
+| Memory grows by a step each time a screen or match is rebuilt; runtime materials and meshes | `reference/runtime-asset-leaks.md` · `resources/OwnedAssets.cs` · `templates/AssetLeakSoakTest.cs` |
+| A frame time read on a shared machine; post-processing cost; CPU or GPU in the Editor | `reference/frame-hygiene.md` |
 | Booting straight into the moment to be measured, and driving it identically twice | skill `unity-play-harness` |
 | Running Unity, reading Editor.log, screenshots, proving the harness told the truth | skill `unity-debug` |
 | Deciding what the budget should be in the first place | skill `unity-game-brief` |
 
-Four files to copy into `Assets/` — namespace `UnityDev.Perf`, Runtime, no package required:
+Files to copy into `Assets/` — namespace `UnityDev.Perf`, Runtime, no package required:
 `resources/CounterCatalog.cs`, `resources/FrameSampler.cs`, `resources/WorkCounters.cs`,
-`resources/ProfilerRawCapture.cs`. They are instrumentation, not gameplay; keep them behind a
+`resources/ProfilerRawCapture.cs`, plus `resources/GcAllocProbe.cs` with `GcAllocProbeOpener.cs`
+for allocation by phase and `resources/OwnedAssets.cs` for runtime-asset ownership (that one is
+gameplay code). The rest are instrumentation, not gameplay; keep them behind a
 development-build check before shipping.
 
 ---
@@ -119,6 +124,8 @@ A router, read against a window you already have. Depth for the first four rows 
 - **A counter that reads zero on every frame of a window is an absence, not a measurement of
   nothing.** The window separates the two: `missing[]` is "not exposed on this build",
   `zeroAll[]` is "exposed and flat". Report both; never quietly average a zero into a result.
+- **A quiet machine, or do not measure.** Another Editor or a Blender job turned 1.6–2.4 ms into
+  4–10 ms in one project; check the process list first (`reference/frame-hygiene.md`).
 - **Same situation, same instrument, or do not compare.** Different run mode, graphics device,
   screen size, vsync or warm-up makes two numbers that subtract cleanly and mean nothing.
 - **Median and worst, never just worst** — one spike and a constant vibration are different faults

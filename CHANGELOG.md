@@ -2,6 +2,226 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.31.0
+
+Fifty-nine skills. Everything in this release comes from building one 3D game, a tennis game,
+end to end in a day: a deterministic simulation on its own thread, a headless character pipeline,
+animation driven by the simulation and corrected with IK, a polish pass, and several agents
+sharing one machine. Each page keeps the numbers that decided it, including the lesson that came
+last and belongs first: measure what the clip library can do before setting a single simulation
+number. New scripts depend only on the Python standard library and numpy and have a `selftest`;
+the pure C# resources (`SimHost`, `SimClock`, `BallFlight`) were compiled and run outside Unity.
+
+**Behaviour change:** `unity-debug/scripts/lanes.sh` now caps Editors per machine. `MAX_UNITY`
+defaults to 2, so `run` queues (or, with `--no-wait`, exits 6) while two Editors are running
+anywhere on the machine, whatever project they belong to, and `status` prints the count. Set
+`MAX_UNITY=0` to restore the old unlimited behaviour.
+
+**Simulation and timing**
+
+- **`unity-gameplay` → `reference/genre-timing-sports.md`.** A recipe for racket and bat games
+  that opens with the clip library. A tennis simulation ran at 7 m/s against a 2.7 m/s run loop
+  and put contact points 25 to 65 cm from where the clips put the racket; the gap became 1.8×
+  playback, 1.5× stride warping, a serve root correction pinned at its cap, and about 40% of the
+  remaining pops. The method: sample loop speeds and racket-bed centres at the contact frame on
+  the reference body, three height classes interpolated and clamped, scaled per body, hashed into
+  the replay header; then the simulation's numbers (top speed lowered to 6.0 m/s). Then contact
+  decided by the simulation (a prototype that judged hits from the animated racket gave PERFECT
+  presses that missed and replays that diverged), reaction floors of 1.5 / 1.0 / 0.75 s as a
+  property test, no time-scale change during a rally, and a bot-vs-bot balance grid with a
+  counter matrix and two gates written before tuning (each counter wins by at least 10 points; no
+  shot kind above 40% usage).
+- **`unity-gameplay` → `reference/sim-host-and-clock.md`, `resources/SimHost.cs`,
+  `resources/SimClock.cs`.** The layer after the simulation/presentation split, for a simulation
+  that is heavy on some ticks and graded against a real clock: 120 Hz on its own thread, the
+  target tick from absolute `Stopwatch` time, a triple-buffered snapshot swapped once per frame,
+  commands drained before each step, a 16-tick catch-up cap, events that carry their own tick and
+  position, and a render tick one behind the clock that is never clamped to the snapshot
+  (clamping slowed the cue ring and biased every press late). A Mono JIT stall held the ball on
+  the racket for 25 to 50 ms on the first strikes; a throwaway warmup match of about 40 ms fixed
+  it (worst lag 1 tick over 22 s), in the order warmup, then restart the clock, then construct
+  the host. The first attempt warmed up after the host existed and raced its thread. Also a
+  sim-lag smoke gate. `unity-game-brief` → `reference/sim-presentation-split.md` ("Picking the
+  tick") now points here for a heavy or timing-graded simulation.
+- **`unity-input` → `reference/timing-press.md`.** Grading a press on a device with about 90 ms of
+  latency and timestamps quantised to about 43 ms: each press carries its device timestamp and
+  the tick it arrived; a timestamp subtracts only the pauses that ended before it (subtracting
+  the total made a pre-pause press read early by the whole pause); PERFECT is never narrower than
+  one quantum, asserted per difficulty; the ideal press sits at contact − (capture + late window
+  + 1 tick), about 0.29 s, so a late press still connects. Both cue schemes were built and
+  played: press-then-swing landed 60% against 13% for a dwell scheme at a typical 90 ms timing
+  spread, because dwell truncates the late window. Plus one press per player rather than per
+  sensor, and a development keyboard that drives the real signal path.
+- **`unity-physics-3d` → `reference/own-ball-physics.md` and `resources/BallFlight.cs`.** When a
+  ball should not be a `Rigidbody`: drag (k ≈ 0.0206 /m), Magnus lift with
+  C_L = 1 / (2 + |v|/(r|ω|)), spin decay, 8 substeps per 120 Hz tick so a substep stays shorter
+  than a diameter (6.25 cm at the 60 m/s clamp), earliest contact by bisection, an impulse bounce
+  whose tangential impulse is the lesser of pure rolling and μ·J_n (topspin kicks, backspin
+  checks, energy never grows over 10 000 random contacts), a net with a height curve, an
+  absorbing body and a cord, and a shooting-method solver gated at ≥ 99.5% convergence over
+  10 000 random launches with landings within 2 cm. Faults come from scattering the target and
+  flying a real shot. The resource is pure C#, double precision, and bit-identical on rerun.
+  `unity-combat` → `reference/projectiles.md` points here for a projectile your own code
+  integrates.
+
+**Characters: fit the mesh to the clip pack**
+
+- **Fit, as a first-class route.** When one purchased pack supplies the motion, each character's
+  mesh is fitted once to the pack's skeleton (names, parents and rest rotations kept, gated
+  < 0.5°) and every clip plays as bought, Generic. `game-character-pipeline` gains the route in
+  G0, its stage mapping and an S7 gate that measures loop speeds and contact points before
+  gameplay numbers freeze; the method is `blender-character-rig` →
+  `reference/fit-to-clip-skeleton.md`. Retargeting stays for custom bodies and clips from many
+  skeletons.
+- **`blender-character-rig` runs headless.** Every module runs unchanged under
+  `blender -b --factory-startup`. `reference/headless-pipeline.md`: the stages prep → fit → skin
+  → proof → lod → export → unity-gate, one gates JSON per stage with exit 0/1/2, two runs giving
+  the same mesh hashes and a byte-identical FBX (the exporter's per-process UUID salt and header
+  time pinned), and a Unity lab project outside the repo that waits while two Editors are open.
+- **`blender-retarget` → `reference/route-bakeoff.md`: the measured choice.** Fit + Generic
+  played within 0.0002° of the clip on the pack's own body; Humanoid on the same skeleton was off
+  by 1.5 to 4.4° and failed the slide gate; per-clip baking was 6.7× larger and carried Blender's
+  reading of late-starting curves. 75 clips took 4.2 MB, against about 9 MB, about 28 MB, and
+  387 MB for the old interactive workflow. A naive per-clip retarget starts 55 to 72° off.
+- **Gate the added foot slide, not the absolute.** The pack's own mocap read 1.8 / 3.3 / 4.4 cm
+  against an absolute p95 gate of 1.5 cm. `blender-retarget/scripts/clip_metrics.py` measures
+  plants on the reference body and the slide a route adds on top; `scripts/bakeoff_report.py`
+  joins per-route reports into one table with the misses in bold. Exit 0/1/2.
+- **`unity-rigged-character` → `reference/shared-skeleton-generic.md` and
+  `resources/Editor/SharedSkeletonClipImporter.cs`.** The import fixes a pack needs: RemapRoot
+  (root names varied 63/7/8), StripNonRootPositions, BakeNodeDefaults (curveless bones otherwise
+  hold another model's defaults), `display_scale` on the prefab root, and what the runtime will
+  ask of the library (plant windows, tool-point paths, peak angular speeds). In batchmode,
+  `AnimationMode.SamplePlayableGraph` poses the Animator where `PlayableGraph.Evaluate` does not,
+  and `BakeMesh` returns the bind pose, so compute skinning yourself; the same trap is now
+  `unity-debug` → `reference/unity-gotchas.md` §24.
+- **Skinned LODs built by a stage, named so Unity leaves them alone.**
+  `blender-character-rig` → `reference/skinned-lod.md` drops hidden inner shells (32% of one
+  body), voxel-remeshes a prop that came out as 333 shards, uses geometric normals, and weights
+  the boundary 0.5 rather than 0 (0 grew an 88 cm spike). `unity-3d-models`: `_LOD<n>` names make
+  the FBX importer build a `LODGroup`, which hid a tier-selected LOD1. Skin method and bone count
+  by measurement: positional 6.3% against heat 13.2% new self-intersection on a double shell, and
+  2 bones per vertex added 0.6 to 0.9 percentage points, so every quality tier uses 4
+  (`unity-android-release` → `reference/player-settings-android.md` carries the tier table).
+
+**Animation that follows the simulation**
+
+- **`unity-animation` → `reference/sim-driven-animation.md`.** One hand-built `PlayableGraph` per
+  character, `DirectorUpdateMode.Manual`, clip time computed from the simulation tick every frame
+  (never `+= dt`), so the contact frame lands on the contact tick by construction (0.00 ms on
+  every hit). The swing schedule (rate 0.8–1.25, start trimmed when clamped, two height variants
+  on one tick, late input at up to 1.6×, start from the predicted stop), root-correction caps by
+  stroke (0.15 / 0.25 / 0.35 m) and the locomotion stack for a mover far faster than its clips,
+  linked back to the design-time method in `unity-gameplay`.
+- **`reference/foot-lock-and-prop-ik.md` with `resources/FootLockJob.cs`,
+  `resources/TwoBoneIKJob.cs` and `resources/AnimJobMath.cs`.** IK as Animation Jobs after the
+  mixer, for Generic rigs. The rule the pops taught: every target and weight continuous in
+  velocity, not only position. A foot lock released by a critically damped spring starting at
+  minus the foot's velocity (a 0.15 s smoothstep popped the knee), landing anticipation 0.08 s
+  ahead, a hinge-axis two-bone solver that cannot flip, plant windows annotated at 0.5 m/s, and
+  prop IK with the wrist solved last. Foot slide p95 per plant 109–225 cm → 0.12–0.27 cm;
+  racket-to-ball p50 18.5 cm → 3.4–4.1 cm.
+- **`reference/motion-metrics.md` and `resources/MotionMetricsSampler.cs`.** A read-only motion
+  gate for PlayMode tests: slide and speed per plant, root against the simulation, root velocity
+  jumps, pops and contact timing. Pops are spikes in the final pose the clip does not have,
+  attributed per layer: 0–2 of 31–63 per match came from clips or blends, so inertialization
+  would not have helped. Pitfalls with numbers: an Editor hitch across a contact, PNG capture
+  blocking about 100 ms, a 2.7-against-3.0 gate that was a flake waiting to happen.
+- **`unity-3d-controller` → `reference/animator-bridge.md`.** A mover faster than every clip:
+  lower its speed first, expose acceleration and a predicted stop so gait and standing actions
+  anticipate, and leave the rest to stride warping and a foot lock.
+
+**Venue, look and feel**
+
+- **`unity-3d-level` → `reference/venue-from-scripts.md`.** A rules-fixed venue built by a Blender
+  script in game coordinates (an asymmetric axis-marker test proves the FBX equals game space),
+  collision exported from a `COLLISION` collection as JSON rounded to 0.1 mm and checked against
+  proxies, rule lines drawn from the rule constants (a prior model's were 2.75 cm off), merged by
+  material and zone, one command per step.
+- **`unity-render-urp` → `reference/material-validation.md` and
+  `resources/Editor/UrpMaterialValidation.cs`.** URP 17.3's validation removes `_EMISSION` unless
+  the GI flags include AnyEmissive and rewrites a hand-made alpha blend to shader-side
+  premultiply; a builder that runs `BaseShaderGUI.SetMaterialKeywords` itself leaves no diff on
+  rebuild, and the audit lists what would drift. Also a see-through fence that does not shimmer,
+  and a grade per venue with effects per tier in `reference/volume-templates.md`.
+- **`unity-scene-optimisation` → `reference/lod.md`, `reference/culling-distances.md`.** A fixed
+  camera picks LOD by quality tier, and the importer's own `LODGroup` has to go: on merged venue
+  meshes it chose LOD0 and culled the LOD1 trees on medium and low. Strip it at prefab build,
+  assert zero in a test, count each tier's triangles from the one camera (worked case 103 020
+  high, 39 516 medium and low), and reopen the zone behind a fixed camera when a shot needs it.
+- **`unity-lighting` → `reference/shadows.md`, `reference/environment.md`.** Per-tier shadow
+  distance and cascades for a long fixed view (52 m, 2 cascades at 0.36 on high; 2048 at 50 m on
+  medium; blob only on low), one shadow map per split-screen camera; fog kept off the play area,
+  and mist placed from known limits.
+- **`unity-camera` → `reference/broadcast-sports.md`.** Broadcast framing for a court sport set
+  by projecting the court against the HUD: 31° solo, 36° per split half; a critically damped
+  follow of your own player with 30% of the ball; a 1.2 m push between points, a winner close-up
+  that reopens the culled back layer, a 4 cm smash dip, and no hit stop during play.
+- **`unity-game-feel` → `reference/sports-readability.md`, `resources/MinScreenSize.cs`,
+  `scripts/screen_smoothness.py`.** A fast ball at least 11 px on a 1080-line reference, outlined
+  and trailed by speed; extrapolated up to 1.5 ticks when the snapshot is late so it never parks
+  for a frame; a screen-speed wobble metric (p95 13.2% to about 5%); grade-coloured hit rings
+  with the opponent's fainter (a white disc read as a second ball).
+- **`unity-audio` → `reference/synth-and-band-limits.md` and `scripts/spectrum_check.py`.**
+  Effects synthesised in C# under a hard 16 kHz ceiling (raised-cosine attacks, Hann fades, noise
+  filtered first, final 7 kHz stages, loops cross-faded after filtering), gated at −60 dB above
+  the cutoff after a 17 kHz calibration tone proves the FFT can see a failure; measured about
+  −120 dB. One-shots are measured without a window and must end at zero.
+- **`unity-profiling` → `reference/gc-per-phase.md`, `reference/frame-hygiene.md`,
+  `reference/runtime-asset-leaks.md`, `resources/GcAllocProbe.cs`, `resources/OwnedAssets.cs`,
+  `templates/AssetLeakSoakTest.cs`.** `GC.GetAllocatedBytesForCurrentThread` returns 0 under
+  Unity's Mono; a `GC.Alloc` recorder gated per phase, with self-calibration, took a presentation
+  layer from 419/419 allocating frames to 3–4 of about 420. A busy machine read 4–10 ms where a
+  quiet one read 1.6–2.4 ms. Runtime materials and meshes get an owner, and a nine-match soak
+  keeps their counts flat.
+- **`unity-ui-ugui` → `reference/text-and-image-traps.md` §6.** TMP outline setters copy the font
+  material per label (sixteen per match); one cached shared material replaces them.
+
+**Process: tests, machines and several agents**
+
+- **`unity-new-project` → `scripts/pure_tests.py` and `reference/pure-test-lane.md`.** A
+  project's engine-free tests run without an Editor, with the .NET runtime, Roslyn compiler and
+  NUnit the Editor already ships: each `noEngineReferences` asmdef compiled under its own name (so
+  `InternalsVisibleTo` behaves as in the Editor), test files that touch the engine excluded with
+  their reason, NUnit's own runner expanding `[TestCase]`, and a suite error or zero tests counted
+  as a failure. Exit 0, 2 or 3; `selftest --e2e <project>` compiles and runs a synthetic suite.
+  `unity-debug` → `reference/cli-harness.md` and `unity-cli` → `reference/editor-binary.md` point
+  to it.
+- **`unity-new-project` → `reference/version-control-setup.md` §5–§7.** An LFS ledger against the
+  plan's quota with real per-import costs, decimation before commit, pushes from a shared working
+  tree (`git log origin/main..HEAD` first; a push publishes every ancestor), pre-commit hooks that
+  check the index rather than the working tree, and purchased material kept private with its
+  licence as an open question.
+- **`unity-debug` → shared machines.** `reference/parallel-runs.md` measures what other work does
+  to a run (frame times 2 to 5 times high, a smoke lag assertion red 5 > 3 under load and green
+  alone, a pure-C# "under 3 ms" assertion reading 6.6 to 9.8 ms), caps Editors per machine
+  rather than per project (three on 16 GB timed out a watchdog), and adds a throwaway lab
+  project outside the repo for pipeline work. `scripts/lanes.sh` gains `MAX_UNITY` (the
+  behaviour change above).
+- **`unity-debug` → captures that tell the truth.** A fixed Game-view resolution through
+  `PlayModeWindow` and a wait on `ShaderUtil.anythingCompiling`, installed as hooks from an Editor
+  assembly; every reported image is opened; a PNG capture stalls the frame about 100 ms, so
+  events are timed by interpolating across the straddling frames; motion is recorded with
+  `AsyncGPUReadback`, resampled by game time to 60 fps. `reference/unity-gotchas.md` gains §22
+  (first-Play cyan placeholders), §23 (the Mono JIT first-use stall on a worker-thread
+  simulation, told the same way as in `unity-gameplay`) and §24 (batchmode sampling reads the
+  bind pose).
+- **`unity-play-harness` → shot lists and the autoplayer.** One parameterised `Shots` test over
+  every situation id, prefs made read-only during situations, the same ids in a built player; an
+  autoplayer that presses through the real input funnel with seeded timing noise (σ 40 ms); and
+  the smoke run's assertions, including a sim-lag counter and that the autoplayer's own seat hit
+  the ball.
+- **`unity-game-brief` → `reference/running-the-build.md`, `templates/AGENT_BRIEF.md`,
+  `templates/DECISION_LOG.md`.** When to rebuild a prototype rather than port it, milestones with
+  ★ gates only the person closes, feel questions settled by building both behind a runtime
+  switch, a three-bucket decision log (locked, small and reported, open with a default),
+  doc/code reconciliation after each milestone, and an ownership block for every agent's brief,
+  with the multi-agent failures behind each line (a push that published other agents' commits,
+  a hook that blocked on another agent's uncommitted work).
+- **`unity-android-release` → `reference/player-settings-android.md`.** A 3D game's baseline:
+  IL2CPP/ARM64, `minSdk` as the person's market decision, `targetSdk` set explicitly rather than
+  `Auto`, Vulkan then GLES3, three quality tiers, and 4 skin weights on every tier.
+
 ## 0.30.0
 
 Fifty-nine skills. A game can now be seen before its first gameplay script, and every picture

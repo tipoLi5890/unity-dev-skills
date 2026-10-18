@@ -169,6 +169,15 @@ screenshot with its state logged next to it, one change, and one question with t
 take if nobody answers.**
 → `templates/REPORT.md`
 
+## 7. After the first interaction
+
+Rebuild a prototype whose scoring follows its animation; port only intent. Milestones carry a ★ on
+gates only the person closes. A feel question gets both options behind a runtime switch, and the
+loser leaves the menus but stays in the sim. Decisions go to three places: locked (rule file,
+verbatim), small (decided, reported), open (with a default). Reconcile docs with code after each
+milestone. Several agents: an ownership block per brief.
+→ `reference/running-the-build.md`, `templates/DECISION_LOG.md`, `templates/AGENT_BRIEF.md`
+
 ---
 
 ## Load what the situation needs
@@ -182,6 +191,7 @@ take if nobody answers.**
 | Where the assembly boundary goes and what it costs; copying the skeleton | `reference/sim-presentation-split.md` |
 | A non-negotiable that has to become a test | `reference/invariants.md` |
 | Choosing what to build first; what Done means; the loop after they play it | `reference/first-interaction.md` |
+| Rebuild or port; milestones and ★ gates; a decision log; briefing several agents | `reference/running-the-build.md` |
 | Generating the boards, the art bible, the anchor image | skill `codex-visual` |
 | Booting straight into a moment, journey tests, a feel complaint turned into a test | skill `unity-play-harness` |
 | What a frame costs, and whether a change actually helped | skill `unity-profiling` |

@@ -4,11 +4,11 @@ description: >-
   The stage order for a rigged game character made from an image, a turnaround
   sheet or a generated model, up to an approved character in Unity. Load before
   starting a character, or when unsure what comes next: the route chosen once
-  (body proportions × rigging tool × clip source), the quality target set with
-  the user first, the preview track (rig the dense mesh, prototype only) or the
-  ship track (budget → game mesh → rig once), then stages S0–S13 with the skill
-  that owns each, its entry and exit gates and its artefacts. Routes only: the
-  methods live in codex-visual, comfyui-asset-generation, blender-character-rig,
+  (fit the mesh to one clip pack's skeleton and play its clips unchanged, or
+  retarget clips onto the character's rig), the quality target set first, the
+  preview or ship track, then stages S0–S13 with the skill that owns each, its
+  entry and exit gates and its artefacts. Routes only: the methods live in
+  codex-visual, comfyui-asset-generation, blender-character-rig,
   blender-retarget, unity-3d-models, unity-rigged-character, art-asset-registry.
 ---
 
@@ -25,8 +25,13 @@ It ships no scripts and copies no method: every row points at the file that does
 > UVs and invalidates everything taken on the old vertices (weight snapshots, the wrist
 > correction, the grip point), and the rig is built again.
 >
-> **All clip retargeting happens in Blender** (`blender-retarget`). Unity receives clips already
-> baked onto the character's own skeleton and never retargets across skeletons.
+> **Unity never retargets across skeletons.** Clips reach it already playable on the character's
+> skeleton, by one of two routes. **Fit:** when one clip pack supplies the motion, the character's
+> mesh is fitted once to the pack's skeleton (its names, hierarchy and rest rotations kept) and the
+> purchased clips play unchanged, Generic
+> (`blender-character-rig` → `reference/fit-to-clip-skeleton.md`). **Retarget:** when the clips
+> come from several skeletons or the body is custom, each clip is baked onto the character's rig
+> in Blender (`blender-retarget`). The measured comparison: `blender-retarget` → `reference/route-bakeoff.md`.
 
 ## G0 — the start gate, once per character
 
@@ -42,6 +47,7 @@ A person decides the three answers below, and they are written down (the brief o
 
    | The body | Rigging tool | Clips | S1 draws |
    |---|---|---|---|
+   | Standard adult proportions, the motion from **one** purchased or captured pack | the pack's own skeleton, fitted to the mesh headless (`blender-character-rig` → `reference/fit-to-clip-skeleton.md`) | the pack's files, played unchanged (Generic) | the realistic humanoid variant: A-pose, straight elbows |
    | Standard adult proportions, Auto-Rig Pro installed in the user's Blender | Auto-Rig Pro (`blender-retarget`) | stock or purchased, retargeted in `blender-retarget` | the realistic humanoid variant: A-pose, straight elbows |
    | A custom body: short limbs, a large head, ears, a tail, mitten hands | positional skinning (`blender-character-rig`) | keyed there, and stock clips retargeted onto that rig in `blender-retarget` | the mascot A-pose, thin parts drawn thick |
    | Standard humanoid, no Auto-Rig Pro — **optional** | Mixamo | Mixamo's own | a T-pose in one piece |
@@ -51,7 +57,13 @@ A person decides the three answers below, and they are written down (the brief o
    `reference/source-art-and-3d.md`; the Auto-Rig Pro test: `blender-retarget` →
    `reference/arp-route.md`; the Mixamo route: `unity-rigged-character` →
    `reference/mixamo-route.md`. The Mixamo and service routes retarget on the service's side,
-   so S7–S9 are theirs; Unity still gets clips that already fit.
+   so S7–S9 are theirs; Unity still gets clips that already fit. **The fit route** replaces S6,
+   S8, S9 and S11 with headless stages, `prep → fit → skin → proof → lod → export → unity-gate`,
+   each a command with a gates JSON and exit 0/1/2 (`blender-character-rig` →
+   `reference/headless-pipeline.md`); a clip from another skeleton is converted to the pack's
+   skeleton once, offline, and then joins the library (`blender-retarget` →
+   `reference/route-bakeoff.md`). A rigging service's export joins only through the fit and skin
+   gates: the pack's names, parents and rest rotations within 0.5°.
 3. **The track.**
 
    | Track | Stages | For |
@@ -79,7 +91,7 @@ the named image and said yes. Every artefact is recorded in the ledger as it is 
 | S4 | Normalise | `blender-character-rig` | a green GLB | one object at its height, Z up, soles on Z 0, facing the right axis; the weld check read; the Auto-Rig Pro route imports with `weld_distance: None`. Leaves `ArtDirection/sources/Runner.blend` | `blender-character-rig` → `reference/import-and-survey.md` |
 | S5 | Game mesh — ship track | `blender-character-rig` | a `3D budgets` row with a `calibrated` date; the S4 file | route A (regenerate at the row's preset, back through S2–S4's gates) or route B (retopology, UVs, rebake from the showcase) when the joints deform badly; budget, silhouette, UV, bake and joint gates; a **person** approves the side-by-side. Leaves `Runner_game.blend`, its baked maps, `Runner_game_vs_showcase.png`, the inspect JSON | `blender-character-rig` → `reference/game-mesh.md` |
 | S6 | Rig | `blender-retarget` (Auto-Rig Pro) or `blender-character-rig` | ship: `Runner_game.blend`; preview: the S4 file | the extreme-pose still looked at by a **person**; right after the bind, the weight sum over deform groups only reads 1 everywhere | `blender-retarget` → `reference/arp-route.md`; `blender-character-rig` → `reference/armature-and-skinning.md`; `blender-retarget` → `reference/weight-repair.md` |
-| S7 | Clip sources | `blender-retarget` | a rig | a manifest written before any download; every file present, names unique, every fps the scene's; no-root or standard chosen per clip (gameplay: no-root) | `blender-retarget` → `reference/clip-sources.md` |
+| S7 | Clip sources | `blender-retarget` | a rig | a manifest written before any download; every file present, names unique, every fps the scene's; no-root or standard per clip by what the pack's no-root removes (pins hip height: standard, non-root positions stripped at import); loop speeds and contact points measured before gameplay numbers freeze (`unity-gameplay` → `reference/genre-timing-sports.md` §0) | `blender-retarget` → `reference/clip-sources.md` |
 | S8 | Retarget — all in Blender | `blender-retarget` | the manifest; one representative clip's skeleton probed | one clip first (a dry run, then the real run), its rest and wrist stills looked at by a **person**; then the batch, whose report counts bake and metadata separately and both equal the clip count | `blender-retarget` → `reference/rest-pose-and-conjugation.md`; `blender-retarget` → `reference/arp-route.md` |
 | S9 | Library, prop, weights | `blender-retarget`, `blender-character-rig` | every clip baked | actions found by their custom properties, not their names; the prop's grip read from the prop's own shape; drift over every clip checked in position **and** rotation; a weight move capped at about 25% of the feature it fits; the worst frame looked at | `blender-retarget` → `reference/action-library.md`; `blender-character-rig` → `reference/prop-on-bone.md`; `blender-retarget` → `reference/weight-repair.md` |
 | S10 | Stop at the target | `blender-retarget` | a defect someone saw | the layer named (geometry, skinning, animation, material) and fixed in that layer only, same camera and frame before and after; stopped at the G0 target. Geometry wrong at the source goes back to S3, or S5 | `blender-retarget` → `reference/defect-triage-and-stop.md` |
@@ -99,29 +111,20 @@ The ledger's `stale` names the downstream records; this table names the stage to
 | The generation graph or a preset | S3; a drift from the official template is put back before any tuning |
 | One clip's map, rest frame or wrist | S8 for that clip, then S9's checks over the library, then S11 |
 | A weight repair or a prop grip | S9, then S11 and S12 |
+| Fit route: a new character, or its mesh | that character's `prep` onward; the clip library is untouched |
+| Fit route: a clip from another skeleton | its one offline conversion to the pack's skeleton, then the unity-gate |
 
 ## Worked example — the Runner with a Mallet, ship track
 
-1. **G0.** The quality target: the runner seen behind the shoulder at the lane camera's usual
-   distance, the swing at the gate as the one close shot, hands and the Mallet's head must hold up.
-   The Runner is a plush mascot with short limbs, long ears and a tail: the custom-body route,
-   positional skinning in `blender-character-rig`, `GateLatchSwing` keyed there and stock jogs
-   retargeted onto `RunnerRig` in `blender-retarget`. Ship track. The Mallet is its own asset
-   (class `hero-prop`): its own views and mesh, never skinned, attached at S9.
-2. **S1 → S0.** The Runner's views are approved first; the `character` ladder runs on them,
-   e.g. eight static Runners in the lane under the game camera; a person picks a rung and the
-   row gets its date.
-3. **S2 → S5.** Clean views, a showcase GLB with a green QA sheet, `Runner.blend` normalised;
-   route A regenerates at the picked preset into `Runner_game.blend`; the person approves
-   `Runner_game_vs_showcase.png`.
-4. **S6 → S10.** `RunnerRig` built once on the game mesh; the jog manifest; one clip, then the
-   batch; the library; the Mallet on `Hand.R` with drift checked in position and rotation; a
-   dented shoulder fixed as a skinning fault, same camera before and after.
-5. **S11 → S12.** The Runner, the Mallet, the idle and `GateLatchSwing` exported first, read back
-   in Blender, then imported Generic into a throwaway project, the socket kept, the frame window
-   inside the class's `frame_ms`; a person approves the screenshot.
-6. **S13 throughout.** Each file recorded as it appears, `Runner_game.blend` with the showcase
-   version as its parent, every approval with its evidence image.
+1. **G0.** Target: the runner behind the shoulder at the lane camera's distance, the swing at
+   the gate as the one close shot. A plush mascot with short limbs, ears and a tail: positional
+   skinning in `blender-character-rig`, stock jogs retargeted in `blender-retarget`. The Mallet
+   is its own `hero-prop` asset, attached at S9.
+2. **S1 → S5.** Views approved; the `character` ladder in the lane under the game camera, a
+   person picks a rung; clean views, a green showcase GLB, `Runner_game.blend` at the preset.
+3. **S6 → S12.** `RunnerRig` built once on the game mesh; one clip, then the batch; drift on
+   `Hand.R` in position and rotation; the first four files exported and read back, then a
+   throwaway Unity project; a person approves the screenshot. S13 records every file as it appears.
 
 ## Scope — what this skill does NOT do
 

@@ -124,3 +124,18 @@ bake normal and occlusion maps from the dense mesh onto the result. Step 2 is sk
 - **Textures.** Base colour, normal and one packed occlusion-roughness-metallic image
   arrive at the size set in the graph. Unity's Max Size still applies on import — set it per
   texture as in step 2.
+
+## Three faults in a generated mesh that stop decimation
+
+Read for them in step 1, before tuning ratios. All three were found in a tennis game's generated
+characters and prop, when lighter levels would not decimate cleanly.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Collapse stops far above the target and grows long spikes (0.86 to 1 m below 3,500 triangles) | a hidden inner body under the clothes and inner shoes: 32% of the faces, invisible from any direction | drop whole islands that no ray from any of 256 directions sees out of; visible islands stay whole (`blender-character-rig` → `reference/skinned-lod.md`) |
+| A prop will not go below about its current count (339 for a 300 target) and its rim grows 10 cm spikes | it was decimated unwelded and is 333 shards of 1 to 38 faces | voxel remesh, drop pieces under 5% of the largest, then collapse; transfer UVs from the original |
+| Shading creases and blotches that get worse with every decimation | custom normals interpolated twice: p95 57° from the geometry, then 115° | clear custom normals, use geometric smooth normals |
+
+**Count vertices after import, not triangles.** Unity splits vertices along UV seams; a generated
+mesh with about 700 UV charts went 17,910 / 6,000 / 3,000 triangles but 16,789 / 7,050 / 4,057
+imported vertices, so the lightest level cut skinning cost about 4×, not 6×.

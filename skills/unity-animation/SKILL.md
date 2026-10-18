@@ -3,14 +3,14 @@ name: unity-animation
 description: >-
   Keep an Animator a rendering of the game's state, for 3D Humanoid and 2D
   frame-clip characters: one writer per parameter through a bridge, blend
-  trees and sprite state graphs built from script, AnimationEvents and attack
-  windows that survive interruption, override controllers, foot and hand IK,
-  Timeline handover, root motion, and a journey proving the shown state
-  follows the game. Load for: "the animation is stuck", "the attack plays by
-  itself", "the jump starts late", "footsteps fire twice", "the feet slide",
-  "the sprite flickers between directions", "the hitbox stays on". Importing
-  rigs is unity-rigged-character; frames into clips is unity-2d-sprites;
-  agent coupling is unity-navigation.
+  trees and sprite state graphs built from script, events and attack windows
+  that survive interruption, override controllers, IK, Timeline, root motion;
+  a hand-built PlayableGraph following a simulation, with foot-lock and prop
+  IK jobs and motion metrics. Load for: "the animation is stuck", "the attack
+  plays by itself", "the feet slide", "the swing contact is late", "a knee
+  pops", "the sprite flickers between directions", "the hitbox stays on". Rigs
+  are unity-rigged-character; frames into clips is unity-2d-sprites; agent
+  coupling is unity-navigation.
 ---
 
 # unity-animation — the game's state is the truth, and the Animator renders it
@@ -68,6 +68,13 @@ Copy `resources/AttackWindowBehaviour.cs` and `resources/FootIK.cs` into a Runti
 four files under `resources/Editor/` into an Editor one, and the template into a PlayMode test
 assembly next to the harness files.
 
+**When a simulation owns the character** (it decides where the character is and when the swing
+connects), skip the Controller: one hand-built `PlayableGraph` per character, evaluated by hand
+from the render tick, clip times computed from the simulation's clock, and Animation Jobs after
+the mixer. → `reference/sim-driven-animation.md`, then `reference/foot-lock-and-prop-ik.md`,
+proven by `reference/motion-metrics.md`. The four job-side files below need only the built-in
+animation module.
+
 | File | Does | Writes assets |
 |---|---|---|
 | `resources/Editor/AnimatorParamAudit.cs` | Parameters × graph × script text scan, as JSON | No |
@@ -76,6 +83,10 @@ assembly next to the harness files.
 | `resources/Editor/ClipEventWriter.cs` | Adds or moves an event by normalised time; reads the clip back | Yes — report clip, function and time first |
 | `resources/AttackWindowBehaviour.cs` | Open / close callbacks by normalised time, closed on any exit | — |
 | `resources/FootIK.cs` | Humanoid foot planting from two raycasts | — |
+| `resources/AnimJobMath.cs` | Critically damped spring, soft reach (absolute and clip-relative), C1 bump, hinge-axis and hint two-bone solvers on `AnimationStream` | — |
+| `resources/FootLockJob.cs` | `IAnimationJob`: stride warp, grounding, plant lock, spring release, landing anticipation, procedural step, pelvis drop, hinge knees | — |
+| `resources/TwoBoneIKJob.cs` | `IAnimationJob`: one limb onto a goal, optionally a held tool point onto it, end bone solved last | — |
+| `resources/MotionMetricsSampler.cs` | Read-only test metrics: slide per plant, plant speed, root vs sim, root velocity jumps, pops, contact timing | — |
 
 ---
 
@@ -90,6 +101,10 @@ assembly next to the harness files.
 | The hitbox an attack window opens: one swing, one damage event | `unity-combat` → `reference/attack-windows.md` |
 | Weapon sets or skins on one graph; "swapping the controller reset the character" | `reference/override-controllers.md` |
 | `OnAnimatorIK` never called; feet floating on slopes; a hand that must reach a switch; whether Animation Rigging is worth adding | `reference/ik-and-rigging.md` |
+| A simulation decides position and contact time; the swing contact is early or late; a replay poses differently; a Generic rig that needs IK | `reference/sim-driven-animation.md` |
+| Feet skate when the character runs faster than any clip; the swing starts while still sliding to a stop; the body slides sideways at contact | `reference/sim-driven-animation.md` §4–6 |
+| A knee pops when the foot lock releases; the knee flips as the leg straightens; the foot stops dead on landing; the racket (prop) misses the ball or pops at the IK window's edges | `reference/foot-lock-and-prop-ik.md` |
+| "It looks better" with no number; a pop count that does not match what the video shows; a flaky motion gate; measurements skewed by hitches or screenshots | `reference/motion-metrics.md` |
 | A cutscene takes the character and the game never gets it back; signals; skipping | `reference/timeline.md` |
 | Animates on the spot, moves twice, or slides back each loop; a Rigidbody under root motion | `reference/root-motion.md` |
 | Import, Avatar, Humanoid versus Generic, Mixamo clips, the locomotion controller itself | `unity-rigged-character` → `reference/editor-scripts.md` |
@@ -117,6 +132,11 @@ assembly next to the harness files.
 | Attack window, as fractions of the state | open 0.25, close 0.55 — then tune per clip | same |
 | Foot IK smoothing · ray reach below the foot | 0.1 s · 0.45 units | — |
 | Hand IK weight ramp | 0.15–0.25 s | — |
+| Swing rate to land a contact frame on a sim tick | 0.8–1.25, start trimmed when clamped | — |
+| Sprint playback rate when the sim outruns the clip · stride warp | up to 1.8 · 0.3–1.8× | — |
+| Foot-lock release spring · landing anticipation · pelvis drop cap | omega 28 · 0.08 s · 10 cm | — |
+| Prop IK window around contact | −120 ms to +60 ms, release 0.15 s | — |
+| Motion gates: slide p95 / max per plant · plant speed · root jump | 1.5 / 3 cm · 3 cm/s · 0.5 m/s per frame | — |
 
 ---
 
@@ -152,6 +172,11 @@ assembly next to the harness files.
 - **Check the package before the `using`.** Read `Packages/packages-lock.json` for
   `com.unity.animation.rigging`, `com.unity.timeline` or `com.unity.2d.animation` before writing
   code against them.
+- **IK targets and weights are continuous in velocity, not only in position.** A smoothstep
+  release, a hard clamp or a weight that snaps to 0 is a one-frame pop; use a critically damped
+  spring and soft limits (`reference/foot-lock-and-prop-ik.md` §1).
+- **Measure before fixing motion.** Write the metrics, record the baseline on the unchanged code,
+  attribute each pop to a layer; a blend fix cannot remove a pop the IK made.
 - **Sample the shown state, do not eyeball it.** `animState` in the probe beside `state` turns
   "the jump looks late" into a count of frames.
 
@@ -174,3 +199,4 @@ assembly next to the harness files.
 | The probe, situations, journeys and timelines themselves | `unity-play-harness` |
 | Running tests headless, screenshots, trusting a result file | `unity-debug` |
 | Animator cost on a crowd: culling modes measured, not guessed | `unity-profiling` |
+| The simulation's mover — its speed, acceleration and the predicted stop the swing waits for | `unity-3d-controller` |

@@ -63,11 +63,18 @@ the prefab pattern. A project replaces a whole row, never a single cell.
   one folder tree to audit — `reference/model-audit.md`.
 - **Clips beside their model:** `Runner.fbx`, `Runner@GateLatchSwing.fbx`. The importer rules in
   `unity-rigged-character` key on the part after `@`.
-- **LOD meshes end `_LOD0` … `_LODn`.** Each level is decimated from the source, never from the
-  level above it, at `target_tris × lod_ratio` per level — the hand-over heights are
-  `unity-scene-optimisation` → `reference/lod.md`. A skinned class's levels are made from the game
-  mesh **before rigging** and skinned in the same rig pass; a level decimated from a rigged mesh
-  carries broken weights — `blender-character-rig` → `reference/game-mesh.md`.
+- **LOD names say who picks the level.** Levels chosen by distance end `_LOD0` … `_LODn`, and the
+  FBX importer then **builds a LODGroup by itself** that culls by screen height; the hand-over
+  heights are `unity-scene-optimisation` → `reference/lod.md`. Levels the game picks per quality
+  tier (one level enabled, the others off) must **not** end `_LOD<n>`: the importer's LODGroup
+  then culls the tier's level by screen size. A tree's LOD1 vanished on the low tier that way;
+  name them `_L1`, `_L2`, and assert in a test that the imported prefab has no LODGroup.
+- **Each level is decimated from level 0, never from the level above**, at
+  `target_tris × lod_ratio`. A skinned class's levels are either made from the game mesh before
+  rigging and skinned in the same pass (`blender-character-rig` → `reference/game-mesh.md`), or
+  collapsed from skinned level 0 by a gated stage that re-limits and re-normalises the weights and
+  measures each level against level 0 in posed frames (`blender-character-rig` →
+  `reference/skinned-lod.md`); an ungated decimation of a rigged mesh carries broken weights.
 
 ## The look comes from the anchor
 

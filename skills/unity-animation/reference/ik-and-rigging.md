@@ -172,3 +172,18 @@ Rules that carry over unchanged:
 
 The rig's bones, Avatar and import settings are `unity-rigged-character` →
 `reference/unity-import.md`.
+
+## 5. Animation Jobs — IK with neither the callback nor the package
+
+A Generic rig in a hand-built `PlayableGraph` has no `OnAnimatorIK`, and the Animation Rigging
+package adds a `RigBuilder` the graph does not need. An `IAnimationJob` in an
+`AnimationScriptPlayable` after the mixer reads and writes bones through
+`TransformStreamHandle`s bound with `animator.BindStreamTransform`, with cross-frame state in
+`NativeArray`s. That is how a foot lock that holds planted feet within millimetres at 7 m/s and a
+racket face put on a ball were built: `reference/foot-lock-and-prop-ik.md`, with
+`resources/AnimJobMath.cs`, `resources/FootLockJob.cs` and `resources/TwoBoneIKJob.cs`. The graph
+they run in is `reference/sim-driven-animation.md`.
+
+Two lessons carry back to `OnAnimatorIK` and the package unchanged: an IK weight or target that
+is continuous in position but not in velocity pops for one frame, and a knee or elbow bent by a
+hint flips when the limb straightens — store a hinge axis instead.

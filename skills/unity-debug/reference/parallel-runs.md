@@ -178,11 +178,75 @@ git status --short -- '*.meta'          # the new .meta files: commit them with 
 ## How many lanes
 
 Each Editor holds a few GB once a PlayMode scene is loaded, and after a code change every lane
-compiles at once. **On a 16 GB machine, lane 0 plus two clones is a sensible default.** Past what
-RAM allows the machine swaps, and every lane runs slower than one alone. Count from free memory,
+compiles at once. **On a 16 GB machine, two Editors in total is the measured ceiling once anything
+else runs**: three at once made a run's watchdog time out. Lane 0 plus two clones running at
+once (`MAX_UNITY=3` for `lanes.sh`) is possible only on a machine doing nothing else, and only
+after the check below. Past what RAM allows the
+machine swaps, and every lane runs slower than one alone. Count from free memory,
 not cores: lanes ≈ (free GB − 2 GB headroom) ÷ one Editor's peak, read with `ps -o rss= -p <pid>`
 during a PlayMode run. Then confirm that `sysctl vm.swapusage` holds still during a parallel run,
 and that the run beats the same legs one after another.
+
+**The cap is per machine, not per project.** A lane lock counts the Editors of one project; a
+second project's Editor (a lab project, below), a Blender job or another agent's Editor does not
+take a lane and still takes the memory. `lanes.sh run` counts every Editor on the machine and
+queues at `MAX_UNITY` (default 2; `0` turns it off), and `lanes.sh status` prints the count. Any
+other script that starts an Editor, such as a lab project's, needs the same check:
+
+```bash
+running=$(pgrep -f '(Contents/MacOS/Unity|/Editor/Unity)( -|$)' | wc -l | tr -d ' ')
+[ "$running" -lt "${MAX_UNITY:-2}" ] || { echo "busy: $running Editors running" >&2; exit 6; }
+```
+
+## The machine is shared: other work moves your numbers
+
+On a machine where several agents work at once, a Blender render, a second Editor, a `dotnet`
+process or a browser's GPU process all share the CPU with your run. In a tennis game built by
+several agents on one 16 GB machine:
+
+| What ran beside the test | What it did to the test |
+|---|---|
+| Nothing | Editor frame time 0.9 to 1.3 ms per quality tier before a visual pass, 1.6 to 2.4 ms after it |
+| Another agent's Blender job and Editor | The same test measured 4 to 10 ms |
+| A browser GPU process at 37 to 43% CPU | The unchanged greybox scene measured 4 to 6 ms |
+| A busy machine, smoke test | The simulation (on a worker thread) fell more than 2 ticks behind the clock on 5 frames against a limit of 3; red once, green on a quiet rerun with a worst lag of 1 tick |
+| A busy machine, smoke test | One 304 ms frame (the simulation 38 ticks behind); two reruns peaked at 40 ms |
+
+So frame times were 2 to 5 times wrong, and a timing assertion turned red with no code change.
+The rules that follow:
+
+- **Before any Perf run, look at the machine:** `ps -axo %cpu=,comm= | sort -rn | head` and the load
+  average from `uptime`. Write both into the report next to the numbers.
+- **Compare only numbers taken under the same load.** Either measure on a quiet machine, or measure
+  the baseline (the old build, or the scene without the change) in the same session, right before
+  the candidate. A number from a quiet evening and one from a busy afternoon do not subtract.
+- **A timing test that fails under load is flaky, not passed.** Rerun it on a quiet machine and
+  report both runs (`harness-trust.md`, retries). Triangle counts, draw calls and allocation counts
+  do not depend on load; trust those across sessions and treat milliseconds as trends.
+- **A worker-thread simulation is the first thing CPU contention shows up in.** If the game runs
+  its rules on a thread, a lag counter in the smoke test (frames where the drawn time ran ahead of
+  the newest snapshot) is the cheapest contention detector you have; log it on every run.
+- **No millisecond assertion is load-proof, Editor or not.** A pure-C# test asserting "solver
+  under 3 ms" read 6.6 to 9.8 ms at a load average near 36. Assert counts in the fast lanes and
+  keep timings in a Perf run taken on a quiet machine. Pairs, instruments and per-tier windows:
+  `unity-profiling` → `reference/frame-hygiene.md`.
+
+## A lab project for pipeline work
+
+Work that needs an Editor but not the game, such as proving that an imported character plays
+its clips or comparing import settings, does not have to queue for lane 0. Give it a throwaway
+project **outside the repo** (a sibling folder), created and filled by the pipeline's own script:
+
+- The script refuses a lab path inside the repo, so nothing it imports can reach the game's
+  `Assets/` or `git status`.
+- It counts every running Editor and waits at the machine cap above, because the lab Editor is
+  one of the two.
+- The pipeline copies its outputs into the game through one install step that runs only when lane
+  0 is idle, since that step writes `Assets/`.
+- The lab is gitignored scratch: deleting it loses nothing that the script cannot rebuild.
+
+A character pipeline built this way ran its Unity checks all day while the main Editor stayed with
+the agents working on the game, and the main project was never opened by the pipeline agent.
 
 ## Splitting a suite: tier it first
 
