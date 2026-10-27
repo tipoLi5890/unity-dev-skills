@@ -31,8 +31,28 @@ Definitions (each is a number the docs quote):
            gains at least 0.02 IoU. Registered frames read 0-2 px; frames sliced
            at their in-cell position read tens of px.
 
+  split    a resample that scales coverage and colour apart (`resize_split`):
+           alpha by LANCZOS, held to the min..max of the source alpha under
+           each output pixel's colour window; colour by a Hamming mix of
+           alpha-premultiplied RGB, a filter with no negative lobe. Every
+           output channel stays inside the range of the source pixels mixed
+           into it, so no rim colour appears that the frame did not have.
+
 Requires Pillow and numpy (codex's imagegen venv has both: ~/.codex/imagegen-venv/bin/python).
 """
+# ---------------------------------------------------------------------------
+# Third-party code. Portions are ported, with identifiers and structure
+# adapted, from sprite-gen https://github.com/aldegad/sprite-gen, commit
+# dddcc1013f7b5587a5eabd8609a5b42dd8aa7c26, Apache License 2.0 — see
+# THIRD_PARTY_NOTICES.md.
+#
+#   util/resample.py  MIX_SUPPORT, support_bounds, mix_windows,
+#                     window_extrema, resize_cell (here resize_split)
+#
+# Changes: resize_cell takes and returns a uint8 RGBA numpy array instead of
+# a PIL image and is renamed resize_split; a size equal to the source returns
+# a copy as upstream does; nothing else in the arithmetic differs.
+# ---------------------------------------------------------------------------
 import numpy as np
 from PIL import Image
 
@@ -287,6 +307,68 @@ def register(alpha_u8, ref_core, mode, scales=(1.0,)):
         if score > best[0]:
             best = (score, float(s), int(dx), int(dy), iou)
     return best[1], best[2], best[3], best[4]
+
+
+# -------------------------------------------------------------- resample ----
+MIX_SUPPORT = 1.0     # how far resize_split's colour filter (Hamming) reaches, in source px at 1:1
+
+
+def support_bounds(n_src, n_out, support):
+    """First and last source index Pillow's resample reads for each output index, for a filter of
+    `support` source pixels (the support widens by the scale when shrinking)."""
+    scale = n_src / n_out
+    reach = support * max(1.0, scale)
+    centre = (np.arange(n_out) + 0.5) * scale
+    lo = np.clip(np.floor(centre - reach + 0.5).astype(int), 0, n_src - 1)
+    hi = np.clip(np.floor(centre + reach + 0.5).astype(int) - 1, 0, n_src - 1)
+    return lo, np.maximum(lo, hi)
+
+
+def mix_windows(src_size, size):
+    """The source rows, then columns, each output pixel's colour is mixed from (sizes are (w, h))."""
+    return (support_bounds(src_size[1], size[1], MIX_SUPPORT),
+            support_bounds(src_size[0], size[0], MIX_SUPPORT))
+
+
+def window_extrema(a, rows, cols):
+    """Min and max of `a` over each output pixel's source window (separable, columns then rows)."""
+    def along(v, lo, hi, axis):
+        low = high = np.take(v, lo, axis=axis)
+        for d in range(1, int((hi - lo).max()) + 1):
+            step = np.take(v, np.minimum(lo + d, hi), axis=axis)
+            low, high = np.minimum(low, step), np.maximum(high, step)
+        return low, high
+
+    lo_c, hi_c = along(a, *cols, axis=1)
+    return along(lo_c, *rows, axis=0)[0], along(hi_c, *rows, axis=0)[1]
+
+
+def resize_split(rgba_u8, size):
+    """Scale one RGBA frame (uint8 H x W x 4) to `size` (w, h) with coverage and colour apart.
+
+    LANCZOS over premultiplied RGBA rings: its negative lobes weigh the colours across an edge
+    against each other, and dividing by the low coverage there throws the result past every
+    colour the source had — a light rim round a dark outline, a key tint where the ink was only
+    a little key. Coverage keeps LANCZOS's edge, clipped to the source alpha range under the
+    colour window (no halo outside the silhouette, no hole inside it); colour is a Hamming mix
+    of premultiplied colour, so each channel stays within the colours under it."""
+    h0, w0 = rgba_u8.shape[:2]
+    if (w0, h0) == tuple(size):
+        return rgba_u8.copy()
+    src = rgba_u8.astype(np.float32)
+    alpha = src[..., 3]
+
+    def scaled(channel, resample):
+        return np.asarray(Image.fromarray(np.ascontiguousarray(channel)).resize(tuple(size), resample),
+                          dtype=np.float32)
+
+    mix_alpha = scaled(alpha, Image.Resampling.HAMMING)
+    mix = np.stack([scaled(src[..., c] * alpha, Image.Resampling.HAMMING) for c in range(3)], axis=-1)
+    low, high = window_extrema(alpha, *mix_windows((w0, h0), size))
+    cover = np.clip(scaled(alpha, Image.Resampling.LANCZOS), low, high)
+    cover = np.where(mix_alpha > 1e-3, np.round(cover), 0)
+    colour = np.where((cover > 0)[..., None], np.round(mix / np.maximum(mix_alpha, 1e-3)[..., None]), 0)
+    return np.dstack([np.clip(colour, 0, 255), np.clip(cover, 0, 255)]).astype(np.uint8)
 
 
 # ---------------------------------------------------------------- slicing ----

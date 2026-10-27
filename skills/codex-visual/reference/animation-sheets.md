@@ -284,6 +284,13 @@ characters first try in one project, two with a small pose slip that was accepte
 then made where the game is drawn: squash and stretch, small jumps, a lean or a wobble applied as
 a transform **around the feet**, and a pose swap on the beat.
 
+The idle needs no sheet at all. `scripts/breathe.py` breathes one keyed pose into a loop on its
+own canvas — the head block bit-identical, the feet pinned on the content's bottom line, every
+pixel a copy of the input's, with a `frames.json` whose `pivot_norm` is the foot centre:
+`breathe.py sentry_idle.png --out-dir out/sentry_idle --frames 12` (usage, the refusals and how
+`--depth auto` scales with the figure: `reference/animation-scripts.md` §2). A moving loop from one
+still — a walk or a run in place — is made from a video: `sprite-from-video`.
+
 That needs two anchors per pose, measured from the keyed cell, never asked of the model:
 
 - **Feet** — x is the mean x of the opaque pixels in the bottom 1/16 of the subject's height, y

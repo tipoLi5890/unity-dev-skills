@@ -2,6 +2,127 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.32.0
+
+Sixty skills. Methods ported from sprite-gen under the Apache License 2.0, credited file by file in
+`THIRD_PARTY_NOTICES.md` and in each ported file's header: keying against the colour a model
+actually painted rather than the one it was asked for, a key colour chosen before generating, a
+breathing idle made from one still, and two new frame gates. A new skill, `sprite-from-video`,
+turns one character still into transparent loops and one-shots through an image-to-video model on
+a self-hosted ComfyUI. Every new script depends only on Python 3, numpy and Pillow (the video
+scripts also on ffmpeg/ffprobe 5.1 or later), has a `--selftest` that builds its inputs in a
+temporary directory, and documents its exit codes; except for `audit_frames.py` (below), options that already existed
+keep their defaults and their output byte for byte.
+
+**Behaviour change:** `codex-visual/scripts/audit_frames.py` gains two gates that are on by
+default. A sequence fails when any frame has more than 120 pixels at alpha above 16 within RGB
+distance 150 of the key (the key is `--key-color`, else the sidecar's `set_metrics.key_color`; with
+neither, the column reads n/a and does not gate), or when any frame has fewer pixels at alpha above
+0 than ceil(sqrt(W×H)) of its canvas, half that for a centroid (effect) sequence. A bare PNG
+directory now includes its empty frames, which then fail the sparse gate; a run driven by
+`frames.json` still skips frames marked empty. `--residual-max -1 --sparse-min 0` restores the
+earlier verdicts.
+
+**Keying: the key the model painted**
+
+- **`codex-visual` → `scripts/key_unmix.py --edge tint`, `reference/codex-runtime.md` §5.** An
+  image or video model paints its "pure" key a little off: a green asked for as `#00FF00` comes
+  back near (0..4, 235..243, 1..4), 12 to 22 away. Tint mode reads the painted key from the
+  border (corner patches and the 1 px ring, 8-wide bins, a 12% bar) and erases two balls of radius
+  96, one around the declared key and one around the painted one, the second grown 8-connected
+  from key-signature pixels. A pixel whose key tint is under 18 is the subject and is never
+  touched; within 4 rings of the keyed region the rest is un-mixed along the key, blends within
+  180 of the key only in rings 1–2; small trapped spill (at most max(32 px, 0.5% of the subject),
+  one pixel past tint 40) is recoloured with its alpha kept, or left under `--no-despill`. A rim
+  whose material is itself key-tinted (a teal jacket on green) is un-mixed against that
+  material's tint rather than against zero, so it keeps its hue instead of turning blue; the run
+  reports those pixels as `baseline_px`. `--lo`
+  and `--band` default to 96 and 4 here and stay 60 and 2 for outline and fill. Name the key hex
+  in tint mode. The keyer is one shared block, `tools/shared-blocks/chroma_unmix.py`, carried by
+  `key_unmix.py` and `sprite-from-video/scripts/video_frames.py`.
+- **`codex-visual` → `scripts/pick_key.py`, `reference/codex-runtime.md` §5.** Which key to
+  generate on, decided against the base image before generating: magenta, green, cyan or blue
+  (`#004DFF`), each scored by the 1st-percentile and minimum distance to the subject's pixels and
+  eligible only when its nearest subject pixel is farther than 96, the tint erase radius; ties go
+  to magenta. The background is read from the border ring (75% within 48), enclosed flat regions
+  are told from material, specks dropped. One JSON object per run; exit 1 names the subject pixel
+  and the box that every key would erase.
+
+**Frames: fit, anchor, resample, gate**
+
+- **`codex-visual` → `scripts/sheet_to_frames.py`, `scripts/sprite_ops.py`,
+  `reference/animation-scripts.md`.** Three opt-in options. `--scale reach` shrinks the whole set
+  by one factor (at most 1) so every frame reaches no closer than 4 px to the canvas edge about the
+  anchor it is already placed on; when content under the feet line would limit it, the foot
+  margin grows to hold that content instead (a NOTE names it), and an explicit `--foot-margin` too
+  small for it draws a WARN naming the one that keeps full size. `--align foot` moves each frame's foot centroid
+  (alpha-weighted over the bottom 20% of its content rows) onto the set's median, in the keep
+  family. `--resample split` scales a registered frame without inventing colours: opaque pixels
+  stay inside the source's per-channel range, which LANCZOS does not promise. New `frames.json`
+  `register` keys appear only when an option is used.
+- **`codex-visual` → `scripts/audit_frames.py`, `reference/animation-faults.md`.** The residual
+  and sparse gates above, with `resid` and `opaque/floor` columns, `residual_px` and `opaque_px` in
+  the CSV, owner rows with the fix order (re-key with `--edge tint`, re-generate on a `pick_key`
+  colour, then re-slice), and a `--selftest`.
+
+**An idle from one still**
+
+- **`codex-visual` → `scripts/breathe.py`, `reference/animation-scripts.md`,
+  `reference/animation-sheets.md` §5.** A breathing loop made from one still pose on the same
+  canvas, in which every output pixel is a copy of an input pixel: whole rows duplicated or deleted
+  under a tapered envelope, a monotone column map about a fixed axis column, the feet pinned on the
+  content's bottom line, the head bit-identical in every frame above the band that deforms (the neck found as
+  the narrowest width minimum in the top 5–60% of the figure, else a height fraction), and phases
+  folded on integers so the loop closes exactly. A row strained past 0.25 or an opaque pixel pushed
+  off the canvas is refused (exit 2) with nothing written. `--depth` defaults to `auto`: the
+  head lift is aimed at max(3 px, 1.5% of the height) with depth at most 0.06, so a 64 px sprite
+  breathes at 0.06 and a 280 px figure at about 0.017 (±4 px, not the ±13 px a fixed 0.06 gives). It also repairs an idle that boils.
+
+**A still into a loop: `sprite-from-video`**
+
+- **`sprite-from-video` → `SKILL.md`, `reference/pipeline.md`.** One approved still, one clip, one
+  cut: a canvas, a generated clip, keyed frames, a loop or a one-shot, a handoff to Unity and the
+  registry, and a re-roll budget, each stage with its gate. Plain image-to-video plus period
+  detection makes a loop; a first-and-last-frame clip on one still comes back almost frozen and is
+  not used for loops; a breathing idle is `codex-visual`'s `breathe.py` first and an image-to-video
+  idle second; a jump, a launch or an attack is a one-shot.
+- **`sprite-from-video` → `scripts/video_canvas.py`.** The still padded onto an exact-key canvas
+  shaped for the motion (square for a gait, 3:4 tall with 0.34 headroom for a jump, 16:9 wide with
+  lead and trail for an attack), feet on the floor, long side 768 and the other a multiple of 16,
+  every pixel the keyer would erase repainted to the exact key. It prints the `--set` arguments
+  for the ComfyUI graph; a white or uneven base is refused.
+- **`sprite-from-video` → `scripts/video_frames.py`.** Every frame extracted with its timing
+  intact, keyed with the shared block against the key painted on frame 0, specks dropped, and a
+  flatness report (painted key off by, border spread, drift). A frame touching the top or a side
+  is refused with a fix that depends on what touches: leftover key (normalise the still and
+  regenerate) or the subject (a taller or wider canvas).
+- **`sprite-from-video` → `scripts/video_loop.py`, `reference/loop-detection.md`.** The period
+  from a lag profile over a 96 px frame-distance matrix, within per-state windows (a walk 0.5–1.6
+  s); the smallest minimum within 15% of the deepest; a half-stride guard that doubles the period
+  or refuses; periodicity at least 0.15; the start picked by a seam score, gated at 2.0 on the shipped frames and at the source rate; drift
+  spread as a whole-pixel ramp. A walk at 24 fps whose two steps take 22 frames comes out as one
+  cycle subsampled to about 12 fps, with `fps_hint` the output frames over the cycle's seconds.
+  A one-shot is cut between matching rest poses, and `--mode once` keeps a jump from its crouch to
+  standing still with `hold_last`. Equal-canvas frames, a GIF preview and a `frames.json` with
+  `register` (`ground` with every frame seated on one feet line when it spreads by at most max(3 px,
+  2 % of the body), `keep` for vertical travel), `pivot_norm`, `loop`, a
+  `verdict` and a `producer`. Exit 2 refuses with nothing handed over; exit 3 writes the frames
+  with `verdict.ok` false for a suspected multi-cycle or harmonic.
+- **`sprite-from-video` → `reference/video-prompts.md`.** What the prompt must say (preserve the
+  first frame, in place, fixed camera, one flat key for the whole clip, no floor or shadow,
+  real-time pace, silent), the wording that fixes each failure, and worked prompts for the
+  runner's walk, run and launch and the sentry's swipe and idle.
+
+**Routing and records**
+
+- **`art-asset-registry` → `scripts/registry_ingest.py`, `reference/ingest.md`.** A `frames.json`
+  that names its `producer` (`{skill, script}`) is read as frames and recorded under that
+  producer, so `breathe.py` and `video_loop.py` output ingests like `sheet_to_frames.py`'s; the
+  still or the clip it names as `source` becomes the record's input.
+- **`comfyui-asset-generation`, `game-character-pipeline`, `codex-visual`.** Their Scope sections
+  route a clip turned into a sprite loop, and a 2D character's frames from a video, to
+  `sprite-from-video`.
+
 ## 0.31.0
 
 Fifty-nine skills. Everything in this release comes from building one 3D game, a tennis game,

@@ -25,6 +25,8 @@ numbers, their flags and what they write are `reference/animation-scripts.md`.
 | The body lurches whenever a prop or an arm moves | `slice_grid.py` was used — it centres each cell on its own bounding box, so a bat moves the box and the body goes the other way | Re-slice with `sheet_to_frames.py --register …`, which seats every frame on one reference by its core silhouette |
 | The GIF has a green or grey halo | A soft matte: GIF alpha is one bit, so half-keyed edges — still the key's colour — snap to opaque | `key_unmix.py`: its rim alpha is soft (0.35–1) but its colour is un-mixed, so the 1-bit cut lands on clean pixels. Never `--soft-matte` |
 | The subject's own fills came back half-transparent | `--soft-matte` against a key sharing the subject's dominant channel | Key a hue the palette lacks (`#FF00FF`) and drop `--soft-matte` (`reference/codex-runtime.md` §5) |
+| Key-coloured specks, a hole the key did not clear, or a fill the key ate into — inside the frame, not on the rim (`audit_frames.py` `resid` over 120 in a frame) | The field was painted off the key and the keyer's radius missed it, or the art carries the key's hue | Re-key with `key_unmix.py --edge tint` and the key hex named; if the residue is the art's own colour, re-generate on the key `pick_key.py` chooses from the base still |
+| A frame is nearly empty, or only debris (`opaque/floor` under the floor) | An empty cell sliced as a frame, a slice that kept a neighbour's sliver instead of the subject, or a key that erased the subject | Re-slice (`--register`, `--gutters search`), drop a deliberate empty frame from the sequence, or re-generate; a subject erased by the key → `pick_key.py` first |
 | A frame is missing (`metric empty_cells frame_011`) | The model skipped a cell — or you commissioned an empty one (`reference/animation-sheets.md` §3a) | Re-roll unless it was deliberate; the cell is excluded from every statistic either way |
 
 ### 1a. Regenerate, re-slice, re-key — which fault is whose
@@ -43,7 +45,9 @@ Read the fault, then pick the one tool that owns it.
 | Feet on different lines (`seat metric feet_drift_px`) | the slicer | `--register ground`; a jump wants `free` |
 | Frames clipped (`GATE clipped_by_canvas`) | the slicer | omit `--canvas` (it is fitted), or the size the WARN prints |
 | Pink / green rim (`rim metric fringe_pct` / `tint_pct`, `GATE key_fringe`) | the **keyer** | `key_unmix.py`; already shipped: `--defringe` |
-| Idle boils (`audit_frames.py --hold` → `BOIL`) | the **engine** | one frame + procedural motion |
+| Key residue in a frame (`audit_frames.py` `resid` > `--residual-max`, the frames named) | the keyer, then the generation | 1 re-key: `key_unmix.py --edge tint --key-color <hex>`; 2 the residue is the art's own key-hued colour → re-generate on a `pick_key.py` colour; 3 a neighbour's sliver → re-slice |
+| A sparse frame (`audit_frames.py` `opaque/floor`, the frames named) | the slicer, then the generation | re-slice (`--register ground \| free`, `--gutters search`); a commissioned empty frame is dropped from the sequence; an empty cell or an erased subject → re-generate, on a `pick_key.py` colour when the key took it |
+| Idle boils (`audit_frames.py --hold` → `BOIL`) | the **engine** | one frame + procedural motion, or `breathe.py` on that frame (`reference/animation-scripts.md` §2) |
 | A jump has no rise, a lunge does not advance | the engine | travel belongs on the transform: `--register free` holds the body still and keeps what the limbs do |
 
 An automatic retry belongs only on the rows owned by the generation. A driver that regenerates on a
@@ -79,6 +83,8 @@ describing the generation.
 | `seat metric slip_max_px` (written frames) | ≤ 1% of the reference height, at least 3 px | registered frames read 0–2; the same sheets kept in-cell read 23–119 |
 | `seat metric feet_drift_px` (`ground`) | ≤ 3 px | on a 470 px character that is 0.6%: resampling, not a hop. More means the lowest part of the body is not the feet in some frame — `free` |
 | `seat metric iou_to_ref_min` | **not gated**; with `audit_frames.py --hold`, ≥ 0.90 to cycle a one-pose loop | below it the frames are different drawings of the pose (`reference/animation-sheets.md` §3a) |
+| `audit_frames.py` `resid` (per frame) | ≤ 120 px at alpha > 16 within 150 RGB of the key (`--residual-max`) | counted anywhere in the frame, so it catches what the rim numbers cannot — a speck, a hole, an eaten fill. The key is `--key-color`, else the sidecar's `set_metrics.key_color`; without either it reads `n/a` and does not gate |
+| `audit_frames.py` `opaque/floor` (per frame) | opaque px (alpha > 0) ≥ `ceil(sqrt(W x H))` of the canvas, half that for a `centroid` effect (`--sparse-min`) | the floor is the canvas's equivalent side, so it scales with the frame: a 256x256 canvas needs 256 px, a 576x768 one 666. A frames.json run skips frames marked empty; a bare PNG directory does not |
 | `content width CV` | ≤1% for a loop | a character that grows across the sheet shows here first — re-roll, no script rescales by default |
 | `content height CV` | ≤2% for a loop; per stage for a transformation | a transformation legitimately gains parts (`reference/animation-sheets.md` §3c) |
 | `--align` exit 2 | a refusal of that tool, not of the sheet | a bbox bottom or a centroid is steered by whatever sticks out, so a larger `--max-shift` only moves the fault: seat the frames with `--register ground \| free`, which is gated on what it wrote instead of on how far it moved a frame |

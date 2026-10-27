@@ -214,11 +214,50 @@ the source's edges. Under snap, `--upscale F` puts every cut, pad, canvas and
 paste offset on a multiple of F, so each written frame is whole F px blocks
 from its top-left corner; `--canvas` must be a multiple of F.
 
-Exit codes: 0 ok · 1 rows × cols cells cannot be formed, bad args, a missing
+FIT OPTIONS. Three opt-in choices for a set that has to fit a fixed frame;
+none of them is on by default, and each is recorded in `frames.json`'s
+`register` block under keys that only appear when it is used.
+
+  --scale reach     ground / free / centroid with `--canvas W H`: ONE scale for
+                    the whole set, the largest (at most 1, so only `--subject-px`
+                    can enlarge) at which every placed frame stays inside the
+                    canvas: k = min(1, min_i half / reach_i, min_i room_y / h_i).
+                    The cell is the `--canvas`; the side margin is the 4 px of
+                    clear canvas the fitter keeps anyway; the reach is measured
+                    from the anchor every frame is placed on — the reference
+                    core's centre x sideways, and vertically from the feet line
+                    up to 4 px under the canvas top (`--foot-margin` stays
+                    under the feet; with content under the feet line and no
+                    `--foot-margin`, the margin grows to hold it at the chosen
+                    factor), or from the centre under centroid. A frame
+                    whose bat reaches far out shrinks the SET, not itself, so one
+                    pose never draws smaller than the next. Recorded as
+                    `register.scale_rule` "reach" and `register.reach_factor`.
+  --align foot      keep: each frame's x is its FOOT centroid (the alpha-weighted
+                    x of the bottom 20% of its content rows), moved onto the set's
+                    median foot x, and its bbox bottom onto the whole-pixel
+                    median bottom — a cape or a trailing arm then cannot steer
+                    the axis the way it steers `--align centroid`. Recorded as
+                    `register.align_x` "foot" and `register.foot_band_frac`.
+  --resample split  ground / free / centroid: wherever a frame is scaled, alpha
+                    and colour are resampled apart (`sprite_ops.resize_split`):
+                    alpha by LANCZOS held to the source alpha range under each
+                    output pixel, colour by a non-negative mix of premultiplied
+                    RGB. No rim colour appears that the frame did not have, so a
+                    shrunk key_unmix.py set stays clean. Recorded as
+                    `register.resample` "split".
+
+`sheet_to_frames.py --selftest` builds synthetic sheets in a temp dir, runs the
+default paths and every fit option through this script, and prints one JSON
+line `{"selftest": "pass"|"fail", ...}`.
+
+Exit codes: 0 ok · 1 rows × cols cells cannot be formed, bad args (including a
+fit option outside its mode, or `--scale reach` without `--canvas`), a missing
 `--outdir`, writing without `--register`, or `--bg-color` on an input that
 already carries alpha (see `--force-key`) · 2 `--align` needed a shift larger
 than `--max-shift` (nothing written) · 3 a gate failed (the frames ARE written,
 `frames.json` carries the faults; `--no-gate` turns this into 0).
+`--selftest`: 0 every check passed · 1 a check failed.
 
 Requires Pillow. `--register ground | free | centroid`, `--gutters search` and the
 rim measurement also need numpy and `sprite_ops.py` beside this script (codex's
@@ -227,6 +266,32 @@ Pillow-only path — `--gutters nominal --register keep` — still runs.
 `--pixel-method snap` needs numpy and `pixel_ops.py` beside this script, and is
 refused without them.
 """
+# ---------------------------------------------------------------------------
+# Third-party code. Portions are ported, with identifiers and structure
+# adapted, from sprite-gen https://github.com/aldegad/sprite-gen, commit
+# dddcc1013f7b5587a5eabd8609a5b42dd8aa7c26, Apache License 2.0 — see
+# THIRD_PARTY_NOTICES.md.
+#
+#   frames/extract.py  fit_scale (here reach_factor, behind --scale reach);
+#                      the band rule of the "foot-centroid" mode of
+#                      _anchor_x / fit_to_cell — the bottom 20% of the
+#                      content rows, at least 2, falling back to the whole
+#                      frame (here foot_x, behind --align foot, which reads
+#                      the band with this script's own centroid())
+#   util/resample.py   resize_cell, behind --resample split; the port itself
+#                      lives in sprite_ops.py (resize_split)
+#
+# Changes: fit_scale's cell and safe margins are mapped onto this script's
+# canvas: the cell is --canvas, the side margin is the fitter's 4 px of clear
+# canvas, and the vertical limit is measured from the anchor every frame is
+# already placed on (the feet line or the canvas centre) instead of from a
+# bottom-pinned bbox; the factor multiplies the set scale --subject-px gives.
+# The foot centroid weights alpha above --alpha-thr (upstream: above 0) inside
+# the thresholded bbox, and the frames are moved onto the set's median foot x
+# and median bottom as the other --align modes are, rather than onto the cell
+# centre. The resample's tail at alpha 1..thr keeps its mixed colour, or is
+# zeroed under --clear-below-thr.
+# ---------------------------------------------------------------------------
 import argparse
 import json
 import math
@@ -382,6 +447,45 @@ def centroid(im):
     cx = sum((i + 0.5) * v for i, v in enumerate(cols)) / total
     cy = sum((i + 0.5) * v for i, v in enumerate(rows)) / total
     return cx, cy
+
+
+FOOT_BAND = 0.2   # --align foot: the foot centroid is read over this share of the content rows
+
+
+def foot_x(im):
+    """Cell-local x of the FOOT centroid: the alpha-weighted x over the bottom FOOT_BAND of the
+    content bbox's rows (at least 2), or the whole-frame centroid x when that band is empty."""
+    bb = alpha_bbox(im)
+    if not bb:
+        return None
+    h = bb[3] - bb[1]
+    y0 = bb[3] - min(h, max(2, round(h * FOOT_BAND)))
+    band = centroid(im.crop((bb[0], y0, bb[2], bb[3])))
+    if band is None:
+        band = centroid(im.crop(bb))
+    return bb[0] + band[0]
+
+
+def reach_factor(ext, canvas, anchor, margin_x, top_room, centred):
+    """--scale reach: the largest factor (at most 1) by which the placed set can be scaled about
+    its anchor and still fit the canvas. `ext` holds each frame's content box relative to the
+    anchor (x0, y0, x1, y1); sideways the reach is the larger side of every frame against half
+    the canvas less `margin_x`; vertically it is the height above the anchor against the rows
+    above it less `top_room`, and the depth below it against the rows below (less `top_room`
+    under `centred`, where the anchor is the canvas centre).
+    Returns (factor, the limit that set it: "none", "side", "up" or "down", px under the anchor)."""
+    CW, CH = canvas
+    ax, ay = anchor
+    side = max(max(-e[0], e[2]) for e in ext)
+    limits = [(1.0, "none"), ((CW / 2.0 - margin_x) / max(side, 0.5), "side")]
+    up = max(-e[1] for e in ext)
+    if up > 0:
+        limits.append(((ay - top_room) / up, "up"))
+    down = max(e[3] for e in ext)
+    if down > 0:       # under a feet line only the foot margin is below it; centred, the same room as above
+        limits.append(((CH - ay - (top_room if centred else 0)) / down, "down"))
+    r, why = min(limits, key=lambda t: t[0])
+    return max(1e-6, r), why, down
 
 
 def signature(im):
@@ -840,9 +944,18 @@ def main():
     ap.add_argument("--no-gate", action="store_true",
                     help="print the verdict but exit 0 on a failed gate (the faults stay in frames.json)")
     ap.add_argument("--names", default="frame", help="output prefix (default frame -> frame_000.png)")
-    ap.add_argument("--align", choices=["none", "baseline", "centroid", "both"], default="none",
+    ap.add_argument("--align", choices=["none", "baseline", "centroid", "both", "foot"], default="none",
                     help="whole-frame translation only: baseline = match the whole-pixel median bbox bottom, "
-                         "centroid = match median centroid x, both = both (default none)")
+                         "centroid = match median centroid x, both = both, foot = match the median FOOT "
+                         "centroid x (bottom 20%% of the content rows) and the median bottom (default none)")
+    ap.add_argument("--scale", choices=["none", "reach"], default="none",
+                    help="reach = ground / free / centroid with --canvas: one scale for the whole set, the "
+                         "largest (at most 1) at which every frame's reach from the anchor fits the canvas "
+                         "(default none)")
+    ap.add_argument("--resample", choices=["lanczos", "split"], default="lanczos",
+                    help="how a scaled frame is resampled (ground / free / centroid): lanczos (default) = "
+                         "LANCZOS on RGBA, its low-alpha tail recoloured; split = alpha and colour apart, so "
+                         "no rim colour appears that the frame did not have")
     ap.add_argument("--max-shift", type=float, default=None,
                     help="refuse to write if any frame needs a shift larger than this many px")
     ap.add_argument("--outdir")
@@ -913,6 +1026,19 @@ def main():
     ap.add_argument("--json", help="sidecar path (default <outdir>/frames.json)")
     ap.add_argument("--report", action="store_true", help="measure only; no writes")
     a = ap.parse_args()
+
+    if (a.scale != "none" or a.resample != "lanczos") and a.register not in ("ground", "free", "centroid"):
+        print("ERROR: --scale reach / --resample split act where this script scales a frame: --register "
+              "ground | free | centroid.", file=sys.stderr)
+        return 1
+    if a.scale == "reach" and not a.canvas:
+        print("ERROR: --scale reach fits the set to a fixed frame — pass --canvas W H (the fitted canvas "
+              "already holds every frame, so the reach would always be 1).", file=sys.stderr)
+        return 1
+    if a.pixelate and (a.scale != "none" or a.resample != "lanczos"):
+        print("ERROR: --pixelate snaps the sheet to a pixel lattice; --scale reach / --resample split "
+              "would resample it off that lattice.", file=sys.stderr)
+        return 1
 
     if a.rows < 1 or a.cols < 1:
         print("ERROR: --rows and --cols must be >= 1", file=sys.stderr)
@@ -1306,13 +1432,14 @@ def main():
         if a.ref not in live_i:
             print(f"ERROR: --ref {a.ref} is not a frame with content (0..{len(frames) - 1})", file=sys.stderr)
             return 1
-        place, ref_h = {}, None
+        place, base, ref_h = {}, {}, None
         if a.register == "centroid":
             # an effect is MEANT to grow and move: one factor for the whole set, never one per frame
             longest = max(max(frames[i][0]["width"], frames[i][0]["height"]) for i in live_i)
             k = (a.subject_px / longest) if a.subject_px else 1.0
             for i in live_i:
                 cx, cy = frames[i][0]["centroid"]
+                base[i] = (1.0, -cx, -cy)
                 place[i] = (k, -cx * k, -cy * k)
                 regs[i] = dict(scale=1.0, dx=0, dy=0, iou=None)
         else:
@@ -1329,27 +1456,92 @@ def main():
                                   else so.register(alphas[i], ref_core, a.register, scales))
                 # top-left of this frame's cell relative to the anchor: the reference core's
                 # centre x and its feet row
+                base[i] = (s, dx - ref_cx, dy - ref_b)
                 place[i] = (s * k, (dx - ref_cx) * k, (dy - ref_b) * k)
                 regs[i] = dict(scale=round(s, 3), dx=int(dx), dy=int(dy), iou=round(float(iou), 3))
-        imgs, ext, tail_px = {}, {}, 0
-        for i in live_i:
-            sc, x, y = place[i]
-            im = frames[i][1]
-            if abs(sc - 1.0) > 1e-9:
-                # Pillow resamples RGBA premultiplied, so a transparent pixel's colour cannot leak
-                # in — but the resample ends in an alpha 1-3 ring whose un-premultiplied colour is
-                # noise at full saturation. Give that ring its neighbour's colour (or clear it).
-                im = im.resize((max(1, round(im.width * sc)), max(1, round(im.height * sc))),
-                               Image.Resampling.LANCZOS)
-                arr, n = so.clean_tail(np.asarray(im), THR, clear=a.clear_below_thr)
-                tail_px += n
-                im = Image.fromarray(arr, "RGBA")
-            imgs[i] = im
-            bb = alpha_bbox(im) or (0, 0, 0, 0)
-            ext[i] = (x + bb[0], y + bb[1], x + bb[2], y + bb[3], bb)
+
+        def build():
+            """Every live frame resampled by its placed scale -> (images, extents, tail px)."""
+            imgs, ext, tail_px = {}, {}, 0
+            for i in live_i:
+                sc, x, y = place[i]
+                im = frames[i][1]
+                if abs(sc - 1.0) > 1e-9:
+                    size = (max(1, round(im.width * sc)), max(1, round(im.height * sc)))
+                    if a.resample == "split":
+                        # coverage and colour apart: the tail at alpha 1..THR already carries a
+                        # mix of the colours under it, so it is only counted (or cleared)
+                        arr = so.resize_split(np.asarray(im), size)
+                        tail = (arr[..., 3] > 0) & (arr[..., 3] <= THR)
+                        tail_px += int(tail.sum())
+                        if a.clear_below_thr:
+                            arr[tail] = 0
+                    else:
+                        # Pillow resamples RGBA premultiplied, so a transparent pixel's colour cannot
+                        # leak in — but the resample ends in an alpha 1-3 ring whose un-premultiplied
+                        # colour is noise at full saturation. Give that ring its neighbour's colour
+                        # (or clear it).
+                        im = im.resize(size, Image.Resampling.LANCZOS)
+                        arr, n = so.clean_tail(np.asarray(im), THR, clear=a.clear_below_thr)
+                        tail_px += n
+                    im = Image.fromarray(arr, "RGBA")
+                imgs[i] = im
+                bb = alpha_bbox(im) or (0, 0, 0, 0)
+                ext[i] = (x + bb[0], y + bb[1], x + bb[2], y + bb[3], bb)
+            return imgs, ext, tail_px
+
+        imgs, ext, tail_px = build()
         room = 4   # px of clear canvas outside the furthest content
         if blk > 1:    # ...and a block more: seating on the block lattice moves a frame by up to one
             room = up_to(room, blk) + blk
+        reach = reach_margin = None
+        if a.scale == "reach":
+            # one factor for the set, from every frame's reach about the anchor it is placed on
+            RW, RH = a.canvas
+            if a.register == "centroid":
+                r_anchor = (RW / 2.0, RH / 2.0)
+            else:
+                r_margin = a.foot_margin if a.foot_margin is not None else max(4, round(0.05 * ref_h * k))
+                r_anchor = (RW / 2.0, float(RH - r_margin - 1))
+            reach, why, below = reach_factor([e[:4] for e in ext.values()], (RW, RH), r_anchor, room, room,
+                                             a.register == "centroid")
+            if why == "down" and a.register != "centroid" and a.foot_margin is None:
+                # content under the feet line (thin legs the core dropped, a prop) is what limits the
+                # factor: keep that depth plus the room under the feet instead of the default margin
+                def lifted_fit(f):     # the margin that holds the depth at factor f, and the factor it allows
+                    m = math.ceil(below * f) + room
+                    return (m, *reach_factor([e[:4] for e in ext.values()], (RW, RH),
+                                             (RW / 2.0, float(RH - m - 1)), room, room, False))
+                lo_f, hi_f = reach, 1.0      # the largest f whose own margin still allows f
+                if lifted_fit(1.0)[1] < 1.0:
+                    for _ in range(40):
+                        mid = (lo_f + hi_f) / 2
+                        lo_f, hi_f = (mid, hi_f) if lifted_fit(mid)[1] >= mid else (lo_f, mid)
+                else:
+                    lo_f = 1.0
+                lifted, l_reach, l_why, l_below = lifted_fit(lo_f)
+                l_reach = min(l_reach, lo_f)
+                if l_reach > reach:
+                    print(f"NOTE: --scale reach: {below:.0f} px of content sit under the feet line, so the foot "
+                          f"margin is {lifted} px (factor {l_reach:.3f}, not {reach:.3f} at the default "
+                          f"{r_margin}); pass --foot-margin to set it.")
+                    reach_margin, reach, why, below = lifted, l_reach, l_why, l_below
+            if why == "down" and a.register != "centroid":
+                print(f"WARN: --scale reach is limited by {below:.0f} px of content under the feet line "
+                      f"(factor {reach:.3f}): the core's lowest row is not the bottom of the drawing — thin "
+                      f"legs or a prop below the feet. --foot-margin {math.ceil(below) + room} holds it at "
+                      f"full size; or seat it with --register free.")
+            if reach < 1.0 and a.subject_px:
+                print(f"WARN: --scale reach shrank the --subject-px {a.subject_px:g} set by {reach:.3f}: the "
+                      f"character is now {ref_h * k * reach if ref_h else a.subject_px * reach:.1f} px, not "
+                      f"{a.subject_px:g}. Slice the next sheet of it with the same --canvas --scale reach, or "
+                      f"with that --subject-px, so the two draw at one size.")
+            if reach < 1.0:
+                k *= reach
+                for i in live_i:
+                    s0, x0b, y0b = base[i]
+                    place[i] = (s0 * k, x0b * k, y0b * k)
+                imgs, ext, tail_px = build()
         half_w = math.ceil(max(max(-e[0], e[2]) for e in ext.values())) + room
         if a.register == "centroid":
             margin = 0
@@ -1359,7 +1551,8 @@ def main():
             ax, ay = CW / 2.0, CH / 2.0
             pivot_norm = [0.5, 0.5]
         else:
-            margin = a.foot_margin if a.foot_margin is not None else max(4, round(0.05 * ref_h * k))
+            margin = a.foot_margin if a.foot_margin is not None else (
+                reach_margin if reach_margin is not None else max(4, round(0.05 * ref_h * k)))
             margin = up_to(margin, blk)
             below = math.ceil(max(e[3] for e in ext.values())) - 1     # content rows under the feet row
             fit_margin = max(margin, below + room)
@@ -1397,8 +1590,13 @@ def main():
             pivot_norm = [0.5, round(margin / CH, 6)]
         if tail_px:
             print(f"resample_tail {tail_px} px at alpha 1..{THR} "
-                  + ("cleared" if a.clear_below_thr else "given their neighbour's colour (alpha kept; "
-                     "--clear-below-thr zeroes them)"))
+                  + ("cleared" if a.clear_below_thr else
+                     "kept with their mixed colour (--clear-below-thr zeroes them)" if a.resample == "split"
+                     else "given their neighbour's colour (alpha kept; --clear-below-thr zeroes them)"))
+        if a.scale != "none" or a.resample != "lanczos":
+            print(f"fit scale_rule {a.scale}"
+                  + (f" reach_factor {reach:.4f} set_scale {k:.4f}" if reach is not None else "")
+                  + f" resample {a.resample}")
         scale_txt = (f"{a.scale_search[0]:g}..{a.scale_search[1]:g}" if a.scale_search else "off")
         print(f"register {a.register} ref {frames[a.ref][0]['name']} scale_search {scale_txt} "
               f"set_scale {k:.4f} canvas {CW}x{CH}{'' if a.canvas else ' (fitted)'} "
@@ -1452,6 +1650,11 @@ def main():
                        scale_search=(list(a.scale_search) if a.scale_search else [1.0, 1.0]),
                        subject_px=float(a.subject_px or 0.0), set_scale=round(k, 6), foot_margin_px=margin,
                        anchor_px=[ax, ay], reference_core_height_px=(round(ref_h * k, 2) if ref_h else 0.0))
+        # the fit options, as keys that only exist when the option was used
+        if reach is not None:
+            reg_top.update(scale_rule="reach", reach_factor=round(reach, 6), reach_margin_px=room)
+        if a.resample != "lanczos":
+            reg_top.update(resample=a.resample)
     else:
         CW, CH = (a.canvas if a.canvas else [cw, ch])
         if CW < cw or CH < ch:
@@ -1469,18 +1672,26 @@ def main():
         if blk > 1:    # a bbox bottom is a block edge, and so must the line they are all moved to be
             tgt_bot = float(near(aux["median_bottom"], blk))
         med_cx = aux["median_cx"]
+        feet_x = {m["name"]: foot_x(sub) for m, sub in frames if not m["empty"]} if a.align == "foot" else {}
+        med_fx = statistics.median(feet_x.values()) if feet_x else 0.0
         shifts = {}
         for m in metas:
             sx = sy = 0
             if not m["empty"]:
-                if a.align in ("baseline", "both"):
+                if a.align in ("baseline", "both", "foot"):
                     sy = round(tgt_bot - m["bbox_bottom"])
                 if a.align in ("centroid", "both"):
                     sx = round(med_cx - m["centroid"][0])
+                if a.align == "foot":
+                    sx = round(med_fx - feet_x[m["name"]])
                 sx, sy = near(sx, blk), near(sy, blk)
             shifts[m["name"]] = (int(sx), int(sy))
         if a.align != "none":
-            print(f"align {a.align} target_bottom {tgt_bot:.0f} target_centroid_x {med_cx:.3f}")
+            if a.align == "foot":
+                print(f"align foot target_bottom {tgt_bot:.0f} target_foot_x {med_fx:.3f} "
+                      f"foot_band_frac {FOOT_BAND:g}")
+            else:
+                print(f"align {a.align} target_bottom {tgt_bot:.0f} target_centroid_x {med_cx:.3f}")
             for m in metas:
                 sx, sy = shifts[m["name"]]
                 print(f"shift {m['name']} {sx:+d} {sy:+d}")
@@ -1666,6 +1877,10 @@ def main():
               f"centroid_x_drift_max_px {post_aux['centroid_x_drift_max_px']:.3f} "
               f"target_bottom {tgt_bot:.0f} (integer, so every shift was a whole pixel and the "
               f"baseline residual is 0.000 unless a frame was clipped)")
+        if a.align == "foot":
+            fxs = [foot_x(c) for pm, (_, c) in zip(post_metas, canvases) if not pm["empty"]]
+            fmed = statistics.median(fxs) if fxs else 0.0
+            print(f"align residual foot_x_drift_max_px {max((abs(v - fmed) for v in fxs), default=0.0):.3f}")
     post_doc.update(seat_doc)
     post_doc.update(rim_doc)
 
@@ -1703,6 +1918,8 @@ def main():
 
     side = a.json or os.path.join(a.outdir, "frames.json")
     register_doc = reg_top or dict(mode="keep", ref=a.ref)
+    if a.align == "foot":
+        register_doc.update(align_x="foot", foot_band_frac=FOOT_BAND)
     doc = dict(
         tool="sheet_to_frames.py", sheet=os.path.abspath(a.sheet),
         rows=a.rows, cols=a.cols, cell=[cw, ch], canvas=[CW, CH], pivot=pivot,
@@ -1731,5 +1948,167 @@ def main():
           f"register {register_doc['mode']}")
     return finish()
 
+def selftest():
+    """Synthetic sheets in a temp dir, run through this script as a subprocess (main() keeps
+    module state). Checks the default paths keep their sidecar shape and each fit option does what
+    the docstring says. Prints one JSON line; 0 when every check passed."""
+    import subprocess
+    import tempfile
+    from PIL import ImageDraw
+
+    checks, failed, last = [], [], [""]
+
+    def check(name, ok):
+        checks.append(name)
+        if not ok:   # name the failure with the last line the run under test printed
+            failed.append(f"{name} [{last[0]}]")
+
+    def runner(tmp):
+        def run(*args):
+            p = subprocess.run([sys.executable, os.path.abspath(__file__), *args],
+                               capture_output=True, text=True, cwd=tmp)
+            out = p.stdout + p.stderr
+            last[0] = (out.strip().splitlines() or [""])[-1][:160]
+            return p.returncode, out
+        return run
+
+    def runner_figure(d, x0, y0, arm, lean=0):
+        """A courier-run runner: a head, a torso, two thick legs and a thin arm reaching `arm` px."""
+        d.ellipse((x0 + 14, y0, x0 + 38, y0 + 24), fill=(235, 190, 150, 255), outline=(20, 20, 30, 255), width=2)
+        d.rectangle((x0 + 10 + lean, y0 + 24, x0 + 42 + lean, y0 + 70), fill=(40, 90, 210, 255),
+                    outline=(20, 20, 30, 255), width=2)
+        d.rectangle((x0 + 10, y0 + 70, x0 + 24, y0 + 104), fill=(30, 30, 40, 255))
+        d.rectangle((x0 + 28, y0 + 70, x0 + 42, y0 + 104), fill=(30, 30, 40, 255))
+        if arm:
+            d.rectangle((x0 + 42 + lean, y0 + 30, x0 + 42 + lean + arm, y0 + 35), fill=(250, 210, 40, 255))
+
+    def sheet(path, specs, aa=True):
+        im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        for i, (dx, dy, arm, lean) in enumerate(specs):
+            r, c = divmod(i, 2)
+            runner_figure(d, c * 128 + dx, r * 128 + dy, arm, lean)
+        if aa:   # an anti-aliased rim, as a keyed generation has
+            im = im.resize((512, 512), Image.Resampling.NEAREST).resize((256, 256), Image.Resampling.LANCZOS)
+        im.save(path)
+
+    new_keys = {"scale_rule", "reach_factor", "reach_margin_px", "resample", "align_x", "foot_band_frac"}
+    with tempfile.TemporaryDirectory() as tmp:
+        run = runner(tmp)
+        sheet(os.path.join(tmp, "run.png"), [(20, 10, 0, 0), (30, 14, 15, 0), (24, 8, 30, 0), (28, 12, 45, 0)])
+        sheet(os.path.join(tmp, "cape.png"), [(20, 10, 0, -8), (34, 14, 0, 8), (26, 8, 50, 0), (40, 12, 0, 6)])
+
+        def doc(sub):
+            with open(os.path.join(tmp, sub, "frames.json"), encoding="utf-8") as fh:
+                return json.load(fh)
+
+        def frames_of(sub):
+            d = doc(sub)
+            return d, [Image.open(os.path.join(tmp, sub, f["file"])).convert("RGBA") for f in d["frames"]]
+
+        # ---- default paths: the sidecar carries none of the fit keys
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--no-gate", "--outdir", "keep")
+        d = doc("keep")
+        check("keep default exit 0", code == 0)
+        check("keep default register is {mode, ref}", set(d["register"]) == {"mode", "ref"})
+        check("keep default align none", d["align"] == "none")
+        check("keep default prints no fit line", "fit scale_rule" not in out)
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--outdir", "ground")
+        d = doc("ground")
+        check("ground default exit 0", code == 0)
+        check("ground default register keys unchanged",
+              set(d["register"]) == {"mode", "ref", "scale_search", "subject_px", "set_scale", "foot_margin_px",
+                                     "anchor_px", "reference_core_height_px"})
+        check("ground default carries no fit key", not (new_keys & set(d["register"])))
+
+        # ---- refusals: a fit option outside its mode, reach without a canvas
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--scale", "reach",
+                      "--canvas", "80", "80", "--outdir", "x")
+        check("reach under keep refused (1)", code == 1)
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--scale", "reach", "--outdir", "x")
+        check("reach without --canvas refused (1)", code == 1)
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--resample", "split", "--outdir", "x")
+        check("split under keep refused (1)", code == 1)
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--align", "foot", "--outdir", "x")
+        check("align foot under ground refused (1)", code == 1)
+
+        # ---- --scale reach: a tight canvas shrinks the SET, nothing is clipped; a roomy one leaves 1.0
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--scale", "reach",
+                        "--canvas", "70", "90", "--outdir", "reach")
+        d, ims = frames_of("reach")
+        reg = d["register"]
+        check("reach exit 0", code == 0)
+        check("reach factor < 1 on a tight canvas", reg.get("scale_rule") == "reach" and 0 < reg["reach_factor"] < 1)
+        check("reach set_scale == factor without --subject-px", abs(reg["set_scale"] - reg["reach_factor"]) < 1e-6)
+        check("reach clips nothing", "loses content" not in out and d["clipped_count"] == 0)
+        check("reach frames inside the canvas", all(alpha_bbox_any(im) and alpha_bbox_any(im)[0] > 0
+                                                    and alpha_bbox_any(im)[2] < 70 and alpha_bbox_any(im)[1] > 0
+                                                    for im in ims))
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--scale", "reach",
+                        "--canvas", "400", "400", "--outdir", "roomy")
+        check("reach never upscales", doc("roomy")["register"].get("reach_factor") == 1.0
+              and doc("roomy")["register"]["set_scale"] == 1.0)
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "centroid", "--scale", "reach",
+                        "--canvas", "48", "48", "--outdir", "fx")
+        d = doc("fx")
+        check("reach under centroid fits", code == 0 and d["clipped_count"] == 0 and d["register"]["reach_factor"] < 1)
+        # a thin pole under the feet (dropped from the core): the foot margin holds it, the set keeps its size
+        im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        dr = ImageDraw.Draw(im)
+        for i in range(4):
+            r, c = divmod(i, 2)
+            runner_figure(dr, c * 128 + 20, r * 128 + 4, 0)
+            dr.rectangle((c * 128 + 36, r * 128 + 109, c * 128 + 38, r * 128 + 124), fill=(250, 210, 40, 255))
+        im.save(os.path.join(tmp, "pole.png"))
+        code, out = run("pole.png", "--rows", "2", "--cols", "2", "--register", "ground", "--scale", "reach",
+                        "--canvas", "128", "128", "--outdir", "pole")
+        d = doc("pole")
+        check("reach: content under the feet lifts the margin, not shrinks the set",
+              code == 0 and "NOTE: --scale reach" in out and d["register"]["reach_factor"] >= 0.9
+              and d["register"]["foot_margin_px"] >= 15 and d["clipped_count"] == 0)
+
+        # ---- --resample split: every written channel stays inside the source's colour range
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--subject-px", "40",
+                        "--resample", "split", "--outdir", "split")
+        d, ims = frames_of("split")
+        src = Image.open(os.path.join(tmp, "run.png")).convert("RGBA")
+        sp = [p for p in _flat(src) if p[3] > 0]
+        lo = [min(p[c] for p in sp) for c in range(3)]
+        hi = [max(p[c] for p in sp) for c in range(3)]
+        inside = all(lo[c] <= p[c] <= hi[c] for im in ims for p in _flat(im) if p[3] > 0 for c in range(3))
+        check("split exit 0", code == 0)
+        check("split recorded", d["register"].get("resample") == "split")
+        check("split colours inside the source range", inside)
+        check("split scaled the set", d["register"]["set_scale"] < 0.5)
+        check("split transparent pixels carry RGB 0", all(p[:3] == (0, 0, 0) for im in ims for p in _flat(im) if p[3] == 0))
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--subject-px", "40",
+                        "--outdir", "lanczos")
+        _, ims_l = frames_of("lanczos")
+        check("lanczos default leaves the source range (the case split exists for)",
+              any(not lo[c] <= p[c] <= hi[c] for im in ims_l for p in _flat(im) if p[3] > 0 for c in range(3)))
+
+        # ---- --align foot: the legs land on one x and one bottom, whatever the arm or the lean does
+        code, out = run("cape.png", "--rows", "2", "--cols", "2", "--align", "foot", "--canvas", "160", "140",
+                        "--outdir", "foot")
+        d, ims = frames_of("foot")
+        fx = [foot_x(im) for im in ims]
+        bots = [alpha_bbox(im)[3] for im in ims]
+        check("foot exit 0", code == 0)
+        check("foot recorded", d["align"] == "foot" and d["register"].get("align_x") == "foot"
+              and d["register"].get("foot_band_frac") == FOOT_BAND and d["register"]["mode"] == "keep")
+        check("foot x on one line (<= 1 px)", max(fx) - min(fx) <= 1.0)
+        check("foot bottoms on one line", len(set(bots)) == 1)
+        code, out = run("cape.png", "--rows", "2", "--cols", "2", "--align", "centroid", "--canvas", "160", "140",
+                        "--outdir", "cen")
+        _, ims_c = frames_of("cen")
+        fxc = [foot_x(im) for im in ims_c]
+        check("centroid align leaves the feet apart (the case foot exists for)", max(fxc) - min(fxc) > 2.0)
+
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
+    return 1 if failed else 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--selftest"]:
+        sys.exit(selftest())
     sys.exit(main())

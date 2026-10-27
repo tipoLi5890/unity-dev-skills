@@ -2,7 +2,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。五十九個 skill，涵蓋做一款遊戲的每個階段，從概念到可驗證的建置，
+給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。六十個 skill，涵蓋做一款遊戲的每個階段，從概念到可驗證的建置，
 可安裝到 Claude Code 或 OpenAI Codex。
 
 有三件事讓它不只是一堆 Unity 筆記：
@@ -71,8 +71,9 @@ Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，
 | | `unity-audio` | 記憶體、load type、取樣率、mixer 成本 —— 它會先報告再重新匯入；在頻率上限之下合成的音效，由 `scripts/spectrum_check.py` 檢查 |
 | | `unity-localization` | 用一種以上的語言出貨，以及真正會出錯的 CJK 字型管線 |
 | **量產 —— AI 素材生成** | `game-character-pipeline` | **從一張圖做出綁骨角色，從這裡開始。** 直到 Unity 裡核准的角色為止的階段順序：先決定路線、品質目標與軌道（預覽軌直接綁密網格，出貨軌先定預算 → 遊戲網格 → 只綁一次），再走 S0–S13，每個階段標出負責的 skill 與進出關卡；動作全來自一套動作包時，把網格套到它的骨架上，clip 原樣播放 |
-| | `codex-visual` | 用 `codex` 影像模型出 2D 美術，靠一份美術聖經與一張錨定圖鎖住風格：grid one-shot 整組、短動畫生成成一張 sprite sheet 再切成量測過的逐格並輸出 GIF 預覽、去背、尺寸正規化，並以幾何驗收閘門讀回交付檔的置中與尺寸；也畫圖生 3D 角色起手的四面圖，只在數值檢查通過時才合成的審閱表，以及依主題分頁、每格標出來源路徑並記下雜湊的概覽頁 |
+| | `codex-visual` | 用 `codex` 影像模型出 2D 美術，靠一份美術聖經與一張錨定圖鎖住風格：grid one-shot 整組、短動畫生成成一張 sprite sheet 再切成量測過的逐格並輸出 GIF 預覽、去背、尺寸正規化，並以幾何驗收閘門讀回交付檔的置中與尺寸；也畫圖生 3D 角色起手的四面圖，只在數值檢查通過時才合成的審閱表，以及依主題分頁、每格標出來源路徑並記下雜湊的概覽頁；生成前先對照主體挑選鍵色、背景偏離宣告鍵色時沿色調軸反混色，以及由一張靜態圖做出呼吸 idle |
 | | `comfyui-asset-generation` | 用自架 ComfyUI 出音樂、音效、MiniMax H3 影片與圖生 3D 的道具和角色：一次一件、只信 `/history`、換模型前先 `/free`；四面圖上傳前先去背，調參前先把專案 graph 和官方模板逐欄比對，生成預設當成階梯來比較，沒有一個是目標；由地面座標畫出關鍵格的版面圖並在生成前找出交叉的移動，以及地平線一動就退回關鍵格的鏡頭閘門 |
+| | `sprite-from-video` | 透過生成影片把一張角色靜態圖變成透明的 sprite 逐格：依動作把靜態圖補到尺寸合適的純鍵色畫布、生成原地的圖生影片、每格依模型實際畫出的顏色去背，再以半步保護與接縫閘門找出循環週期，或在兩個靜止姿勢之間切出單次動作 —— 輸出同尺寸畫布的逐格與 `frames.json` |
 | | `blender-character-rig` | 透過 MCP server 在執行中的 Blender 裡，替圖生 3D 角色綁骨架、做動畫：骨頭依量到的特徵點擺放、權重依位置計算、道具掛在手骨上、key 出一段 action、算出預覽，再把 FBX 重新匯入驗證；同一批模組也能無頭執行成有關卡的階段：把動作包骨架套到網格、蒙皮 LOD、位元組完全相同的 FBX |
 | | `blender-retarget` | 把現成的動作 clip 套到在 Blender 裡綁好骨架的角色上：透過 Auto-Rig Pro 或純 bpy 的骨骼對照表，依兩邊的 rest pose 轉換每個旋轉 key、一份 clip 清單、局部修權重、帶 NLA 審閱軌的動作庫、每段 clip 都對手骨檢查的道具，以及重新開啟存檔來驗證的稽核；套骨架還是重定向，用量測比較決定（`scripts/clip_metrics.py`、`scripts/bakeoff_report.py`） |
 | **打磨與優化** | `unity-game-feel` | 沒有打擊感的命中、命中後整個遊戲停住不動、閃白之後一直白著的敵人、三十個拾取物播出三十個音效、停不下來的手把震動：每個 gameplay 事件一列有預算的回饋——由唯一擁有 `Time.timeScale` 的元件做 hit stop、會還原的閃白、不需要套件的擠壓與 tween、粒子、拖尾、有發聲數上限的池化音效、會停下來的震動；讓又小又快的球在畫面上看得清、走得順（`MinScreenSize.cs`、`scripts/screen_smoothness.py`） |
@@ -114,4 +115,4 @@ claude plugin validate .                # manifest 形狀
 
 ## 授權
 
-MIT —— 見 [LICENSE](../LICENSE)。
+MIT —— 見 [LICENSE](../LICENSE)。移植自其他專案的程式碼保留其原授權：見 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

@@ -98,6 +98,9 @@ with the Codex host — display name, one-line summary, and the
   `unity-rigged-character` as an option) is chosen in `game-character-pipeline`.
 - **What a class of asset may cost** — the generation preset ladder and the `3D budgets` row:
   `unity-3d-models`. This skill generates the presets it compares.
+- **A clip turned into a transparent sprite loop** — the canvas, keying every frame, the loop
+  period or one-shot cut and the frames handed to Unity: `sprite-from-video`. This skill generates
+  the clip.
 - **Images and sprites** — reference art, icons, sprite sheets, chroma-key transparency and the
   art-bible discipline, and the source image or turnaround sheet an image-to-3D job starts from:
   `codex-visual`.

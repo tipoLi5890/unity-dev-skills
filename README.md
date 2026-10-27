@@ -2,7 +2,7 @@
 
 **English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
 
-Unity 6 game-development skills for AI coding agents. Fifty-nine skills covering every stage of
+Unity 6 game-development skills for AI coding agents. Sixty skills covering every stage of
 making a game, from concept to a verified build — installable into Claude Code or OpenAI Codex.
 
 Three things make this different from a pile of Unity notes:
@@ -74,8 +74,9 @@ start at `unity-gameplay`: it reads the project and routes to the rest.
 | | `unity-audio` | Memory, load types, sample rates, mixer cost — reports before it reimports; effects synthesised under a frequency ceiling and checked by `scripts/spectrum_check.py` |
 | | `unity-localization` | Shipping in more than one language, and the CJK font pipeline where it goes wrong |
 | **Production — AI asset generation** | `game-character-pipeline` | **Start here for a rigged character made from an image.** The stage order up to an approved character in Unity: the route, the quality target and the track (a preview rig on the dense mesh, or budget → game mesh → rig once) decided first, then stages S0–S13, each with the skill that owns it and its entry and exit gates; when one clip pack supplies the motion, the mesh fitted to its skeleton and the clips played unchanged |
-| | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files; also the four views an image-to-3D character starts from, review sheets composed only when their numeric checks pass, and themed overview sheets that caption each picture with its source path and record its hash |
+| | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files; also the four views an image-to-3D character starts from, review sheets composed only when their numeric checks pass, and themed overview sheets that caption each picture with its source path and record its hash; a key colour chosen against the subject before generating, a tint-axis un-mix for a field painted off its key, and a breathing idle from one still |
 | | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props and characters through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch; four views cleaned before upload, the project graph diffed against the official template before any tuning, generation presets compared as rungs, none of them a target; keyframe layout maps drawn from ground coordinates with crossing moves found before generating, and a camera gate that rejects a keyframe whose horizon moved |
+| | `sprite-from-video` | One character still turned into transparent sprite frames through a generated video: the still padded onto an exact-key canvas sized for the motion, an in-place image-to-video clip, every frame keyed against the colour the model actually painted, the loop period found with a half-stride guard and a seam gate, or a one-shot cut between rest poses — equal-canvas frames plus a `frames.json` |
 | | `blender-character-rig` | An image-to-3D character rigged and animated in a running Blender through its MCP server: bones from measured landmarks, weights computed by position, a prop on a hand bone, a keyed action, a preview, and an FBX proven by re-import; the same modules headless as gated stages: a clip pack's skeleton fitted to the mesh, skinned LODs, a byte-identical FBX |
 | | `blender-retarget` | Stock clips moved onto a character rigged in Blender: through Auto-Rig Pro or a pure-bpy bone map that converts each rotation key between the two rest poses, a clip manifest, a local weight repair, an action library with an NLA review track, a prop checked against its hand bone in every clip, and an audit that re-opens the saved file; a measured fit-or-retarget bake-off (`scripts/clip_metrics.py`, `scripts/bakeoff_report.py`) |
 | **Polish & optimisation** | `unity-game-feel` | A hit with no impact, a game left frozen after a hit, an enemy that stays white after its flash, thirty pickups playing thirty sounds, a pad that keeps vibrating: one feedback row per gameplay event with a budget — hit stop through one owner of `Time.timeScale`, flashes that restore, squash and tweens with no library, particles, trails, pooled SFX with a voice cap, rumble that stops; a small fast ball kept readable and smooth on screen (`MinScreenSize.cs`, `scripts/screen_smoothness.py`) |
@@ -117,4 +118,4 @@ What this release contains: [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Code ported from other projects keeps its own licence: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

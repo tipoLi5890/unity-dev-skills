@@ -28,7 +28,7 @@ Tried in this order; the first that fits is used.
 | Shape | Recognised by | Becomes |
 |---|---|---|
 | a record | a `record` object, from any producer that writes one (every Blender skill report carries one; the ComfyUI and codex clients where they add one) | that object; keys it leaves out are filled from the shape below it, and a top-level `file` (`{path, saved, dirty}`) is carried in and hashed. A ComfyUI job is read only through its `record` |
-| frames | `sheet_to_frames.py`'s `frames.json` (`tool`, or `frames` with `cell` and `verdict`) | the sidecar first, then every frame (read next to it), the sheet as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note` |
+| frames | `sheet_to_frames.py`'s `frames.json` (`tool`, or `frames` with `cell` and `verdict`), or any `frames.json` with `frames` and a `producer` (`breathe.py`, `video_loop.py`) | the sidecar first, then every frame (read next to it), the sheet (else `source`, a path or `{file}`) as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note`; `tool` is the `producer`'s `{skill, script}` when it names one (both strings, else exit 3), else `codex-visual`/`sheet_to_frames.py` |
 | Blender | `gates` and `blender` | its gates and verdict (`ok`), `source: authored`; the file comes from `--file`, else the report's top-level `path` (an FBX export), else the saved `.blend` from `file.path` as `role: source, mutable: true`, hashed like any file |
 | codex | `out` and `size` | the image, `source: generated`; with `--expect-size`, a `codex.size` gate; an alpha render adds a warning |
 

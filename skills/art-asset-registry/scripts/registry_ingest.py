@@ -9,8 +9,9 @@ The shapes it reads, tried in this order:
                object is the partial record. A top-level `file` ({path, saved, dirty}) is carried
                in, and what the JSON's own shape below would add fills the keys the record leaves
                out
-  frames       sheet_to_frames.py's frames.json: the sidecar and every frame (relative to it),
-               the sheet as input, one `frames.faults` gate
+  frames       sheet_to_frames.py's frames.json, or any frames.json naming its `producer`
+               ({skill, script}: breathe.py, video_loop.py): the sidecar and every frame
+               (relative to it), the sheet or `source` as input, one `frames.faults` gate
   blender      a Blender skill's report (`gates` and `blender`): its gates and verdict; the file
                it wrote comes from --file, else its top-level `path`, else the saved .blend
                (role source, mutable; hashed like any file, so each version has its sha256)
@@ -71,10 +72,21 @@ def _frames(doc, src):
     for frame in doc.get("frames") or []:
         if isinstance(frame, dict) and isinstance(frame.get("file"), str):
             files.append({"path": os.path.join(base, frame["file"]), "role": "derived"})
-    part = {"kind": "frames", "source": "generated", "files": files,
-            "tool": {"skill": "codex-visual", "script": "sheet_to_frames.py"}}
+    tool = {"skill": "codex-visual", "script": "sheet_to_frames.py"}
+    producer = doc.get("producer")
+    if producer is not None:
+        if not (isinstance(producer, dict) and isinstance(producer.get("skill"), str)
+                and isinstance(producer.get("script"), str)):
+            raise Bad("`producer` is not an object with string `skill` and `script`")
+        tool = {"skill": producer["skill"], "script": producer["script"]}
+    part = {"kind": "frames", "source": "generated", "files": files, "tool": tool}
+    origin = doc.get("source")
+    if isinstance(origin, dict):
+        origin = origin.get("file")
     if isinstance(doc.get("sheet"), str):
         part["inputs"] = [{"path": doc["sheet"]}]
+    elif isinstance(origin, str):
+        part["inputs"] = [{"path": origin}]
     verdict = doc.get("verdict")
     if isinstance(verdict, dict) and isinstance(verdict.get("ok"), bool):
         faults = [f for f in verdict.get("faults") or [] if isinstance(f, dict)]
@@ -140,6 +152,8 @@ def legacy_shape(doc):
     if doc.get("tool") == "sheet_to_frames.py" or (
             isinstance(doc.get("frames"), list) and "cell" in doc and "verdict" in doc):
         return "frames"
+    if isinstance(doc.get("producer"), dict) and isinstance(doc.get("frames"), list):
+        return "frames"
     if "gates" in doc and "blender" in doc:
         return "blender"
     if "out" in doc and "size" in doc:
@@ -179,7 +193,7 @@ def convert(doc, src, ctx, args):
         raise Bad("the producer reported an error and wrote nothing to record")
     else:
         raise Bad("not a shape ingest reads: a JSON with a `record` object, frames.json from "
-                  "sheet_to_frames.py, a Blender report (gates, blender), or codex_generate "
+                  "sheet_to_frames.py or with a `producer`, a Blender report (gates, blender), or codex_generate "
                   "output (out, size)")
     for k in ("schema", "rev", "ts"):
         part.pop(k, None)
@@ -386,6 +400,28 @@ def selftest(d):
         "ArtDirection/frames/runner_run/run_00.png", "ArtDirection/frames/runner_run/run_01.png"]
     assert part["inputs"] == [{"path": "ArtDirection/sheets/runner_run.png"}], part
     assert part["gates"] == [{"name": "frames.faults", "value": 0, "limit": 0, "pass": True}]
+    assert part["tool"] == {"skill": "codex-visual", "script": "sheet_to_frames.py"}, part
+
+    # a frames.json naming its producer: that tool, `source` (a path or {file}) as the input
+    for source in (sheet, {"file": sheet, "sha256": "0" * 64, "fps": 24.0}):
+        named = {"tool": "video_loop.py", "source": source, "canvas": [32, 32], "loop": True,
+                 "producer": {"skill": "sprite-from-video", "script": "video_loop.py"},
+                 "verdict": {"ok": False, "faults": [{"kind": "multi-cycle-suspect"}]},
+                 "frames": [{"index": k, "file": f"run_{k:02d}.png"} for k in range(2)]}
+        with open(side, "w", encoding="utf-8") as fh:
+            json.dump(named, fh)
+        code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side)
+        part = json.loads(out)
+        assert code == 0 and part["kind"] == "frames", out
+        assert part["tool"] == {"skill": "sprite-from-video", "script": "video_loop.py"}, part
+        assert part["inputs"] == [{"path": "ArtDirection/sheets/runner_run.png"}], part
+        assert len(part["files"]) == 3 and part["verdict"] == "failed", part
+    with open(side, "w", encoding="utf-8") as fh:
+        json.dump(dict(named, producer={"skill": "sprite-from-video", "script": 3}), fh)
+    code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side)
+    assert code == 3 and "`producer`" in out, (code, out)
+    with open(side, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh)
 
     # a Blender report: no file named -> 3; --file; a newer report with record and file
     report = {"ok": True, "gates": [{"name": "rig.bones", "value": 24, "limit": 15, "pass": True}],

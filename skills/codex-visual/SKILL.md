@@ -32,7 +32,7 @@ visual work through **one canonical project spec**.
 | `/ArtDirection/candidates/` | Bootstrap explorations. |
 | `/ArtDirection/anchors/` · `anchors/sets/` | Locked reference image(s) fed via `-i`; `sets/` = per-set anchors (an approved first member). |
 | `/ArtDirection/manifest.md` | Registry of every generated asset. |
-| skill `scripts/` | **Key:** `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py` · `overview_sheet.py` (`reference/overview-sheets.md`). **Call:** `codex_generate.py` |
+| skill `scripts/` | **Key:** `pick_key.py` · `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py` · `breathe.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py` · `overview_sheet.py` (`reference/overview-sheets.md`). **Call:** `codex_generate.py` |
 | project asset dir | Shippable art, at the path the spec defines (e.g. `Assets/…` for Unity). |
 
 `<repo>` = the project root, as an **absolute path**.
@@ -77,7 +77,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 | One sprite, icon, key art or background | job shape (below) → PHASE 3 |
 | A matching set — icons, pickups, variants; one more for a shipped set | PHASE 3S |
 | An idle loop, a walk, an attack, a GIF; "the animation jitters" | PHASE 3A |
-| A transparent PNG; "a fringed cut-out" | `reference/codex-runtime.md` §5 |
+| A transparent PNG; "a fringed cut-out"; which key colour | `reference/codex-runtime.md` §5 |
 | "Off-centre", "one is smaller"; a crosshair template | `reference/geometry-gate.md` |
 | "The assets don't match / the style drifted" | PHASE 4 |
 | A source image for image-to-3D | `reference/image-to-3d-input.md` |
@@ -87,7 +87,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 
 ## Decide the shape of the job
 
-Three shapes, three priorities; the wrong one is why a sheet comes back unusable.
+Three shapes, three priorities; the wrong one makes a sheet unusable.
 
 | Shape | Priority | Path |
 |---|---|---|
@@ -184,7 +184,7 @@ Three SCOPES of consistency, each owned by one mechanism; they **stack** in one 
 | *guarantee* (size and centre) | **normalize + gate** | `slice_grid.py` / `normalize_set.py`, then `audit_set.py` |
 
 So the canonical call is **style anchor + family anchor (chain) + grid layout, in ONE generation**,
-then slice + normalize (`reference/image-model.md` §6).
+then slice + normalize.
 
 - **New set of N≥2 siblings** → grid one-shot: `cols=ceil(√N)`, `rows=ceil(N/cols)`, leftover
   cells blank or repeated, the static-set floors above, a related family's anchor chained. Too
@@ -195,12 +195,10 @@ then slice + normalize (`reference/image-model.md` §6).
 ### Recipe — grid + chain in one call
 
 Style anchor, then family anchor; locks 1–3; capture → key → slice → **gate** → promote. The call:
-`reference/image-model.md` §6. Off-centre or shrunken sprites, crosshair templates:
-`reference/geometry-gate.md`.
+`reference/image-model.md` §6.
 
 > One cell wrong? **Re-gen the whole sheet** — never patch one cell: a repair request re-renders the
-> whole canvas, so no untouched cell comes back unchanged (`reference/animation-faults.md` §3, with
-> the local splice).
+> whole canvas (`reference/animation-faults.md` §3, with the local splice).
 
 ## PHASE 3A — Animation sheets (one short motion as ONE gridded sheet)
 
@@ -221,7 +219,7 @@ PHASE 3S's stack, but the cells are **moments of one character**. The sheet deci
    per cell on a contact sheet is not evidence about an animation** →
    `reference/animation-scripts.md` §1, §2.
 6. **One cell wrong** → a new sheet or a local splice; **jitter, cut feet, a fringe, a boiling
-   idle** → not a re-generation → `reference/animation-faults.md` §3, §1a. **Pixel style** →
+   idle** (→ `breathe.py`) → not a re-generation → `reference/animation-faults.md` §3, §1a. **Pixel style** →
    post-process the whole sheet, then register → `reference/pixel-grid.md`.
 7. **Outputs and the handoff:** frames + `frames.json` (`pivot_norm` = the pivot) + the keyed
    sheet (→ `anchors/sets/<action>.png` if the next animation must match) + previews →
@@ -244,7 +242,8 @@ PHASE 3S's stack, but the cells are **moments of one character**. The sheet deci
   `comfyui-asset-generation`; import: `unity-3d-models`; a character's route:
   `game-character-pipeline`.
 - **Audio and video**, a real moving-camera clip included — music, SFX and MiniMax H3 video through
-  a self-hosted ComfyUI: `comfyui-asset-generation`.
+  a self-hosted ComfyUI: `comfyui-asset-generation`; a still → a transparent loop from a video:
+  `sprite-from-video`.
 - **Where the art goes in a HUD**, type sizes, contrast: `unity-game-ui`.
 
 Related: `game-character-pipeline`, `comfyui-asset-generation`, `art-asset-registry`.

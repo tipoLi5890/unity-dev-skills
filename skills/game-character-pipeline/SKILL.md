@@ -132,7 +132,7 @@ The ledger's `stale` names the downstream records; this table names the stage to
 |---|---|
 | How to perform any stage | the skill and file in that stage's row |
 | Props and anything with no skeleton | `unity-3d-models` |
-| A 2D character: sprite sheets, frames, Unity sprite animation | `codex-visual` · `unity-2d-sprites` |
+| A 2D character: sprite sheets, frames, Unity sprite animation | `codex-visual` · `sprite-from-video` · `unity-2d-sprites` |
 | Moving the character in the game: controller, Animator bridge | `unity-3d-controller` |
 | States, events, root motion and IK on the clips in Unity | `unity-animation` |
 | The game's visual direction and its locked decisions | `unity-game-brief` |

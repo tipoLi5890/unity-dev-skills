@@ -135,7 +135,7 @@ read its size:
 
 The built-in tool has **no native transparency** (`reference/image-model.md` §4). Generate on a
 **flat key colour absent from the subject** — magenta `#FF00FF` for a green-and-gold palette, NOT a
-colour in the art — as an **opaque** image, then key it out. Removal needs **Pillow and numpy**,
+colour in the art; `pick_key.py` chooses it (below) — as an **opaque** image, then key it out. Removal needs **Pillow and numpy**,
 which system Python lacks; use the machine's existing venv at `$HOME/.codex/imagegen-venv` (absent →
 stop and ask the user to create it with `python3 -m venv` + Pillow + numpy; never silently):
 
@@ -143,6 +143,8 @@ stop and ask the user to create it with `python3 -m venv` + Pillow + numpy; neve
 PY=$HOME/.codex/imagegen-venv/bin/python
 "$PY" <skill>/scripts/key_unmix.py IN.png --out OUT.png --key-color '#ff00ff'       # art with an outline
 "$PY" <skill>/scripts/key_unmix.py IN.png --out OUT.png --edge fill                 # effects: no outline
+# a field painted off the key (video frames, a dim render): name the hex, un-mix by tint
+"$PY" <skill>/scripts/key_unmix.py IN.png --out OUT.png --key-color '#00ff00' --edge tint
 # already keyed and shipped (trimmed, 9-sliced, retouched): repair the rim without re-slicing
 "$PY" <skill>/scripts/key_unmix.py --defringe <asset dir> --in-place
 ```
@@ -192,7 +194,64 @@ bundles — `remove_chroma_key.py --key-color '#ff00ff' --tolerance 40 --despill
 The hex in the generation prompt and `--key-color` are **one fact written twice**: key magenta out
 of a green-screen render and nothing is keyed (`key_unmix.py` exits 2 under 1% transparent;
 `remove_chroma_key.py` succeeds on an opaque PNG). Both name the key colour `ART_DIRECTION.md`
-records.
+records — per character, the one `pick_key.py` chose.
+
+### Choose the key before generating — `pick_key.py`
+
+The key is a property of the **subject**, so pick it from the base still (the anchor, the
+character's approved pose) before the first sheet or clip is made on it:
+
+```bash
+"$PY" <skill>/scripts/pick_key.py /abs/ArtDirection/anchors/sets/runner_base.png > /abs/keys/runner.json
+```
+
+It finds the subject (the image shrunk to 256 px with NEAREST, the border field flood-filled
+away, the anti-aliased rim and one-pixel specks dropped) and scores four candidates — magenta
+`#FF00FF`, green `#00FF00`, cyan `#00FFFF`, blue `#004DFF`. A candidate is **eligible** when the
+subject's nearest pixel is farther from it than `--min-distance` (96): the radius `--edge tint`
+erases around the key, so an eligible key cannot take a pixel of the art with it. Among the
+eligible ones the highest (1st-percentile distance, nearest distance) wins, ties to magenta. The
+JSON names the pick (`hex`), and for every candidate its distances, its nearest subject pixel and
+the bbox of the subject pixels inside its radius.
+
+**Exit 1 = no key clears the radius**: the art carries every key's hue somewhere (a green visor
+on the runner, a pink sash on the sentry). stderr names, for the best-scoring key, the pixel and
+the bbox that would be erased. Recolour that feature in the base and pick again, or accept losing
+it — never key on a colour the subject contains. A transparent base reads `mode transparent`; a
+base with no flat field reads `heterogeneous` and warns that its distances may count background.
+
+### `--edge tint` — when the field is not the colour you named
+
+`outline` and `fill` assume the field is the key within 60 RGB and the rim is the key mixed with
+one neighbour. **`--edge tint`** is for the field that is painted off the key — video frames, a
+renderer that paints `#00FF00` as `(3,240,2)` or `#FF00FF` as `(216,46,147)` — and for a rim that
+mixes the key with fills of every colour. What its thresholds mean:
+
+- **`--lo` 96 — two erase balls.** Every pixel within 96 of the named key goes, wherever it sits.
+  A second ball of the same radius sits on the colour the border was actually painted (read from
+  the corners and the 1 px border); it only takes pixels carrying the key's hue signature and what
+  is 8-connected to them inside the ball. A hot-pink fill inside the subject, within 96 of a dim
+  painted magenta, survives; a subject patch with the key's own hue does not — which is what
+  `pick_key.py` prevents.
+- **tint < 18 is subject**, never touched. `tint = mean(key channels) − mean(other channels)`; a
+  pixel's key share is `k = min(tint / key_tint, 1)`, its colour becomes `(rgb − k·painted)/(1−k)`
+  and its alpha `1 − k`.
+- **Key-tinted material keeps its hue.** A teal jacket on green has a tint of its own (about
+  50), so un-mixing its rim against zero would take green the jacket owns and leave it blue.
+  When the material just inside the rim (past ring 4) has tint ≥ 18, the rim is un-mixed
+  against it instead: `k = (tint − base)/(key_tint − base)`. The run prints the pixels this
+  touched as `baseline_px`. A neutral subject (base under 18) keys exactly as above.
+- **`--band` 4 — rings un-mixed.** Only pixels 1–4 rings from the cut are un-mixed; one still
+  within 180 of the key (an in-band blend) only in rings 1–2. No choke.
+- **`--despill`** (default on; `--no-despill` off) recolours small trapped spill: 8-connected
+  tinted clusters of at most max(32, 0.5% of the subject) px, one pixel tinted past 40, get the key
+  taken out of their colour and keep their alpha. A larger key-tinted region is the art's own
+  colour and stays.
+
+**Name the key hex in tint mode.** `--key-color auto` takes the border median as the declared
+key, and a dim painted field then shifts the channel split the tint axis is read from. The run
+prints `painted_key (r,g,b) off_by X key_tint Y` and the same `fringe_pct` / `tint_pct` lines and
+exit codes as the other modes. Generated sheets stay on `outline` / `fill`, the default.
 
 ## 6. The flat-vector detour
 
@@ -241,8 +300,9 @@ Relay Codex's stdout back to the user in your own words.
   cut subjects and the rim, with nothing written and exit 3 on a hard fault. Writing needs
   `--register ground | free | centroid | keep` — where a frame sits is decided by silhouette, not
   by the cell the model drew it in. `audit_frames.py` re-reads the written PNGs (feet, slip,
-  fringe, tint, cut; exit 1) and `frames_to_anim.py --onion --bg` makes the two previews that show
-  motion. Full usage: `reference/animation-scripts.md` §2.
+  fringe, tint, cut, key residue, sparse frames; exit 1) and `frames_to_anim.py --onion --bg` makes
+  the two previews that show motion. `breathe.py` makes an idle loop from one still pose, with no
+  sheet. Full usage: `reference/animation-scripts.md` §2.
 - **Animation frames never go through `slice_grid.py`** — it centres every cell on its own bounding
   box, so a bat or a raised arm moves the body the other way.
 - **3D source scripts** — `turnaround_to_views.py` · `audit_3d_source.py`: one scale for four
@@ -253,7 +313,8 @@ Relay Codex's stdout back to the user in your own words.
   each cell as an F px block. `audit_pixel.py` is the gate on either kind — block size, canvas,
   lattice phase, binary alpha, colour count, palette; exit 1 on a failed gate, 2 when it had
   nothing to check against. Full usage: `reference/pixel-grid.md`.
-- **`key_unmix.py`** keys both kinds of sheet (§5). **`sprite_ops.py`** is not a command: it holds
+- **`key_unmix.py`** keys both kinds of sheet, and `--edge tint` a field painted off the key;
+  **`pick_key.py`** chooses the key before generating (§5). **`sprite_ops.py`** is not a command: it holds
   the definitions the keyer, the slicer and the two gates share (core, rim, fringe, tint, slip), so
   none of them can disagree about a number. **`pixel_ops.py`** is the same kind of shared module
   for the pixel scripts — the cell fit, the colour recovery, the palette and the lattice read-back —
