@@ -1,0 +1,2 @@
+# registry.py check: an approved video whose licence excludes US, EU, UK and KR, in a game sold worldwide
+ERROR ArtDirection/motion/runner_run_h3.txt: territory-excluded: licence minimax-h3-local runner-run-take-2 excludes EU, GB, KR, US, and the game is sold worldwide (ART_DIRECTION.md:5)

@@ -18,12 +18,13 @@ seen in the real game, and quality comes first.
   |---|---|---|
   | Small | 2000 | 1024 |
   | Medium | 4000 | 1024 |
-  | Template | 8000 | 1024 |
+  | Compact | 8000 | 1024 |
   | Large | 20000 | 2048 |
+  | Template (the templates' default) | 70000 | 2048 |
   | Showcase | 700000 | 4096 |
 
 - **Generating every rung is cheap.** Generation time barely moves with the face count (e.g.
-  ≈ 80 s at 20000 faces against ≈ 90 s at 700000 on one server), so one asset at five presets is
+  ≈ 80 s at 20000 faces against ≈ 90 s at 700000 on one server), so one asset at six presets is
   minutes of server time. A preset is a generation setting, not a game target: Showcase is the
   official template's own settings, and 700000 faces is where the comparison starts, not a number
   any class is held to.

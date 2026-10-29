@@ -33,11 +33,20 @@ all `omega` in rad/s.
 
 ### Plant windows come first
 
-The lock needs to know when each foot is planted in each clip. Annotate it offline: foot
-height under 4 cm, and horizontal speed under a threshold for at least 3 frames. **0.15 m/s
-found almost no stance phases** in the purchased mocap's run and shuffle loops; a planted foot
-in an in-place loop moves backward relative to the pelvis at 0.2–0.4 m/s. 0.5 m/s found 10–30%
-of each cycle. Look at per-frame foot height and speed before trusting a detector.
+The lock needs to know when each foot is planted in each clip. Annotate it offline with
+`blender-retarget` → `scripts/motion_metrics.py`, which writes the windows (`plants.<side>.ranges`).
+
+**Plant, one definition** (the same sentence in `reference/motion-metrics.md`,
+`reference/foot-lock-and-prop-ik.md` and `blender-retarget` → `scripts/motion_metrics.py`): a
+foot is planted over a run of at least 3 frames where its sole is under 4 cm above the floor and
+its ground-relative horizontal speed is under 0.15 m/s; an in-place loop gets its travel speed
+added back before the speed test, and supplied contact probabilities (≥ 0.5) define the plant
+instead.
+
+In an in-place loop a planted foot slides backward under the pelvis at the travel speed, so a
+detector that does not add the travel back finds almost no stance. Confirm that each foot's
+windows cover its stance (`plants.<side>.coverage`) before trusting them; when they do not, look
+at per-frame foot height and speed, fix the declared travel, and never loosen the speed.
 
 At runtime, plant is a **weight vote**: each active input's plant flag at its current time,
 weighted by the input's mixer weight, entered at 0.6 and left at 0.4. The metrics use the same
@@ -177,4 +186,4 @@ The second round's progress came from being able to say which layer moved a join
 | The elbow bends the moment the racket IK turns on | Soft reach not relative to the clip | `SoftReachRel` |
 | The racket arm pops at the window's edges | Clavicle or wrist hard-clamped; weight stepping on early end | Clavicle only for extra reach × weight; wrist soft saturation; keep releasing from the last error |
 | The ball is on the wrong side of the face | Face side picked per frame | Fix it from the stroke's swing direction |
-| Feet still skate in run loops although the lock exists | The lock never engages: plant windows annotated with too strict a speed threshold | Re-annotate at 0.5 m/s and check the windows cover stance |
+| Feet still skate in run loops although the lock exists | The lock never engages: an in-place loop annotated without its travel speed, so no plant windows | Re-annotate ground-relative (the loop's travel speed declared, §2) and check the windows cover stance |

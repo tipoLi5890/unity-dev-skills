@@ -1,6 +1,6 @@
 # Editor scripts — entry points, arguments, the config
 
-Four files in `resources/Editor/`. Copy all four into an `Editor` folder of the project:
+Five files in `resources/Editor/`. Copy all five into an `Editor` folder of the project:
 `MixamoTextures.cs` serves every FBX route: an FBX from Blender's exporter or from Mixamo never
 arrives with its metallic/smoothness map bound, and any other carrier is checked as
 `reference/textures.md` says. They automate `reference/unity-import.md`
@@ -13,12 +13,14 @@ command. Every command **rebuilds from a clean state** rather than reconciling w
 | File | Kind | Menu: `Tools/Unity Dev/Rigged Character/…` | From an eval | Writes |
 |---|---|---|---|---|
 | `CharacterImportSettings.cs` | `AssetPostprocessor`, plus a command | Reimport Character Folder | `CharacterImportSettings.Reimport(folder)`, `.Describe(folder)` | import settings of every FBX and texture in the folder |
+| `CharacterHumanoidAvatar.cs` | command, `"rig": "Humanoid"` only | Build Humanoid Avatar | `CharacterHumanoidAvatar.Build(folder)` | the body's Rig tab: Human, an explicit `humanDescription` (every mapped `HumanTrait.BoneName`, the skeleton from the imported body); then the gate |
 | `CharacterAvatarLinker.cs` | command | Link Animation Avatars | `CharacterAvatarLinker.Link(folder)` | the Rig tab of every `<name>@<Clip>.fbx` |
 | `CharacterAnimatorBuilder.cs` | command | Build Animator | `CharacterAnimatorBuilder.Build(folder)` | the controller and mask, deleted and created again |
 | `MixamoTextures.cs` | command, any FBX route; needs URP | Apply Mixamo Textures | `MixamoTextures.Apply(folder)` | the URP Lit material; the mask only from a `*_MetallicSmoothness` map, a skipped raw metallic map named in `note` |
 
-Order: drop the files in (the postprocessor applies on import) → Link Animation Avatars → Build
-Animator → Apply Mixamo Textures → the prefab step below. A menu command acts on the folder
+Order: drop the files in (the postprocessor applies on import) → on a Humanoid folder only, Build
+Humanoid Avatar → Link Animation Avatars → Build Animator → Apply Mixamo Textures → the prefab
+step below. Re-run Build Humanoid Avatar after every re-export of the body. A menu command acts on the folder
 selected in the Project window, else the default folder. Each logs `[RIGGED-CHAR] {json}` and an
 eval call returns the same string; `"ok": false` carries the reason. Build Animator and Apply Mixamo
 Textures overwrite assets at the config's paths: confirm a path holds nothing hand-built before
@@ -75,7 +77,9 @@ whole block, as above.
 | Field | Default | Meaning |
 |---|---|---|
 | `folder` | `Assets/Models/Character` | read only from the default-path file; a folder file is its own folder |
-| `rig` | `Humanoid` | `Generic` for clips retargeted or keyed in Blender (`reference/unity-import.md` §1): no Avatar validation as human, no body-part mask on the Hurt layer. Keep `Humanoid` on the Mixamo route, or where the game needs the body-part mask or IK |
+| `rig` | `Generic` | plays every clip on the skeleton it was baked on: the humanoid contract, a clip pack's own, Mixamo's (`reference/unity-import.md` §1); no body-part mask on the Hurt layer. `Humanoid` only where the game needs the body-part mask or IK, then Build Humanoid Avatar. Any value but `Humanoid` reads as Generic |
+| `humanMap` | empty | Humanoid only: a `unity-human-map/1` file (`contract_map.py map … --unity-out`) for a skeleton that is not the contract's — Mixamo, Auto-Rig Pro, a clip pack; a project path or one inside the character folder. Empty: the contract's own names (`reference/humanoid-contract.md`) |
+| `minFingerBones` | 10 | Humanoid only: finger bones the Avatar gate requires, both hands together; 0 for a rig with no finger bones |
 | `clipRules` | runfast, fastrun, runslow, slowrun, run, walk, idle (loop); jump, hurt, hit, fall (one-shot) | replaces the built-in list; first match wins, so a specific keyword precedes a general one |
 | `maxTextureSize` | 0 | Max Size for every texture in the folder, rounded up to a power of two; 0 or absent leaves the importer's own value (2048 on a fresh importer), so a 1024 px map stays 1024. Set 512 for a 512 cap |
 | `targetTexPx` | 0 | the `target_tex_px` of the `character` row of the 3D budgets table (`unity-3d-models` → `reference/budgets.md`); Max Size when `maxTextureSize` is 0; rounded up to a power of two |
@@ -136,6 +140,8 @@ public static void SwapModel(string prefabPath, string modelPath, Material mater
 | Bones per vertex | `ModelImporter.skinWeights` (`Standard` = 4), `maxBonesPerVertex` for `Custom` |
 | Fetch the Avatar (a sub-asset) | `AssetDatabase.LoadAllAssetsAtPath(modelPath)` → first `Avatar` |
 | Validate a rig | `avatar.isHuman && avatar.isValid` |
+| Explicit Humanoid map | `HumanDescription d = importer.humanDescription;` set `d.human`, `d.skeleton`; `importer.humanDescription = d` (a struct: assign it back) |
+| Read the map an Avatar got | `avatar.humanDescription.human` — `humanName` is a `HumanTrait.BoneName` string (`Left Little Proximal`, never Pinky) |
 | Create a controller | `AnimatorController.CreateAnimatorControllerAtPath(path)` |
 | Blend tree as sub-asset | `new BlendTree { hideFlags = HideFlags.HideInHierarchy }` + `AssetDatabase.AddObjectToAsset(tree, controller)` |
 | Humanoid mask | `AvatarMask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.…, bool)` |

@@ -56,8 +56,11 @@ glow becomes painted-on colour.
   antennae) fuse or drop. A 1254 px square source is already enough; do not upscale.
 - Soft even lighting; no cast shadow, ground plane or rim glow.
 - No special background is needed: mid-grey, the project's key colour and alpha convert alike.
-  To mask by the image's own alpha instead of background removal:
-  `--set '312.masks=["122",1]'`.
+  To mask by the image's own alpha instead of background removal, use a copy of the graph with
+  `"313": {"class_type": "InvertMask", "inputs": {"mask": ["122", 1]}}` added and
+  `--set '312.masks=["313",0]'`: `LoadImage`'s mask is 1 where the image is transparent, and
+  `ImageCropToMask` keeps where the mask is 1, so `["122",1]` straight into `312` crops the
+  background.
 
 Multi-view input is four square views with alpha or on black, straight-on at eye level, the
 object about 1/1.1 of the frame at its widest and **at the same scale in every view**. Cropping
@@ -77,30 +80,41 @@ sheets; removal can also eat dark hair, a dark shoe or a thin part. So clean the
 the server first and keep three outputs per view: the **RGBA cut-out**, the **mask preview**, and
 the **black composite** — the file the generation job uploads.
 
-A removal graph, one block per view (node ids are an example; core nodes and the BiRefNet
-component of the single-image templates; check every class against `/object_info` first):
+`templates/four_view_background_removal_api.json` is that graph: core nodes and the BiRefNet
+component of the single-image templates, one block per view.
 
-| Node | Class | Inputs |
+| Node (front; left 20–28, back 30–38, right 40–48) | Class | Inputs |
 |---|---|---|
 | `1` | LoadBackgroundRemovalModel | `bg_removal_name` `birefnet.safetensors` |
 | `2` | EmptyImage | width and height = the views' side (`turnaround_to_views.py --size`, default 1024), `color` 0: the black square |
-| `10` | LoadImage | `runner_front_r03.png` |
+| `10` | LoadImage | `REPLACE_WITH_FRONT_VIEW.png` |
 | `11` | RemoveBackground | `bg_removal_model` ← `1`, `image` ← `10` |
-| `12` | InvertMask | `mask` ← `11` — **only if the polarity check below asks for it** |
-| `13` | JoinImageWithAlpha | `image` ← `10`, `alpha` ← `11` or `12` |
-| `14` | SaveImage | `13`, prefix `3d/clean/runner_front_r03_rgba` |
-| `15`, `16` | MaskToImage → SaveImage | `11`, prefix `3d/clean/runner_front_r03_mask` |
-| `17`, `18` | ImageCompositeMasked → SaveImage | `destination` ← `2`, `source` ← `10`, `mask` ← `11`, `x` 0, `y` 0; prefix `3d/clean/runner_front_r03_black` |
+| `12` | InvertMask | `mask` ← `11` |
+| `13` | JoinImageWithAlpha | `image` ← `10`, `alpha` ← `12` |
+| `14` | SaveImage | `13`, prefix `3d/clean/front_rgba` |
+| `15`, `16` | MaskToImage → SaveImage | `11`, prefix `3d/clean/front_mask` |
+| `17`, `18` | ImageCompositeMasked → SaveImage | `destination` ← `2`, `source` ← `10`, `mask` ← `11`, `x` 0, `y` 0, `resize_source` false; prefix `3d/clean/front_black` |
 
-Repeat `10`–`18` for left, back and right with their own ids and names, and run the graph with
-`scripts/comfy_asset_client.py` like any other.
+The masks point two ways, and the wiring above is fixed, not a choice per run:
+`RemoveBackground` gives 1 on the subject, which `ImageCompositeMasked` and `ImageCropToMask` take
+as is; `JoinImageWithAlpha` writes alpha = 1 − mask (it takes `LoadImage`'s convention, 1 where
+transparent), so its alpha goes through `12`. Fed `11` directly it returns the subject transparent
+and the background opaque.
 
-- **Check the mask polarity per tool, on the first view, before trusting the batch.** Nodes
-  disagree about whether a mask's 1 means keep or cut, and some invert on the way to alpha: an
-  `InvertMask` that one graph needs is wrong in another. Open the outputs: the mask preview
-  white on the subject, the RGBA transparent around it and opaque on it, the black composite
-  showing the subject, not a hole, at the view's own size (a black square of another size crops
-  the view or leaves it in a corner: set `2` to match). Wrong → add or drop `12`, rerun that view.
+```bash
+python3 scripts/comfy_asset_client.py --workflow templates/four_view_background_removal_api.json \
+  --output-dir work/clean --upload runner_front_r03.png --upload runner_left_r03.png \
+  --upload runner_back_r03.png --upload runner_right_r03.png \
+  --set 10.image=runner_front_r03.png --set 20.image=runner_left_r03.png \
+  --set 30.image=runner_back_r03.png --set 40.image=runner_right_r03.png
+#   saves 3d/clean/<view>_rgba, _mask and _black; set 14/16/18 (24/26/28, …) filename_prefix per asset
+```
+
+- **Open the outputs of the first view before trusting the batch.** The mask preview white on
+  the subject, the RGBA transparent around it and opaque on it, the black composite showing the
+  subject, not a hole, at the view's own size (a black square of another size crops the view or
+  leaves it in a corner: set `2` to match). An inverted result means the graph was edited: a
+  missing `12`, or `12` moved onto `15` or `17`.
 - **Check what removal took.** Hair, hands, feet and thin parts present in the RGBA over a light
   and a dark backdrop; a part that went missing is lost to the mesh too.
 - **Upload names are unique per asset, view and run** (`runner_front_r03.png`, then `_r04`): the
@@ -117,7 +131,7 @@ Repeat `10`–`18` for left, back and right with their own ids and names, and ru
 python3 scripts/comfy_asset_client.py --workflow templates/pixal3d_image_to_model_api.json \
   --output-dir out/crate --upload art/pickup_crate.png \
   --set 122.image=pickup_crate.png \
-  --set 186.target_face_count=2000 --set 241.resolution=128
+  --set 186.target_face_count=2000 --set 241.resolution=128 --set 288.value=1024
 python3 scripts/inspect_glb.py out/crate/*.glb --max-triangles 2000 --texture-size 1024 \
   --require base,normal,occlusion,metallic-roughness
 
@@ -231,9 +245,8 @@ python3 scripts/comfy_asset_client.py --workflow templates/pixal3d_multiview_to_
   --upload clean/runner_front_r03_black.png --upload clean/runner_left_r03_black.png \
   --upload clean/runner_back_r03_black.png --upload clean/runner_right_r03_black.png \
   --set 801.image=runner_front_r03_black.png --set 802.image=runner_left_r03_black.png \
-  --set 803.image=runner_back_r03_black.png --set 804.image=runner_right_r03_black.png \
-  --set 186.target_face_count=20000 --set 241.resolution=768 --set 288.value=2048
-python3 scripts/inspect_glb.py out/runner_r03/*.glb --max-triangles 20000 --texture-size 2048
+  --set 803.image=runner_back_r03_black.png --set 804.image=runner_right_r03_black.png
+python3 scripts/inspect_glb.py out/runner_r03/*.glb --max-triangles 70000 --texture-size 2048
 ```
 
 On `clay`, on top of the acceptance table: each arm separate from the torso, a gap between the

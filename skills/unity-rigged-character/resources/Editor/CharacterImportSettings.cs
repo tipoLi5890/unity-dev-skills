@@ -1,8 +1,8 @@
 // CharacterImportSettings — makes a rigged character's FBX files and texture maps game-ready on
 // import, driven by one small JSON file instead of constants edited in the script.
 //
-// Drop into an Editor folder together with CharacterAvatarLinker.cs, CharacterAnimatorBuilder.cs
-// and MixamoTextures.cs (any FBX route; it needs URP). No package needed.
+// Drop into an Editor folder together with CharacterAvatarLinker.cs, CharacterAnimatorBuilder.cs,
+// CharacterHumanoidAvatar.cs and MixamoTextures.cs (any FBX route; it needs URP). No package needed.
 //
 //   on import (AssetPostprocessor)        every .fbx and texture inside a character folder
 //   Tools/Unity Dev/Rigged Character/Reimport Character Folder
@@ -13,8 +13,14 @@
 // A character folder is the nearest folder above a file that holds character-pipeline.json; else
 // the "folder" named in Assets/Editor/character-pipeline.json; else, with neither file,
 // Assets/Models/Character. Every field is optional:
-//   rig             "Humanoid" (default) or "Generic" — Generic for clips retargeted or keyed in
-//                   Blender; Humanoid for the Mixamo route or a body-part mask
+//   rig             "Generic" (default) or "Humanoid" — Generic plays every clip on the skeleton it
+//                   was baked on (the humanoid contract, a clip pack's own, Mixamo's); Humanoid only
+//                   when the game needs IK or a body-part mask, and then the Avatar is built from an
+//                   explicit map by CharacterHumanoidAvatar.cs (Build Humanoid Avatar)
+//   humanMap        Humanoid only: the unity-human-map/1 file contract_map.py --unity-out wrote for a
+//                   skeleton that is not the contract's; absent: the contract's own bone names
+//   minFingerBones  Humanoid only: finger bones the Avatar gate requires (default 10; 0 for a rig
+//                   with no finger bones)
 //   clipRules       [{"keyword":"runfast","clip":"RunFast","loop":true}, ...] — replaces the
 //                   built-in list; first match wins, so a specific keyword precedes a general one
 //   maxTextureSize  Max Size for every texture in the folder; 0 or absent: the importer's own value
@@ -75,7 +81,9 @@ public class CharacterAnimatorConfig
 public class CharacterPipelineConfig
 {
     public string folder = CharacterImportSettings.DefaultFolder;
-    public string rig = "Humanoid";
+    public string rig = "Generic";
+    public string humanMap = "";
+    public int minFingerBones = 10;
     public CharacterClipRule[] clipRules;
     public int maxTextureSize;
     public int targetTexPx;
@@ -84,7 +92,8 @@ public class CharacterPipelineConfig
 
     [NonSerialized] public string source = "built-in defaults";
 
-    public bool Humanoid => !string.Equals(rig, "Generic", StringComparison.OrdinalIgnoreCase);
+    // Only the word Humanoid (any case) turns Humanoid on: a typo stays Generic rather than silently re-solving every pose.
+    public bool Humanoid => string.Equals(rig, "Humanoid", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Max Size to write, or 0 to leave the importer's value alone.</summary>
     public int EffectiveMaxTextureSize
@@ -239,8 +248,9 @@ public class CharacterImportSettings : AssetPostprocessor
         if (cfg == null) return;
         var importer = (ModelImporter)assetImporter;
 
-        // Humanoid is what buys retargeting and the body-part AvatarMask; Generic plays the clip
-        // on the bones it was keyed on, extra bones included.
+        // Generic (the default) plays the clip on the bones it was keyed on, extra bones included.
+        // Humanoid buys the body-part AvatarMask and IK; its explicit map is written afterwards by
+        // CharacterHumanoidAvatar.Build, because the skeleton is only readable once imported.
         importer.animationType = cfg.Humanoid ? ModelImporterAnimationType.Human
                                               : ModelImporterAnimationType.Generic;
 

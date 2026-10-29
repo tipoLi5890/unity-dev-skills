@@ -7,7 +7,7 @@ measures what the route added (fit, Humanoid, a per-clip bake), not what the moc
 
 usage:
     clip_metrics.py SAMPLES.json [--out REPORT.json] [--slide-p95 0.015] [--slide-max 0.03]
-                    [--limb-p95 2.0] [--h-max 0.04] [--v-max 0.15] [--min-frames 3]
+                    [--limb-p95 2.0] [--h-max 0.04] [--v-max 0.15] [--min-frames 3] [--pops-max 0]
     clip_metrics.py selftest            (or --selftest)
 
 SAMPLES.json (schema "clip-samples/1"), metres, Z up, one row per frame:
@@ -23,10 +23,11 @@ Roles, by function, never by a skeleton's own bone names (map them when you samp
 Both bodies are in one space and one scale (scale the reference by the character's display scale
 first). Lengths may differ: the arm pose error divides by each body's own arm length.
 
-Definitions:
+Definitions (the plant detector, slide, summaries and pop test are motion_metrics.py's):
 - plant: sole under --h-max above the clip's floor (the reference's lowest sole over the clip)
   and horizontal foot speed under --v-max m/s, for at least --min-frames frames, found on the
-  REFERENCE; the character is judged inside the same frames.
+  REFERENCE; the character is judged inside the same frames. The defaults are the one plant
+  definition motion_metrics.py states (4 cm, 0.15 m/s ground-relative, 3 frames).
 - slide: inside a plant, the horizontal distance of the foot point from its position on the
   plant's first frame. Reported for both bodies; NOT gated (mocap drifts on its own).
 - added slide: |(c(t) - c(start)) - (r(t) - r(start))| inside each plant: the slide the route
@@ -34,9 +35,14 @@ Definitions:
 - limb direction error: the angle between the character's and the reference's segment direction,
   per frame, over upper arm, forearm, thigh and lower leg. Gated: p95 <= --limb-p95 degrees.
 - arm pose error: |(hand - upper_arm)/arm_len| difference in % of the arm, proportion-free.
+- pops: per limb segment present on both bodies, motion_metrics.py's single- and two-frame spike
+  test on the character's direction speed, which must also beat 1.2 x the reference's speed at
+  those frames + 3 deg in the frame (a pop the route added, not a fast swing the clip has).
+  Gated: count <= --pops-max (0).
 
 Prints one JSON report (also to --out): per-metric p50, p95, max, n; plants; gates; ok.
-Exit codes: 0 every gate passed; 1 a gate failed; 2 refused input (unreadable file, wrong schema,
+Exit codes (not motion_metrics.py's: there 2 is a failed gate and 1 a refusal):
+0 every gate passed; 1 a gate failed; 2 refused input (unreadable file, wrong schema,
 a required role missing, frame counts that differ, a non-finite value). Requires numpy.
 """
 from __future__ import annotations
@@ -49,6 +55,10 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from motion_metrics import (PLANT_H_MAX, PLANT_MIN_FRAMES, PLANT_V_MAX, plants, pops,  # noqa: E402
+                            segment_speed_deg, slide, summary)
+
 SCHEMA = "clip-samples/1"
 SIDES = ("l", "r")
 LIMBS = [("upper_arm", "forearm"), ("forearm", "hand"), ("thigh", "shin"), ("shin", "foot")]
@@ -56,40 +66,6 @@ LIMBS = [("upper_arm", "forearm"), ("forearm", "hand"), ("thigh", "shin"), ("shi
 
 class Refused(Exception):
     pass
-
-
-def summary(x) -> dict:
-    x = np.asarray(x, float)
-    if not x.size:
-        return {"p50": 0.0, "p95": 0.0, "max": 0.0, "n": 0}
-    return {"p50": float(np.median(x)), "p95": float(np.percentile(x, 95)),
-            "max": float(x.max()), "n": int(x.size)}
-
-
-def speed_xy(xy: np.ndarray, fps: float) -> np.ndarray:
-    if len(xy) < 2:
-        return np.zeros(len(xy))
-    v = np.linalg.norm(np.diff(xy, axis=0), axis=1) * fps
-    return np.concatenate([[v[0]], v])
-
-
-def plants(sole, xy, fps, h_max, v_max, min_frames) -> list:
-    on = (np.asarray(sole) < h_max) & (speed_xy(xy, fps) < v_max)
-    out, start = [], None
-    for i, flag in enumerate(on):
-        if flag and start is None:
-            start = i
-        if start is not None and (not flag or i == len(on) - 1):
-            end = i if flag else i - 1
-            if end - start + 1 >= min_frames:
-                out.append((start, end))
-            start = None
-    return out
-
-
-def slide(xy, ranges) -> np.ndarray:
-    d = [np.linalg.norm(xy[a:b + 1] - xy[a], axis=1) for a, b in ranges]
-    return np.concatenate(d) if d else np.zeros(0)
 
 
 def added_slide(xy_c, xy_r, ranges) -> np.ndarray:
@@ -177,12 +153,25 @@ def measure(doc: dict, a) -> dict:
                 return (b[ks[2]] - b[ks[0]]) / ln[:, None]
             arm.append(100 * np.linalg.norm(rel(c) - rel(r), axis=1))
     out["arm_pose_error_pct"] = summary(np.concatenate(arm) if arm else [])
+    found, n_segs = [], 0
+    for s in SIDES:
+        for p, q in LIMBS:
+            pa, qa = f"{p}_{s}", f"{q}_{s}"
+            if all(k in c and k in r for k in (pa, qa)):
+                n_segs += 1
+                clip_w = segment_speed_deg(r[pa], r[qa], fps)
+                for f, kind in pops(segment_speed_deg(c[pa], c[qa], fps), fps, clip=clip_w):
+                    found.append({"segment": f"{p}>{q}_{s}", "frame": int(f), "kind": kind})
+    out["pops"] = {"count": len(found) if n_segs else None, "list": found[:60]}
     gates = [
         {"name": "added_slide_p95_m", "value": out["foot_slide_added_m"]["p95"],
          "limit": f"<= {a.slide_p95}", "ok": out["foot_slide_added_m"]["p95"] <= a.slide_p95},
         {"name": "added_slide_max_m", "value": out["foot_slide_added_m"]["max"],
          "limit": f"<= {a.slide_max}", "ok": out["foot_slide_added_m"]["max"] <= a.slide_max},
     ]
+    if n_segs:
+        gates.append({"name": "pops", "value": len(found), "limit": f"<= {a.pops_max}",
+                      "ok": len(found) <= a.pops_max})
     if errs:
         v = out["limb_direction_error_deg"]["p95"]
         gates.append({"name": "limb_direction_p95_deg", "value": v,
@@ -199,9 +188,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--slide-p95", type=float, default=0.015)
     p.add_argument("--slide-max", type=float, default=0.03)
     p.add_argument("--limb-p95", type=float, default=2.0)
-    p.add_argument("--h-max", type=float, default=0.04)
-    p.add_argument("--v-max", type=float, default=0.15)
-    p.add_argument("--min-frames", type=int, default=3)
+    p.add_argument("--h-max", type=float, default=PLANT_H_MAX)
+    p.add_argument("--v-max", type=float, default=PLANT_V_MAX)
+    p.add_argument("--min-frames", type=int, default=PLANT_MIN_FRAMES)
+    p.add_argument("--pops-max", type=int, default=0)
     return p
 
 
@@ -278,6 +268,20 @@ def selftest() -> int:
         check("limb error = 10 deg", abs(rep["limb_direction_error_deg"]["max"] - 10.0) < 1e-6)
         check("limb gate fails: exit 1", code == 1)
         check("arm pose error > 0", rep["arm_pose_error_pct"]["max"] > 1.0)
+        # 3b. one frame where the character's hand jumps: one pop the reference does not have
+        doc["character"] = _walk(80, 0.01)
+        doc["reference"] = _walk(80, 0.01)
+        hand = np.asarray(doc["character"]["hand_r"])
+        hand[30] += [0.2, 0.0, 0.2]
+        doc["character"]["hand_r"] = hand.tolist()
+        p.write_text(json.dumps(doc))
+        code, rep, _ = run([str(p)])
+        check("pop added by the route: exit 1", code == 1 and rep["pops"]["count"] == 1)
+        # ... the same jump in the reference too is the clip's own motion, not a pop
+        doc["reference"] = json.loads(json.dumps(doc["character"]))
+        p.write_text(json.dumps(doc))
+        code, rep, _ = run([str(p)])
+        check("same jump in the reference: no pop", rep["pops"]["count"] == 0)
         # 4. refused inputs
         bad = dict(doc, character={k: v[:-1] for k, v in doc["character"].items()})
         p.write_text(json.dumps(bad))

@@ -80,6 +80,9 @@ SOFTWARE.
     `detect_one_shot`, the body and foot centres, the body wrap offset and drift ramp, the cycle
     subsampling and the seam gate's re-read on moved cells; from `video/period.py`: the divisors,
     the near and exact returns, local minima, the pose measure, the verdict and the screen.
+  - `skills/blender-retarget/scripts/motion_metrics.py` — its loop search (the period, periodicity,
+    seam and gait-double constants and the cut search) follows `video_loop.py` above, with joint
+    distance in place of pixel distance.
 - **Source:** <https://github.com/aldegad/sprite-gen>, commit
   `dddcc1013f7b5587a5eabd8609a5b42dd8aa7c26`
 - **Licence:** Apache License 2.0. Each of the files above states its changes from the upstream code
@@ -339,3 +342,43 @@ the flows averaged at every level — follows rife-ncnn-vulkan 20221029
 rife_*_tta shaders), Copyright (c) 2020 nihui, MIT License. It reads its weights
 from that release's rife-v4.6 model, which sprite-gen does not ship.
 ```
+
+## anymove
+
+- **Files:** under `skills/humanoid-motion/scripts/twocam/`; each file's header names the upstream file
+  it ports and what changed.
+  - `layout.py` — from `mocap/layout.py` and the layout half of `blender/common.py`: the two-view frame,
+    `compose`, `split`, `project`, `unproject_front`, `unproject_side`; from `tools/compose_ref.py`: the
+    reference frame composition.
+  - `model.py` — from `mocap/model.py`: `JointReader` (DINOv2 with registers and the upsampling head),
+    `square`, `decode`; from `mocap/train.py`: `heatmaps`.
+  - `train.py` — from `mocap/train.py`: `backdrop`, `photometric`, the `Views` sample (framing jitter,
+    divider, square, warp), the held-out split, the optimiser, schedule, loss and validation.
+  - `detect.py` — from `mocap/detect.py`: `read_frames`, `calibrate` (the ECC affine fit), `prep`, the
+    batched read, `load`, `overlay`.
+  - `solve.py` — from `mocap/solve.py`: `fix_swaps`, `height_features`, `align_views` (the time warp),
+    `paw_agreement`, `sync_report`, `euler_xyz`, `axis_angle`, `Rig`, `project`, `triangulate`,
+    `root_from_triangulation`, `euler_from_matrix`, `rot_between`, `ik_init`, `fit`, `to_quat` and the
+    stage order of `main`.
+  - `exam.py` — from `mocap/exam.py`: `make`, `qmul`, `video`, `score` and its groups.
+  - `skeleton.py` — replaces `blender/common.py`'s `load_rig`, `mirror`, `write_rig_info`, `LEG_BONES` and
+    `LEG_COLORS`, and the limb names of `mocap/solve.py` (`LEGS`, the paw prefixes), with the humanoid
+    contract; the rig_info.json fields are upstream's.
+  - `make_prompt.py` — from `tools/make_prompt.py`: the template and `prompt`, `check`.
+  - `film.py` — replaces `mocap/generate.py` and `mocap/fal.py`, keeping the output folder layout.
+  - `twocam.py` — from `tools/_env.sh`, `tools/dataset.sh`, `tools/train.sh`, `tools/film.sh` and
+    `tools/capture.sh`, rewritten in Python.
+  - `blender/bcommon.py` — from `blender/common.py`: `cameras`, `camera_json`, `studio`, `render_views`,
+    `srgb_to_linear`, `paint_legs` (here `paint_limbs`).
+  - `blender/prepare_rig.py` — from `blender/build_rig.py`: the rig_info and paint writing and the save.
+  - `blender/render_ref.py`, `blender/render_dataset.py`, `blender/apply_motion.py` — from the files of the
+    same names in `blender/` (`apply_motion.py` without the fur springs).
+  Not ported: `mocap/fal.py`, `mocap/lora.py`, `mocap/generate.py`, `mocap/mirror.py`,
+  `mocap/showcase.py`, `tools/build_lora_set.py`, the mesh, rig and fur tools, the assets and prompts.
+- **Source:** <https://github.com/patch-gg/anymove>, commit
+  `7a82a0a8fadffddd5c24fabf0697d9b6c814ce6e`. The two-camera method is @CanItCode's; the H3 LoRA idea,
+  not ported here, is @Graalitoo's (credited in `skills/humanoid-motion/reference/two-camera.md`).
+- **Licence:** Apache License 2.0, the text reproduced in the sprite-gen section above. Each of the files
+  above states its changes from the upstream code in its header, as §4(b) asks. anymove ships no NOTICE
+  file. Its licence does not cover the Patch name and marks, which are not used here; MiniMax H3's weights
+  and outputs carry their own community licence, and hosted H3 on fal goes through fal's terms.

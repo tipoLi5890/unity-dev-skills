@@ -1,21 +1,35 @@
-# unity-dev-skills
+<div align="center">
 
-**English** · [繁體中文](.github/README.zh-TW.md) · [简体中文](.github/README.zh-CN.md) · [日本語](.github/README.ja.md)
+<h1>unity-dev-skills</h1>
 
-Unity 6 game-development skills for AI coding agents. Sixty skills covering every stage of
-making a game, from concept to a verified build — installable into Claude Code or OpenAI Codex.
+<p><b>Unity 6 skills that make Claude Code and Codex work like a careful Unity developer — and prove each step.</b></p>
 
-Three things make this different from a pile of Unity notes:
+<p><i>60+ skills from the first idea to a build on a real phone.</i></p>
 
-1. **It is self-contained.** No skill tells you to go install something else first. They route to
-   each other through their own `Scope — what this skill does NOT do` sections, so you land in the
-   right one from any direction.
-2. **Each skill is a method you run on your own project.** What to check, how to check it, and the
-   code that does it — Python in `scripts/`, C# and shader source in `resources/`, whole files to
-   copy in `templates/` — not notes to retype.
-3. **Skills are split by loading situation, not by topic.** A `SKILL.md` is a router with a symptom
-   table, and depth lives in the `reference/` files it names, so a skill only pulls in what the
-   situation needs.
+<p>
+<a href=".claude-plugin/plugin.json"><img alt="version" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
+<a href="https://github.com/tipoLi5890/unity-dev-skills/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tipoLi5890/unity-dev-skills/actions/workflows/ci.yml/badge.svg"></a>
+<a href="LICENSE"><img alt="licence: MIT" src="https://img.shields.io/badge/licence-MIT-green"></a>
+<img alt="Unity 6" src="https://img.shields.io/badge/Unity-6-black?logo=unity">
+<img alt="works with Claude Code · Codex" src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-d97757">
+</p>
+
+<p><b>English</b> · <a href=".github/README.zh-TW.md">繁體中文</a> · <a href=".github/README.zh-CN.md">简体中文</a> · <a href=".github/README.ja.md">日本語</a></p>
+
+<img src=".github/media/hero.jpg" alt="One character through four skills: a concept drawing, its generated 3D mesh, the rig's joint markers, and the rigged character in an extreme pose" width="100%">
+
+</div>
+
+## Try asking
+
+| You say | What happens |
+|---|---|
+| "The runner's jump doesn't always register." | `unity-input` latches each press in `Update`, spends it once in `FixedUpdate`, and a journey test proves one press gives one jump |
+| "The sentry sees the runner through walls." | `unity-game-ai` builds the vision cone from distance, angle and one line-of-sight cast; a journey proves the chase starts only after sight |
+| "It hitches when the third pickup spawns." | `unity-profiling` samples that moment in 90-frame windows (median, p95, worst), reads the work and GC counters, and compares before and after |
+| "Turn this drawing of the runner into a character that runs in Unity." | `game-character-pipeline` sets the quality target and route first, then hands stages S0–S13 — views, 3D, rig, motion, import — to the skill that owns each, gated |
+| "Show me the courier run before we write code." | `unity-game-brief` builds a timed simulated-gameplay preview from the game's own rule constants, with every sound logged |
+| "Put it on my iPhone — without opening Xcode." | `unity-ios-build` runs a headless build, a compile gate, signing with what your Mac holds, a `devicectl` install, and reads the app's console |
 
 ## Install
 
@@ -24,97 +38,234 @@ claude plugin marketplace add tipoLi5890/unity-dev-skills
 claude plugin install unity-dev@unity-dev
 ```
 
-Codex reads the same tree: point it at `.agents/plugins/marketplace.json`, or at
+**Codex** reads the same tree: point it at `.agents/plugins/marketplace.json`, or at
 `.codex-plugin/plugin.json` for the plugin on its own. Both are generated from the Claude-format
 manifests, so they cannot come to say anything different.
 
-Or drop the skills straight into a project — copy `skills/*` into `<project>/.claude/skills/`.
+**Or copy** the skills straight into a project: `skills/*` into `<project>/.claude/skills/`.
 
-## The skills
+### Requirements
 
-The groups follow the stages a game moves through, top to bottom. For any gameplay request,
-start at `unity-gameplay`: it reads the project and routes to the rest.
+- **Required:** Claude Code or Codex; a Unity 6 project; Python 3.10 or newer for the scripts, with
+  NumPy and Pillow for the ones that read images or audio.
+- **Optional, for the asset and character pipeline only:** Blender, in a version your Auto-Rig Pro
+  release supports (`character-autorig` explains); Auto-Rig Pro under your own licence; a
+  self-hosted ComfyUI on a GPU machine; the `codex` CLI for 2D art.
+- **Optional, for video:** ffmpeg, for anything that writes one (previews, reels, sprites from video).
+- **Optional, for devices:** a Mac with Xcode 15 or newer for iOS; the Android SDK for Android.
 
-| Group | Skill | Load it when |
-|---|---|---|
-| **Every stage — terminal & search** | `unity-cli` | Driving Unity from a terminal: editors, licences, templates, CI, MCP, and exit codes that say whether a retry is honest |
-| | `unity-search` | "Find it / where is it / what references it" as one Unity Search query — type filters, folders, labels, `ref=` relationships, scene component queries — shown before it runs, and opened in a live Editor when there is one |
-| **Concept** | `unity-game-brief` | The first hour, before any Unity work: one line of idea into a one-page experience brief, the look locked with images, an architecture proposal derived from the constraints, invariants, and one interaction a human can play; to see the game before code, a timed simulated-gameplay preview composited from the game's own rule constants with every sound logged, joined into a reel with title cards, music and one loudness; after that first interaction, milestones with gates only the person closes and briefs for several agents (`templates/AGENT_BRIEF.md`, `templates/DECISION_LOG.md`) |
-| | `unity-new-project` | Decisions that are expensive to retrofit: editor pinning, `.meta`/LFS, UPM tag pinning, IL2CPP/ARM64, asmdef boundaries; engine-free tests run in seconds without the Editor (`scripts/pure_tests.py`), an LFS ledger against the quota |
-| | `unity-gameplay` | **Start here for any gameplay request that names no perspective.** Fingerprints the project — 2D or 3D, projection, view, movement model — and routes controls, camera, animation and verification; owns genre recipes written as constraints, level metrics derived from the controller's numbers, and production stages with exit checks; for racket and bat games, the clip library measured before the simulation's numbers, and a simulation on its own thread with an absolute clock (`SimHost.cs`, `SimClock.cs`) |
-| **3C prototype** | `unity-input` | Player input that gameplay reads as one struct, never a device: an actions asset for keyboard, gamepad and touch, presses latched in `Update` and spent once in `FixedUpdate` — the jump that goes missing or fires twice — plus buffering, on-screen sticks, pointer aim and rebinding; a timing press graded in milliseconds against the device's own timestamp |
-| | `unity-camera` | A camera that jitters, shows outside the level or clips through walls: the two clocks behind the jitter, Cinemachine rigs for 2D follow with a room confiner, pixel-perfect follow, third-person orbit and first person, shake and blends, the 2.x → 3.x name table, and a journey that proves a rig holds; broadcast framing for a court sport |
-| | `unity-2d-controller` | A 2D character that slides down slopes, sticks to walls or jumps a different height every time: a kinematic platformer motor that asks physics where the ground is — slopes, one-way and moving platforms, coyote time, variable jump, dash, wall jump — free top-down movement with aim split from move, cell steps shown as tweens, the Animator bridge, and journeys that prove apex, coyote and buffer |
-| | `unity-3d-controller` | A 3D character whose `isGrounded` flickers, that slides down the ramp, refuses the step or jumps a different height at another frame rate: one owner of the transform, a `CharacterController` motor that finds ground by its own cast — slopes, steps, moving platforms — third-person, first-person, top-down and lane-runner controllers reading one input struct, the Animator bridge, and journeys that prove ramp, step, apex and lane change |
-| | `unity-animation` | An Animator that disagrees with the game — stuck in a state, an attack that plays by itself, a hitbox that stays on: one writer per parameter, blend trees and sprite state graphs built from script, events and attack windows that survive interruption, IK, Timeline handover, root motion; a hand-built PlayableGraph that follows a simulation, foot-lock and prop IK as Animation Jobs, and motion metrics that count pops (C# in `resources/`) |
-| | `unity-physics-2d` | `OnCollisionEnter2D` or `OnTriggerEnter2D` that never fires, a bullet through a tilemap wall, a ground check that hits the player itself, a runner that snags on tile seams: a triage ladder in Box2D's own vocabulary, a two-sided probe and a read-only scene audit |
-| | `unity-physics-3d` | A collision or trigger that never fires, tunnelling, a raycast that misses; a sports ball the game integrates itself, with spin and swept contact (`BallFlight.cs`) |
-| | `unity-play-harness` | Making the game drivable and readable: a one-line probe snapshot, named situations that boot straight into a moment and wait on a readiness set, journey tests that assert invariants, a feel complaint turned into a repeatable test — for a 3D or a 2D game |
-| **Vertical slice — 2D world** | `unity-2d-level` | A 2D level put together as data: a serialisable level painted into a fixed stack of Tilemap layers, runtime tile edits, rooms and doors, chunks stitched into an endless run, Tiled and LDtk import, SpriteShape terrain, and seeded generation with reachability checked per level |
-| | `unity-2d-grid` | Board logic for tactics games and tile puzzles on rectangular, isometric and hexagonal grids, as plain C# with no scene: hex offset, axial and cube conversion, movement range, A* paths, lines of sight, one occupancy map, push rules, turn order, undo, pointer to cell |
-| | `unity-tilemap` | Tile Palettes for rectangular, hexagonal and isometric grids, and RuleTiles built from a terrain sheet you already have |
-| | `unity-2d-rendering` | A sprite that draws behind the wrong one, a `Light2D` that does nothing or turns everything black: the four sorting keys in priority order, `SortingGroup`, Y-sort for top-down, isometric and hex scenes, shadow casters, normal maps, sprite masks and parallax layers |
-| **Vertical slice — 3D world** | `unity-3d-level` | A 3D level built to its metrics before art exists: a greybox from a metrics sheet — door, corridor, step, ramp, jump gap — proven by a walk journey, a modular kit on a 1/2/4 m grid, prefab structure with an override audit, collision proxies on one layer, Terrain, spline roads and lanes, and URP decals |
-| | `unity-lighting` | A bake that did nothing, a character black beside baked walls, the sky reflected indoors, shadows that flicker or stop a few metres away: a symptom ladder over light modes, the bake, probes, shadows and the environment on URP, a read-only scene audit, a bake that reads its result back, and the subset a phone can afford |
-| | `unity-navigation` | NavMesh, agents, obstacles, links — and deciding who owns the transform |
-| **Vertical slice — systems** | `unity-interaction` | Making things usable — "press E to open the door", a prompt that flickers between two objects, a gate that opens twice, a switch used through a wall, a coin collected twice: one `IInteractable` contract, an interactor that keeps one selected target found by perspective, one prompt, pickups, switches, gates as state machines, locked doors, pointer hotspots, and a journey proving a gate opens once |
-| | `unity-combat` | One swing that deals damage twice, a sword that hits every frame, spikes that drain every heart, a shot straight through the sentry: a damage struct and a receiver with teams, invincibility and death as a state, hit and hurt layers, query hitboxes that own a swing id and a hit list, opened by animation windows, knock-back through the motor, cast-per-step projectiles and bullet patterns as data — in 2D and 3D |
-| | `unity-game-ai` | An enemy that sees through walls, never gives up, flickers between two states or raycasts every frame: perception on a budget, decisions on a tick and movement left to whoever owns the transform — a code state machine, a small behaviour tree, a vision cone, hearing and memory, patrol and chase, 2D pathfinding, wave spawners, turn-based move scoring, and a journey proving the sentry chases only after it sees |
-| | `unity-scene-flow` | Managers duplicated after a return to the menu, a loading screen stuck at 90%, a pause that stops nothing, a corrupted save: a Boot scene that never unloads and owns the services, additive loading with one operation in flight, a game phase machine in which pause is a state, a versioned save with migrations and an atomic write, checkpoints that rebuild, object pools, ScriptableObject config |
-| **Vertical slice — UI** | `unity-game-ui` | **Start here for any UI request.** Detects the project's UI system and routes; owns the runtime `OnGUI` HUD nobody else documents |
-| | `unity-ui-ugui` | Canvas, RectTransform, Layout Groups — and the six ways uGUI renders nothing |
-| | `unity-ui-toolkit` | UXML/USS, flex, Painter2D — and the properties USS silently ignores |
-| **Production — assets** | `art-asset-registry` | Keeping track of every generated 2D and 3D asset: one append-only ledger per project with sha256 hashes (every `.blend` version too), lineage, links to the art direction and the job that made it, a status a person sets with its evidence image, what an upstream change left stale, and an existing `manifest.md` adopted read-only |
-| | `unity-3d-models` | A 3D model into the game, routed by where it came from — an image-to-3D GLB, an FBX character, a Blender rig, a purchased pack — inspected, decimated to its class's target, imported and audited; a class's budget is picked by a person from the same asset generated at every preset and seen in the game scene, never a fixed cap |
-| | `unity-rigged-character` | The Unity side of a rigged character, whichever route made the FBX — Auto-Rig Pro, a Blender rig, Mixamo, an auto-rig service: import → Avatar (Generic for clips retargeted in Blender, Humanoid when the game needs a mask or IK) → Animator → gameplay rig, a prop socket kept under Optimize Game Objects, the PBR maps an FBX drops rebuilt; characters fitted to a clip pack's skeleton, imported Generic (`SharedSkeletonClipImporter.cs`) |
-| | `unity-2d-sprites` | Sprite sheets, slicing, pivots, 9-slice, and a set of frames turned into a playable `AnimationClip` — metadata that lives inside the importer |
-| | `unity-2d-animation` | Skeletal 2D characters with the 2D Animation and PSD Importer packages: a PSB imported as a rig, bones then geometry then weights, `SpriteSkin` and CPU or GPU deformation, Sprite Library skins and equipment swapped at runtime, 2D IK, and an audit of what a rig costs |
-| | `unity-2d-pixel-perfect` | Pixel art that renders soft, shimmers as the camera moves, or shows hairline seams — and which of the two components called `PixelPerfectCamera` you actually have |
-| | `unity-sprite-atlas` | Sprites that should share a draw call: V2 atlases from script, packing and platform settings, and how the packed texture reaches the player |
-| | `unity-audio` | Memory, load types, sample rates, mixer cost — reports before it reimports; effects synthesised under a frequency ceiling and checked by `scripts/spectrum_check.py` |
-| | `unity-localization` | Shipping in more than one language, and the CJK font pipeline where it goes wrong |
-| **Production — AI asset generation** | `game-character-pipeline` | **Start here for a rigged character made from an image.** The stage order up to an approved character in Unity: the route, the quality target and the track (a preview rig on the dense mesh, or budget → game mesh → rig once) decided first, then stages S0–S13, each with the skill that owns it and its entry and exit gates; when one clip pack supplies the motion, the mesh fitted to its skeleton and the clips played unchanged |
-| | `codex-visual` | 2D art through the `codex` image model, held on-style by one art bible and one anchor: grid one-shot sets, short animations generated as one gridded sheet and sliced into measured frames with a GIF preview, chroma-key transparency, normalised sizes and a geometry gate on the shipped files; also the four views an image-to-3D character starts from, review sheets composed only when their numeric checks pass, and themed overview sheets that caption each picture with its source path and record its hash; a key colour chosen against the subject before generating, a tint-axis un-mix for a field painted off its key, and a breathing idle from one still |
-| | `comfyui-asset-generation` | Music, SFX, MiniMax H3 video and image-to-3D props and characters through a self-hosted ComfyUI — one job at a time, `/history` as the only proof, `/free` before a model switch; four views cleaned before upload, the project graph diffed against the official template before any tuning, generation presets compared as rungs, none of them a target; keyframe layout maps drawn from ground coordinates with crossing moves found before generating, and a camera gate that rejects a keyframe whose horizon moved |
-| | `sprite-from-video` | One character still turned into transparent sprite frames through a generated video: the still padded onto an exact-key canvas sized for the motion, an in-place image-to-video clip, every frame keyed against the colour the model actually painted, the loop period found with a half-stride guard and a seam gate, or a one-shot cut between rest poses — equal-canvas frames plus a `frames.json` |
-| | `blender-character-rig` | An image-to-3D character rigged and animated in a running Blender through its MCP server: bones from measured landmarks, weights computed by position, a prop on a hand bone, a keyed action, a preview, and an FBX proven by re-import; the same modules headless as gated stages: a clip pack's skeleton fitted to the mesh, skinned LODs, a byte-identical FBX |
-| | `blender-retarget` | Stock clips moved onto a character rigged in Blender: through Auto-Rig Pro or a pure-bpy bone map that converts each rotation key between the two rest poses, a clip manifest, a local weight repair, an action library with an NLA review track, a prop checked against its hand bone in every clip, and an audit that re-opens the saved file; a measured fit-or-retarget bake-off (`scripts/clip_metrics.py`, `scripts/bakeoff_report.py`) |
-| **Polish & optimisation** | `unity-game-feel` | A hit with no impact, a game left frozen after a hit, an enemy that stays white after its flash, thirty pickups playing thirty sounds, a pad that keeps vibrating: one feedback row per gameplay event with a budget — hit stop through one owner of `Time.timeScale`, flashes that restore, squash and tweens with no library, particles, trails, pooled SFX with a voice cap, rumble that stops; a small fast ball kept readable and smooth on screen (`MinScreenSize.cs`, `scripts/screen_smoothness.py`) |
-| | `unity-render-urp` | Post-processing that will not appear, the mobile subset, Render Graph review, material keywords that validation strips (`UrpMaterialValidation.cs`) |
-| | `unity-urp-migration` | Moving a Built-in project to URP in five gated phases read back from the saved project, and diagnosing one that was half-moved: magenta materials, PPv2 into a Volume, lightmaps that never rebaked, `GrabPass`/`OnRenderImage` |
-| | `unity-profiling` | What a slow or uneven frame is actually doing: counters without the Profiler window, 90-frame windows with median/p95/worst, work counters, a before/after table; GC allocations per phase and runtime asset leaks (`GcAllocProbe.cs`, `OwnedAssets.cs`, a soak test) |
-| | `unity-scene-optimisation` | The change to make once a profiling counter has named the cost: batching paths and why GPU instancing does nothing under URP, `LODGroup` and Mesh LOD, baked and GPU occlusion culling, per-layer cull distances, texture size and mipmap streaming, sprite and particle overdraw — each lever tested in one window first and read back on the same counter |
-| | `unity-debug` | You need to verify a change you cannot see — and to prove the harness is telling the truth before believing it; on a machine shared by several agents, at most two Editors (`lanes.sh` queues at `MAX_UNITY`) |
-| **Shipping** | `unity-device-testing` | Acceptance on a **real phone**, Android or iOS: a probe scene that logs one tagged line per state change, a driver that asserts on it and taps system dialogs, a human asked for one physical action at a time and verified from the device, and exit codes that separate a real failure from a broken harness |
-| | `unity-android-release` | Build it, then *prove* it: read the artifact back, keystore and versionCode discipline |
-| | `unity-ios-build` | From a Unity project to a process on an iPhone without opening Xcode: headless build, an unsigned compile gate, signing with what this Mac actually holds, `devicectl` install, the console as the only log, and native `.mm` plugins iterated in 30 s |
-| | `unity-web-release` | WebGL/WebGPU download size, the server headers, browser memory ceilings |
-| **Backend & commerce** | `unity-live-services` | Which environment a build talks to, where keys live, designing the offline path first |
-| | `unity-ugs` | The Gaming Services API surface: which package provides what, the initialisation order everything else depends on, Cloud Save access classes, Cloud Code, Remote Config |
-| | `unity-iap` | In-App Purchasing v5 call by call: connecting to a store, the pending/confirm flow, receipts, entitlement, restore — and content granted twice or not at all |
-| | `unity-ads-levelplay` | LevelPlay mediation: native dependency resolution, consent before init, rewarded/interstitial/banner units, impression-level revenue |
-| | `unity-monetization` | Where IAP and ad SDKs collide with shipping: merged manifest, store declarations, receipts |
-| | `unity-multiplayer` | Topology as the expensive decision, plus voice chat and microphone contention |
-| | `unity-multiplayer-services` | Sessions: how players get into a game together — join codes, a browsable game list, quick join, ticket matchmaking, relay, host migration, dedicated servers |
-| | `unity-vivox` | Voice and text chat call by call: sign-in, group/echo/positional channels, the roster, mute and push-to-talk, microphone permission |
+Work inside Unity needs none of the asset-pipeline or video tools; a phone build needs only what
+that platform already asks for.
 
-## Working on this repo
+## See it work
 
-```bash
-python3 tools/lint-skills.py            # frontmatter + name/dir match + size limits + executable syntax
-python3 tools/check-consistency.py      # manifests agree, companions declared
-python3 tools/check-registry.py        # asset registry selftests and fixtures, the budget table in one place
-python3 tools/sync-codex-manifests.py   # regenerate the Codex manifests
-claude plugin validate .                # manifest shape
+### From one drawing to a moving, rigged character
+
+<div align="center">
+<img src=".github/media/motion.gif" alt="Top: a machine-generated two-camera video of the character, front and side. Bottom: the character's rig driven by the motion solved from that video" width="640">
+<p><sub>Top: a generated two-camera video. Bottom: the character's rig, driven by the motion solved from it.</sub></p>
+</div>
+
+[`codex-visual`](skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`character-autorig`](skills/character-autorig/SKILL.md) →
+[`humanoid-motion`](skills/humanoid-motion/SKILL.md) →
+[`unity-rigged-character`](skills/unity-rigged-character/SKILL.md)
+
+The 3D model, the rig and the motion are made on your own machines; only the 2D art goes through
+the `codex` CLI. The two-camera solve is ported from [anymove](https://github.com/patch-gg/anymove) (Apache-2.0;
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+The video is machine-generated with MiniMax H3, run locally on its open weights under the MiniMax H3
+Community License Agreement.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Your request"] --> B["SKILL.md<br/>symptom table"]
+    B --> C["reference/<br/>only the part needed"]
+    C --> D["scripts/ · resources/ · templates/"]
+    D --> E{"Gate<br/>exit code + evidence"}
+    E -->|fails| C
+    E -->|passes| F["Done, with proof"]
 ```
 
-`.claude-plugin/*` are the sources of truth. `.codex-plugin/plugin.json` and
-`.agents/plugins/marketplace.json` are **generated — never hand-edit them.**
+- **Lands on the right method from your words.** Each skill opens with a table of symptoms in
+  plain language, and three start-here skills route any gameplay, UI or character request.
+- **Runs code, not advice.** 100+ Python scripts, 170+ C# files and 50+ templates you copy into
+  your project instead of retyping notes.
+- **Proves it.** Methods end in a check you can read: a probe snapshot, a journey test, a re-imported FBX,
+  a device log.
+- **Light on context, self-contained.** A `SKILL.md` only routes; depth loads when the situation
+  needs it. No other plugin is required: skills hand off to each other through their Scope sections.
 
-Routing to a plugin outside this repo is a declared dependency: add it to `COMPANIONS` in
-`tools/check-consistency.py`, with the reason. An undeclared one fails the gate.
+## Skills
 
-What this release contains: [CHANGELOG.md](CHANGELOG.md).
+> [!TIP]
+> Not sure where to start? Use `unity-gameplay` for any gameplay request, `unity-game-ui` for any
+> UI request, and `game-character-pipeline` for a rigged character made from an image.
+
+<details>
+<summary><b>Every stage — terminal & search</b> — the Unity CLI, and finding anything in a project</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-cli`](skills/unity-cli/SKILL.md) | Unity from a terminal, with exit codes that say whether a retry is honest |
+| [`unity-search`](skills/unity-search/SKILL.md) | "Where is it, what references it?" answered as one Unity Search query |
+
+</details>
+
+<details>
+<summary><b>Concept</b> — the brief, day-one project setup, gameplay routing</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-game-brief`](skills/unity-game-brief/SKILL.md) | An idea becomes a brief, a locked look, a gameplay preview, one playable interaction |
+| [`unity-new-project`](skills/unity-new-project/SKILL.md) | Day-one decisions that are costly to retrofit, plus tests that run without the Editor |
+| [`unity-gameplay`](skills/unity-gameplay/SKILL.md) | **Start here** for any gameplay request: it fingerprints the project and routes the work |
+
+</details>
+
+<details>
+<summary><b>3C prototype</b> — input, camera, 2D and 3D controllers, animation, physics, play harness</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-input`](skills/unity-input/SKILL.md) | A jump that goes missing or fires twice; gameplay reads one input struct |
+| [`unity-camera`](skills/unity-camera/SKILL.md) | A camera that jitters, shows outside the level or clips through walls |
+| [`unity-2d-controller`](skills/unity-2d-controller/SKILL.md) | A 2D character that slides down slopes or sticks to walls: one kinematic motor |
+| [`unity-3d-controller`](skills/unity-3d-controller/SKILL.md) | `isGrounded` flickers or jump height changes with frame rate: one 3D motor |
+| [`unity-animation`](skills/unity-animation/SKILL.md) | An Animator stuck in a state or an attack that plays by itself |
+| [`unity-physics-2d`](skills/unity-physics-2d/SKILL.md) | A 2D collision or trigger that never fires, triaged in Box2D's own vocabulary |
+| [`unity-physics-3d`](skills/unity-physics-3d/SKILL.md) | A collision or trigger that never fires, or a ball your game integrates itself |
+| [`unity-play-harness`](skills/unity-play-harness/SKILL.md) | Make the game drivable: a one-line probe snapshot and journey tests that assert invariants |
+
+</details>
+
+<details>
+<summary><b>Vertical slice — 2D world</b> — levels as data, grid boards, tile palettes, draw order and 2D lights</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-2d-level`](skills/unity-2d-level/SKILL.md) | A 2D level as data, with seeded generation that checks every pickup is reachable |
+| [`unity-2d-grid`](skills/unity-2d-grid/SKILL.md) | Board logic for tactics and tile puzzles on square, isometric or hex grids |
+| [`unity-tilemap`](skills/unity-tilemap/SKILL.md) | Tiles that won't connect as you paint: RuleTiles from your sheet, palettes per grid |
+| [`unity-2d-rendering`](skills/unity-2d-rendering/SKILL.md) | A sprite drawn behind the wrong one, or a `Light2D` that turns everything black |
+
+</details>
+
+<details>
+<summary><b>Vertical slice — 3D world</b> — greybox to metrics, URP lighting, NavMesh agents</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-3d-level`](skills/unity-3d-level/SKILL.md) | A 3D greybox built from a metrics sheet and proven by a walk journey |
+| [`unity-lighting`](skills/unity-lighting/SKILL.md) | A bake that did nothing, or a character black beside baked walls, on URP |
+| [`unity-navigation`](skills/unity-navigation/SKILL.md) | An agent that won't move or walks through walls: NavMesh, links, transform ownership |
+
+</details>
+
+<details>
+<summary><b>Vertical slice — systems</b> — doors and pickups, damage, enemy AI, scenes and saves</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-interaction`](skills/unity-interaction/SKILL.md) | "Press E to open" that flickers or opens twice: one target, one prompt |
+| [`unity-combat`](skills/unity-combat/SKILL.md) | A swing that hits twice or a shot through the sentry: one hit each |
+| [`unity-game-ai`](skills/unity-game-ai/SKILL.md) | An enemy that sees through walls or never gives up: perception on a budget |
+| [`unity-scene-flow`](skills/unity-scene-flow/SKILL.md) | Duplicated managers or a corrupted save: a Boot scene and versioned atomic saves |
+
+</details>
+
+<details>
+<summary><b>Vertical slice — UI</b> — UI routing and HUDs, uGUI, UI Toolkit</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-game-ui`](skills/unity-game-ui/SKILL.md) | **Start here** for any UI request: it detects the UI system and routes |
+| [`unity-ui-ugui`](skills/unity-ui-ugui/SKILL.md) | A Canvas UI that renders nothing: six checks, then anchors and Layout Groups |
+| [`unity-ui-toolkit`](skills/unity-ui-toolkit/SKILL.md) | A USS property that silently does nothing, plus UXML, flex layout and binding |
+
+</details>
+
+<details>
+<summary><b>Production — assets</b> — asset ledger, 3D models, rigged characters, sprites, audio, languages</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`art-asset-registry`](skills/art-asset-registry/SKILL.md) | Which generated asset came from where, and what went stale: one append-only ledger |
+| [`unity-3d-models`](skills/unity-3d-models/SKILL.md) | A 3D model into the game, at a budget picked under the game camera |
+| [`unity-rigged-character`](skills/unity-rigged-character/SKILL.md) | A rigged FBX that T-poses in Unity: import, Avatar, Animator and gameplay rig |
+| [`unity-2d-sprites`](skills/unity-2d-sprites/SKILL.md) | Sprite sheets sliced from script, and frames turned into a playable clip |
+| [`unity-2d-animation`](skills/unity-2d-animation/SKILL.md) | Skeletal 2D characters from a PSB, with skins and equipment swapped at runtime |
+| [`unity-2d-pixel-perfect`](skills/unity-2d-pixel-perfect/SKILL.md) | Pixel art that renders soft, shimmers as the camera moves or shows seams |
+| [`unity-sprite-atlas`](skills/unity-sprite-atlas/SKILL.md) | Sprites that should share a draw call, packed into V2 atlases from script |
+| [`unity-audio`](skills/unity-audio/SKILL.md) | Audio memory and CPU cut without the game sounding worse; it reports before reimporting |
+| [`unity-localization`](skills/unity-localization/SKILL.md) | Shipping in more than one language, including the CJK font pipeline where it breaks |
+
+</details>
+
+<details>
+<summary><b>Production — AI asset generation</b> — the character stage order, 2D art, audio, video and 3D, rigging and motion</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`game-character-pipeline`](skills/game-character-pipeline/SKILL.md) | **Start here** for a rigged character from an image: stages S0–S13, each gated |
+| [`codex-visual`](skills/codex-visual/SKILL.md) | 2D art through the `codex` image model, kept on-style by one art bible |
+| [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video and 3D models from your own ComfyUI, one job each |
+| [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
+| [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | An image-to-3D character rigged in Blender, its FBX proven by re-import |
+| [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |
+| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid rigged locally with your own Auto-Rig Pro, in one headless command |
+| [`humanoid-motion`](skills/humanoid-motion/SKILL.md) | A move as a clip, solved from a two-camera video straight onto the skeleton |
+
+</details>
+
+<details>
+<summary><b>Polish & optimisation</b> — game feel, URP, migration, profiling, scene cost, verification</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-game-feel`](skills/unity-game-feel/SKILL.md) | A hit with no impact: one feedback row per gameplay event, with a budget |
+| [`unity-render-urp`](skills/unity-render-urp/SKILL.md) | Post-processing that will not appear, and Render Graph features reviewed before shipping |
+| [`unity-urp-migration`](skills/unity-urp-migration/SKILL.md) | Built-in to URP in five gated phases, or a half-moved project diagnosed |
+| [`unity-profiling`](skills/unity-profiling/SKILL.md) | What a slow or uneven frame is doing, as 90-frame windows you compare |
+| [`unity-scene-optimisation`](skills/unity-scene-optimisation/SKILL.md) | The fix once a counter names the cost, read back on the same counter |
+| [`unity-debug`](skills/unity-debug/SKILL.md) | Verifying a change you cannot see — after proving the harness tells the truth |
+
+</details>
+
+<details>
+<summary><b>Shipping</b> — real-phone tests, Android, iOS, web</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-device-testing`](skills/unity-device-testing/SKILL.md) | Acceptance on a real phone: an agent drives, a person does the physical step |
+| [`unity-android-release`](skills/unity-android-release/SKILL.md) | A signed APK or AAB, proven by reading the artifact back |
+| [`unity-ios-build`](skills/unity-ios-build/SKILL.md) | A Unity project to a running iPhone app, without opening Xcode |
+| [`unity-web-release`](skills/unity-web-release/SKILL.md) | A WebGL or WebGPU build small and fast enough that people wait for it |
+
+</details>
+
+<details>
+<summary><b>Backend & commerce</b> — backend discipline, Gaming Services, purchases, ads, multiplayer, voice</summary>
+
+| Skill | Use it when |
+|---|---|
+| [`unity-live-services`](skills/unity-live-services/SKILL.md) | Putting a game on a backend safely, with the offline path designed first |
+| [`unity-ugs`](skills/unity-ugs/SKILL.md) | A service that throws because nothing initialised: Gaming Services in the right order |
+| [`unity-iap`](skills/unity-iap/SKILL.md) | Content granted twice or not at all: In-App Purchasing v5, call by call |
+| [`unity-ads-levelplay`](skills/unity-ads-levelplay/SKILL.md) | No ads, or a build broken by ad dependencies: LevelPlay, consent before init |
+| [`unity-monetization`](skills/unity-monetization/SKILL.md) | Purchase and ad SDKs that break the build, the manifest or the store declaration |
+| [`unity-multiplayer`](skills/unity-multiplayer/SKILL.md) | Choosing the topology first, and keeping voice chat off another feature's microphone |
+| [`unity-multiplayer-services`](skills/unity-multiplayer-services/SKILL.md) | How players get into a game together, from join codes to host migration |
+| [`unity-vivox`](skills/unity-vivox/SKILL.md) | A voice join that succeeds while nobody hears: Vivox chat, sign-in to push-to-talk |
+
+</details>
+
+## Contributing
+
+Tooling, checks and repo rules: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md). What each release contains: [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

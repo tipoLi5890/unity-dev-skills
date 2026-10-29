@@ -27,6 +27,8 @@ asset is its latest `approved` revision. The field table and the check rules are
   validate(rec, strict=False)  a list of problems against schema 1; [] when valid
   vocabulary_notes(rec)        kinds and link rels outside the documented vocabulary
   cycles(edges)                every cycle in {id: [id, ...]}
+  territory_codes(codes)       ISO codes a territory list covers (EU expanded, UK read as GB)
+  excluded_codes(licence)      ISO codes a record's `licence` excludes
   sha256_file, rel_posix, slugify, path_key, path_problem, now_utc, dumps, canonical
 """
 from __future__ import annotations
@@ -62,7 +64,7 @@ SOURCES = ("generated", "authored", "purchased", "third-party", "unknown")
 LICENSED_SOURCES = ("purchased", "third-party")
 
 FIELDS = ("schema", "id", "rev", "ts", "kind", "class", "status", "superseded_by", "source",
-          "license", "parent", "links", "files", "inputs", "tool", "params", "gates", "verdict",
+          "license", "licence", "parent", "links", "files", "inputs", "tool", "params", "gates", "verdict",
           "warnings", "file", "approver", "note")
 REQUIRED = ("schema", "id", "rev", "ts", "kind", "status", "files", "source")
 FILE_FIELDS = ("path", "role", "sha256", "bytes", "vendor", "mutable", "missing")
@@ -71,6 +73,14 @@ LINK_FIELDS = ("rel", "to", "rev")
 TOOL_FIELDS = ("skill", "script", "version")
 GATE_FIELDS = ("name", "value", "limit", "pass")
 FILESTATE_FIELDS = ("path", "saved", "dirty", "sha256", "bytes")
+LICENCE_FIELDS = ("source", "id", "territory")
+WORLDWIDE = "worldwide"
+# Territory codes are ISO 3166-1 alpha-2, plus EU for its member states. UK and EL are the codes
+# people write for GB and GR; both are read as the ISO code.
+EU_MEMBERS = ("AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU",
+              "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK")
+TERRITORY_ALIASES = {"UK": "GB", "EL": "GR"}
+TERRITORY_CODE_RE = re.compile(r"[A-Z]{2}\Z")
 PARAMS_RESERVED = ("model", "seed", "prompt_sha256", "prompt_file", "workflow_sha256",
                    "overrides", "server_label", "argv")
 
@@ -462,6 +472,8 @@ def validate(rec, strict=False):
             err("license", f"required when source is {rec['source']} (e.g. purchased:<pack>, cc0)")
     elif has("license") and not isinstance(rec["license"], str):
         err("license", "is not a string")
+    if has("licence"):
+        _validate_licence(rec["licence"], strict, errs)
     if has("parent"):
         if not isinstance(rec["parent"], list):
             err("parent", "is not a list of ids")
@@ -542,6 +554,59 @@ def validate(rec, strict=False):
     if strict:
         _unknown(rec, FIELDS, "", errs)
     return errs
+
+
+def territory_codes(codes):
+    """The set of ISO codes a list of territory codes covers: EU becomes its member states, UK
+    becomes GB, EL becomes GR. Codes that are not two capital letters are left out."""
+    out = set()
+    for c in codes:
+        c = TERRITORY_ALIASES.get(c, c) if isinstance(c, str) else None
+        if c == "EU":
+            out.update(EU_MEMBERS)
+        elif c is not None and TERRITORY_CODE_RE.match(c):
+            out.add(c)
+    return out
+
+
+def excluded_codes(licence):
+    """The ISO codes a valid `licence` object excludes; an empty set for worldwide or no licence."""
+    if not isinstance(licence, dict):
+        return set()
+    terr = licence.get("territory")
+    if isinstance(terr, dict) and isinstance(terr.get("excludes"), list):
+        return territory_codes(terr["excludes"])
+    return set()
+
+
+def _validate_licence(lic, strict, errs):
+    if not isinstance(lic, dict):
+        errs.append("licence: is not an object {source, id, territory}")
+        return
+    if not isinstance(lic.get("source"), str) or not SLUG_RE.match(lic["source"]):
+        errs.append(f"licence.source: {lic.get('source')!r} is not a slug [a-z][a-z0-9-]* "
+                    "(reference/licences.md lists the known sources)")
+    if lic.get("id") is not None and not isinstance(lic["id"], str):
+        errs.append("licence.id: is not a string")
+    terr = lic.get("territory")
+    if terr is None:
+        errs.append('licence.territory: required, "worldwide" or {"excludes": [codes]}')
+    elif isinstance(terr, str):
+        if terr != WORLDWIDE:
+            errs.append(f'licence.territory: {terr!r} is neither "worldwide" nor {{"excludes": [codes]}}')
+    elif not isinstance(terr, dict) or not isinstance(terr.get("excludes"), list) \
+            or not terr["excludes"]:
+        errs.append('licence.territory: neither "worldwide" nor {"excludes": [codes]} with at '
+                    'least one code')
+    else:
+        for i, c in enumerate(terr["excludes"]):
+            if not (isinstance(c, str) and (c == "EU" or TERRITORY_CODE_RE.match(c))):
+                errs.append(f"licence.territory.excludes[{i}]: {c!r} is neither an ISO 3166-1 "
+                            "alpha-2 code (US, GB, KR) nor EU")
+        if strict:
+            _unknown(terr, ("excludes",), "licence.territory.", errs)
+    if strict:
+        _unknown(lic, LICENCE_FIELDS, "licence.", errs)
 
 
 def _validate_links(links, strict, errs):

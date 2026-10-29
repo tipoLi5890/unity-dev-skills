@@ -2,6 +2,343 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.33.0
+
+Sixty-two skills. Humanoid rigging and motion now run locally first, onto one skeleton: the
+**humanoid contract** (`unity-rigged-character` → `reference/humanoid-contract.md`), 53 bones in
+Blender names with a non-deform `Root`, an A-pose rest, +Z up and facing −Y. Every motion source
+reaches it through a role map, so a clip made for one contract character plays on every other. Two
+new skills: `character-autorig` rigs a mesh onto the contract with the user's own Auto-Rig Pro,
+headless and in one command, and `humanoid-motion` turns a move into a clip on it with two cameras:
+a front and a side view of the character in one frame, animated by local H3 image-to-video, read by
+a reader trained for that character and triangulated straight onto its skeleton, then a shared back
+half that bakes contacts, cuts the loop, gates and ships. The two-camera route is ported from
+patch-gg/anymove under the Apache License 2.0, credited in `THIRD_PARTY_NOTICES.md` and in each
+ported file's header. No cloud rigging service is used anywhere; a paid cloud service may remake a
+character's **mesh**, only on a new upgrade track a person chooses after the demo. Every record can
+now carry a `licence` with a sales territory, and the registry refuses to approve an asset the
+declared territory excludes. Every new script prints one JSON object, has a `--selftest` that builds
+its inputs in a temporary directory and documents its exit codes; the host scripts need Python 3 and
+numpy only, the Blender ones Blender's own Python, and the two-camera reader torch, opencv and
+transformers, imported lazily so `--help` works without them.
+
+**Behaviour change:** `blender-retarget`'s `brt_retarget` now retargets root translation by
+default. The translation bone is the mapped bone whose source is the root-most bone of its chain
+with a moving location and that has no mapped ancestor; its motion is scaled by `k`, the target's
+hip height over the source's. `translate: False` drops it, `"in_place"` keeps only the rise, and
+`translation_scale` replaces `k`. The result reports `translation` (`"retargeted"`, `"in place"`,
+`"dropped"`, `"present in into_action"`, or `"not retargeted"` when no mapped bone moves, as
+before) with `translation_k` and the hip heights, alongside `translation_keyed`. A new gate,
+`retarget.translation_kept`, fails a clip whose translation bones stand still in the output while
+the source's move, so a clip run with `translate: False` fails it whenever its source travels.
+Rotation output is unchanged.
+
+**Behaviour change:** pops fail. `blender-retarget/scripts/clip_metrics.py` gains a `pops` gate
+(a pop the route added fails; the same jump in the reference is not a pop), and the new
+`motion_metrics.py` gates `pops` at 0 by default. The runtime C# sampler in `unity-animation` still
+only logs them. For motion read from video, `--pops-min-move M` requires a spike to move the
+segment's end by M metres, so reading noise on a short segment (a clavicle) is not a pop;
+`twocam.py capture` passes 0.03. When the samples carry the joints triangulated straight from the
+video (`reading_joints`), a spike the video shows too is reported as `pops_in_source` and not
+gated; only the pops the solve added count. `motion_metrics.py` counts both as events, one per
+frame and parent joint: the segments that leave one joint turn with that bone, so a shin and the
+Auto-Rig Pro twist segment beside it spiking on one frame are one pop, not two. `--pops-max`
+applies to that count; `segments` counts the segments that spiked and `list` names each.
+
+**Behaviour change:** one plant definition. A foot is planted over a run of at least 3 frames whose
+sole is under 4 cm above the floor and whose ground-relative horizontal speed is under 0.15 m/s; an
+in-place loop declares its travel speed (`travel_mps`) and gets it added back before the speed test,
+and supplied contact probabilities at or above 0.5 define the plant instead. When the samples carry
+`sole_offsets` (each foot joint's rest height above the ground), a foot's sole is the lowest of its
+joints' heights minus their offsets, so a plant is found though the ankle stands well above the
+sole. `motion_metrics.py` holds it; `clip_metrics.py` and `humanoid-motion`'s `contact_bake.py`
+import it, and `unity-animation` → `reference/motion-metrics.md` and
+`reference/foot-lock-and-prop-ik.md` now state the same sentence (the second said 0.5 m/s, which
+only made up for in-place loops). `clip_metrics.py`'s options and output are unchanged apart from
+the added `pops` key and gate. `motion_metrics.py`'s plant gate is renamed: what was gated as
+`plants_found` is now `plants_min_per_foot`, the fewest plants on one foot, at least 1 with
+`--state walk|run` or on a foot that stands on the ground; `plants_found` is now the total over
+both feet, reported beside `plants_per_foot` and not gated, as `contact_bake.py` reports it.
+`contact_bake.py` still gates its own `plants_found`.
+
+**Behaviour change:** the image-to-3D templates (`pixal3d_image_to_model_api.json`,
+`pixal3d_multiview_to_model_api.json`, `trellis2_image_to_model_api.json`) default to 70000 faces
+(`186.target_face_count`), a 768 remesh (`241.resolution`) and 2048 textures (`288.value`), where
+they had 8000, 384 and 1024. A run with no `--set` now gives a mesh about nine times denser and a
+GLB about three times larger, in about a quarter more time. The old defaults are the Compact
+preset: `--set 186.target_face_count=8000 --set 241.resolution=384 --set 288.value=1024`.
+
+**Behaviour change:** `unity-rigged-character`'s `CharacterImportSettings.cs` defaults
+`character-pipeline.json`'s `"rig"` to `"Generic"`, as the documentation already said; only the
+exact word `"Humanoid"` turns Humanoid on. A project that relied on the implicit Humanoid default
+sets `"rig": "Humanoid"`. New fields: `"humanMap"` (a `unity-human-map/1` file; empty = the
+contract's own names) and `"minFingerBones"` (default 10).
+
+**Behaviour change:** the sales territory is gated. Once `ART_DIRECTION.md` declares
+`Sales territory: worldwide | <ISO codes or EU> | undecided`, `registry.py check`,
+`status ID approved` and `record --status approved` exit 2 on an approved record whose own licence,
+or any upstream reached through `parent` or a `depends-on` link, excludes a declared territory. No
+declaration, or `undecided`, is a warning; candidates are never refused. Records without `licence`
+behave as before.
+
+**The humanoid contract**
+
+- **`unity-rigged-character` → `reference/humanoid-contract.md`, `scripts/contract_map.py`.** The
+  bone table, the rest and axes, and role maps for Mixamo, Auto-Rig Pro's Unity export with and
+  without Rename for UE, and the contract itself; a skeleton without a preset gets its own map from
+  `suggest`. `contract_map.py map` reads a skeleton JSON, a Blender dump or a BVH header and gates
+  it: Unity's 15 required bones; with `--require contract` all 53, `Root` non-deform at the origin
+  between the feet and the upper arm 30–60° below horizontal; `--min-fingers`; unique sources;
+  parent chains; sides; axes. It writes `retarget_map` in `brt_retarget`'s orientation and a
+  `unity-human-map/1` for Unity. `bvh`, `contract` (the reference skeleton as JSON, for other
+  skills to read rather than import), `suggest` and `presets` complete it. Exit 0 pass, 2 a gate
+  failed, 1 refused.
+- **`unity-rigged-character` → `resources/Editor/CharacterHumanoidAvatar.cs`.** Builds a Humanoid
+  Avatar from an explicit `humanDescription` (Tools/Unity Dev/Rigged Character/Build Humanoid
+  Avatar), so Chest and the fingers are mapped rather than left to auto-mapping; its gate requires
+  `isValid`, `isHuman`, Chest and at least `minFingerBones` fingers, and `CharacterAvatarLinker`
+  uses it when the rig is Humanoid. Generic stays the default on the contract; Humanoid is for a
+  body-part mask or IK.
+- **Unity clips on the contract.** `SharedSkeletonClipImporter` takes `RootNode` = the armature
+  object's name and `RootBonePath` = `<rig>/Root/Hips`; motion samples from a contract rig are
+  read with `--root Hips` unless they come from `contact_bake.py`, which names Hips itself.
+
+**Rigging, locally: `character-autorig`**
+
+- **`character-autorig` → `SKILL.md`.** Seven stages, one command each, and one command for them
+  all: riggable mesh, markers, Auto-Rig Pro, contract, skin, deformation, FBX. Auto-Rig Pro is the
+  default when the user has installed it; the hand-built route (`reference/hand-built-route.md`)
+  uses the same markers through `blender-character-rig`'s `bcr_armature`, `bcr_skin`, `bcr_fbx` and
+  `rig_gate.py`. Check the Blender version first: on a Blender newer than the add-on lists, run
+  `scripts/tests/test_arp_pipeline.py` before the first character, and rig in the listed version or
+  by hand if it fails. Failures are fixed locally, never by loosening a limit.
+- **`character-autorig` → `scripts/mesh_check.py`, `reference/gates.md`.** Before any rig: legs
+  part below the crotch (slice connectivity), both arms hang clear in the arm band, and the
+  double-shell ratio stays at or under 0.25. Only a same-facing double layer counts: a thin inner
+  shell lying back to back with the skin, its normals pointing in (a fixed product of some
+  image-to-3D generators), is reported as `inner_shell` and kept. GLB, glTF or OBJ; a fail goes
+  back to the views or the 3D generation.
+- **`character-autorig` → `scripts/arp_markers.py`, `reference/markers.md`.** Every Auto-Rig Pro
+  reference marker measured from horizontal slices, in Blender or on the host: heights inside their
+  windows, left and right within 0.02 H, the upper arm 30–60° down, fingers found where the hand
+  splits into four parts or a fixed hand shape scaled to the hand, front and side pictures for a
+  person, `--adjust` for one marker. A marker a person adjusted leaves the symmetry test and is
+  listed under `asymmetry_accepted`; the markers left unadjusted are still held to it. No marker is
+  placed by eye and no Smart detection runs. It also writes a contract-named bone spec for the
+  hand-built route.
+- **`blender-retarget` → `brt_arp` op `pipeline`, `character-autorig` →
+  `reference/arp-pipeline.md`.** Append, reference bones placed from the markers, Match, bind,
+  influences limited to 4 and normalised, the Unity FBX exported and read back, and a `skeleton/1`
+  dump whose deform flags come from the weights, in one call; a gate that fails before the bind
+  rolls the rig back. The record carries `licence: {source: "auto-rig-pro", territory:
+  "worldwide"}`. The add-on's spine Count counts its root: Count 4 gives the contract's three
+  spine bones.
+- **`blender-retarget` → `brt_arp` op `export`, `scripts/tests/test_arp_export.py`.** Re-exports a
+  bound rig after a weight repair with the pipeline's own settings, the 4-influence limit, the
+  skeleton dump and the licence. `reference/arp-pipeline.md` carries the ladder for an elbow or a
+  knee that collapses, tried in order on a copy and stopped at the first pass. The first rung, which
+  `autorig.py` runs, is the weights: two `brt_weights` transfers across the hinge between deform
+  bones only, below the joint to the lower bone (its twist bone included) and above it to the upper
+  one, each band handed over whole (`amount` 1.0) with the crease band left blended and the torso
+  kept out by an X range, then the deform gate again. A finer bind and the marker moved to the
+  crease follow, by hand. A loose sleeve hides the crease, and only the weight transfer holds
+  there, which is why it comes first.
+- **`character-autorig` → `scripts/autorig.py`.** The stages for one character in one command:
+  `prep` (`bcr_import_prep`), `check`, `markers`, `arp`, `contract`, `deform`, or `all` in that
+  order, into one folder. `--blender`, `--python`, `--threads N` (Blender's `-t N`), `--no-render`
+  (no marker pictures, no pose renders) and `--dry-run`; `--min-fingers` and the `fist` pose follow
+  the markers' `fingers.mode`. Commands are argument lists with no shell and no inline Python, so a
+  Windows path passes as is, and the Blender-side work runs this same file inside Blender; prep,
+  markers and deform run with `--factory-startup`, arp and the repair without it. It prints one
+  JSON summary (each step's exit code, seconds, log, report and failed gates, the repair attempts
+  and the files to take on) and writes it to `OUT/autorig.<stage>.json`; exit 0 pass (after a
+  repair that passed, too), 2 a gate failed, 1 refused or an error. The repair ladder runs only
+  when `deform.volume_loss_max` is the one failing gate and every joint over the limit is an elbow
+  or a knee: each attempt starts from the unrepaired `rig/NAME_arp.blend`, moves the weights across
+  that hinge on both sides with bands computed from the markers and scaled with the height, exports,
+  keeps a copy in `repair/aN/` and gates again. A hinge that only now fails is added at the same
+  amount; volume held but self-intersection failed retries at 0.9; anything else stops, after at
+  most 3 attempts, with exit 2, every attempt listed and the two manual rungs named. Limits never
+  change; `--no-repair` turns the ladder off.
+- **`blender-retarget` → `brt_arp`, headless.** With no window, the 3D view is taken from the
+  file's own screens and passed with its `space_data`, so markers, Match, bind and export run under
+  `blender -b`. `--factory-startup` still turns the add-on off.
+- **`character-autorig` → `scripts/deform_gate.py`.** Six poses — arms up, deep squat, torso twist,
+  fist, leg raise, elbow at 120° — stepped in, gated on volume loss at hinge and spine joints (at
+  most 0.35; shoulders and hips reported, not gated) and on new self-intersections over the
+  triangles that moved (p95 at most 8 %), with renders for a person. Both are measured on the outer
+  skin only: a triangle that sees out of the mesh is skin; one with a back-to-back sheet right
+  behind it and no way out is inner shell; the rest take the side of their edge neighbours, and a
+  connected piece no triangle of which sees out (eyes behind lids, teeth) is left out. Vertices are
+  welded by position first, so a UV seam neither splits a sheet nor counts as a rest crossing.
+  `deform.joints_measured` fails when an elbow or a knee could not be measured, where it used to
+  read 0 and pass. This is the 3D self-intersection count that was only described before.
+- **Exit codes.** `mesh_check.py`, `arp_markers.py`, `deform_gate.py`, `autorig.py`,
+  `contract_map.py`, `motion_metrics.py`, `contact_bake.py` and the `twocam/` scripts exit 0 pass, 2
+  a gate failed, 1 refused; `rig_gate.py` and `clip_metrics.py` keep 0 pass, 1 a gate failed, 2
+  refused. A stage runner reads each tool's own table.
+
+**Motion from video: `humanoid-motion`**
+
+- **`humanoid-motion` → `SKILL.md`, `reference/two-camera.md`, `scripts/twocam/`.** A front and a
+  side view of the contract character side by side in one 1376 × 768 frame, animated by a local
+  MiniMax H3 image-to-video template through `comfyui-asset-generation`'s client (`film.py`, audio
+  dropped, sizes checked against `/object_info`); a reader trained for that character on DINOv2 from
+  Blender renders of its own rig (`render_dataset.py`, `train.py`, `detect.py`, `--device`, bf16
+  only on CUDA, training refused on Apple GPUs); a solve that triangulates the two views straight
+  onto the character's skeleton with joint limits in an anatomical frame, no retarget (`solve.py`);
+  and two gates handed to `motion_metrics.py`: two-view agreement at least 0.8, read only on the
+  frames where a foot reads at confidence 0.3 or more in both views, and reprojection p95 at most 8
+  px at 768 px height, read as the median over joints. `exam.py` builds a synthetic motion with
+  known truth to score a solve in centimetres; `--compat-anymove` reproduces the upstream solve
+  exactly. The acceleration weight defaults to 0.005 for humanoids (0.02 in compat mode). The
+  upstream cloud video call and LoRA training are not ported. H3 output carries `licence: {source:
+  "minimax-h3-local", territory: {excludes: [US, EU, UK, KR]}}`.
+- **`humanoid-motion` → `scripts/twocam/twocam.py`.** One runner in Python, the same on Windows,
+  macOS and Linux, with a subcommand per stage in the order a person checks them: `prepare` → `ref`
+  → `film` (look at the H3 take before anything is trained on it) → `dataset` → `train` → `capture`
+  → `bake`. Blender comes from `--blender` or `BLENDER`; every child runs with
+  `PYTHONIOENCODING=utf-8`. Exit 0 pass, 2 a gate failed (capture and bake carry on, so the overlay,
+  the fit and the GLB are there to read), 1 refused or an error (the stage stops); the failed gates
+  are named from each tool's own report, whether it marks a gate `ok` or `pass`, on stdout or in its
+  `--out` file. `capture` runs detect and the solve with `--samples-out` on the same `--device`
+  (auto by default), `motion_metrics.py` and the GLB; `bake` keys the rig, runs `contact_bake.py` in
+  Blender with `--legs contract --rig-info rig_info.json --readings samples.json` and gates the
+  baked samples, so an Auto-Rig Pro rig bakes under its own bone names and the video's pops stay out
+  of the gated count. `bake` refuses a clip whose `samples.json` has no `reading_joints`.
+  `bake --render` (`--samples`, `--engine`, `--device`) runs the new `blender/render_baked.py` on
+  `baked.blend`: every frame from the layout's front and side cameras on the studio grey, into
+  `baked/front/` and `baked/side/`, and with ffmpeg on the PATH `baked.mp4`, front | side, the
+  take's own layout; gated on every frame written and on the encode. Every summary gives each
+  step's `seconds`. `reference/two-camera.md` adds how to run long jobs on a Windows host.
+- **`humanoid-motion` → `scripts/twocam/solve.py`.** `--samples-out` adds `sole_offsets` (each foot
+  joint's rest height above the ground, from `rig_info.json`) and `reading_joints` with
+  `reading_names` (the joints triangulated from the readings alone), so `motion_metrics.py` finds
+  plants on the sole and tells the fit's pops from the video's. `--despike`, on by default, replaces
+  a one- or two-frame pop the fit added with a slerp of the bone's local rotation between its
+  neighbours and lists `despiked` bones and frames; `--no-despike` keeps the raw fit. `--device
+  cpu|cuda|auto` (auto: CUDA when present, else the CPU); the fit runs in float64, which MPS lacks,
+  so `twocam.py capture --device mps` reads on MPS and fits on the CPU. The agreement skips a foot's
+  frames that read under confidence 0.3 in either view (a foot hidden behind the other) and reports
+  `frames_used`; a foot needs at least 8 such frames and a quarter of the clip. When no foot has
+  them the gate fails with no value and `unread` names the feet; `--agreement-min -1` turns it off
+  after a person has looked at the overlay. A clip whose feet barely move leaves the gate out with a
+  warning.
+- **Training and rendering.** `train.py`: the dataset pickles, so DataLoader workers run under spawn
+  on Windows; loaders are built once with persistent, pinned workers; batches travel as uint8 and
+  are normalised on the GPU, with TF32, a fused AdamW and SDPA attention on CUDA. `--batch 20` and
+  `--epochs` 20 from scratch, 12 with `--init` when not given, run in full: the cosine schedule
+  spans them and `reader.pt` is always the best epoch. Early stops are off by default, since a
+  reader stopped before the cosine ends reads video less well: `--patience N` (0) stops after N
+  evals that improve the best by less than `--min-delta` (0.1 px), counted only after the 300-step
+  warmup (`--warmup-steps`), because a warm start's held-out error rises while its rate warms up;
+  `--target-px PX` stops at the first eval at or under PX, for a quick preview. `twocam.py train`
+  passes `--epochs` and `--patience` only when given. `--cache` decodes the PNGs once into a uint8
+  memmap, and every run closes its memmaps when it ends; `--init OLD.pt` warm-starts the next
+  character from a reader with the same joint names, on about 1,000 new samples; `--follow` trains
+  while the dataset still renders. `render_dataset.py` keeps render data between the front, the side
+  and the next pose, renders 8 samples with the GPU denoiser by default, takes `--engine
+  cycles|eevee|workbench` and `--png-compression`, and the runner splits the dataset over 3
+  processes. Cycles stays the default: EEVEE rendered the set more slowly and its reader read the
+  same clips no better; `workbench` is for the selftests. **Behaviour change:** each sample draws
+  from its own seed, so a dataset is the same however it is split, but differs from what the same
+  `--seed` gave before; metas already written are kept.
+- **`detect.py`, `film.py`.** The detect selftest passes on Python 3.12 and Windows. `film.frames`
+  counts frames with opencv, else `ffprobe -count_frames`; with neither, the gate is listed and
+  fails instead of disappearing.
+- **`humanoid-motion` → `reference/pipeline.md`, `scripts/bvh_io.py`.** The back half, numbered
+  1–6: contact bake, loop cut, `motion_metrics.py`, FBX through `rig_gate.py`, Unity, and a ledger
+  record whose `depends-on` link reaches the video, so the video's territory reaches every clip
+  solved from it. A clip pack goes through `blender-retarget`, in place or with translation. Hands
+  ship with a fixed pose by default (`reference/hands.md`). Text to motion is not in this release.
+- **`humanoid-motion` → `scripts/contact_bake.py`.** Plants from contact probabilities or the shared
+  detector, the foot point locked per plant with an analytic two-bone leg IK and blended over 3
+  frames, on a BVH or on a Blender action; gated on `plants_found`, `contact_height_m`, `reach_m`,
+  slide p95 and max and penetration; `--sample-only` measures. `--rig-info` reads the sole offsets
+  from `rig_info.json` (a samples file's `sole_offsets` work too) and the baked samples carry them;
+  its `twocam.contract_names` maps an Auto-Rig Pro rig's bones (`foot.l`, `toes_01.l`) to the
+  contract, so `--legs contract` bakes such a rig, and a rig with other names and no map is refused.
+  `--readings samples.json` carries the capture's `reading_joints` into the baked samples under the
+  rig's names, a twist bone between two read joints placed between them, and `--readings-offset N`
+  aligns them with a cut loop, so a pop the video has stays under `pops_in_source` after the bake.
+  It imports `motion_metrics.py` from `skills/blender-retarget/scripts` by a path relative to
+  itself, so the two skills ship together.
+
+**Motion gates**
+
+- **`blender-retarget` → `scripts/motion_metrics.py`.** One clip's joint positions
+  (`motion-samples/1` JSON or NPZ): plant slide p95 and max, penetration, jitter (acceleration p95
+  on the residual after a short moving average, default 20 m/s²), joint limits, the loop period and
+  seam (the lag-profile and cut search of `sprite-from-video`'s `video_loop.py`, with joint distance
+  in place of pixel distance), root drift, pops and `pops_in_source` (both counted per event),
+  translation kept against the source scaled by `k`, and the two-view gates. Plants are counted per
+  foot and in total, and gated as `plants_min_per_foot`. An NPZ carries the readings as
+  `reading_joints` with `reading_names`, as JSON does. A foot that moves but finds no plant gets a
+  warning. Exit 0 pass, 2 a gate failed, 1 refused. Confirm the jitter limit once per capture type
+  on a clean clip before relying on it.
+- **`blender-retarget` → `reference/rest-pose-and-conjugation.md`, `reference/route-bakeoff.md`,
+  `reference/clip-sources.md`; `unity-animation` → `reference/motion-metrics.md`,
+  `reference/foot-lock-and-prop-ik.md`.** Updated for translation, pops, sole offsets and the one
+  plant sentence.
+
+**3D sources**
+
+- **`codex-visual` → `scripts/audit_3d_source.py`, `reference/image-to-3d-input.md`.** The
+  turnaround audit compares the left and right side views' silhouettes, as drawn and with one
+  mirrored, and fails two side views that face the same way; when both match it reports the facing
+  as inconclusive. `--selftest` builds the silhouettes.
+- **`comfyui-asset-generation` → `reference/image-to-3d.md`, `reference/comfyui-api.md`,
+  `templates/four_view_background_removal_api.json`.** The four-view background removal wrote
+  RGBA with the alpha inverted: `JoinImageWithAlpha` takes an InvertMask of `RemoveBackground`'s
+  mask, while `ImageCompositeMasked` and `ImageCropToMask` take the mask as it is. `LoadImage`'s
+  MASK is 1 where the image is transparent, so cropping on an alpha-cut input goes through an
+  InvertMask too. The new template carries the corrected graph for all four views.
+- **`comfyui-asset-generation` → `templates/pixal3d_*`, `templates/trellis2_*`,
+  `reference/image-to-3d-tuning.md`.** The new defaults (70000 faces, remesh 768, texture 2048)
+  and a preset ladder that gains two rungs: Compact (8000 / 384 / 1024, the old defaults) and
+  Template (70000 / 768 / 2048, no `--set`), between Small, Medium, Large and Showcase. Every rung
+  now names its texture size; Large sets only the face count and Showcase the face count and
+  texture, on the template's 768 remesh. Raising the face count without the remesh adds no detail, and the remesh
+  costs the time, not the face count. A preview rig takes the template's mesh as it is.
+
+**Licences and the sales territory**
+
+- **`art-asset-registry` → `reference/licences.md`, `scripts/registry_ledger.py`,
+  `scripts/registry.py`.** An optional record field, `licence: {source, id?, territory}`, where
+  territory is `worldwide` or `{excludes: [...]}` in ISO 3166-1 alpha-2 codes or `EU` (expanded to
+  its members; `UK` reads as GB). It is separate from the existing `license` string, carried over on
+  re-record and passed through by ingest from a producer's `record`. Known sources: local H3
+  (excludes US, EU, UK, KR), hosted H3, footage the team shot itself and Auto-Rig Pro (worldwide).
+  `check --json` reports the declared `territory`. Two negative fixtures, `bad_territory` and
+  `bad_territory_upstream`, keep `tools/check-registry.py` able to fail on it.
+
+**Routing**
+
+- **`game-character-pipeline` → `SKILL.md`, `reference/start-gate.md`, `reference/routes.md`.**
+  The start gate and the route detail move to `reference/`. S3 stays the local multi-view
+  generation and the quality target no longer decides where the mesh is made; `mesh_check.py` gates
+  every mesh before S6, keeping a back-to-back inner shell and sending a same-facing double layer
+  back to S1 or S3; S6 is `character-autorig` (Auto-Rig Pro by default, the hand-built route or
+  `blender-character-rig` as the fallback) and never a cloud rigging service; S7 and S8 take
+  `humanoid-motion`'s two cameras or a clip pack. A third track, **upgrade**: after the demo is
+  approved, a person chooses to have a paid cloud service (Tripo, Meshy) regenerate only the mesh;
+  it re-enters at S4 and the mesh gate, is rigged locally onto the same contract through the same
+  gates, and the demo's clips carry over unchanged. The Mixamo and rigging-service rows leave the
+  route table.
+- **`blender-retarget`, `blender-character-rig`, `unity-animation`, `comfyui-asset-generation`.**
+  Their tables and Scope sections name `character-autorig` and `humanoid-motion`.
+
+**The README**
+
+- **`README.md` and the three translations in `.github/`.** The page opens with what the skills
+  do and a banner of one character through four skills (concept art, 3D mesh, rig, deform check),
+  then six requests in the courier-run setting and the skill that answers each, the install with
+  required and optional tools apart, a two-camera motion clip, and how a request reaches a gate.
+  The skills table keeps its stage groups, now folded, one line per skill linked to its
+  `SKILL.md`. The images live in `.github/media/`.
+- **`.github/CONTRIBUTING.md`.** The repo's own checks and its two manifest rules move here from
+  the README.
+
 ## 0.32.0
 
 Sixty skills. Methods ported from sprite-gen under the Apache License 2.0, credited file by file in

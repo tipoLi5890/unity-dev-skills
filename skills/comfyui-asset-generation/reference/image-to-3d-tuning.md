@@ -25,11 +25,11 @@ workflows.
 | `94` | Trellis2UpsampleStage | `target_resolution` 1536 (1024–2048, step 128) |
 | `23` | KSampler | upsampled shape: `seed` 42, `steps` 12 |
 | `12` | KSampler | texture: `seed` 43, `steps` 12, `cfg` 1 |
-| `241` | RemeshMesh | `resolution` 384, `sign_mode` udf, `smooth_iters` 20, `drop_small_components` 0.01 |
-| `186` | DecimateMesh | `target_face_count` 8000, `placement_mode` midpoint |
+| `241` | RemeshMesh | `resolution` 768, `sign_mode` udf, `smooth_iters` 20, `drop_small_components` 0.01 |
+| `186` | DecimateMesh | `target_face_count` 70000, `placement_mode` midpoint |
 | `238`, `260` | MeshSmoothNormals | `crease_angle` 180 (before unwrap; after texturing) |
 | `196` | UnwrapMesh | `segmenter` pec, `padding` 4, `weld_distance` 0.0002 |
-| `288` | PrimitiveInt | `value` 1024: texture size for unwrap, base-colour bake and normal bake |
+| `288` | PrimitiveInt | `value` 2048: texture size for unwrap, base-colour bake and normal bake |
 | `147` | BakeTextureFromVoxel | base colour, metallic, roughness |
 | `224` | BakeNormalMapFromMesh | decimated mesh against the remeshed one; `cage_distance` 0.05 |
 | `233` | BakeAmbientOcclusion | `resolution` 1024, `samples` 64, `max_distance` 0.71, `bias` 0.05, `strength` 1 |
@@ -41,9 +41,9 @@ Dynamic-combo inputs take dotted keys: `sign_mode` udf carries `sign_mode.qef`; 
 qem needs `placement_mode.line_quadric_weight`, `.feature_edge_quadric_weight`,
 `.feature_edge_min_dihedral_deg` and `.clamp_v_to_edge` in the same run.
 
-The templates differ from the official UI workflow on purpose: face count 8000 (UI 700000),
-remesh resolution 384 (UI 768), texture size 1024 (UI 4096), normal-bake resolution tied to
-`288` (UI fixed 2048), occlusion `bias` 0.05 (UI 0.01), unwrap `padding` 4 (UI 1). They add the
+The templates differ from the official UI workflow on purpose: face count 70000 (UI 700000),
+texture size 2048 (UI 4096), normal-bake resolution tied to `288` (UI fixed 2048), occlusion
+`bias` 0.05 (UI 0.01), unwrap `padding` 4 (UI 1). They add the
 QA renders, replace the UI's switch nodes with one template per path, and the multi-view template
 takes four prepared views where the UI crops each sheet panel to its own mask.
 
@@ -72,36 +72,41 @@ templates and the saved UI workflow; a graph renumbered by hand diffs as nodes a
 |---|---|---|---|---|
 | Small | 2000 | 128 | 1024 | ~3 MB |
 | Medium | 4000 | 256 | 1024 | ~4 MB |
-| Template | 8000 | 384 | 1024 | ~4 MB |
-| Large | 20000 | 768 | 2048 | ~15 MB |
+| Compact | 8000 | 384 | 1024 | ~4 MB |
+| Large | 20000 | 768 | 2048 | ~10–15 MB |
+| Template (no `--set`) | 70000 | 768 | 2048 | ~13–18 MB |
 | Showcase (the official UI workflow's values) | 700000 | 768 | 4096 | ~65 MB |
 
 These are generation settings — a face target, the remesh resolution that holds it, a texture
-size — and none of them is a budget. 20000 is not "the character budget" and 700000 is not
-"the quality setting": they are two rungs of one ladder. What a class of asset may cost is its
-`3D budgets` row, chosen by comparing these presets in the game: `unity-3d-models` →
+size — and none of them is a budget. File size is mostly the textures and moves with the input
+more than with the face target. 70000 is the templates' default, not "the character budget", and
+700000 is not "the quality setting": they are rungs of one ladder. What a class of asset may cost
+is its `3D budgets` row, chosen by comparing these presets in the game: `unity-3d-models` →
 `reference/budgets.md`.
 
 - **Generate each preset once and compare.** Run time barely depends on the face count — a
   700000-face run takes about as long as a 20000-face one (e.g. 90 s against 80 s on one
   server) — and a rerun that changes only a late stage can reuse the server's cache up to it
-  (`execution_cached` lists what was reused): only the changed stages run. One input, the same seeds, five presets: the
+  (`execution_cached` lists what was reused): only the changed stages run. One input, the same seeds, six presets: the
   comparison costs minutes, a wrong guess costs a rigging pass.
 - **Showcase is the baseline**, the version every cheaper one is compared with; it need not ship.
-  The three `--set`s below give its face count, remesh and texture only. For the official
+  The `--set`s below give its face count and texture only (the remesh is the template's). For the official
   workflow's full settings add `--set 196.padding=1 --set 233.bias=0.01 --set 224.resolution=2048`,
   then confirm with `graph_diff.py` that nothing else differs.
 - A character that will be rigged: generate the ladder up to Showcase; the preset that ships is
   the `character` row's (`unity-3d-models` → `reference/budgets.md`). The visible surface gets
   half the triangles, and a joint that bends needs them: below Large, look at the joints in an
   extreme pose before accepting a rung, and a rung that deforms badly goes to route B of
-  `blender-character-rig` → `reference/game-mesh.md`. A preview rig can take the showcase mesh as it is.
+  `blender-character-rig` → `reference/game-mesh.md`. A preview rig takes the template's mesh
+  (70000 faces, about 35000 on the visible skin) as it is.
 
 ```bash
---set 186.target_face_count=2000 --set 241.resolution=128                        # small
---set 186.target_face_count=4000 --set 241.resolution=256                        # medium
---set 186.target_face_count=20000 --set 241.resolution=768 --set 288.value=2048  # large
---set 186.target_face_count=700000 --set 241.resolution=768 --set 288.value=4096 # showcase
+--set 186.target_face_count=2000 --set 241.resolution=128 --set 288.value=1024  # small
+--set 186.target_face_count=4000 --set 241.resolution=256 --set 288.value=1024  # medium
+--set 186.target_face_count=8000 --set 241.resolution=384 --set 288.value=1024  # compact
+--set 186.target_face_count=20000                                               # large
+                                                                                # template: no --set
+--set 186.target_face_count=700000 --set 288.value=4096                         # showcase
 ```
 
 - **The face target and the remesh resolution move together.** 5000 faces asked of a 768 remesh
@@ -196,12 +201,15 @@ full run, and an unchanged rerun answers nothing.
    the cheapest cause to rule out.
 2. **Look at what the model was given.** Single image: `3d/qa/crop` is all the model sees and
    must show the subject whole on black; node `312` takes its mask from `192`, or from the
-   image's own alpha with `--set '312.masks=["122",1]'`. Four views: the black composites from
-   `reference/image-to-3d.md`, Background removal for four views. An inverted mask — background
-   kept, subject cut out — is one way to get thin sheets around the silhouette, not the only
-   one: soft halos, a contact shadow or a background that is near-black but not black can do it
-   too. Which way a mask must point is a convention of each node; check the mask preview, never
-   assume it.
+   image's own alpha through an added `InvertMask` (`reference/image-to-3d.md`, Input image).
+   Four views: the black composites from `reference/image-to-3d.md`, Background removal for
+   four views. An inverted mask — background kept, subject cut out — is one way to get thin
+   sheets around the silhouette, not the only one: soft halos, a contact shadow or a background
+   that is near-black but not black can do it too. Which way a mask points is a convention of
+   each node: `RemoveBackground` gives 1 on the subject and `ImageCropToMask` keeps 1;
+   `LoadImage`'s mask is 1 where the image is transparent and `JoinImageWithAlpha` writes
+   alpha = 1 − mask. A crop that shows the background, or a cut-out with the subject
+   transparent, is a mask fed across the two conventions without an `InvertMask`.
 3. **Bisect by stage, keeping each stage's output.** The templates save only the final GLB. On a
    copy of the graph, add a `MeshToFile3D` and a second `Save3DAdvanced` with its own
    `filename_prefix` on the output of `92`, the shape decode, so the raw mesh is kept beside it.

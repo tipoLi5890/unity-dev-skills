@@ -93,6 +93,9 @@ z 0.27, `Chest` from z 0.36 to the neck at 0.47):
 
 At `amount` 1 the region goes rigid when the arm lifts. A mask copied from another character
 edits the wrong vertices: measure height, chest, shoulder joint and armpit again for every body.
+Across an elbow or knee hinge the band below and the band above it each hand over whole
+(`amount` 1) and the crease band between them stays blended (`character-autorig` →
+`reference/arp-pipeline.md`); the limb keeps its pull through that crease band.
 
 ## The transfer
 

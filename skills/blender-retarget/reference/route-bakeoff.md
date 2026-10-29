@@ -21,13 +21,14 @@ were built for the same character and measured the same way.
   the same lab, one formula for both, lengths scaled to the character's height. Measuring the
   target alone, or in Blender alone, hides what Unity does to the curves.
 - **Representative clips:** an idle (641 frames), the fastest forehand (73), a smash (116).
-- **Added foot slide, not absolute.** Inside each plant (sole under 4 cm, horizontal speed under
-  0.15 m/s, at least 3 frames, found on the reference body), how far the character's foot moved
-  from its plant-start position **beyond** what the reference foot moved:
-  `|(c(t) − c(start)) − (r(t) − r(start))|`. The pack's own mocap failed an absolute gate of
-  p95 ≤ 1.5 cm: 1.8 / 3.3 / 4.4 cm on the three clips. A character pipeline can only promise not
-  to slide more than the source; the absolute gate is met in the game by foot-lock IK during
-  plants (`unity-animation` → `reference/foot-lock-and-prop-ik.md`).
+- **Added foot slide, not absolute.** Inside each plant (found on the reference body; the one
+  plant definition: a run of at least 3 frames with the sole under 4 cm above the floor and the
+  ground-relative horizontal speed under 0.15 m/s, `scripts/motion_metrics.py`), how far the
+  character's foot moved from its plant-start position **beyond** what the reference foot moved:
+  `|(c(t) − c(start)) − (r(t) − r(start))|`. The pack's own mocap failed an absolute gate of p95 ≤
+  1.5 cm: 1.8 / 3.3 / 4.4 cm on the three clips. A character pipeline can only promise not to
+  slide more than the source; the absolute gate is met in the game by foot-lock IK during plants
+  (`unity-animation` → `reference/foot-lock-and-prop-ik.md`).
 - **Limb direction error:** the angle between the character's and the reference's upper-arm,
   forearm, thigh and shin directions, per frame. Arm pose error: the wrist relative to its own
   shoulder divided by the arm's own length, so proportions cancel.

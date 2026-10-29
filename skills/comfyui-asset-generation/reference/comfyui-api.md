@@ -55,9 +55,10 @@ do not require JSON.
 `scripts/comfy_asset_client.py` takes a template and changes it per run:
 
 ```bash
---set 186.target_face_count=8000        # NODE.INPUT=VALUE, repeatable
+--set 186.target_face_count=20000       # NODE.INPUT=VALUE, repeatable
 --set 122.image=pickup_crate.png        # not JSON, so a string
---set '312.masks=["122",1]'             # a JSON list rewires the input to node 122, output 1
+--set '312.masks=["313",0]'             # a JSON list rewires the input to node 313, output 0
+                                        # (313: an InvertMask added to a copy, reference/image-to-3d.md)
 --set 4.caption=@captions/menu.txt      # @path: the value is the file's text, line breaks kept
 ```
 

@@ -643,6 +643,121 @@ def t_concurrent(d):
     assert sorted(revs) == sorted(list(range(1, 21)) * 5)
 
 
+H3_LOCAL = {"source": "minimax-h3-local", "id": "runner-run-take-2",
+            "territory": {"excludes": ["US", "EU", "UK", "KR"]}}
+
+
+def t_territory(d):
+    root, led = _project(d)
+
+    def declare(line):
+        path = os.path.join(root, "ART_DIRECTION.md")
+        if line is None:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        _put(root, "ART_DIRECTION.md", ("# Courier run\n\nStatus: LOCKED\n\n```\nSales territory: "
+                                        "worldwide\n```\n\n" + line + "\n").encode())
+
+    def territory_rules(line):
+        declare(line)
+        return _check(root, led)
+
+    # licence objects: their shape is the schema's
+    for lic, want in (({"source": "motion-solver", "territory": "global"}, "licence.territory:"),
+                      ({"source": "motion-solver"}, "licence.territory:"),
+                      ({"source": "Gem X", "territory": "worldwide"}, "licence.source:"),
+                      ({"source": "hy-motion", "territory": {"excludes": ["usa"]}},
+                       "licence.territory.excludes[0]:"),
+                      ({"source": "hy-motion", "territory": {"excludes": []}}, "licence.territory:"),
+                      ("hy-motion", "licence:")):
+        errs = L.validate(_rec("artdirection/clips/x", "ArtDirection/clips/x.fbx", rev=1,
+                               licence=lic))
+        assert any(e.startswith(want) for e in errs), (lic, errs)
+    assert not L.validate(_rec("artdirection/clips/x", "ArtDirection/clips/x.fbx", rev=1,
+                               licence=H3_LOCAL), strict=True)
+    assert L.territory_codes(["UK", "EL"]) == {"GB", "GR"} and "DE" in L.territory_codes(["EU"])
+
+    # an approved clip whose own licence excludes territories
+    video = "ArtDirection/motion/runner_run_h3.mp4"
+    clip = "ArtDirection/clips/runner_run.fbx"
+    _put(root, video, b"generated performance video")
+    _put(root, clip, b"clip solved from the video")
+    code, out = _record(root, led, {"files": [video], "licence": H3_LOCAL}, "--kind", "preview",
+                        "--source", "generated")
+    assert code == 0, out
+    vid = "artdirection/motion/runner-run-h3"
+    code, out = _cli(root, led, "status", vid, "approved")       # nothing declared: a warning
+    assert code == 0 and "territory-undeclared" in out, (code, out)
+    for line, want_code, want in (
+            (None, 0, ("WARN", "territory-undeclared")),
+            ("Sales territory: undecided", 0, ("WARN", "territory-undeclared")),
+            ("**Sales territory:** JP, TW", 0, None),
+            ("Sales territory: worldwide", 2, ("ERROR", "territory-excluded")),
+            ("- Sales territory: JP, DE", 2, ("ERROR", "territory-excluded")),   # DE is in the EU
+            ("Sales territory: GB", 2, ("ERROR", "territory-excluded")),         # UK is GB
+            ("Sales territory: JP, Narnia", 0, ("WARN", "territory-unknown"))):
+        code, rules = territory_rules(line)
+        assert code == want_code, (line, code, rules)
+        if want:
+            assert want in rules, (line, rules)
+        else:
+            assert not {r for _, r in rules if r.startswith("territory")}, (line, rules)
+    # a declared EU meets a licence that excludes one member state
+    code, out = _cli(root, led, "status", vid, "rejected")
+    assert code == 0, out
+    one = "ArtDirection/motion/runner_idle.mp4"
+    _put(root, one, b"idle")
+    code, out = _record(root, led, {"files": [one], "licence": {
+        "source": "hy-motion", "territory": {"excludes": ["FR"]}}}, "--kind", "preview",
+        "--source", "generated")
+    assert code == 0, out
+    declare("Sales territory: EU")
+    code, out = _cli(root, led, "status", "artdirection/motion/runner-idle", "approved")
+    assert code == 2 and "territory-excluded" in out and "excludes FR" in out, (code, out)
+    code, out = _cli(root, led, "status", "artdirection/motion/runner-idle", "rejected")
+    assert code == 0, out
+
+    # upstream: the clip's own licence is clean, its parent's is not
+    declare("Sales territory: worldwide")
+    code, out = _record(root, led, {"files": [clip], "parent": [vid],
+                                    "licence": {"source": "motion-solver", "territory": "worldwide"}},
+                        "--kind", "clip", "--source", "generated")
+    assert code == 0, out
+    cid = "artdirection/clips/runner-run"
+    code, rules = _check(root, led)
+    assert code == 0, ("a candidate is never refused for its territory", rules)
+    code, out = _cli(root, led, "status", cid, "approved", "--approver", "lead")
+    assert code == 2 and "territory-excluded" in out and f"via {cid} -> {vid}" in out, (code, out)
+    assert "excludes EU, GB, KR, US" in out, out
+    # the same through a depends-on link only, refused by record --status approved too
+    take = "ArtDirection/clips/runner_run_take2.fbx"
+    _put(root, take, b"second take")
+    code, out = _record(root, led, {"files": [take], "links": [{"rel": "depends-on", "to": vid}],
+                                    "licence": {"source": "motion-solver", "territory": "worldwide"}},
+                        "--kind", "clip", "--source", "generated", "--status", "approved")
+    assert code == 2 and "territory-excluded" in out and "nothing recorded" in out, (code, out)
+    declare("Sales territory: JP, TW")
+    code, out = _cli(root, led, "status", cid, "approved", "--approver", "lead")
+    assert code == 0, out
+    rec = _current(led)[cid]
+    assert rec["licence"]["source"] == "motion-solver", rec
+    _put(root, clip, b"clip solved again")
+    code, out = _record(root, led, {"files": [clip]})        # a new revision keeps the licence
+    assert code == 0 and _current(led)[cid].get("licence", {}).get("source") == "motion-solver", out
+    # a circle through parent ends: the rule visits each id once
+    ring = ("ArtDirection/motion/a.png", "ArtDirection/motion/b.png")
+    for p in ring:
+        _put(root, p, p.encode())
+    for i, p in enumerate(ring):
+        L.append(led, _rec(f"artdirection/motion/{'ab'[i]}", p, status="approved",
+                           parent=[f"artdirection/motion/{'ba'[i]}"], licence=H3_LOCAL,
+                           files=[_pinned(root, p)]), assign_rev=True)
+    declare("Sales territory: KR")
+    code, rules = _check(root, led)
+    assert code == 2 and {"parent-cycle", "territory-excluded"} <= _errors(rules), rules
+
+
 def t_adopt_ingest(d):
     import registry_adopt
     import registry_ingest
@@ -658,7 +773,7 @@ CASES = (("append-load", t_append_load), ("last-wins", t_last_wins), ("validate"
          ("dirty-approve", t_dirty_approve), ("diagnostic", t_diagnostic),
          ("stale-links", t_stale_links), ("mv-render", t_mv_render),
          ("init-ignored", t_init_ignored), ("concurrent-append", t_concurrent),
-         ("adopt-ingest", t_adopt_ingest))
+         ("territory", t_territory), ("adopt-ingest", t_adopt_ingest))
 
 
 def run(rep):

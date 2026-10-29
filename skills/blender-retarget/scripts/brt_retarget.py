@@ -1,12 +1,12 @@
-"""brt_retarget.py — convert the rotation of mapped bones from a source skeleton onto a target.
+"""brt_retarget.py — convert the rotation of mapped bones, and the root's translation, onto a target.
 
 Runs inside Blender; not a command-line script (the stub is in brt_common.py).
 Stock bpy only: Auto-Rig Pro is not needed.
 
-Scope: rotation conjugation of mapped bones, nothing else. Location and scale
-curves are not read or written (`translation: "not retargeted"` in every
-result; `translation_keyed` lists mapped source bones whose clip moves them).
-Travel through space comes from the clip variant or another tool.
+Scope: rotation conjugation of mapped bones, and the location of the
+translation bones (below) scaled by the hip-height ratio k. Scale curves, and
+location curves on any other bone, are not read or written
+(`translation_keyed` lists mapped source bones whose clip moves them).
 
 A key is a rotation from the bone's own rest, and two skeletons rest
 differently, so copying the four numbers turns the target the wrong way. Each
@@ -83,9 +83,54 @@ for its K (`aim`), and a hash of both rests and the maps on the action as the
           source action and reference_frame is merged per bone (map, K, aim);
           one from another conversion is replaced, with a warning.
 
+Translation. A translation bone is a mapped bone whose source bone is the
+root-most bone of its chain with a location that moves over the frame range
+(and has no mapped ancestor): the hip, or a root that carries the travel. A
+location further down (an FBX import keys every bone; a few stray keys on a
+spine bone) is never copied: it would replace the target's bone lengths with
+the source's; one that moves over 1 cm (a hip bob under a travelling root) is
+named in a warning. A moving root-most bone left out of the map is named in a warning
+(not with into_action, whose action already carries what it carries).
+Per frame, the source location is turned into a world offset from rest and
+written as the target bone's location giving k times that offset:
+
+    offset   = W_s × R_s × loc_s            (W: the rig's matrix_world 3×3, scale included;
+    loc_t    = inv(W_t × R_t) × (k × offset)  R: the bone's matrix_local rotation)
+    k        = target hip height / source hip height
+
+A hip height is the bone's rest head in world Z above the lowest rest head or
+tail of its own skeleton, so neither origin needs to sit on the floor (above the
+rig's origin when nothing sits lower), read on the translation bone or, for a
+root on the floor, its nearest mapped descendant (`hip_bones`). This is
+the hip-height ratio the fit route uses (there it scales the character to the
+pack; here it scales the pack's motion to the character). `translation_scale`
+(a number) replaces k: take the leg-length ratio (thigh + shin) when the two
+skeletons put the hip joint at different heights relative to the thighs.
+The offset assumes the bone's ancestors sit at rest; a warning names a keyed
+ancestor. `reference_frame` rebases rotations only: offsets stay rest-relative.
+
+  `translate: True` (default)  write it. Result `translation: "retargeted"`,
+          `translation_k`, both hip heights.
+  `translate: "in_place"`      remove the straight horizontal travel from the
+          first to the last frame, keep the vertical motion and the sway
+          (`translation: "in place"`); `in_place_travel_mps` ({bone: [vx, vy]}, world,
+          already times k) is the travel taken out: give it to motion_metrics.py as
+          `travel_mps`, or its plant detector sees a sliding foot.
+  `translate: False`           write none (`translation: "dropped"`; the gate
+          below fails when the source moves).
+  With into_action, a translation bone that already has location curves there
+  (an Auto-Rig Pro bake carries the hip) keeps them: `translation: "present in
+  into_action"`; `replace: True` replaces them too.
+  A source with no location curve on a mapped bone writes nothing and reports
+  `translation: "not retargeted"`, with no translation gate.
+
 Gates: retarget.output_is_new (new action) or retarget.channels_free
 (into_action); retarget.finite_keys (no NaN or infinite value in the curves
-written); retarget.first_equals_last when `loop` is set. Reported, not gated:
+written); retarget.first_equals_last when `loop` is set (rotation only: a loop
+that travels ends elsewhere); retarget.translation_kept when the source's
+translation bones move: the output action has a location curve on each of them
+whose values spread over 1e-6 (read from the action, not from what was
+computed); with in_place, only when something is left after the removal. Reported, not gated:
 max_step (largest rotation between consecutive written keys) with max_step_at,
 and source_max_step. Conjugation keeps angles, so the two are equal by
 construction: they show how fast the clip moves, never whether the map is right.
@@ -207,6 +252,23 @@ def _rest_hash(src, tgt, mapping: dict, aim: dict) -> str:
     return h.hexdigest()[:16]
 
 
+def _height(rig, bone) -> float:
+    """World Z of the bone's rest head above the lowest rest head or tail of its skeleton
+    (above the rig's origin when nothing of the skeleton sits lower: a rig without legs)."""
+    mw = rig.matrix_world
+    lowest = min(min((mw @ b.head_local).z, (mw @ b.tail_local).z) for b in rig.data.bones)
+    head = (mw @ rig.data.bones[bone].head_local).z
+    return head - lowest if head - lowest > 1e-4 else head - mw.translation.z
+
+
+def _ancestors(bone):
+    out, b = [], bone.parent
+    while b is not None:
+        out.append(b.name)
+        b = b.parent
+    return out
+
+
 def _refusal(params, gate, message, **extra) -> dict:
     return C.report(params, [gate], translation="not retargeted", message=message, **extra)
 
@@ -321,6 +383,33 @@ def run(params: dict, tracker: C.Tracker) -> dict:
         raise ValueError(f"{clip.name!r} has no curve for the rotation mode of: {unkeyed}")
     moved = sorted(s for s in sources
                    if any((_bone_path(s, "location"), i) in curves for i in range(3)))
+    translate = params.get("translate", True)
+    if translate not in (True, False, "in_place"):
+        raise ValueError('translate is True, False or "in_place"')
+    source_of = {s: t for t, s in mapping.items()}
+
+    _varies = {}
+
+    def varies(bone):
+        if bone not in _varies:
+            _varies[bone] = _moves(bone)
+        return _varies[bone]
+
+    def _moves(bone):
+        for i in range(3):
+            fc = curves.get((_bone_path(bone, "location"), i))
+            if fc is not None:
+                vals = [fc.evaluate(f) for f in frames]
+                if max(vals) - min(vals) > 1e-6:
+                    return True
+        return False
+
+    # the root-most bone whose location moves, in each chain; a mapped one carries the translation
+    carriers = [b.name for b in src.data.bones
+                if varies(b.name) and not any(varies(a) for a in _ancestors(b))]
+    movers = {source_of[s]: s for s in carriers if s in source_of
+              and not any(a in source_of for a in _ancestors(src.data.bones[s]))}
+    unmapped_carriers = sorted(s for s in carriers if s not in source_of)
     ref_frame = params.get("reference_frame")
     pose_at_ref = {}
     if ref_frame is not None:
@@ -351,6 +440,88 @@ def run(params: dict, tracker: C.Tracker) -> dict:
             prev = qt
         keys[t] = out
 
+    # translation: offsets from the source's location curves, scaled by k
+    trans, tr_info, expected_move = {}, {}, 0.0
+    if unmapped_carriers and into is None:      # into_action: the action written into carries the hip
+        warnings.append(f"source bones {unmapped_carriers} move but are not mapped: their translation is "
+                        "not carried; map the one that carries the travel")
+    # a mapped bone under a translation bone that moves by over 1 cm (a hip bob under a root that
+    # carries the travel) is not copied: say so, since only translation_keyed would show it
+    big = []
+    for s in moved:
+        if s in movers.values():
+            continue
+        span = 0.0
+        for i in range(3):
+            fc = curves.get((_bone_path(s, "location"), i))
+            if fc is not None:
+                vals = [fc.evaluate(f) for f in frames]
+                span = max(span, max(vals) - min(vals))
+        if span * src.matrix_world.to_scale().length / math.sqrt(3) > 0.01:
+            big.append(s)
+    if big and movers:
+        warnings.append(f"location of {big} moves over 1 cm under a translation bone and is not copied; "
+                        "(only the root-most moving bone is); if it carries the hip's rise and fall, bake the "
+                        "root's travel into that bone on the source first")
+    if movers:
+        ws = src.matrix_world.to_3x3()
+        tw3 = tgt.matrix_world.to_3x3()
+        scale = params.get("translation_scale")
+        heights = {}
+        if scale is None:
+            # read on the translation bone, or (a root on the floor) its nearest mapped descendant
+            t0 = sorted(movers)[0]
+            queue, pair = [src.data.bones[movers[t0]]], None
+            while queue and pair is None:
+                b = queue.pop(0)
+                if b.name in source_of:
+                    hs, ht = _height(src, b.name), _height(tgt, source_of[b.name])
+                    if hs > 1e-4 and ht > 1e-4:
+                        pair = (b.name, source_of[b.name], hs, ht)
+                queue.extend(b.children)
+            if pair is None:
+                raise ValueError(f"no hip height above the floor under {movers[t0]!r}: give translation_scale")
+            heights = {"source_hip_height_m": pair[2], "target_hip_height_m": pair[3],
+                       "hip_bones": {"source": pair[0], "target": pair[1]}}
+            k = pair[3] / pair[2]
+        else:
+            k = float(scale)
+            if not (math.isfinite(k) and k > 0):
+                raise ValueError("translation_scale must be a positive number")
+        src_move, out_expect, travel_mps = 0.0, 0.0, {}
+        fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+        for t, s in sorted(movers.items()):
+            loc_curves = [curves.get((_bone_path(s, "location"), i)) for i in range(3)]
+            to_world = ws @ src.data.bones[s].matrix_local.to_3x3()
+            to_local = (tw3 @ tgt.data.bones[t].matrix_local.to_3x3()).inverted()
+            offs = [to_world @ Vector([fc.evaluate(f) if fc else 0.0 for fc in loc_curves]) for f in frames]
+            src_move = max(src_move, max(o.length for o in offs))
+            if translate == "in_place" and len(offs) > 1:
+                a, b = offs[0].copy(), offs[-1].copy()
+                span = (frames[-1] - frames[0]) / fps
+                travel_mps[t] = [round(k * (b.x - a.x) / span, 6), round(k * (b.y - a.y) / span, 6)]
+                for j, o in enumerate(offs):
+                    u = j / (len(offs) - 1)
+                    o.x -= a.x + (b.x - a.x) * u
+                    o.y -= a.y + (b.y - a.y) * u
+            # what the output curve should still carry: its spread over the range, after in_place
+            out_expect = max(out_expect, k * max((o - offs[0]).length for o in offs))
+            trans[t] = [to_local @ (k * o) for o in offs]
+            keyed = [a for a in _ancestors(src.data.bones[s])
+                     if any(fc.data_path.startswith(f'pose.bones["{bpy.utils.escape_identifier(a)}"].')
+                            for fc in curves.values())]
+            if keyed:
+                warnings.append(f"translation of {s!r} assumes its ancestors at rest; keyed: {keyed}")
+            mapped_up = [a for a in _ancestors(tgt.data.bones[t]) if a in mapping]
+            if mapped_up:
+                warnings.append(f"translation bone {t!r} has mapped ancestors {mapped_up}: its offset is "
+                                "applied in the parent's rest frame")
+        tr_info = {"translation_k": k, **heights, "translation_bones": dict(sorted(movers.items())),
+                   "source_translation_m": src_move}
+        if travel_mps:
+            tr_info["in_place_travel_mps"] = travel_mps
+        expected_move = out_expect
+
     removed = []
     if into is None:
         # built under a free name; with overwrite_action the old one goes only once this one exists
@@ -374,6 +545,33 @@ def run(params: dict, tracker: C.Tracker) -> dict:
             fc.keyframe_points.foreach_set("co", [x for f, q in zip(frames, quats) for x in (f, q[i])])
             fc.keyframe_points.foreach_set("interpolation", [_LINEAR] * n)
             fc.update()
+    translation, tr_written, tr_kept = "not retargeted", [], []
+    if movers:
+        translation = {True: "retargeted", "in_place": "in place", False: "dropped"}[translate]
+        replace_loc = into is not None and bool(params.get("replace", False))
+        for t in sorted(trans):
+            path = _bone_path(t, "location")
+            if into is not None:
+                there = [fc for bag in _channelbags(action, slot) for fc in bag.fcurves if fc.data_path == path]
+                if there and not replace_loc:
+                    tr_kept.append(t)
+                    continue
+                for bag in _channelbags(action, slot):
+                    for fc in list(bag.fcurves):
+                        if fc.data_path == path:
+                            removed.append(f"{fc.data_path}[{fc.array_index}]")
+                            bag.fcurves.remove(fc)
+            if translate is False:
+                continue
+            for i in range(3):
+                fc = C.ensure_fcurve(action, slot, path, i, group_name=t)
+                fc.keyframe_points.add(n)
+                fc.keyframe_points.foreach_set("co", [x for f, v in zip(frames, trans[t]) for x in (f, v[i])])
+                fc.keyframe_points.foreach_set("interpolation", [_LINEAR] * n)
+                fc.update()
+                tr_written.append(f"{path}[{i}]")
+        if tr_kept and not tr_written:
+            translation = "present in into_action"
     if into is None and action.name != out_name:
         old = bpy.data.actions.get(out_name)
         if old is not None:
@@ -395,8 +593,13 @@ def run(params: dict, tracker: C.Tracker) -> dict:
             record["map"] = {**before.get("map", {}), **mapping}
             record["K"] = {**before.get("K", {}), **record["K"]}
             record["aim"] = {**before.get("aim", {}), **record["aim"]}
+            if "translation" not in record and "translation" in before:
+                record["translation"] = before["translation"]
         else:
             warnings.append(f"replaced the brt_retarget record of another conversion on {action.name!r}")
+    if movers:
+        record["translation"] = {"mode": translation, "k": round(tr_info["translation_k"], 7),
+                                 "bones": tr_info["translation_bones"]}
     if into is not None:
         record["into_action"] = True
     record["rest_hash"] = _rest_hash(src, tgt, record["map"], record["aim"])
@@ -424,9 +627,29 @@ def run(params: dict, tracker: C.Tracker) -> dict:
         d = quats[0].conjugated() @ quats[-1]
         seam = max(seam, 2.0 * math.atan2(math.hypot(d.x, d.y, d.z), abs(d.w)))
 
+    loc_of = {_bone_path(t, "location"): t for t in movers}
+    out_move = {t: 0.0 for t in movers}
+    for fc in C.action_slot_fcurves(action, slot):
+        if fc.data_path in loc_of and len(fc.keyframe_points):
+            co = [0.0] * (2 * len(fc.keyframe_points))
+            fc.keyframe_points.foreach_get("co", co)
+            vals = co[1::2]
+            if f"{fc.data_path}[{fc.array_index}]" in tr_written:
+                bad += sum(1 for v in co if not math.isfinite(v))
+            finite = [v for v in vals if math.isfinite(v)]
+            if finite:
+                t = loc_of[fc.data_path]
+                out_move[t] = max(out_move[t], max(finite) - min(finite))
+
     gates = [first_gate, C.gate("retarget.finite_keys", bad, 0, bad == 0)]
     if params.get("loop"):
         gates.append(C.gate("retarget.first_equals_last", seam, "< 1e-4", not bad and seam < 1e-4))
+    # gated when the output should move: always for "dropped" (a moving source), otherwise when
+    # something is left after in_place (a pure straight travel taken out leaves nothing to keep)
+    if movers and tr_info["source_translation_m"] > 1e-6 and (translate is False or expected_move > 1e-4):
+        still = sorted(t for t, v in out_move.items() if v <= 1e-6)
+        gates.append(C.gate("retarget.translation_kept", still, "[] (every translation bone moves)", not still))
+        tr_info["output_translation_m"] = out_move
     target_key = {"into_action": action.name, "curves_removed": removed} if into is not None \
         else {"output_action": action.name, "replaced": exists}
     return C.report(params, gates, source=src.name, target=tgt.name, source_action=clip.name,
@@ -434,7 +657,8 @@ def run(params: dict, tracker: C.Tracker) -> dict:
                     curves_written=len(written), frame_range=[start, end], frames=n,
                     map=mapping, reference_map=reference, no_aim=no_aim,
                     aimed=sorted(aimed), reference_frame=ref_frame,
-                    translation="not retargeted", translation_keyed=moved,
+                    translation=translation, translation_keyed=moved, **tr_info,
+                    translation_curves_written=len(tr_written), translation_kept_from_action=tr_kept,
                     max_step=max_step if not bad else None, max_step_at=step_at,
                     source_max_step=source_step,
                     source_modes={s: ch.mode for s, ch in channels.items()},

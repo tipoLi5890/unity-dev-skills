@@ -1,4 +1,4 @@
-# Retargeting: rest poses and rotation conjugation
+# Retargeting: rest poses, rotation conjugation and root translation
 
 > Part of the `blender-retarget` skill. How a `brt_*` module is called and what every `run`
 > returns are in `SKILL.md`.
@@ -7,9 +7,10 @@ A keyed bone rotation is relative to that bone's rest orientation. Two skeletons
 rests give the same four numbers two different meanings, so copying channels moves the wrong
 way. `brt_retarget` converts each mapped bone's rotation from the source frame into the target
 frame by conjugation, writes it as a new action on the target or into an action that already
-exists, and gates the result. Its scope is the rotation of mapped bones only: location and scale
-are not read or written, and every result says `translation: "not retargeted"` (with
-`translation_keyed` naming mapped source bones whose clip moves them).
+exists, and gates the result. Its scope is the rotation of mapped bones and the translation of
+the root-most moving bone (the hip, or a root carrying the travel), scaled by the hip-height
+ratio `k` (*Root translation*, below). Scale curves and every other location curve are not read
+or written (`translation_keyed` names mapped source bones whose clip has location curves).
 
 ## Why a clip goes wrong between two skeletons
 
@@ -52,8 +53,11 @@ Three consequences decide how it is used:
   turning tens of degrees a frame) would fail it. `max_step` (the target's largest step, with
   `max_step_at`) and `source_max_step` are reported, not gated.
 - **Only mapped bones are written.** `map` is `{target_bone: source_bone}`; a source bone mapped
-  to two targets raises. The reference walk below covers every source bone, so a bone the map
-  skips carries its parent's alignment down to its children, but it gets no curves of its own.
+  to two targets raises. For a character on the humanoid contract, `unity-rigged-character` →
+  `scripts/contract_map.py map <source skeleton>` prints this map as `retarget_map` (contract bone:
+  source bone) after gating the source's bones, chains and sides. The reference walk below covers
+  every source bone, so a bone the map skips carries its parent's alignment down to its children,
+  but it gets no curves of its own.
 
 ## Rebuilding the source reference orientation
 
@@ -139,6 +143,57 @@ slot, and `action.fcurves` does not exist. `brt_common.action_slot_fcurves` read
 and then `action_slot`. The source is read through the slot it plays, else the slot named after
 it, else its first slot.
 
+## Root translation
+
+A clip's travel and the hip's rise and fall live in the location curves of one bone near the top
+of the source skeleton. `brt_retarget` carries them over by default (`translate: True`):
+
+1. **Find the translation bone.** In each chain, the root-most source bone whose location moves
+   over the frame range; it is a translation bone when it is mapped and has no mapped ancestor.
+   A moving bone left out of the map is named in `warnings` (not with `into_action`): map it (often `Root` → the target's
+   root, or `Hips` → `Hips`) or the travel is lost.
+2. **Measure `k`** = target hip height ÷ source hip height. A hip height is the bone's rest head
+   in world Z above the lowest rest head or tail of the same skeleton, so neither rig's origin has
+   to sit on the floor; for a root on the floor it is read on the nearest mapped descendant
+   (`hip_bones` in the result). This is the fit route's hip-height ratio
+   (`blender-character-rig` → `reference/fit-to-clip-skeleton.md`): there it scales the character
+   to the pack; here it scales the pack's motion to the character.
+3. **Convert the offset, not the numbers.** A pose location is in the bone's own rest frame, so
+   copying it moves the target along the wrong axis whenever the rests or the rig rotations
+   differ. Per frame:
+
+   ```text
+   offset = W_source × R_source_bone × location_source        # world offset from rest
+   location_target = inverse(W_target × R_target_bone) × (k × offset)
+   ```
+
+   `W` is the rig's world matrix (3×3, scale included, so a 0.01-scale import is handled) and `R`
+   the bone's `matrix_local` rotation. The offset assumes the bone's ancestors sit at rest; a
+   keyed ancestor is named in `warnings`.
+4. **Choose what to keep.** `translate: "in_place"` removes the straight horizontal travel from
+   the first to the last frame and keeps the rise, fall and sway: the gameplay variant, with the
+   travel given to the game's controller (`reference/clip-sources.md`); `in_place_travel_mps`
+   ({bone: [vx, vy]}, world, already times `k`) is the travel taken out, for motion_metrics'
+   `--travel-mps`. `translate: False` writes
+   none, and `retarget.translation_kept` fails when the source moves.
+5. **Into an existing action.** A translation bone that already has location curves there (an
+   Auto-Rig Pro bake carries the hip) keeps them: `translation: "present in into_action"`;
+   `replace: True` replaces them too.
+
+The result reports `translation` (`"retargeted"`, `"in place"`, `"dropped"`,
+`"present in into_action"`, or `"not retargeted"` when no mapped bone's location moves),
+`translation_k`, `source_hip_height_m`, `target_hip_height_m`, `hip_bones`, `translation_bones`,
+`source_translation_m`, `output_translation_m` and, in place, `in_place_travel_mps`; the action's `brt_retarget` record stores the mode, `k` and the bones.
+
+**Check `k` before batching.** Compare the two skeletons' hip joints against their thighs: when
+one puts the hip joint well above or below the thigh heads, the hip-height ratio misstates the
+legs. Pass `translation_scale` with the leg-length ratio (thigh + shin) instead, then confirm on
+the converted clip that the feet plant: `scripts/motion_metrics.py` on the sampled joints with
+`--state walk` (or `run`), so `plants_min_per_foot` fails when the feet skate faster than the plant
+speed and no plant is found at all; its foot-slide gates; each foot's `plants.<side>.coverage`
+near its stance share; and, with the source root as `source`, its `translation_kept` gate. A k
+off by 10 % on a 0.8 m/s walk leaves about 3 cm of slide per stance and fails the slide gates.
+
 ## One bone, then widen
 
 1. One bone, one clip. Convert, read the gates, look at stills.
@@ -156,7 +211,8 @@ only multiplies one error. A rerun onto a name kept from the last attempt needs
 | `retarget.output_is_new` | new action: `output_action` was free, or `overwrite_action` was given | an action of that name exists; the call refused and changed nothing |
 | `retarget.channels_free` | `into_action`: no mapped bone already has a rotation curve there, or `replace` was given | the call refused and changed nothing; `existing` lists the curves |
 | `retarget.finite_keys` | no NaN or infinite value in the curves written | a zero-length quaternion was normalised, or a source channel is broken at some frame |
-| `retarget.first_equals_last` | first and last key of every bone agree within 1e-4 rad | a loop whose seam pops. Emitted only with `loop: True`: a one-shot such as `GateLatchSwing` would fail it legitimately |
+| `retarget.first_equals_last` | first and last key of every bone agree within 1e-4 rad | a loop whose seam pops. Emitted only with `loop: True`: a one-shot such as `GateLatchSwing` would fail it legitimately. Rotation only: a loop that travels ends elsewhere |
+| `retarget.translation_kept` | when the source's translation bones move: every one of them has a location curve whose values spread over 1e-6 in the output action, read back from the action; with `in_place`, only when something is left after the travel is taken out | the root's translation was dropped (`translate: False`, or curves lost on the way); `value` lists the bones that stand still |
 
 Reported beside the gates: `max_step` and `max_step_at` (the bone and frame), equal to
 `source_max_step` by construction. A value near π is a lost sign; otherwise it says how fast the
@@ -212,10 +268,11 @@ Compare the `rest_hash` stored in the action's `brt_retarget` property before re
 - **The other hand.** The same procedure applies per side, but it needs its own `K` and its own
   check. Do not mirror `K` across sides unless the two rests are exact mirrors, and do not assume
   they are.
-- **Translation and root motion.** Only rotations are converted; `translation: "not retargeted"`
-  in every result. Travel through space is chosen with the clip variant (in place or no-root,
-  `reference/clip-sources.md`) and owned by the game; a hips height or travel the target needs
-  comes from the add-on's bake or another tool.
+- **Location on any bone below the translation bone.** An FBX import keys every bone's location,
+  and a few stray keys on a spine bone replace the target's bone lengths with the source's; they
+  are never copied. One that moves over 1 cm under the translation bone (a hip bob under a root
+  that carries the travel) is named in `warnings`: only the root-most moving bone is carried, so
+  bake the root's travel into that bone on the source first when its rise and fall is needed.
 - **Contact.** A converted wrist does not make the hand reach a prop. A prop carried on the hand is
   checked for drift across the library (`brt_drift`, `drift.max_drift` and `drift.max_rotation`); whether it touches
   anything is a separate check.

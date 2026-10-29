@@ -58,7 +58,10 @@ as `parent` and as a `depends-on` link. A clip from `blender-retarget` carries t
 returned and `file: {path, saved, dirty}` for the `.blend` it came out of; `record` adds that
 file's sha256, so every version of the `.blend` that produced something is pinned. A purchased
 crate is `--source purchased --license purchased:courier-pack` with `vendor: true` on its file.
-Turning a producer's own JSON output into this shape is `reference/ingest.md`.
+A video or a clip made with a model whose licence limits where it may be sold carries
+`"licence": {"source": "minimax-h3-local", "territory": {"excludes": ["US", "EU", "UK", "KR"]}}`
+in its partial record; what is made from it links back to it (`parent` or `depends-on`) and needs
+no copy (`reference/licences.md`). Turning a producer's own JSON output into this shape is `reference/ingest.md`.
 
 **A headless character pipeline** (`blender-character-rig` → `reference/headless-pipeline.md`)
 records one row per shipped output: the character FBX (with its LOD levels inside), the prop FBX,
@@ -82,7 +85,7 @@ write that decision down, and expect `check --strict` to flag the tracked vendor
 - **The id comes from the first file**, or from the id that already holds it. List the shipped
   file first, or pass `--id`.
 - **Regenerating at the same path** adds a revision of the same id, back to `candidate`; `kind`,
-  `class`, `source` and `license` carry over when they are not given again, links do not.
+  `class`, `source`, `license` and `licence` carry over when they are not given again, links do not.
 - **A new path for the same asset** is a new id. Approve the new one, then
   `status OLD superseded --by NEW`.
 - **A run made to learn something** (a raw decode export, a downstream-only rerun, one preset of
@@ -116,6 +119,8 @@ usual fixes:
 | `unresolved-parent`, `unresolved-link` | record the parent first, or correct the id in a new revision; an outside name is `ns:key` |
 | `torn-line` | nothing: the next write moves it to `assets.jsonl.torn`; read that, then delete it |
 | `orphan` | record the file, or delete it if it is a leftover; orphans never fail a check |
+| `territory-excluded` | remake the asset (or the upstream one the message names) from a source licensed where the game is sold, record and approve it, and supersede the old one; or narrow the `Sales territory:` line (`reference/licences.md`) |
+| `territory-undeclared` | write the `Sales territory:` line in `ART_DIRECTION.md` before shipping; until then it only warns |
 
 ## 4. Status: a person's act
 
@@ -132,7 +137,8 @@ python3 registry.py status artdirection/anchors/runner-v1 superseded --by artdir
 ```
 
 `approved` checks the record as if it were already approved and refuses (exit 2) on a missing or
-changed file, a failed verdict, a failing gate, a tracked vendor file, an unresolved parent, a
+changed file, a failed verdict, a failing gate, a tracked vendor file, a licence (its own or an
+upstream one) that excludes part of the declared sales territory, an unresolved parent, a
 `diagnostic` run, or a Blender file that was unsaved when the asset was produced (`file.dirty`).
 Save the `.blend`, run the step again and record that; `--allow-dirty` approves anyway and writes
 the reason into the record's `warnings`. `superseded --by X` refuses an X that is the record

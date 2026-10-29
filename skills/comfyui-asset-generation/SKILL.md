@@ -57,9 +57,9 @@ infer permission to upload private inputs unless the user authorizes those actio
 | Keyframe layout maps drawn from ground coordinates, crossing moves found before generating, a camera gate with a reject-and-retry loop | `reference/h3-keyframe-segments.md` §2–3, `scripts/layout_map.py`, `scripts/camera_gate.py` |
 | A static 3D prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
 | Four views cleaned before upload: BiRefNet removal, RGBA + mask preview + black composite, mask polarity checked per tool, unique upload names | `reference/image-to-3d.md` (Background removal for four views) |
-| A character to be rigged: multi-view only, four A-pose views at one scale, the preset the class's row names | `reference/image-to-3d.md` (A character); `templates/pixal3d_multiview_to_model_api.json` |
+| A character to be rigged: multi-view only, four A-pose views at one scale, the preset the class's row names | `reference/image-to-3d.md` (A character); `templates/four_view_background_removal_api.json` (the four views' backgrounds out first), `templates/pixal3d_multiview_to_model_api.json` |
 | Before tuning: the project graph against the official template, node by node | `scripts/graph_diff.py`; `reference/image-to-3d-tuning.md` (Diff against the official template) |
-| Generation presets (Small … Template … Showcase; none is a target), node knobs, occlusion, sheets or slabs diagnosed by stage, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` (`--class` + `--budgets ART_DIRECTION.md` for a class's row, which `unity-3d-models` sets) |
+| Generation presets (Small … Template, 70000 faces by default … Showcase; none is a target), node knobs, occlusion, sheets or slabs diagnosed by stage, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` (`--class` + `--budgets ART_DIRECTION.md` for a class's row, which `unity-3d-models` sets) |
 | H3 character motion transfer, pace matching, or side-by-side QA | Also read `reference/h3-motion-transfer.md`; normalize non-24 fps sources with `scripts/prepare_h3_motion_reference.py` |
 
 Read only the references relevant to the current request.
@@ -93,11 +93,14 @@ with the Codex host — display name, one-line summary, and the
 - **Importing a GLB into Unity** — glTFast, scale, pivot and rotation on the `Model` child,
   prefab wiring, culling and the triangle budget: `unity-3d-models`.
 - **Rigging a character** — skeleton, skin weights, Avatar, animation clips. The 3D templates
-  here produce an unrigged mesh; a character takes the multi-view path, and its route (Auto-Rig
-  Pro and clips in `blender-retarget`, a custom body in `blender-character-rig`, Mixamo through
-  `unity-rigged-character` as an option) is chosen in `game-character-pipeline`.
+  here produce an unrigged mesh; a character takes the multi-view path and is rigged locally in
+  `character-autorig` (Auto-Rig Pro onto the humanoid contract; a custom body in
+  `blender-character-rig`), its clips from `humanoid-motion` or `blender-retarget`, in the order
+  `game-character-pipeline` sets.
 - **What a class of asset may cost** — the generation preset ladder and the `3D budgets` row:
   `unity-3d-models`. This skill generates the presets it compares.
+- **A video turned into a 3D humanoid clip** — a two-camera H3 video solved onto the rig:
+  `humanoid-motion`. This skill generates the video.
 - **A clip turned into a transparent sprite loop** — the canvas, keying every frame, the loop
   period or one-shot cut and the frames handed to Unity: `sprite-from-video`. This skill generates
   the clip.

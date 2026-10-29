@@ -14,7 +14,9 @@ Commands
                                 --kind --class --source --license --status --id --art-version
                                 --link REL=TO --note
   check [--strict]              every rule in reference/ledger-schema.md, then orphans under
-                                ArtDirection/ (count and up to 20 examples)
+                                ArtDirection/ (count and up to 20 examples); an approved asset
+                                whose licence, or an upstream one, excludes part of the sales
+                                territory that ART_DIRECTION.md declares fails
   stale [--art-version N] [--at NS:KEY=N]
                                 current candidate or approved records with a link behind the
                                 current value: an upstream asset with newer content, or a
@@ -43,7 +45,8 @@ Exit codes
   0  green: nothing failed (warnings allowed)
   2  failed: a check rule failed, or a write was refused: a schema break, a path outside --root,
      an id or a file another id holds, a cycle, an unresolved parent or link, a failed verdict or
-     gate, an unsaved Blender file, a changed or missing file
+     gate, an unsaved Blender file, a changed or missing file, a licence that excludes part of
+     the declared sales territory
   3  harness: no ledger, a corrupt line in the middle of the ledger, the ledger changed under a
      write, input that is not a JSON object, bad arguments, an unknown id
 
@@ -66,6 +69,7 @@ import copy
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import unicodedata
@@ -77,6 +81,11 @@ import registry_adopt, registry_ingest  # noqa: E402,E401
 ART_DIR = "ArtDirection"
 DEFAULT_LEDGER = ART_DIR + "/assets.jsonl"
 MANIFEST = ART_DIR + "/manifest.md"
+ART_DIRECTION_FILE = "ART_DIRECTION.md"      # at the project root; its `Sales territory:` line
+TERRITORY_LINE = re.compile(r"^\s*(?:[-*+]\s+)?\**\s*sales territory\s*\**\s*:\s*\**\s*(.*?)\s*\**\s*$",
+                            re.IGNORECASE)
+UNDECIDED = ("", "undecided", "tbd", "none")
+UPSTREAM_RELS = ("depends-on",)              # with `parent`: whose content this one was made from
 ORPHAN_SKIP_TOP = ("raw",)          # ArtDirection/raw/: git-ignored originals, not scanned for orphans
 ORPHAN_EXAMPLES = 20
 OK, FAILED, HARNESS = 0, 2, 3
@@ -440,6 +449,119 @@ def check_approval(ctx, rep, rec, line=None):
         rep.error(at, "failing-gate", "failing gate(s): " + ", ".join(failing), ident, rev)
 
 
+class Territory:
+    """The sales territory ART_DIRECTION.md declares. `found` is False without the file or the
+    line; `undecided` when the line says so; `worldwide`, or `codes` (ISO, EU expanded);
+    `unknown` holds the words that are not a code."""
+
+    def __init__(self):
+        self.found, self.line, self.raw = False, None, ""
+        self.undecided, self.worldwide, self.codes, self.unknown = True, False, set(), []
+
+    @property
+    def declared(self):
+        return self.found and not self.undecided
+
+
+def read_territory(ctx):
+    """The `Sales territory:` line of <root>/ART_DIRECTION.md, outside code fences; first wins."""
+    terr = Territory()
+    try:
+        with open(ctx.full(ART_DIRECTION_FILE), encoding="utf-8-sig") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError):
+        return terr
+    fence = None
+    for n, line in enumerate(text.splitlines(), 1):
+        mark = re.match(r"\s*(`{3,}|~{3,})", line)
+        if mark:
+            ch = mark.group(1)[0]
+            fence = ch if fence is None else (None if fence == ch else fence)
+            continue
+        m = None if fence else TERRITORY_LINE.match(line)
+        if not m:
+            continue
+        terr.found, terr.line, terr.raw = True, n, m.group(1).strip()
+        words = [w for w in re.split(r"[\s,;/]+", terr.raw.strip("`*_ ")) if w]
+        if not words or (len(words) == 1 and words[0].lower() in UNDECIDED):
+            return terr
+        terr.undecided = False
+        for w in words:
+            code = w.upper()
+            if w.lower() == L.WORLDWIDE:
+                terr.worldwide = True
+            elif code == "EU" or L.TERRITORY_CODE_RE.match(code):
+                terr.codes |= L.territory_codes([code])
+            else:
+                terr.unknown.append(w)
+        if not terr.worldwide and not terr.codes:
+            terr.undecided = True
+        return terr
+    return terr
+
+
+def report_territory(ctx, rep, terr):
+    """WARN territory-unknown for each word of the declaration that is not a code."""
+    at = f"{ART_DIRECTION_FILE}:{terr.line}"
+    for w in terr.unknown:
+        rep.warn(at, "territory-unknown", f"{w!r} is neither worldwide, EU nor an ISO 3166-1 "
+                 "alpha-2 code (US, GB, JP); the territory rule ignores it")
+
+
+def _codes_text(codes):
+    """Sorted codes, the EU member states written as EU when all of them are there."""
+    codes = set(codes)
+    eu = set(L.EU_MEMBERS) <= codes
+    return ", ".join((["EU"] if eu else []) + sorted(codes - set(L.EU_MEMBERS) if eu else codes))
+
+
+def licence_chain(rec, current):
+    """[(ids from rec to the holder, licence)] for every licence that excludes something, on
+    rec itself and upstream through `parent` and `depends-on` links (each id once, so a circle
+    ends)."""
+    out, seen = [], set()
+    stack = [(rec, [_id(rec) or "?"])]
+    while stack:
+        r, path = stack.pop()
+        if L.excluded_codes(r.get("licence")):
+            out.append((path, r["licence"]))
+        ups = [p for p in r.get("parent") or [] if isinstance(p, str)] \
+            if isinstance(r.get("parent"), list) else []
+        ups += [x.get("to") for x in r.get("links") or [] if isinstance(x, dict)
+                and x.get("rel") in UPSTREAM_RELS and L.is_id(x.get("to"))]
+        for up in reversed(ups):
+            if up in seen or up in path or up not in current:
+                continue
+            seen.add(up)
+            stack.append((current[up], path + [up]))
+    return sorted(out, key=lambda item: (len(item[0]), item[0]))
+
+
+def check_territory(ctx, rep, rec, current, terr, line=None):
+    """An approved record, and everything upstream of it, may be sold where ART_DIRECTION.md
+    says the game is sold: ERROR territory-excluded when a licence on the way excludes a declared
+    code; WARN territory-undeclared when no territory is declared yet."""
+    ident, rev, at = _id(rec), _rev(rec), where(ctx, rec, line)
+    for path, lic in licence_chain(rec, current):
+        excl = L.excluded_codes(lic)
+        name = str(lic.get("source")) + (f" {lic['id']}" if isinstance(lic.get("id"), str)
+                                         and lic["id"] else "")
+        via = f" via {' -> '.join(path)}" if len(path) > 1 else ""
+        if not terr.declared:
+            rep.warn(at, "territory-undeclared", f"licence {name}{via} excludes "
+                     f"{_codes_text(excl)}, and {ART_DIRECTION_FILE} declares no sales territory "
+                     "(`Sales territory: worldwide` or a list of codes); declare it before "
+                     "shipping", ident, rev)
+            continue
+        hit = excl if terr.worldwide else excl & terr.codes
+        if hit:
+            sold = "worldwide" if terr.worldwide else _codes_text(terr.codes)
+            rep.error(at, "territory-excluded", f"licence {name}{via} excludes {_codes_text(hit)}, "
+                      f"and the game is sold {'' if terr.worldwide else 'in '}{sold} "
+                      f"({ART_DIRECTION_FILE}:{terr.line}); remake it from a source that is "
+                      "licensed there, or narrow the sales territory", ident, rev)
+
+
 def check_dirty(ctx, rep, rec, allow):
     """Approving output of an unsaved Blender file. Returns True when it was allowed through."""
     state = rec.get("file")
@@ -771,7 +893,7 @@ def cmd_record(ctx, args, rep):
                       f"--id {ident} adds a revision of that asset, another --id makes a new one")
             rep.summary("ERROR", at, "nothing recorded")
             return FAILED
-        for k in ("kind", "class", "source", "license"):
+        for k in ("kind", "class", "source", "license", "licence"):
             if rec.get(k) is None and prev.get(k) is not None:
                 rec[k] = prev[k]
     if rec.get("status") is None:
@@ -797,6 +919,9 @@ def cmd_record(ctx, args, rep):
         check_files(ctx, rep, rec, facts, approving=True)
         check_approval(ctx, rep, rec)
         check_vendor(ctx, rep, rec, facts, strict=False)
+        terr = read_territory(ctx)
+        report_territory(ctx, rep, terr)
+        check_territory(ctx, rep, rec, dict(current, **{ident: rec}), terr)
         allowed_dirty = check_dirty(ctx, rep, rec, args.allow_dirty)
     if rep.count("ERROR"):
         rep.summary("ERROR", at, "nothing recorded")
@@ -832,6 +957,9 @@ def cmd_check(ctx, args, rep):
     current_lines = set(last_line.values())
     live = [rec for n, rec in lines if n in current_lines]
     facts = gather_facts(ctx, rep, live)
+    current = L.last_by_id(records)
+    terr = read_territory(ctx)
+    report_territory(ctx, rep, terr)
     for n, rec in lines:
         for e in L.validate(rec, args.strict):
             rep.error(f"{ctx.disp}:{n}", "schema", e, _id(rec), _rev(rec))
@@ -844,9 +972,10 @@ def cmd_check(ctx, args, rep):
             check_files(ctx, rep, rec, facts)
         if rec.get("status") == "approved":
             check_approval(ctx, rep, rec, n)
+            check_territory(ctx, rep, rec, current, terr, n)
         check_vendor(ctx, rep, rec, facts, args.strict)
         check_refs(ctx, rep, rec, known, n)
-    check_graph(ctx, rep, L.last_by_id(records), last_line)
+    check_graph(ctx, rep, current, last_line)
     orphans = find_orphans(ctx, records)
     if orphans:
         rep.warn(ART_DIR + "/", "orphans", f"{len(orphans)} file(s) under ArtDirection/ are in "
@@ -854,6 +983,8 @@ def cmd_check(ctx, args, rep):
                                  ORPHAN_EXAMPLES else ""))
         for p in orphans[:ORPHAN_EXAMPLES]:
             rep.warn(p, "orphan", "in no record")
+    rep.data["territory"] = (None if not terr.declared else "worldwide" if terr.worldwide
+                             else sorted(terr.codes))
     rep.data.update(ledger=ctx.disp, lines=len(lines), ids=len(last_line),
                     orphans={"count": len(orphans), "examples": orphans[:ORPHAN_EXAMPLES]})
     errors, warnings = rep.count("ERROR"), rep.count("WARN")
@@ -1028,6 +1159,9 @@ def cmd_status(ctx, args, rep):
         check_approval(ctx, rep, cur)
         check_vendor(ctx, rep, cur, facts, strict=False)
         check_refs(ctx, rep, cur, known)
+        terr = read_territory(ctx)
+        report_territory(ctx, rep, terr)
+        check_territory(ctx, rep, cur, current, terr)
         # what check would fail once it is approved: a file another id holds, a circle
         check_graph(ctx, rep, dict(current, **{args.id: dict(cur, status="approved")}),
                     only=args.id)

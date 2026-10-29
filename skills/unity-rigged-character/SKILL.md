@@ -2,15 +2,15 @@
 name: unity-rigged-character
 description: >-
   The Unity-side contract for a rigged character: FBX import → Avatar (Generic
-  for clips retargeted in Blender or a clip pack played on characters fitted
-  to its skeleton, Humanoid when the game needs it) → Animator → gameplay rig.
-  Load for rig type and Configure, Copy From Other Avatar, `@Clip` naming and
-  loopPose, a prop socket under Optimize Game Objects, clips whose root names
-  differ, curveless bones, an upper-body mask, PBR maps an FBX drops, a
-  hitbox, batchmode sampling. Symptoms: T-poses in place, clips named
-  mixamo.com, a held prop off the hand, a white mannequin, BakeMesh stuck in
-  bind pose. Props: unity-3d-models; rigging: blender-character-rig; clip
-  libraries: blender-retarget.
+  by default; Humanoid, built from an explicit map, when the game needs IK or a
+  mask) → Animator → gameplay rig. Owns the humanoid contract skeleton and its
+  role maps (Mixamo, Auto-Rig Pro, clip packs). Load for rig type and
+  Configure, Chest and fingers mapped, `@Clip` naming and loopPose, a prop
+  socket under Optimize Game Objects, curveless bones, an upper-body mask, PBR
+  maps an FBX drops, a hitbox, batchmode sampling. Symptoms: T-poses in place, clips named
+  mixamo.com, a held prop off the hand, a white mannequin. Props:
+  unity-3d-models; rigging: blender-character-rig; clip libraries:
+  blender-retarget.
 ---
 
 # unity-rigged-character — the Unity-side character contract
@@ -22,9 +22,10 @@ upstream route has its own skill. An asset with no skeleton belongs to `unity-3d
 > **Unity never retargets across skeletons here.** Every clip arrives already on the character's
 > skeleton — retargeted in Blender, by Mixamo on that route, or played as bought on a character
 > fitted to the clip pack's own skeleton (`reference/shared-skeleton-generic.md`) — so the rig
-> type follows from what the game needs. Generic reproduces the Blender pose; on a test rig, Humanoid moved bones by up
-> to 20° and a hand socket by 13–15 cm on the same clip. Choose Humanoid only for a body-part mask, IK or
-> other avatars, and measure it first (`reference/unity-import.md` §1).
+> type follows from what the game needs. Generic (the config default) reproduces the Blender pose; on a test rig,
+> Humanoid moved bones by up to 20° and a hand socket by 13–15 cm on the same clip. Choose Humanoid only for a
+> body-part mask, IK or other avatars, measure it first (`reference/unity-import.md` §1), and build the Avatar from
+> the explicit contract map, Chest and fingers included (`reference/humanoid-contract.md`).
 >
 > **A GLB has no Rig tab** (glTFast uses its own importer). It takes Humanoid clips through an
 > Avatar built from bone names with `AvatarBuilder.BuildHumanAvatar` (`reference/unity-import.md`
@@ -53,6 +54,7 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 
 | # | Stage | Read |
 |---|---|---|
+| 0 | The humanoid contract: bones, rest and axes, role maps from Mixamo, Auto-Rig Pro and a clip pack, `contract_map.py`, acceptance | `reference/humanoid-contract.md` |
 | 1 | Rig type (Generic, Humanoid, Legacy), the Avatar, Configure, a GLB's Avatar | `reference/unity-import.md` §1 |
 | 2 | `<name>@<Clip>.fbx` naming, Copy From Other Avatar, `loopPose`, root motion off | `reference/unity-import.md` §2 |
 | 3 | Optimize Game Objects and a prop socket; Skin Weights | `reference/unity-import.md` §3 |
@@ -72,14 +74,17 @@ prefab snippet and an API cheat sheet: `reference/editor-scripts.md`. Menu
 | File | Step |
 |---|---|
 | `CharacterImportSettings.cs` | Postprocessor: rig type, Avatar, `@Clip` renames, `loopPose`, map import types, from `character-pipeline.json`. Reimport Character Folder |
-| `CharacterAvatarLinker.cs` | Link Animation Avatars: Copy From Other Avatar for every `<name>@<Clip>.fbx` |
+| `CharacterHumanoidAvatar.cs` | Build Humanoid Avatar (`"rig": "Humanoid"` only): an explicit HumanDescription from the contract map or a `humanMap` file; gate: valid, human, Chest, ≥ `minFingerBones` fingers |
+| `CharacterAvatarLinker.cs` | Link Animation Avatars: Copy From Other Avatar for every `<name>@<Clip>.fbx`; on Humanoid, the same gate first |
 | `CharacterAnimatorBuilder.cs` | Build Animator: the controller, with parameter names from the config |
 | `MixamoTextures.cs` | Apply Mixamo Textures: the URP Lit material from the source maps, on any FBX route (needs URP) |
 | `SharedSkeletonClipImporter.cs` | Postprocessor for the fit route, two folders only: Generic characters and the pack's clips, then root aliases renamed, non-root positions stripped, curveless bones given the file's default. Keep `CharacterImportSettings` off those folders |
 
 Stdlib Python: `scripts/fbx2mixamo.py` and `scripts/glb2mixamo.py` (Mixamo route: cleanup,
 axes, a Mixamo-ready OBJ); `scripts/fbx_textures.py` (maps out of any FBX, the original export on
-the Mixamo route).
+the Mixamo route). `scripts/contract_map.py` (numpy): a skeleton JSON or BVH header mapped onto
+the humanoid contract, missing and extra bones, chain, side and axis gates, the retarget map and
+Unity's human map (`reference/humanoid-contract.md`).
 
 ---
 

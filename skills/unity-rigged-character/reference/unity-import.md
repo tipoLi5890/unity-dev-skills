@@ -30,7 +30,9 @@ its pack's mocap), the muscle-space round trip moved limbs 1.5–4.4° and the h
 the arm pose 8% off and pushed added foot slide to 2.7 cm on a forehand, where Generic stayed at
 0.0002°; foot IK pulled the slide back to 1.2 cm but bent the knees 5–9° more
 (`blender-retarget` → `reference/route-bakeoff.md`). The automatic mapping took all 22 body bones
-and no finger: a Humanoid with fingers needs an explicit finger map. A clip
+and no finger: a Humanoid with fingers needs an explicit finger map. Build it with
+`CharacterHumanoidAvatar.cs` (Build Humanoid Avatar) from the contract map or a `humanMap` file
+(`reference/humanoid-contract.md`); it gates on `isValid`, `isHuman`, Chest and the finger count. A clip
 whose pose is outside the muscle limits (a knee bent backwards) is clamped, and that joint ends far
 off. Before choosing Humanoid:
 

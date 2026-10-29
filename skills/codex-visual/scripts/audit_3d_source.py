@@ -25,13 +25,18 @@ Columns, --views
   gates: four square canvases of one size; object heights within --tol (4%) of each other;
   front and back widths within --tol; left and right widths within --tol; the largest
   object side between 0.80 and 0.95 of the canvas (the model wants about 1/1.1)
+  facing: each side view's silhouette cut to its box and resized to one square; IoU(left, right)
+  against IoU(left, mirrored right). Two side views face opposite ways, so the mirrored pair
+  should match better: same-facing by more than --facing-margin (0.05) fails; a gap within it
+  (a symmetric profile, a crate) passes with a WARN "inconclusive"
 
 The converter re-crops the subject with its own margin, so fill only has to keep the subject
 large and clear of the edge. This gates the brief this skill draws to — a flat field, one
 object — not everything a background remover can survive.
 
-It cannot tell which side view is the left one: that shows only after conversion, as a hue
-shift (`reference/image-to-3d-input.md` §6).
+The facing check catches two side views that face the same way. It cannot tell which of two
+opposite-facing views is the left one: that shows only after conversion, as a hue shift
+(`reference/image-to-3d-input.md` §6).
 
 Exit 0 = pass, 1 = a gate failed, 2 = a file could not be read. An alpha PNG is read by its
 alpha; an opaque one by distance from its corner colour (--bg-tol).
@@ -39,6 +44,10 @@ alpha; an opaque one by distance from its corner colour (--bg-tol).
 --json-out PATH also writes {"gates": [{name, value, limit, pass}, ...], "verdict"} (green,
 failed, or harness with "error" when a file could not be read) for a script to read; the text
 above is unchanged. A single image's gates are named <file name>/<check>.
+
+--selftest builds synthetic views (a profile with a forward nose and feet) in a temp dir and
+runs them through main(): opposite-facing passes, same-facing fails, a symmetric pair is
+inconclusive; one JSON line {"selftest": "pass"|"fail"}, exit 0 or 1.
 
 Requires Pillow and numpy, and `sprite_ops.py` beside this script.
 """
@@ -54,6 +63,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sprite_ops import label  # noqa: E402
 
 VIEW_NAMES = ("front", "left", "back", "right")
+FACING_SIDE = 128
 
 
 def gate(name, value, limit, ok):
@@ -78,6 +88,29 @@ def subject_mask(path, bg_tol):
 def bbox(mask):
     rows, cols = np.where(mask.any(axis=1))[0], np.where(mask.any(axis=0))[0]
     return int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1
+
+
+def silhouette(mask, side=FACING_SIDE):
+    """The mask cut to its box and resized to side x side (bilinear, then halved)."""
+    x0, y0, x1, y1 = bbox(mask)
+    crop = Image.fromarray((mask[y0:y1, x0:x1] * 255).astype(np.uint8))
+    return np.asarray(crop.resize((side, side), Image.BILINEAR)) >= 128
+
+
+def iou(a, b):
+    union = np.logical_or(a, b).sum()
+    return float(np.logical_and(a, b).sum() / union) if union else 0.0
+
+
+def facing(left_mask, right_mask, margin):
+    """(state, same, mirror): state is opposite, same or inconclusive."""
+    left, right = silhouette(left_mask), silhouette(right_mask)
+    same, mirror = iou(left, right), iou(left, np.fliplr(right))
+    if same - mirror > margin:
+        return "same", same, mirror
+    if mirror - same > margin:
+        return "opposite", same, mirror
+    return "inconclusive", same, mirror
 
 
 def audit_single(path, args, gates):
@@ -125,7 +158,7 @@ def audit_single(path, args, gates):
 
 def audit_views(folder, args, gates):
     """(lines, fails); appends one gate per check to `gates`."""
-    lines, fails, boxes, canvases = [], [], {}, set()
+    lines, fails, boxes, canvases, masks = [], [], {}, set(), {}
     for name in VIEW_NAMES:
         path = os.path.join(folder, name + ".png")
         mask, _bg = subject_mask(path, args.bg_tol)
@@ -137,6 +170,7 @@ def audit_views(folder, args, gates):
             continue
         x0, y0, x1, y1 = bbox(mask)
         boxes[name] = (x1 - x0, y1 - y0)
+        masks[name] = mask
         lines.append(f"{name:5s}: canvas {w}x{h}  object {x1 - x0}x{y1 - y0}  fill {max(x1 - x0, y1 - y0) / min(w, h):.2f}")
     if len(canvases) != 1 or any(w != h for w, h in canvases):
         fails.append(f"canvases differ or are not square: {sorted(canvases)}")
@@ -159,6 +193,16 @@ def audit_views(folder, args, gates):
         if not 0.80 <= largest <= 0.95:
             fails.append(f"largest object side is {largest:.2f} of the canvas, want about 0.91")
         gates.append(gate("largest_side", round(largest, 4), [0.80, 0.95], 0.80 <= largest <= 0.95))
+    if "left" in masks and "right" in masks:
+        state, same, mirror = facing(masks["left"], masks["right"], args.facing_margin)
+        lines.append(f"facing: IoU left/right {same:.3f}  left/mirrored right {mirror:.3f}  -> {state}")
+        if state == "same":
+            fails.append("left and right face the same way: one side view is mirrored or repeated; "
+                         "redraw or flip one of them, then check which is the left one (§6)")
+        elif state == "inconclusive":
+            lines.append("  WARN facing inconclusive: the profile is near-symmetric; open both side views (§6)")
+        gates.append(gate("facing", {"state": state, "iou_same": round(same, 4), "iou_mirror": round(mirror, 4)},
+                          args.facing_margin, state != "same"))
     return lines, fails
 
 
@@ -174,6 +218,84 @@ def write_json(path, obj):
         print(f"audit_3d_source: --json-out {path} not written: {exc}", file=sys.stderr)
 
 
+def selftest():
+    """Synthetic views in a temp dir, judged by main() in this process. One JSON line."""
+    import contextlib
+    import io
+    import tempfile
+
+    checks, failed = [], []
+
+    def check(name, ok):
+        checks.append(name)
+        if not ok:
+            failed.append(name)
+
+    side = 256
+
+    def profile():
+        """A runner in profile facing image-left: nose and toes stick out on the left."""
+        m = np.zeros((side, side), bool)
+        m[60:226, 104:152] = True                       # torso and legs
+        yy, xx = np.mgrid[:side, :side]
+        m[(yy - 42) ** 2 + (xx - 128) ** 2 <= 26 ** 2] = True   # head
+        m[38:50, 92:104] = True                         # nose
+        m[214:240, 74:152] = True                       # feet, toes forward
+        m[240:244, 74:152] = True
+        return m
+
+    def block():
+        m = np.zeros((side, side), bool)
+        m[16:244, 92:164] = True
+        return m
+
+    def save(path, mask, keyed):
+        if keyed:
+            px = np.full((side, side, 3), 128, np.uint8)
+            px[mask] = (40, 40, 160)
+            Image.fromarray(px).save(path)
+        else:
+            px = np.zeros((side, side, 4), np.uint8)
+            px[mask] = (40, 40, 160, 255)
+            Image.fromarray(px, "RGBA").save(path)
+
+    def audit(folder):
+        buf = io.StringIO()
+        out = os.path.join(folder, "audit.json")
+        saved = sys.argv
+        sys.argv = ["audit_3d_source.py", "--views", folder, "--json-out", out]
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                code = main()
+        finally:
+            sys.argv = saved
+        with open(out, encoding="utf-8") as handle:
+            facing_gate = next(g for g in json.load(handle)["gates"] if g["name"] == "facing")
+        return code, buf.getvalue(), facing_gate
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cases = {
+            "opposite": (profile(), np.fliplr(profile()), False),
+            "same": (profile(), profile(), True),
+            "symmetric": (block(), block(), False),
+        }
+        for case, (left, right, keyed) in cases.items():
+            folder = os.path.join(tmp, case)
+            os.makedirs(folder)
+            for name, mask in (("front", block()), ("back", block()), ("left", left), ("right", right)):
+                save(os.path.join(folder, name + ".png"), mask, keyed)
+            code, text, g = audit(folder)
+            if case == "opposite":
+                check("opposite passes", code == 0 and g["pass"] and g["value"]["state"] == "opposite")
+            elif case == "same":
+                check("same-facing fails", code == 1 and not g["pass"] and "face the same way" in text)
+            else:
+                check("symmetric is inconclusive, not a fail",
+                      code == 0 and g["pass"] and g["value"]["state"] == "inconclusive" and "WARN" in text)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
+    return 1 if failed else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("images", nargs="*")
@@ -184,6 +306,8 @@ def main():
     parser.add_argument("--part-min", type=float, default=0.01)
     parser.add_argument("--tol", type=float, default=0.04)
     parser.add_argument("--bg-tol", type=int, default=24)
+    parser.add_argument("--facing-margin", type=float, default=0.05,
+                        help="IoU gap between same and mirrored side views that decides facing")
     parser.add_argument("--json-out", metavar="PATH", help="Also write {gates, verdict} as JSON to PATH")
     args = parser.parse_args()
     if bool(args.images) == bool(args.views):
@@ -215,4 +339,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--selftest"]:
+        sys.exit(selftest())
     sys.exit(main())

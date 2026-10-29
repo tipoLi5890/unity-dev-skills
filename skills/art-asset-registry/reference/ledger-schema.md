@@ -40,6 +40,7 @@ nothing writes one.
 | `verdict` | enum | N | `green` `failed` `harness` |
 | `source` | enum | Y | `generated` `authored` `purchased` `third-party` `unknown` |
 | `license` | str | when `source` is `purchased` or `third-party` | e.g. `purchased:<pack>`, `cc0` |
+| `licence` | object | N | `{source, id, territory}`: where the asset may be sold; `territory` is `"worldwide"` or `{"excludes": [codes]}` (ISO 3166-1 alpha-2, or `EU`). Not `license`, the pack string above: `reference/licences.md` |
 | `file` | object | N | `{path, saved, dirty, sha256, bytes}`: the Blender file the asset came out of, as it stood; `record` hashes it when it is on disk inside the project |
 | `approver` | str | N | who looked, on an `approved` revision |
 | `note` | str | N | one line for people |
@@ -196,6 +197,9 @@ its rule, so a fixture can expect a particular one.
 | `failing-gate` | ERROR | an approved record has a gate with `pass: false` |
 | `vendor-not-ignored` | ERROR | a current `vendor: true` file that git does not ignore, or tracks |
 | `licensed-tracked` | WARN | a current `purchased` or `third-party` file (not vendor) that git tracks; ERROR with `--strict` |
+| `territory-excluded` | ERROR | an approved record's `licence`, or one reached up its `parent` and `depends-on` links, excludes a code of the `Sales territory:` line in `ART_DIRECTION.md` (`worldwide`: any code); `reference/licences.md` |
+| `territory-undeclared` | WARN | the same record while `ART_DIRECTION.md` has no `Sales territory:` line, or says `undecided` |
+| `territory-unknown` | WARN | a word on the `Sales territory:` line that is neither `worldwide`, `EU` nor a two-letter code; it is ignored |
 | `unresolved-parent` | ERROR | a current record's `parent` names an id the ledger does not have, or itself |
 | `unresolved-superseded-by` | ERROR | the same for `superseded_by` |
 | `unresolved-link` | ERROR | a link's `to` is an id (no `:`) the ledger does not have |
@@ -214,7 +218,7 @@ The writing commands apply the same rules before they append:
 | Command | Refused (exit 2) when | Also |
 |---|---|---|
 | `record` | the composed record breaks the schema (`art_version` included: it is a `made-under` link); a path is outside the root; a parent, `superseded_by` or link id is not in the ledger; the record closes a cycle or takes a file another id holds; `id-taken`; with `--status approved`, anything approval refuses | a missing file is recorded with `missing: true` and a WARN; a `file.path` outside the root is kept by its name only, `file-outside-root` WARN |
-| `status ID approved` | any rule above for this record, read as approved: a file missing, recorded missing, or changed since it was recorded, a failed verdict, a failing gate, a tracked vendor file, an unresolved parent, a file another id holds (`dual-owner`), a cycle through it; `dirty-file`, its Blender file unsaved, unless `--allow-dirty`; `diagnostic`, the record is a diagnostic run | the same status again with nothing new writes nothing |
+| `status ID approved` | any rule above for this record, read as approved: a file missing, recorded missing, or changed since it was recorded, a failed verdict, a failing gate, a tracked vendor file, a licence that excludes part of the sales territory (`territory-excluded`), an unresolved parent, a file another id holds (`dual-owner`), a cycle through it; `dirty-file`, its Blender file unsaved, unless `--allow-dirty`; `diagnostic`, the record is a diagnostic run | the same status again with nothing new writes nothing |
 | `status ID superseded --by X` | X is the record itself, X is superseded down a chain by ID (`superseded-cycle`), X is not a candidate or approved (`bad-successor`) | X unknown exits 3 |
 | `mv` | the new path is not on disk or outside the root; an approved file's bytes differ at the new path; another asset holds the new path | `old-path-exists` WARN when the old path is still there |
 
@@ -233,5 +237,5 @@ Lines read `ERROR <path>: <rule>: <message> (id <id> rev <n>)`, `WARN …` or `O
 summary line. `--json` (every command except `record` and `ingest`, where `--json` names the
 input) prints one object instead: `command`, `exit`, `verdict`, `errors`, `warnings`, `items` (each
 with `level`, `rule`, `path`, `msg`, `id`, `rev`), `summary`, and the command's own keys: `lines`,
-`ids` and `orphans` for `check`; `stale` and `at` for `stale`; `history`, `current_version` and
+`ids`, `orphans` and `territory` (`null` while undeclared, `"worldwide"`, or the sorted codes) for `check`; `stale` and `at` for `stale`; `history`, `current_version` and
 `previous_good` for `history`; `rows` for `render`; `record` for the writing commands.

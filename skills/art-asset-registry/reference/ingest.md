@@ -21,6 +21,11 @@ validated, a refusal exactly as `record` refuses (`reference/workflow.md` §2), 
 as on `record`, in the printed partial too (`--art-version` and `--link` as `links`). `--file PATH` (repeatable, the shipped file first) adds a file the JSON does not
 name.
 
+A producer that knows its model writes `licence` (`{source, id, territory}`,
+`reference/licences.md`) into its `record` object; `ingest` carries it through unchanged, and a
+clip solved from a generated video names that video as `parent` or a `depends-on` link instead of
+copying its licence.
+
 ## The shapes
 
 Tried in this order; the first that fits is used.

@@ -9,7 +9,9 @@ K computed here from the rests alone; a correct clip stepping about 1 rad per
 frame passes, with max_step reported and no max_step gate; into_action adds
 exactly the mapped quaternion curves and leaves every other curve's keys as they
 were; a mapped bone that already has a rotation curve refuses without replace
-and is replaced with it; location is reported as not retargeted; with a
+and is replaced with it; a clip without location curves reports translation as
+not retargeted, and into_action keeps the hip location an action already has
+(translation is covered in test_retarget_translation.py); with a
 T-pose source arm against an A-pose target arm whose hand tail is off the arm
 line, a hand converted alone with the arm in `reference_map` (or the arm mapped
 and the hand in `no_aim`) gets the K computed here by walking the source with
@@ -197,7 +199,8 @@ def case_into_action():
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierLane",
                  "map": {"Hips": "hips"}, "into_action": "JogLaneLeft"})
     assert out["ok"], out["gates"]
-    assert [g["name"] for g in out["gates"]] == ["retarget.channels_free", "retarget.finite_keys"]
+    assert [g["name"] for g in out["gates"]] == ["retarget.channels_free", "retarget.finite_keys",
+                                                 "retarget.translation_kept"], out["gates"]
     after = snapshot(baked)
     added = set(after) - set(before)
     want = {('pose.bones["Hips"].rotation_quaternion', i) for i in range(4)}
@@ -207,7 +210,8 @@ def case_into_action():
         assert after[key] == value, f"{key} changed"
     assert len(after[('pose.bones["Hips"].rotation_quaternion', 0)][0]) == 10    # frames 1-5
     assert tgt.animation_data.action == other, "into_action changed what the target plays"
-    assert out["translation"] == "not retargeted" and out["translation_keyed"] == ["hips"]
+    assert out["translation"] == "present in into_action" and out["translation_keyed"] == ["hips"]
+    assert [g["pass"] for g in out["gates"] if g["name"] == "retarget.translation_kept"] == [True]
     assert "brt_retarget" in baked.keys()
 
 

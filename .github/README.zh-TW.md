@@ -1,19 +1,35 @@
-# unity-dev-skills
+<div align="center">
+
+<h1>unity-dev-skills</h1>
+
+<p><b>一組 Unity 6 skill，讓 Claude Code 和 Codex 像謹慎的 Unity 開發者一樣做事，而且每一步都拿得出證明。</b></p>
+
+<p><i>60+ 個 skill，從最初的構想一路到真機上的建置。</i></p>
+
+<p>
+<a href="../.claude-plugin/plugin.json"><img alt="版本" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
+<a href="https://github.com/tipoLi5890/unity-dev-skills/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tipoLi5890/unity-dev-skills/actions/workflows/ci.yml/badge.svg"></a>
+<a href="../LICENSE"><img alt="授權：MIT" src="https://img.shields.io/badge/licence-MIT-green"></a>
+<img alt="Unity 6" src="https://img.shields.io/badge/Unity-6-black?logo=unity">
+<img alt="支援 Claude Code · Codex" src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-d97757">
+</p>
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-給 AI 編碼代理使用的 Unity 6 遊戲開發 skills。六十個 skill，涵蓋做一款遊戲的每個階段，從概念到可驗證的建置，
-可安裝到 Claude Code 或 OpenAI Codex。
+<img src="media/hero.jpg" alt="同一個角色走過四個 skill：一張概念圖、由它生成的 3D 網格、骨架的關節標記點，以及擺出極端姿勢的綁骨角色" width="100%">
 
-有三件事讓它不只是一堆 Unity 筆記：
+</div>
 
-1. **它是自足的。** 沒有任何一個 skill 會叫你先去裝別的東西。它們透過各自的
-   `Scope — what this skill does NOT do` 段落互相導流，所以不管你從哪個方向進來，都會落到對的那一個。
-2. **每個 skill 都是一套在你自己的專案上執行的方法。** 要檢查什麼、怎麼檢查，以及負責做這些事的
-   程式碼 —— `scripts/` 裡的 Python、`resources/` 裡的 C# 與 shader 原始碼、`templates/` 裡整份
-   複製走的檔案 —— 不是要你重打一遍的筆記。
-3. **Skills 是按載入情境拆分的，不是按主題。** 一份 `SKILL.md` 是帶著症狀路由表的路由器，
-   深度內容放在它指名的 `reference/` 檔案裡，所以一個 skill 只會把當下情境需要的東西載進來。
+## 試著這樣問
+
+| 你說 | 接下來會發生什麼 |
+|---|---|
+| 「跑者的跳躍有時候按了沒反應。」 | `unity-input` 在 `Update` 鎖存每一次按下、在 `FixedUpdate` 只消耗一次，再用一個 journey test 證明按一次正好跳一次 |
+| 「哨兵隔著牆也看得到跑者。」 | `unity-game-ai` 用距離、角度和一次視線 cast 組出視野錐；一個 journey 證明要先看見，追擊才會開始 |
+| 「第三個拾取物生出來的時候會卡一下。」 | `unity-profiling` 以 90 幀為一個視窗取樣那一刻（中位數、p95、最差值），讀出工作量與 GC 計數器，再比對改動前後 |
+| 「把這張跑者的圖做成能在 Unity 裡跑起來的角色。」 | `game-character-pipeline` 先定好品質目標與路線，再把 S0–S13 各階段——多視角圖、3D、綁骨、動作、匯入——交給各自負責的 skill，每一段都有閘門把關 |
+| 「寫程式之前，先讓我看看這趟送件玩起來是什麼樣子。」 | `unity-game-brief` 依遊戲自己的規則常數做出一段計時的模擬遊玩預覽，每個音效都記錄下來 |
+| 「幫我裝到 iPhone 上，不要開 Xcode。」 | `unity-ios-build` 跑 headless 建置、過編譯閘門、用你這台 Mac 上現有的簽章資料簽章、以 `devicectl` 安裝，並讀取 App 的 console |
 
 ## 安裝
 
@@ -22,97 +38,220 @@ claude plugin marketplace add tipoLi5890/unity-dev-skills
 claude plugin install unity-dev@unity-dev
 ```
 
-Codex 讀的是同一份樹：把它指向 `.agents/plugins/marketplace.json`，只要 plugin 本身的話就指向
-`.codex-plugin/plugin.json`。兩份都由 Claude 格式的 manifest 生成，所以不可能講出不一樣的話。
+**Codex** 讀的是同一棵目錄樹：把它指向 `.agents/plugins/marketplace.json`；只要 plugin 本身的話，就指向 `.codex-plugin/plugin.json`。兩份都由 Claude 格式的 manifest 生成，所以內容永遠不會分歧。
 
-也可以把 skills 直接放進專案 —— 把 `skills/*` 複製到 `<專案>/.claude/skills/`。
+**或者直接複製** skill 到專案裡：把 `skills/*` 複製到 `<project>/.claude/skills/`。
 
-## Skills 一覽
+### 需求
 
-分組依照一款遊戲由上而下經過的製作階段排列。任何 gameplay 需求都從 `unity-gameplay` 開始：
-它會讀懂專案，再導流到其他 skill。
+- **必要**：Claude Code 或 Codex；一個 Unity 6 專案；執行腳本需要 Python 3.10 以上，讀取圖片或音訊的腳本另需 NumPy 與 Pillow。
+- **選用，只有資產與角色管線需要**：Blender，版本須是你那一版 Auto-Rig Pro 支援的（`character-autorig` 有說明）；Auto-Rig Pro，使用你自己的授權；在 GPU 機器上自架的 ComfyUI；做 2D 美術用的 `codex` CLI。
+- **選用，影片用**：ffmpeg，凡是要輸出影片的都需要（預覽、reel、由影片做成的 sprite）。
+- **選用，裝置用**：iOS 需要一台裝有 Xcode 15 以上的 Mac；Android 需要 Android SDK。
 
-| 分組 | Skill | 什麼時候載入 |
-|---|---|---|
-| **每個階段 —— 終端機與搜尋** | `unity-cli` | 從終端機驅動 Unity：editor、授權、template、CI、MCP，以及能告訴你「重試是否誠實」的 exit code |
-| | `unity-search` | 把「找一下／在哪裡／誰引用了它」變成一條 Unity Search 查詢：型別 filter、資料夾、label、`ref=` 關係、場景元件查詢 —— 先把查詢寫給你看，Editor 還活著時順手幫你開視窗 |
-| **概念** | `unity-game-brief` | 動 Unity 之前的第一個小時：一行想法變成一頁體驗簡報、用圖鎖定視覺、由限制推導出架構提案、寫成可測試的不變量，以及一個人可以真的玩到的互動；寫程式前先看到遊戲：依遊戲自己的規則常數合成、每個音效都記成事件的定時模擬遊玩預覽，再接成有片頭卡、音樂與統一響度的 reel；第一個互動之後：只有人能關的里程碑關卡、多個 agent 各自的簡報（`templates/AGENT_BRIEF.md`、`templates/DECISION_LOG.md`） |
-| | `unity-new-project` | 事後補救很貴的決策：editor 版本釘死、`.meta`/LFS、UPM 釘 tag、IL2CPP/ARM64、asmdef 邊界；不開 Editor、幾秒跑完不依賴引擎的測試（`scripts/pure_tests.py`），以及對照額度的 LFS 帳本 |
-| | `unity-gameplay` | **任何沒有指明視角的 gameplay 需求都從這裡開始。** 為專案做指紋辨識——2D 或 3D、投影、視角、移動模型——並把操控、相機、動畫與驗證導流到各自的 skill；並且擁有寫成限制條件的類型配方、由控制器數值推導出的關卡度量，以及附帶結束檢查的製作階段；球拍與球棒類遊戲先量動作庫、再定模擬數值，模擬跑在自己的執行緒、用絕對時鐘（`SimHost.cs`、`SimClock.cs`） |
-| **3C 原型** | `unity-input` | 讓 gameplay 只讀一個 struct、永遠不讀裝置的玩家輸入：涵蓋鍵盤、手把與觸控的 actions asset，按下在 `Update` 鎖存、在 `FixedUpdate` 只花用一次——解掉時有時無或連跳兩次的跳躍——再加上輸入緩衝、螢幕搖桿、指標瞄準與重新綁定；以裝置自己的時間戳記、用毫秒評分的時機按壓 |
-| | `unity-camera` | 會抖動、拍到關卡外面或穿牆的相機：抖動背後的那兩個時鐘、Cinemachine 的 2D 跟隨與房間 confiner、pixel-perfect 跟隨、第三人稱環繞與第一人稱 rig、震動與 blend、2.x → 3.x 名稱對照表，以及證明 rig 站得住的 journey；球場運動的轉播式構圖 |
-| | `unity-2d-controller` | 會沿斜坡滑下去、黏在牆上、每次跳的高度都不一樣的 2D 角色：向物理引擎詢問地面在哪裡的 kinematic 平台跳躍 motor——斜坡、單向與移動平台、coyote time、可變跳躍高度、衝刺、蹬牆跳——瞄準與移動分離的俯視自由移動、以 tween 呈現的格子步進、Animator 橋接，以及證明跳躍頂點、coyote 與緩衝的 journey |
-| | `unity-3d-controller` | `isGrounded` 一直閃爍、沿斜坡滑下去、上不了台階、換個幀率跳的高度就不一樣的 3D 角色：只讓一個元件擁有 transform、用自己的 cast 找地面的 `CharacterController` motor——斜坡、台階、移動平台——讀同一個輸入 struct 的第三人稱、第一人稱、俯視與分道跑酷控制器、Animator 橋接，以及證明斜坡、台階、跳躍頂點與換道的 journey |
-| | `unity-animation` | 跟遊戲狀態對不上的 Animator——卡在某個狀態、攻擊自己播出來、hitbox 一直開著：每個參數只有一個寫入者、用腳本建出 blend tree 與 sprite 狀態圖、被打斷也不會漏的事件與攻擊視窗、IK、Timeline 交接、root motion；跟著模擬走的手建 PlayableGraph、用 Animation Job 做的腳鎖與道具 IK，以及會數跳動的動作度量（C# 在 `resources/`） |
-| | `unity-physics-2d` | 永遠不觸發的 `OnCollisionEnter2D` 或 `OnTriggerEnter2D`、穿過 tilemap 牆的子彈、打到玩家自己的地面檢查、卡在 tile 接縫上的角色：用 Box2D 自己的詞彙寫成的分診階梯、雙邊探針，以及唯讀的場景稽核 |
-| | `unity-physics-3d` | 永遠不觸發的碰撞或 trigger、高速穿透、明明在正前方卻打不到的 raycast；遊戲自己積分的運動用球，含旋轉與掃掠碰撞（`BallFlight.cs`） |
-| | `unity-play-harness` | 把遊戲做成 agent 能驅動、能讀懂的樣子：一行 probe 快照、直接開進某個時刻並等待「就緒集合」的具名 situation、取樣成時間線並斷言不變量的 journey test，以及把一句手感抱怨變成可重現的測試——3D 或 2D 遊戲皆可 |
-| **垂直切片 —— 2D 世界** | `unity-2d-level` | 把 2D 關卡當成資料來組裝：可序列化的關卡畫進固定的 Tilemap 圖層堆疊、執行期改 tile、房間與門、接成無盡跑道的 chunk、Tiled 與 LDtk 匯入、SpriteShape 地形，以及逐關檢查可達性的種子生成 |
-| | `unity-2d-grid` | 戰棋與方塊解謎在矩形、等角與六角網格上的棋盤邏輯，純 C#、不需要場景：六角 offset、axial 與 cube 轉換、移動範圍、A* 路徑、視線、單一佔位表、推動規則、回合順序、undo、指標對應到格子 |
-| | `unity-tilemap` | 矩形、六角與等角網格的 Tile Palette，以及用手上現成的地形圖產出 RuleTile |
-| | `unity-2d-rendering` | 畫在錯誤前後順序的 sprite、毫無作用或讓整個畫面變黑的 `Light2D`：依優先順序排列的四個排序鍵、`SortingGroup`、俯視、等角與六角場景的 Y 排序、shadow caster、normal map、sprite mask 與視差圖層 |
-| **垂直切片 —— 3D 世界** | `unity-3d-level` | 在美術存在之前就照尺寸蓋好的 3D 關卡：從尺寸表（門、走廊、台階、斜坡、跳躍間距）生成、以行走 journey 證明的 greybox、1/2/4 m 網格上的模組化套件、附 override 稽核的 prefab 結構、集中在同一個 layer 的碰撞代理、Terrain、沿 spline 的道路與跑道，以及 URP decal |
-| | `unity-lighting` | 烘焙了卻沒變化、角色在烘焙過的牆邊一片黑、室內反射出天空、鏡頭一轉陰影就閃或幾公尺外陰影就斷掉：URP 上涵蓋燈光模式、烘焙、probe、陰影與環境光的症狀階梯、唯讀的場景稽核、會讀回結果的烘焙，以及手機負擔得起的子集 |
-| | `unity-navigation` | NavMesh、agent、障礙物、link —— 以及決定誰擁有 transform |
-| **垂直切片 —— 系統** | `unity-interaction` | 讓東西可以被使用——「按 E 開門」、在兩個物件之間閃來閃去的提示、開了兩次的閘門、隔著牆也能按的開關、被收集兩次的金幣：一份 `IInteractable` 契約、依視角找出候選並只保留一個選取目標的 interactor、一個提示、拾取物、開關、以狀態機寫成的閘門、上鎖的門、指標熱點，以及證明閘門只開一次的 journey |
-| | `unity-combat` | 一次揮擊扣兩次血、每一幀都在命中的劍、一下扣光所有血量的尖刺、直接穿過哨兵的子彈：一個傷害 struct 與帶有陣營、無敵與「死亡是一種狀態」的接收者、hit 與 hurt 圖層、擁有揮擊 id 與命中清單的查詢式 hitbox（由動畫視窗開啟）、經由 motor 的擊退、每一步都做 cast 的投射物，以及寫成資料的彈幕——2D 與 3D 皆可 |
-| | `unity-game-ai` | 隔著牆也看得到你、永遠不放棄追擊、在兩個狀態之間閃爍、每一幀都在 raycast 的敵人：有預算的感知、按 tick 做的決策、移動交給擁有 transform 的那一方——程式碼狀態機、小型行為樹、視野錐、聽覺與記憶、巡邏與追擊、2D 尋路、波次生成器、回合制的走法評分，以及證明哨兵看見之後才開始追的 journey |
-| | `unity-scene-flow` | 回到主選單後 manager 變成兩份、卡在 90% 的讀取畫面、什麼都停不下來的暫停、壞掉的存檔：一個永不卸載並擁有各項服務的 Boot 場景、同時只有一個操作在進行的 additive 載入、暫停也是一種狀態的遊戲階段狀態機、帶遷移與原子寫入的版本化存檔、會重建的檢查點、物件池、ScriptableObject 設定 |
-| **垂直切片 —— UI** | `unity-game-ui` | **任何 UI 需求都從這裡開始。** 偵測專案用的是哪套 UI 系統並導流；並且擁有沒人寫的那一塊 —— runtime `OnGUI` HUD |
-| | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— 以及 uGUI 什麼都畫不出來的六種原因 |
-| | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— 以及 USS 會靜默忽略的那些屬性 |
-| **量產 —— 資產** | `art-asset-registry` | 追蹤每一件生成的 2D 與 3D 資產：每個專案一份只增不改的帳本，記下 sha256 雜湊（每個 `.blend` 版本也記）、來源血緣、指向美術規格與產出工作的連結、由人設定並附證據圖的狀態、上游改動後過期的資產，並以唯讀方式接手既有的 `manifest.md` |
-| | `unity-3d-models` | 把 3D 模型帶進遊戲，依來源分路——圖生 3D 的 GLB、FBX 角色、Blender 綁好的骨架、購買的素材包——檢查、減面到類別的目標、匯入並稽核；類別的預算由人選定：同一件資產在每個生成預設各產一版，放進遊戲場景比較，從來不是固定上限 |
-| | `unity-rigged-character` | Unity 端的綁骨角色契約，不論 FBX 從哪條路線來——Auto-Rig Pro、Blender 骨架、Mixamo、自動綁骨服務：匯入 → Avatar（在 Blender 重定向的 clip 用 Generic，遊戲需要部位遮罩或 IK 時才用 Humanoid）→ Animator → gameplay rig，在 Optimize Game Objects 下保住道具 socket，並重建 FBX 丟掉的 PBR 貼圖；套到動作包骨架上的角色以 Generic 匯入（`SharedSkeletonClipImporter.cs`） |
-| | `unity-2d-sprites` | Sprite sheet、切圖、pivot、9-slice、把一組逐格做成可播放的 `AnimationClip` —— 那些住在 importer 裡的中繼資料 |
-| | `unity-2d-animation` | 用 2D Animation 與 PSD Importer 套件做骨骼式 2D 角色：把 PSB 匯入成 rig、先骨骼再幾何再權重、`SpriteSkin` 與 CPU 或 GPU 變形、執行期切換 Sprite Library 的造型與裝備、2D IK，以及一份 rig 成本的稽核 |
-| | `unity-2d-pixel-perfect` | 像素畫糊掉、鏡頭一動像素就爬、tile 之間出現髮絲縫 —— 以及你手上到底是哪一個叫 `PixelPerfectCamera` 的元件 |
-| | `unity-sprite-atlas` | 該共用一次 draw call 的 sprite：用腳本產 V2 atlas、打包與平台設定，以及打包好的貼圖怎麼到玩家手上 |
-| | `unity-audio` | 記憶體、load type、取樣率、mixer 成本 —— 它會先報告再重新匯入；在頻率上限之下合成的音效，由 `scripts/spectrum_check.py` 檢查 |
-| | `unity-localization` | 用一種以上的語言出貨，以及真正會出錯的 CJK 字型管線 |
-| **量產 —— AI 素材生成** | `game-character-pipeline` | **從一張圖做出綁骨角色，從這裡開始。** 直到 Unity 裡核准的角色為止的階段順序：先決定路線、品質目標與軌道（預覽軌直接綁密網格，出貨軌先定預算 → 遊戲網格 → 只綁一次），再走 S0–S13，每個階段標出負責的 skill 與進出關卡；動作全來自一套動作包時，把網格套到它的骨架上，clip 原樣播放 |
-| | `codex-visual` | 用 `codex` 影像模型出 2D 美術，靠一份美術聖經與一張錨定圖鎖住風格：grid one-shot 整組、短動畫生成成一張 sprite sheet 再切成量測過的逐格並輸出 GIF 預覽、去背、尺寸正規化，並以幾何驗收閘門讀回交付檔的置中與尺寸；也畫圖生 3D 角色起手的四面圖，只在數值檢查通過時才合成的審閱表，以及依主題分頁、每格標出來源路徑並記下雜湊的概覽頁；生成前先對照主體挑選鍵色、背景偏離宣告鍵色時沿色調軸反混色，以及由一張靜態圖做出呼吸 idle |
-| | `comfyui-asset-generation` | 用自架 ComfyUI 出音樂、音效、MiniMax H3 影片與圖生 3D 的道具和角色：一次一件、只信 `/history`、換模型前先 `/free`；四面圖上傳前先去背，調參前先把專案 graph 和官方模板逐欄比對，生成預設當成階梯來比較，沒有一個是目標；由地面座標畫出關鍵格的版面圖並在生成前找出交叉的移動，以及地平線一動就退回關鍵格的鏡頭閘門 |
-| | `sprite-from-video` | 透過生成影片把一張角色靜態圖變成透明的 sprite 逐格：依動作把靜態圖補到尺寸合適的純鍵色畫布、生成原地的圖生影片、每格依模型實際畫出的顏色去背，再以半步保護與接縫閘門找出循環週期，或在兩個靜止姿勢之間切出單次動作 —— 輸出同尺寸畫布的逐格與 `frames.json` |
-| | `blender-character-rig` | 透過 MCP server 在執行中的 Blender 裡，替圖生 3D 角色綁骨架、做動畫：骨頭依量到的特徵點擺放、權重依位置計算、道具掛在手骨上、key 出一段 action、算出預覽，再把 FBX 重新匯入驗證；同一批模組也能無頭執行成有關卡的階段：把動作包骨架套到網格、蒙皮 LOD、位元組完全相同的 FBX |
-| | `blender-retarget` | 把現成的動作 clip 套到在 Blender 裡綁好骨架的角色上：透過 Auto-Rig Pro 或純 bpy 的骨骼對照表，依兩邊的 rest pose 轉換每個旋轉 key、一份 clip 清單、局部修權重、帶 NLA 審閱軌的動作庫、每段 clip 都對手骨檢查的道具，以及重新開啟存檔來驗證的稽核；套骨架還是重定向，用量測比較決定（`scripts/clip_metrics.py`、`scripts/bakeoff_report.py`） |
-| **打磨與優化** | `unity-game-feel` | 沒有打擊感的命中、命中後整個遊戲停住不動、閃白之後一直白著的敵人、三十個拾取物播出三十個音效、停不下來的手把震動：每個 gameplay 事件一列有預算的回饋——由唯一擁有 `Time.timeScale` 的元件做 hit stop、會還原的閃白、不需要套件的擠壓與 tween、粒子、拖尾、有發聲數上限的池化音效、會停下來的震動；讓又小又快的球在畫面上看得清、走得順（`MinScreenSize.cs`、`scripts/screen_smoothness.py`） |
-| | `unity-render-urp` | 設了卻不出現的後製、行動裝置負擔得起的子集、Render Graph 審查、會被驗證拿掉的材質關鍵字（`UrpMaterialValidation.cs`） |
-| | `unity-urp-migration` | 把 Built-in 專案分五個帶閘的階段搬到 URP，每一階段都從存檔後的專案讀回來驗證；也用來診斷搬到一半的專案：整片洋紅、PPv2 轉成 Volume、從來沒重烤的 lightmap、`GrabPass`／`OnRenderImage` |
-| | `unity-profiling` | 慢幀或不穩定的幀背後到底在做什麼工作：不開 Profiler 視窗的 counter、90 幀視窗的 median/p95/worst、工作量計數，以及一張前後對照表；分階段的 GC 配置與執行期資源洩漏（`GcAllocProbe.cs`、`OwnedAssets.cs`、一個浸泡測試） |
-| | `unity-scene-optimisation` | 效能 counter 已經指出成本之後該改什麼：各條 batching 路徑以及為什麼 GPU instancing 在 URP 下毫無作用、`LODGroup` 與 Mesh LOD、烘焙式與 GPU occlusion culling、逐 layer 的剔除距離、貼圖尺寸與 mipmap streaming、sprite 與粒子的 overdraw——每個手段先用一個視窗測試，再在同一個 counter 上讀回 |
-| | `unity-debug` | 你需要驗證一個看不見的改動 —— 並且在相信量測工具之前，先證明它說的是真話；多個 agent 共用一台機器時最多兩個 Editor（`lanes.sh` 在 `MAX_UNITY` 排隊） |
-| **出貨** | `unity-device-testing` | 在**真的手機**上做驗收（Android／iOS）：探針場景每次狀態變化印一行帶標籤的 log、驅動腳本對 log 斷言並替你點系統對話框、真人一次只做一個實體動作且由裝置端驗證、用 exit code 分開「真的失敗」和「測試工具壞了」 |
-| | `unity-android-release` | 建置完之後**證明**它：把產物讀回來、keystore 與 versionCode 紀律 |
-| | `unity-ios-build` | 不開 Xcode，把 Unity 專案變成 iPhone 上跑著的 process：headless build、免簽章的編譯關卡、用這台 Mac 真正有的東西簽章、`devicectl` 安裝、console 是唯一的 log 管道、native `.mm` plugin 30 秒迭代 |
-| | `unity-web-release` | WebGL/WebGPU 的下載量、伺服器標頭、瀏覽器記憶體上限 |
-| **後端與商業** | `unity-live-services` | 這個 build 在跟哪個環境說話、金鑰該放哪、先設計離線路徑 |
-| | `unity-ugs` | Gaming Services 的 API 表面：哪個套件提供什麼、其他一切都依賴的初始化順序、Cloud Save 的存取類別、Cloud Code、Remote Config |
-| | `unity-iap` | 逐個呼叫寫 In-App Purchasing v5：連上商店、pending/confirm 流程、收據、權益、restore —— 以及內容給了兩次或一次都沒給 |
-| | `unity-ads-levelplay` | LevelPlay 廣告中介：原生依賴解析、init 之前的同意流程、rewarded/interstitial/banner 廣告單元、單次曝光層級的營收 |
-| | `unity-monetization` | IAP 與廣告 SDK 撞上出貨流程的地方：merged manifest、商店宣告、收據 |
-| | `unity-multiplayer` | 拓撲是那個很貴的決定，加上語音聊天與麥克風競用 |
-| | `unity-multiplayer-services` | Sessions：玩家怎麼進到同一場遊戲 —— join code、可瀏覽的房間列表、quick join、ticket 配對、relay、host 遷移、專用伺服器 |
-| | `unity-vivox` | 逐個呼叫接語音與文字聊天：登入、group/echo/定位頻道、參與者名單、mute 與 push-to-talk、麥克風權限 |
+在 Unity 裡工作，不需要任何資產管線或影片工具；手機建置只需要該平台本來就要求的東西。
 
-## 在這個 repo 上工作
+## 實際效果
 
-```bash
-python3 tools/lint-skills.py            # frontmatter + name 與目錄名一致 + 大小上限 + 可執行檔語法
-python3 tools/check-consistency.py      # manifest 一致、外部依賴已宣告
-python3 tools/check-registry.py        # 資產帳本的 selftest 與 fixture、預算表只存一份
-python3 tools/sync-codex-manifests.py   # 重新生成 Codex manifest
-claude plugin validate .                # manifest 形狀
+### 從一張圖到會動的綁骨角色
+
+<div align="center">
+<img src="media/motion.gif" alt="上：機器生成的角色雙機位影片，正面與側面。下：由這段影片解算出的動作所驅動的角色骨架" width="640">
+<p><sub>上：生成的雙機位影片。下：角色的骨架，由從影片解算出的動作驅動。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`character-autorig`](../skills/character-autorig/SKILL.md) →
+[`humanoid-motion`](../skills/humanoid-motion/SKILL.md) →
+[`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
+
+3D 模型、骨架和動作都在你自己的機器上製作；只有 2D 美術會經過 `codex` CLI。雙機位解算移植自 [anymove](https://github.com/patch-gg/anymove)（Apache-2.0；見 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)）。影片由 MiniMax H3 機器生成，依 MiniMax H3 Community License Agreement，在本地以其開放權重執行。
+
+## 運作方式
+
+```mermaid
+flowchart LR
+    A["你的需求"] --> B["SKILL.md<br/>症狀表"]
+    B --> C["reference/<br/>只載入需要的部分"]
+    C --> D["scripts/ · resources/ · templates/"]
+    D --> E{"閘門<br/>exit code + 證據"}
+    E -->|未通過| C
+    E -->|通過| F["完成，附上證明"]
 ```
 
-`.claude-plugin/*` 是事實來源。`.codex-plugin/plugin.json` 與 `.agents/plugins/marketplace.json`
-是**生成物 —— 永遠不要手動編輯它們。**
+- **從你的描述找到對的方法**。每個 skill 開頭都是一張用白話寫成的症狀表，另有三個「從這裡開始」的 skill 負責分派任何 gameplay、UI 或角色需求。
+- **執行的是程式碼，不是建議**。100+ 支 Python 腳本、170+ 個 C# 檔案和 50+ 份範本，直接複製進你的專案，不用照著筆記重打。
+- **拿得出證明**。每套方法都以一項你看得到的檢查收尾：probe 快照、journey test、重新匯入的 FBX、裝置 log。
+- **少佔上下文，自成一體**。`SKILL.md` 只負責分派；深入的內容等情境需要時才載入。不需要任何其他 plugin：skill 之間透過各自的 Scope 段落互相交接。
 
-路由到本 repo 以外的 plugin 算一項**宣告過的依賴**：把它加進 `tools/check-consistency.py` 的
-`COMPANIONS`，並寫上理由。沒宣告的會被 gate 擋下。
+## Skill 一覽
 
-這一版有什麼：[CHANGELOG.md](../CHANGELOG.md)。
+> [!TIP]
+> 不知道從哪裡開始？任何 gameplay 需求用 `unity-gameplay`，任何 UI 需求用 `unity-game-ui`，要從圖片做出綁骨角色就用 `game-character-pipeline`。
+
+<details>
+<summary><b>每個階段——終端機與搜尋</b>：Unity CLI，以及在專案裡找出任何東西</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-cli`](../skills/unity-cli/SKILL.md) | 從終端機操作 Unity，exit code 會告訴你重試是否合理 |
+| [`unity-search`](../skills/unity-search/SKILL.md) | 「它在哪？誰引用了它？」用一條 Unity Search 查詢回答 |
+
+</details>
+
+<details>
+<summary><b>概念</b>：企劃書、第一天的專案設定、gameplay 分派</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-game-brief`](../skills/unity-game-brief/SKILL.md) | 把一個點子變成一份企劃書、一套定案的視覺風格、一段遊玩預覽、一個可以玩的互動 |
+| [`unity-new-project`](../skills/unity-new-project/SKILL.md) | 第一天就該定下、事後補做代價很高的決策，外加不開 Editor 就能跑的測試 |
+| [`unity-gameplay`](../skills/unity-gameplay/SKILL.md) | 任何 gameplay 需求都**從這裡開始**：它先辨識專案的特徵，再分派工作 |
+
+</details>
+
+<details>
+<summary><b>3C 原型</b>：輸入、攝影機、2D 與 3D 控制器、動畫、物理、play harness</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-input`](../skills/unity-input/SKILL.md) | 會漏掉或連發兩次的跳躍；gameplay 讀取單一輸入 struct |
+| [`unity-camera`](../skills/unity-camera/SKILL.md) | 會抖動、拍到關卡外面或穿牆的攝影機 |
+| [`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md) | 沿斜坡滑下去或黏在牆上的 2D 角色：一個 kinematic motor |
+| [`unity-3d-controller`](../skills/unity-3d-controller/SKILL.md) | `isGrounded` 忽真忽假，或跳躍高度隨幀率改變：一個 3D motor |
+| [`unity-animation`](../skills/unity-animation/SKILL.md) | 卡在某個狀態的 Animator，或自己播出來的攻擊 |
+| [`unity-physics-2d`](../skills/unity-physics-2d/SKILL.md) | 永遠不觸發的 2D 碰撞或 trigger，用 Box2D 自己的術語來診斷 |
+| [`unity-physics-3d`](../skills/unity-physics-3d/SKILL.md) | 永遠不觸發的碰撞或 trigger，或是由遊戲自己積分的球 |
+| [`unity-play-harness`](../skills/unity-play-harness/SKILL.md) | 讓遊戲可以被驅動：一行 probe 快照，以及斷言不變量的 journey test |
+
+</details>
+
+<details>
+<summary><b>垂直切片——2D 世界</b>：以資料表示的關卡、網格棋盤、Tile Palette、繪製順序與 2D 光源</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-2d-level`](../skills/unity-2d-level/SKILL.md) | 以資料表示的 2D 關卡，附種子生成，會檢查每個拾取物都到得了 |
+| [`unity-2d-grid`](../skills/unity-2d-grid/SKILL.md) | 戰棋與方塊解謎的棋盤邏輯，支援方格、等角與六角網格 |
+| [`unity-tilemap`](../skills/unity-tilemap/SKILL.md) | 畫的時候接不起來的 tile：用你的圖集產出 RuleTile，每個網格各一套 palette |
+| [`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md) | 前後順序畫錯的 sprite，或讓整個畫面變黑的 `Light2D` |
+
+</details>
+
+<details>
+<summary><b>垂直切片——3D 世界</b>：照尺寸表蓋的 greybox、URP 光照、NavMesh agent</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-3d-level`](../skills/unity-3d-level/SKILL.md) | 依尺寸表蓋出、再用行走 journey 證明的 3D greybox |
+| [`unity-lighting`](../skills/unity-lighting/SKILL.md) | URP 上烘焙了卻沒變化，或角色在烘焙過的牆邊一片黑 |
+| [`unity-navigation`](../skills/unity-navigation/SKILL.md) | 不肯動或直接穿牆走的 agent：NavMesh、link、transform 歸屬 |
+
+</details>
+
+<details>
+<summary><b>垂直切片——系統</b>：門與拾取物、傷害、敵人 AI、場景與存檔</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-interaction`](../skills/unity-interaction/SKILL.md) | 會閃爍或開兩次的「按 E 開啟」：一個目標、一個提示 |
+| [`unity-combat`](../skills/unity-combat/SKILL.md) | 一次揮擊打中兩次，或子彈直接穿過哨兵：每次只算一次命中 |
+| [`unity-game-ai`](../skills/unity-game-ai/SKILL.md) | 能隔牆看見、或永遠不放棄追擊的敵人：有預算的感知 |
+| [`unity-scene-flow`](../skills/unity-scene-flow/SKILL.md) | 重複的 manager 或損壞的存檔：一個 Boot 場景，加上版本化的原子存檔 |
+
+</details>
+
+<details>
+<summary><b>垂直切片——UI</b>：UI 分派與 HUD、uGUI、UI Toolkit</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-game-ui`](../skills/unity-game-ui/SKILL.md) | 任何 UI 需求都**從這裡開始**：它偵測專案用的是哪套 UI 系統，再分派 |
+| [`unity-ui-ugui`](../skills/unity-ui-ugui/SKILL.md) | 什麼都畫不出來的 Canvas UI：先做六項檢查，再看錨點與 Layout Group |
+| [`unity-ui-toolkit`](../skills/unity-ui-toolkit/SKILL.md) | 靜默失效的 USS 屬性，外加 UXML、flex 版面與資料綁定 |
+
+</details>
+
+<details>
+<summary><b>量產——資產</b>：資產帳本、3D 模型、綁骨角色、sprite、音訊、多語言</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`art-asset-registry`](../skills/art-asset-registry/SKILL.md) | 哪件生成的資產從哪裡來、哪些已經過期：一份只增不改的帳本 |
+| [`unity-3d-models`](../skills/unity-3d-models/SKILL.md) | 把 3D 模型帶進遊戲，預算在遊戲攝影機下挑選 |
+| [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md) | 在 Unity 裡卡在 T-pose 的綁骨 FBX：匯入、Avatar、Animator 與 gameplay rig |
+| [`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) | 用腳本切 sprite sheet，再把逐格做成可播放的 clip |
+| [`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) | 由 PSB 做出骨骼式 2D 角色，在執行期換造型與裝備 |
+| [`unity-2d-pixel-perfect`](../skills/unity-2d-pixel-perfect/SKILL.md) | 畫出來糊掉、攝影機一動就閃爍或出現接縫的像素畫 |
+| [`unity-sprite-atlas`](../skills/unity-sprite-atlas/SKILL.md) | 該共用一次 draw call 的 sprite，用腳本打包成 V2 atlas |
+| [`unity-audio`](../skills/unity-audio/SKILL.md) | 削減音訊的記憶體與 CPU，遊戲聽起來卻不變差；重新匯入前先報告 |
+| [`unity-localization`](../skills/unity-localization/SKILL.md) | 用一種以上的語言出貨，也包括會出錯的地方——CJK 字型管線 |
+
+</details>
+
+<details>
+<summary><b>量產——AI 資產生成</b>：角色的階段順序、2D 美術、音訊、影片與 3D、綁骨與動作</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 從一張圖做出綁骨角色，**從這裡開始**：S0–S13 各階段，每一段都有閘門 |
+| [`codex-visual`](../skills/codex-visual/SKILL.md) | 透過 `codex` 影像模型出 2D 美術，靠一份美術聖經維持風格一致 |
+| [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音樂、音效、影片與 3D 模型，每項各一個 job |
+| [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 透過生成影片，把一張角色靜態圖變成透明的 sprite 循環動畫 |
+| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | 在 Blender 裡替圖片轉 3D 的角色綁骨，再重新匯入 FBX 來證明 |
+| [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把現成的 clip 套到你的 Blender 骨架上，以滑步、抖動與 pop 把關 |
+| [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地替人形角色綁骨，一個 headless 指令完成 |
+| [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 把一個動作做成 clip：從雙機位影片直接解算到骨架上 |
+
+</details>
+
+<details>
+<summary><b>打磨與優化</b>：遊戲手感、URP、遷移、效能分析、場景成本、驗證</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-game-feel`](../skills/unity-game-feel/SKILL.md) | 沒有打擊感的命中：每個 gameplay 事件一列回饋，附預算 |
+| [`unity-render-urp`](../skills/unity-render-urp/SKILL.md) | 怎麼都不出現的後處理效果，以及出貨前審查過的 Render Graph 功能 |
+| [`unity-urp-migration`](../skills/unity-urp-migration/SKILL.md) | 分五個帶閘門的階段從 Built-in 搬到 URP，或診斷搬到一半的專案 |
+| [`unity-profiling`](../skills/unity-profiling/SKILL.md) | 慢幀或不穩定的幀在做什麼，以可互相比較的 90 幀視窗呈現 |
+| [`unity-scene-optimisation`](../skills/unity-scene-optimisation/SKILL.md) | 計數器點出成本之後的修正，再從同一個計數器讀回結果 |
+| [`unity-debug`](../skills/unity-debug/SKILL.md) | 驗證一個你看不見的改動——前提是先證明 harness 說的是實話 |
+
+</details>
+
+<details>
+<summary><b>出貨</b>：真機測試、Android、iOS、Web</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-device-testing`](../skills/unity-device-testing/SKILL.md) | 在真的手機上驗收：agent 負責驅動，實體的那一步由人來做 |
+| [`unity-android-release`](../skills/unity-android-release/SKILL.md) | 簽好章的 APK 或 AAB，靠讀回產物來證明 |
+| [`unity-ios-build`](../skills/unity-ios-build/SKILL.md) | 不開 Xcode，把 Unity 專案變成在 iPhone 上跑的 App |
+| [`unity-web-release`](../skills/unity-web-release/SKILL.md) | 小到、快到讓人願意等它載完的 WebGL 或 WebGPU 建置 |
+
+</details>
+
+<details>
+<summary><b>後端與商業</b>：後端紀律、Gaming Services、內購、廣告、多人連線、語音</summary>
+
+| Skill | 什麼時候用 |
+|---|---|
+| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | 安全地把遊戲接上後端，先把離線路徑設計好 |
+| [`unity-ugs`](../skills/unity-ugs/SKILL.md) | 因為沒有初始化而丟出例外的服務：照正確順序初始化 Gaming Services |
+| [`unity-iap`](../skills/unity-iap/SKILL.md) | 內容給了兩次或一次都沒給：In-App Purchasing v5，逐個呼叫來看 |
+| [`unity-ads-levelplay`](../skills/unity-ads-levelplay/SKILL.md) | 廣告不出來，或建置被廣告依賴弄壞：LevelPlay，init 之前先取得同意 |
+| [`unity-monetization`](../skills/unity-monetization/SKILL.md) | 弄壞建置、manifest 或商店宣告的內購與廣告 SDK |
+| [`unity-multiplayer`](../skills/unity-multiplayer/SKILL.md) | 先選定拓撲，並且別讓語音聊天搶走其他功能的麥克風 |
+| [`unity-multiplayer-services`](../skills/unity-multiplayer-services/SKILL.md) | 玩家怎麼進到同一場遊戲，從 join code 到 host 遷移 |
+| [`unity-vivox`](../skills/unity-vivox/SKILL.md) | 加入語音成功卻沒人聽得到：Vivox 聊天，從登入到 push-to-talk |
+
+</details>
+
+## 參與貢獻
+
+工具、檢查與 repo 規則：[.github/CONTRIBUTING.md](CONTRIBUTING.md)。每個版本包含什麼：[CHANGELOG.md](../CHANGELOG.md)。
 
 ## 授權
 
-MIT —— 見 [LICENSE](../LICENSE)。移植自其他專案的程式碼保留其原授權：見 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+MIT——見 [LICENSE](../LICENSE)。移植自其他專案的程式碼保留原本的授權：[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

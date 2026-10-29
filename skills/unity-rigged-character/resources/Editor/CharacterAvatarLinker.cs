@@ -4,7 +4,9 @@
 // while the Animator reports nothing wrong.
 //
 // Drop into an Editor folder with CharacterImportSettings.cs (it reads that file's config and
-// naming contract). No package needed.
+// naming contract) and CharacterHumanoidAvatar.cs (its Humanoid gate). No package needed.
+// On a Humanoid folder run Build Humanoid Avatar first: the link refuses a body whose Avatar is
+// not human, has no Chest, or maps fewer finger bones than minFingerBones.
 //
 //   Tools/Unity Dev/Rigged Character/Link Animation Avatars    select the character folder first;
 //                                                               logs "[RIGGED-CHAR] {json}"
@@ -66,11 +68,19 @@ public static class CharacterAvatarLinker
                 errors.Add(body + ": produced no Avatar — open its Rig tab and read the import message");
                 continue;
             }
-            if (!avatar.isValid || (cfg.Humanoid && !avatar.isHuman))
+            if (cfg.Humanoid)
             {
-                errors.Add(body + ": Avatar is not a valid " + (cfg.Humanoid ? "Humanoid" : "Generic") +
-                           " (isHuman=" + avatar.isHuman + ", isValid=" + avatar.isValid +
-                           ") — Rig tab, Configure, and find the unmapped bone");
+                // isValid, isHuman, Chest mapped, minFingerBones fingers mapped
+                string reason = CharacterHumanoidAvatar.Gate(avatar, cfg, out int fingerCount);
+                if (reason != null)
+                {
+                    errors.Add(body + ": " + reason);
+                    continue;
+                }
+            }
+            else if (!avatar.isValid)
+            {
+                errors.Add(body + ": Avatar is not a valid Generic (isValid=false) — open its Rig tab and read the import message");
                 continue;
             }
             if (!(AssetImporter.GetAtPath(path) is ModelImporter importer)) continue;

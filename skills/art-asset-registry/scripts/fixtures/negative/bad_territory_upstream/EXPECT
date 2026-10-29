@@ -1,0 +1,2 @@
+# registry.py check: an approved clip with a clean licence, solved from a video whose licence excludes the EU; the game is sold in JP and DE
+ERROR ArtDirection/clips/runner_vault.txt: territory-excluded: licence minimax-h3-local runner-vault-take-1 via artdirection/clips/runner-vault -> artdirection/motion/runner-vault-h3 excludes DE, and the game is sold in DE, JP (ART_DIRECTION.md:6)

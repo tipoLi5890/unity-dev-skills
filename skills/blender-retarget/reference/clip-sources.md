@@ -100,8 +100,10 @@ choosing. In one pack the pelvis still rose, dropped and swayed. In another, no-
 floated 0.28 m in a crouch and 0.55 m in a kneel, while the standard variant's hip height varied 2
 to 50 cm per clip. There, take the standard variant for gameplay too, keep its vertical hip
 motion, strip non-root positions at import and give the horizontal travel to the game's controller
-(`reference/route-bakeoff.md`, *Clip-file behaviour*). Reference files (a T-pose, an A-pose) sit among
-the clips; list them, and keep them out of the manifest's clips.
+(`reference/route-bakeoff.md`, *Clip-file behaviour*); converted onto another skeleton,
+`brt_retarget` with `translate: "in_place"` does the same (`reference/rest-pose-and-conjugation.md`,
+*Root translation*). Reference files (a T-pose, an A-pose) sit among the clips; list them, and
+keep them out of the manifest's clips.
 
 **3. Count takes, not products.** A two-actor interaction comes as one file per actor, so a pack
 holds more takes than its advertised motion count. Reconcile the inventory against the product

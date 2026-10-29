@@ -32,6 +32,27 @@ sampler, so every "before" below is measured, not remembered.
 | Pops | §3 | 0 |
 | Root velocity jump | Change of the character root's velocity (simulated position + correction) per frame, scaled to a 60 fps frame; teleports excluded | ≤ 0.5 m/s |
 
+**Plant, one definition** (the same sentence in `reference/motion-metrics.md`,
+`reference/foot-lock-and-prop-ik.md` and `blender-retarget` → `scripts/motion_metrics.py`): a
+foot is planted over a run of at least 3 frames where its sole is under 4 cm above the floor and
+its ground-relative horizontal speed is under 0.15 m/s; an in-place loop gets its travel speed
+added back before the speed test, and supplied contact probabilities (≥ 0.5) define the plant
+instead.
+
+**The sole is not a joint.** An ankle stands about 7 cm over the floor at rest, so a foot measured
+by its lowest joint never comes under 4 cm: no plant is found, and the slide gate passes on
+nothing. Offline, each foot joint's height has its rest height over the sole taken off first
+(`sole_offsets` in the samples, from the rig's rest pose); the plant, penetration and slide all
+read that sole. With the offsets, a foot that moves and finds no plant is reported as a warning
+even when no gate asks for plants.
+
+The offline report carries those windows (`plants.<side>.ranges`) and counts them per foot
+(`plants_per_foot`) and in total (`plants_found`, as `contact_bake` reports it); its gate
+`plants_min_per_foot` needs at least one on each foot. The runtime plant below is the foot lock's
+vote over them. A baked clip is gated offline with `blender-retarget` →
+`scripts/motion_metrics.py` (foot slide, ground penetration, jitter, joint limits, loop seam,
+root drift, pops) before it reaches Unity.
+
 Choices that made these honest:
 
 - **Plant is the same signal the foot lock uses** (the weight vote), and a foot the lock had to
@@ -87,9 +108,18 @@ Inertialized transitions, which the design had planned, would not have removed a
 and were not built. The fix was velocity continuity in the jobs
 (`reference/foot-lock-and-prop-ik.md` §1). Version 3, being wider, counted 68–120 for the same code;
 the second round of continuity fixes took that to 58–114. A count that rises when the metric
-widens is not a regression: compare counts only under one definition. The pop gate still
-fails, so the test logs it rather than asserting it; the remainder is the 7 m/s sprint and a
-serve stance the IK cannot reach.
+widens is not a regression: compare counts only under one definition. Offline, a baked clip's
+pops fail: `blender-retarget` → `scripts/motion_metrics.py` applies the same single- and
+two-frame rule to the clip's segment directions (ratio 1.8, floor 30 °/s, 3° extra in the frame,
+which is 180 °/s at 60 fps) and fails on any pop; `clip_metrics.py` adds the clip term against
+the reference body (1.2 × the reference's speed + the same excess). Motion read from video carries
+its readings (`reading_joints` with `reading_names`, the joints triangulated straight from the
+views; arrays beside the positions in an NPZ) as that
+reference: a spike the readings show too is a fast move in the source, listed as
+`pops_in_source` and not gated; only a spike the solve added fails. Both counts are events, one
+per frame and parent joint, so a twist segment beside the shin is not a second pop; `segments`
+counts the segments that spiked. The runtime test (§6) logs
+pops and asserts them once the count reaches 0.
 
 ## 4. Results, before → after
 

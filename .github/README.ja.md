@@ -1,22 +1,35 @@
-# unity-dev-skills
+<div align="center">
+
+<h1>unity-dev-skills</h1>
+
+<p><b>Claude Code と Codex に慎重な Unity 開発者のように仕事をさせ、その一歩一歩を証明させる Unity 6 の skill 集。</b></p>
+
+<p><i>最初のアイデアから、スマートフォンの実機で動くビルドまで。60 を超える skill。</i></p>
+
+<p>
+<a href="../.claude-plugin/plugin.json"><img alt="バージョン" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
+<a href="https://github.com/tipoLi5890/unity-dev-skills/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tipoLi5890/unity-dev-skills/actions/workflows/ci.yml/badge.svg"></a>
+<a href="../LICENSE"><img alt="ライセンス：MIT" src="https://img.shields.io/badge/licence-MIT-green"></a>
+<img alt="Unity 6" src="https://img.shields.io/badge/Unity-6-black?logo=unity">
+<img alt="Claude Code · Codex 対応" src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-d97757">
+</p>
 
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
-AI コーディングエージェント向けの Unity 6 ゲーム開発 skills。コンセプトから検証済みのビルドまで、
-ゲーム制作のすべての段階をカバーする 60 個の skill で、Claude Code と OpenAI Codex のどちらにも
-インストールできます。
+<img src="media/hero.jpg" alt="一体のキャラクターが四つの skill を通っていく様子：コンセプト画、生成された 3D メッシュ、リグの関節マーカー、極端なポーズを取るリグ付きキャラクター" width="100%">
 
-単なる Unity のメモの寄せ集めと違う点が三つあります。
+</div>
 
-1. **自己完結しています。** 「先に別のものを入れてください」と言う skill はひとつもありません。
-   それぞれの `Scope — what this skill does NOT do` の節を通じて互いに誘導し合うので、
-   どこから入っても正しい skill にたどり着きます。
-2. **各 skill は、自分のプロジェクトで実行する手順です。** 何を確認するか、どう確認するか、
-   そしてそれを行うコード —— `scripts/` の Python、`resources/` の C# とシェーダのソース、
-   `templates/` のまるごとコピーして使うファイル —— 打ち直すためのメモではありません。
-3. **skills はトピックではなく読み込む状況で分割してあります。** `SKILL.md` は症状ルーティング表を
-   持つルーターで、深い内容はそこから名指しされた `reference/` ファイルにあります。おかげで skill は
-   その場面で必要なぶんだけを読み込みます。
+## こんなふうに頼めます
+
+| 依頼 | 何が起きるか |
+|---|---|
+| 「ランナーのジャンプが、押しても出ないことがある」 | `unity-input` が押下を `Update` でラッチして `FixedUpdate` で一度だけ消費し、一回押せば一回跳ぶことを journey test で証明します |
+| 「見張りが壁越しにランナーを見つけてくる」 | `unity-game-ai` が距離・角度・一回の視線キャストから視界コーンを作り、視認してから初めて追跡が始まることを journey で証明します |
+| 「3 個目のピックアップが出るときにカクつく」 | `unity-profiling` がその瞬間を 90 フレームの窓（中央値、p95、最悪値）でサンプリングし、処理量と GC のカウンターを読んで前後を比べます |
+| 「このランナーの絵を、Unity で走るキャラクターにして」 | `game-character-pipeline` がまず品質目標とルートを決め、S0–S13 の各工程（ビュー、3D、リグ、モーション、インポート）を、それぞれを担当する skill へゲート付きで渡します |
+| 「コードを書く前に、クーリエランを見せて」 | `unity-game-brief` がゲーム自身のルール定数から時間軸どおりに進む模擬ゲームプレイのプレビューを作り、鳴った音をすべて記録します |
+| 「Xcode は開かずに、iPhone に入れて」 | `unity-ios-build` がヘッドレスビルドとコンパイルゲートを実行し、Mac にあるもので署名して `devicectl` でインストールし、アプリのコンソールを読みます |
 
 ## インストール
 
@@ -25,99 +38,220 @@ claude plugin marketplace add tipoLi5890/unity-dev-skills
 claude plugin install unity-dev@unity-dev
 ```
 
-Codex も同じツリーを読みます。`.agents/plugins/marketplace.json` を指定してください。plugin 単体なら
-`.codex-plugin/plugin.json` です。どちらも Claude 形式の manifest から生成されるので、
-違うことを言い出すことはありません。
+**Codex** も同じツリーを読みます。`.agents/plugins/marketplace.json` を指定するか、plugin 単体なら `.codex-plugin/plugin.json` を指定してください。どちらも Claude 形式のマニフェストから生成されるので、内容が食い違うことはありません。
 
-skills をプロジェクトへ直接置くこともできます —— `skills/*` を `<プロジェクト>/.claude/skills/`
-へコピーしてください。
+**コピーして使う**こともできます。skill をプロジェクトへ直接入れるには、`skills/*` を `<project>/.claude/skills/` へコピーしてください。
 
-## Skills 一覧
+### 必要なもの
 
-グループは、ゲームが上から下へとたどる制作の段階順に並んでいます。gameplay の依頼はどれも
-`unity-gameplay` から始めてください。プロジェクトを読み取り、残りの skill へ振り分けます。
+- **必須**：Claude Code または Codex、Unity 6 のプロジェクト、スクリプト用の Python 3.10 以降（画像や音声を読むスクリプトには NumPy と Pillow も）。
+- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、ご自身のライセンスで使う Auto-Rig Pro、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI。
+- **任意**（動画）：動画を書き出すもの（プレビュー、リール、動画からのスプライト）には ffmpeg。
+- **任意**（デバイス）：iOS には Xcode 15 以降を入れた Mac、Android には Android SDK。
 
-| グループ | Skill | 読み込むとき |
-|---|---|---|
-| **全ステージ —— ターミナルと検索** | `unity-cli` | ターミナルから Unity を動かす：editor、ライセンス、template、CI、MCP、そして「リトライして良いのか」を示す exit code |
-| | `unity-search` | 「探したい／どこにある／何が参照している」を一本の Unity Search クエリにする：型フィルタ、フォルダ、label、`ref=` の関係、シーンのコンポーネント検索 —— 実行する前にクエリを見せ、生きた Editor があれば検索ウィンドウも開きます |
-| **コンセプト** | `unity-game-brief` | Unity を触る前の最初の一時間：一行のアイデアを一枚の体験ブリーフにし、画像で見た目を固定し、制約からアーキテクチャ案を導き、テスト可能な不変条件として書き、人間が実際に遊べる一つのインタラクションを作る。コードの前にゲームを見るため、ゲーム自身のルール定数から合成し、すべての効果音をイベントとして記録する時間付きの模擬ゲームプレイ動画と、タイトルカード・音楽・統一ラウドネスのリールも。最初のインタラクションの後は、人だけが閉じられるマイルストーンのゲートと、複数エージェントそれぞれへのブリーフ（`templates/AGENT_BRIEF.md`、`templates/DECISION_LOG.md`） |
-| | `unity-new-project` | 後から直すと高くつく決定：editor バージョンの固定、`.meta`/LFS、UPM の tag 固定、IL2CPP/ARM64、asmdef の境界。エンジンに依存しないテストを Editor なしで数秒で回す（`scripts/pure_tests.py`）、容量枠に対する LFS 台帳 |
-| | `unity-gameplay` | **視点を指定していない gameplay の依頼はまずここから。** プロジェクトのフィンガープリント——2D か 3D か、投影、視点、移動モデル——を取り、操作・カメラ・アニメーション・検証をそれぞれの skill に振り分けます。制約として書かれたジャンル別レシピ、コントローラーの数値から導くレベルメトリクス、終了チェック付きの制作ステージを受け持ちます。ラケットやバットのゲームではシミュレーションの数値より先にクリップライブラリを計測し、シミュレーションは絶対時計で専用スレッドに載せる（`SimHost.cs`、`SimClock.cs`） |
-| **3C プロトタイプ** | `unity-input` | gameplay がデバイスではなく一つの struct だけを読むプレイヤー入力：キーボード・ゲームパッド・タッチ用の actions asset、押下を `Update` でラッチして `FixedUpdate` で一度だけ消費する仕組み——効いたり効かなかったり、二度発火したりするジャンプへの対処——に加え、入力バッファ、画面上スティック、ポインターエイム、リバインド。デバイス自身のタイムスタンプでミリ秒単位に判定するタイミング入力 |
-| | `unity-camera` | ガタつく、レベルの外を映す、壁を突き抜けるカメラ：ガタつきの原因である二つのクロック、Cinemachine による 2D 追従とルーム confiner、pixel-perfect 追従、三人称オービットと一人称の rig、シェイクとブレンド、2.x → 3.x の名前対応表、そして rig が保たれることを証明する journey。コートスポーツの中継風フレーミング |
-| | `unity-2d-controller` | 坂を滑り落ちる、壁に張り付く、跳ぶたびに高さが変わる 2D キャラクター：地面の位置を物理に問い合わせる kinematic なプラットフォーマー motor——坂、一方通行と動く足場、coyote time、可変ジャンプ、ダッシュ、壁ジャンプ——に加え、エイムと移動を分けた見下ろし自由移動、tween で見せるセル単位の移動、Animator ブリッジ、そして頂点・coyote・バッファを証明する journey |
-| | `unity-3d-controller` | `isGrounded` がちらつく、坂を滑り落ちる、段差を上れない、フレームレートが変わると跳ぶ高さが変わる 3D キャラクター：transform を動かすのは一つのコンポーネントだけ、自前の cast で地面を見つける `CharacterController` の motor——坂、段差、動く足場——に、一つの入力 struct を読む三人称・一人称・見下ろし・レーンランナーのコントローラー、Animator ブリッジ、そして坂・段差・頂点・レーン変更を証明する journey |
-| | `unity-animation` | ゲームの状態と食い違う Animator——ステートから抜けない、攻撃が勝手に再生される、hitbox が開いたまま：パラメーターごとに書き手は一つ、スクリプトから組む blend tree と sprite ステートグラフ、割り込まれても壊れないイベントと攻撃ウィンドウ、IK、Timeline の受け渡し、root motion。シミュレーションに従う手組みの PlayableGraph、Animation Job による足ロックとプロップ IK、ポップを数えるモーション計測（C# は `resources/`） |
-| | `unity-physics-2d` | 決して発火しない `OnCollisionEnter2D` や `OnTriggerEnter2D`、tilemap の壁を抜ける弾、プレイヤー自身に当たる接地判定、tile の継ぎ目に引っかかるキャラクター：Box2D 自身の語彙で書かれたトリアージの手順、両側プローブ、読み取り専用のシーン監査 |
-| | `unity-physics-3d` | 決して発火しない衝突や trigger、高速すり抜け、目の前にあるのに当たらない raycast。回転とスイープ接触を持つ、ゲーム自身が積分するスポーツのボール（`BallFlight.cs`） |
-| | `unity-play-harness` | エージェントが自分で動かして読み取れるゲームにする：一行の probe スナップショット、目的の瞬間から直接始めて「準備完了の集合」を待つ名前付き situation、タイムラインに記録して不変条件を検証する journey test、そして手触りの不満を再現可能なテストに変える方法——3D でも 2D でも |
-| **バーティカルスライス —— 2D ワールド** | `unity-2d-level` | 2D レベルをデータとして組み立てる：固定の Tilemap レイヤースタックに描き込むシリアライズ可能なレベル、ランタイムでの tile 編集、部屋と扉、エンドレスランにつなぐ chunk、Tiled と LDtk のインポート、SpriteShape の地形、そしてレベルごとに到達可能性を検査するシード生成 |
-| | `unity-2d-grid` | 矩形・アイソメトリック・ヘックスのグリッド上で動くタクティクスやタイルパズルの盤面ロジックを、シーン不要の素の C# で：ヘックスの offset・axial・cube 変換、移動範囲、A* 経路、射線、一つの占有マップ、押し出しルール、ターン順、undo、ポインターからセルへ |
-| | `unity-tilemap` | 矩形・ヘックス・アイソメトリックの Tile Palette と、手持ちの地形シートから作る RuleTile |
-| | `unity-2d-rendering` | 前後が逆に描かれる sprite、何も起きない、あるいは画面全体を黒くする `Light2D`：優先順位どおりの四つのソートキー、`SortingGroup`、見下ろし・アイソメトリック・ヘックスのシーン向け Y ソート、shadow caster、normal map、sprite mask、パララックスレイヤー |
-| **バーティカルスライス —— 3D ワールド** | `unity-3d-level` | アートができる前に寸法どおりに組む 3D レベル：寸法表（扉、通路、段差、坂、ジャンプの間隔）から作り、歩行 journey で証明する greybox、1/2/4 m グリッド上のモジュラーキット、override 監査つきの prefab 構成、一つのレイヤーにまとめたコリジョン代理、Terrain、spline に沿った道とレーン、そして URP のデカール |
-| | `unity-lighting` | ベイクしても何も変わらない、ベイクした壁の横でキャラクターが真っ黒、屋内に空が映り込む、カメラを回すと影がちらつく、数メートル先で影が切れる：URP でのライトモード・ベイク・プローブ・影・環境光をたどる症状別の手順、読み取り専用のシーン監査、結果を読み戻すベイク、そしてスマートフォンで賄える範囲 |
-| | `unity-navigation` | NavMesh、agent、障害物、link —— そして transform を誰が所有するかの決定 |
-| **バーティカルスライス —— システム** | `unity-interaction` | 物を使えるようにする——「E でドアを開ける」、二つの物の間でちらつくプロンプト、二度開くゲート、壁越しに押せてしまうスイッチ、二回拾われるコイン：一つの `IInteractable` 契約、視点に応じて候補を見つけ選択対象を一つだけ保つ interactor、一つのプロンプト、ピックアップ、スイッチ、ステートマシンとしてのゲート、鍵のかかったドア、ポインターのホットスポット、そしてゲートが一度だけ開くことを証明する journey |
-| | `unity-combat` | 一振りで二回ダメージが入る、毎フレーム当たり続ける剣、一瞬で体力を削り切るトゲ、センサーをすり抜ける弾：陣営・無敵・「死は一つの状態」を持つダメージ struct と受け手、hit と hurt のレイヤー、スイング id とヒット済みリストを持ちアニメーションのウィンドウで開くクエリ型 hitbox、motor を通したノックバック、毎ステップ cast する弾、データとしての弾幕——2D でも 3D でも |
-| | `unity-game-ai` | 壁越しに見つけてくる、決して諦めない、二つの状態の間でちらつく、毎フレーム raycast する敵：予算内の知覚、tick ごとの判断、移動は transform を持つ側に任せる——コードのステートマシン、小さなビヘイビアツリー、視界コーン、聴覚と記憶、巡回と追跡、2D の経路探索、ウェーブスポナー、ターン制の手の評価、そして見てから初めて追うことを証明する journey |
-| | `unity-scene-flow` | メニューに戻るとマネージャーが二重になる、90% で止まるロード画面、何も止めないポーズ、壊れたセーブ：決してアンロードされずサービスを持つ Boot シーン、同時に一つしか走らない additive ロード、ポーズも一つの状態であるゲームフェーズのステートマシン、マイグレーションとアトミック書き込みを持つバージョン付きセーブ、作り直されるチェックポイント、オブジェクトプール、ScriptableObject の設定 |
-| **バーティカルスライス —— UI** | `unity-game-ui` | **UI の依頼はまずここから。** プロジェクトがどの UI システムを使っているか判定して振り分け、誰も書いていない領域 —— runtime の `OnGUI` HUD —— を自分で受け持ちます |
-| | `unity-ui-ugui` | Canvas、RectTransform、Layout Group —— そして uGUI が何も描かなくなる六つの原因 |
-| | `unity-ui-toolkit` | UXML/USS、flex、Painter2D —— そして USS が黙って無視するプロパティ |
-| **量産 —— アセット** | `art-asset-registry` | 生成したすべての 2D・3D アセットを追跡：プロジェクトごとに追記専用の台帳を一つ持ち、sha256 ハッシュ（`.blend` の各版も）、来歴、アートディレクションと生成ジョブへのリンク、人が証拠画像とともに設定するステータス、上流の変更で古くなったアセットを記録し、既存の `manifest.md` は読み取り専用で取り込む |
-| | `unity-3d-models` | 3D モデルをゲームに入れる：出所で振り分け——画像から 3D の GLB、FBX キャラクター、Blender のリグ、購入パック——検査し、クラスの目標まで減面し、インポートして監査する。クラスの予算は、同じアセットを各生成プリセットで作りゲームシーンで見比べて人が選ぶもので、固定の上限ではない |
-| | `unity-rigged-character` | リグ付きキャラクターの Unity 側の契約。FBX がどのルートから来ても——Auto-Rig Pro、Blender のリグ、Mixamo、自動リグサービス——インポート → Avatar（Blender でリターゲットしたクリップは Generic、部位マスクや IK が要るときだけ Humanoid）→ Animator → ゲームプレイ用リグ。Optimize Game Objects 下でもプロップのソケットを残し、FBX が落とす PBR マップを組み直す。クリップパックの骨格に合わせたキャラクターを Generic でインポート（`SharedSkeletonClipImporter.cs`） |
-| | `unity-2d-sprites` | スプライトシート、スライス、pivot、9-slice、コマ列を再生可能な `AnimationClip` に —— importer の内側にあるメタデータ |
-| | `unity-2d-animation` | 2D Animation と PSD Importer パッケージによるスケルタル 2D キャラクター：rig としてインポートする PSB、ボーン・ジオメトリ・ウェイトの順、`SpriteSkin` と CPU または GPU の変形、ランタイムで切り替える Sprite Library のスキンと装備、2D IK、そして rig のコストを示す監査 |
-| | `unity-2d-pixel-perfect` | ドット絵がぼける、カメラが動くとピクセルが這う、タイルの継ぎ目に髪の毛のような隙間 —— そして手元にあるのは `PixelPerfectCamera` という名の二つのコンポーネントのどちらなのか |
-| | `unity-sprite-atlas` | 同じ draw call に載せたいスプライト：スクリプトからの V2 アトラス、パッキングとプラットフォーム設定、そして焼いたテクスチャがプレイヤーに届くまで |
-| | `unity-audio` | メモリ、load type、サンプリングレート、mixer のコスト —— 再インポートの前に必ず報告します。周波数の上限の下で合成した効果音を `scripts/spectrum_check.py` で検査 |
-| | `unity-localization` | 複数言語での出荷と、実際に破綻する CJK フォントのパイプライン |
-| **量産 —— AI アセット生成** | `game-character-pipeline` | **画像からリグ付きキャラクターを作るならまずここから。** Unity で承認されたキャラクターまでの工程順：ルート、品質目標、トラック（密なメッシュにそのままリグを付けるプレビュー、予算 → ゲームメッシュ → リグは一度だけの出荷）を先に決め、S0–S13 の各段を担当 skill と入口・出口のゲートとともに示す。動きが一つのクリップパックから来るなら、メッシュをその骨格に合わせ、クリップはそのまま再生 |
-| | `codex-visual` | `codex` の画像モデルで 2D アートを生成し、一冊のアートバイブルと一枚のアンカーでスタイルを固定：グリッド一括生成、短いアニメーションを 1 枚のシートとして生成し計測済みのコマへ切り出して GIF プレビュー、クロマキー透過、サイズ正規化、そして納品ファイルから中心とサイズを読み戻す幾何ゲート。画像から 3D のキャラクターが始まる四面図と、数値チェックが通ったときだけ合成するレビューシート、そして各セルに元ファイルのパスを書きハッシュを記録するテーマ別の概観シートも。生成前に被写体と照らしてキー色を選び、宣言したキーからずれて塗られた背景は色味の軸で混色を解き、一枚の静止画から呼吸する idle を作る |
-| | `comfyui-asset-generation` | 自前の ComfyUI で音楽・効果音・MiniMax H3 動画・画像から 3D のプロップとキャラクターを生成：一度に一件、`/history` だけを完了の証拠に、モデル切替前に `/free`。四面図はアップロード前に背景を除去し、調整の前にプロジェクトのグラフを公式テンプレートとノードごとに比べ、生成プリセットは目標ではなく段として見比べる。地面座標から描くキーフレームのレイアウト図で交差する動きを生成前に見つけ、地平線が動いたキーフレームを差し戻すカメラゲートも |
-| | `sprite-from-video` | 生成した動画を通して、キャラクターの静止画一枚を透過スプライトのコマにする：動きに合わせたサイズの純キー色キャンバスへ静止画を配置し、その場で動く画像から動画を生成、各コマをモデルが実際に塗った色でキー抜きし、半歩ガードと継ぎ目ゲートでループ周期を見つけるか、静止ポーズ間で一回きりの動作を切り出す —— 同じキャンバスのコマと `frames.json` を出力 |
-| | `blender-character-rig` | 起動中の Blender を MCP サーバー経由で操作し、画像から生成した 3D キャラクターにリグとアニメーションを付ける：計測したランドマークからボーンを配置、ウェイトは位置から計算、プロップは手のボーンに、アクションをキー入力してプレビューを出し、FBX は再インポートで確かめる。同じモジュールをヘッドレスでゲート付きの工程として実行：クリップパックの骨格をメッシュに合わせ、スキン付き LOD、バイト単位で同一の FBX |
-| | `blender-retarget` | 既製のクリップを Blender でリグを付けたキャラクターへ移す：Auto-Rig Pro か純粋な bpy のボーン対応表で各回転キーを二つのレストポーズの間で変換、クリップのマニフェスト、局所的なウェイト修正、NLA のレビュートラック付きアクションライブラリ、どのクリップでも手のボーンに対して確かめるプロップ、そして保存したファイルを開き直して確かめる監査。骨格に合わせるかリターゲットするかを計測で比べて決める（`scripts/clip_metrics.py`、`scripts/bakeoff_report.py`） |
-| **仕上げと最適化** | `unity-game-feel` | 手応えのないヒット、ヒット後に止まったままのゲーム、フラッシュ後に白いままの敵、三十個のピックアップで鳴る三十の音、止まらない振動：ゲームプレイのイベントごとに予算付きのフィードバック行を一つ——`Time.timeScale` の唯一の持ち主によるヒットストップ、元に戻るフラッシュ、ライブラリ不要のスクワッシュと tween、パーティクル、トレイル、発音数上限付きのプール済み SFX、止まる振動。小さく速いボールを画面上で見やすく滑らかに保つ（`MinScreenSize.cs`、`scripts/screen_smoothness.py`） |
-| | `unity-render-urp` | 設定したのに出てこないポストプロセス、モバイルで賄える範囲、Render Graph のレビュー、検証で外されるマテリアルのキーワード（`UrpMaterialValidation.cs`） |
-| | `unity-urp-migration` | Built-in のプロジェクトを五つのゲート付きフェーズで URP へ移す —— 各フェーズは保存済みのプロジェクトから読み直して確認します。途中で止まった移行の診断にも：一面のマゼンタ、PPv2 から Volume への移行、焼き直されないままの lightmap、`GrabPass`／`OnRenderImage` |
-| | `unity-profiling` | 遅いフレーム・揺れるフレームの裏で何が動いているのか：Profiler ウィンドウを開かない counter、90 フレーム窓の median/p95/worst、作業量カウンタ、そして前後の比較表。フェーズごとの GC アロケーションと実行時のアセットリーク（`GcAllocProbe.cs`、`OwnedAssets.cs`、ソークテスト） |
-| | `unity-scene-optimisation` | プロファイリングの counter がコストを特定したあとに変えるもの：batching の経路と URP で GPU instancing が何もしない理由、`LODGroup` と Mesh LOD、ベイクと GPU の occlusion culling、レイヤーごとのカリング距離、テクスチャサイズと mipmap streaming、sprite とパーティクルの overdraw——どの手段もまず一つの窓で試し、同じ counter で読み戻す |
-| | `unity-debug` | 目に見えない変更を検証したいとき —— そして計測結果を信じる前に、計測する側が本当のことを言っていると確かめたいとき。複数のエージェントが一台のマシンを共有するときは Editor を最大二つまで（`lanes.sh` は `MAX_UNITY` で待つ） |
-| **出荷** | `unity-device-testing` | **実機**（Android／iOS）での受け入れテスト：状態が変わるたびにタグ付きの 1 行を出すプローブシーン、そのログに対してアサートしシステムダイアログも押してくれるドライバ、人間には物理操作を 1 回に 1 つだけ頼んで端末側で確認、本当の失敗とハーネスの故障を分ける exit code |
-| | `unity-android-release` | ビルドしたあとに**証明する**：成果物を読み返す、keystore と versionCode の規律 |
-| | `unity-ios-build` | Xcode を開かずに Unity プロジェクトを iPhone 上のプロセスにする：headless ビルド、署名不要のコンパイルゲート、この Mac が実際に持っているもので署名、`devicectl` でインストール、コンソールが唯一のログ経路、native `.mm` プラグインを 30 秒で反復 |
-| | `unity-web-release` | WebGL/WebGPU のダウンロードサイズ、サーバのヘッダ、ブラウザのメモリ上限 |
-| **バックエンドと収益化** | `unity-live-services` | そのビルドがどの環境と話しているか、鍵をどこに置くか、オフライン経路を先に設計する |
-| | `unity-ugs` | Gaming Services の API 面：どのパッケージが何を提供するか、ほかのすべてが前提にする初期化順、Cloud Save のアクセスクラス、Cloud Code、Remote Config |
-| | `unity-iap` | In-App Purchasing v5 を呼び出し単位で：ストア接続、pending/confirm の流れ、レシート、権利付与、復元 —— そして二重に付与される／まったく付与されない |
-| | `unity-ads-levelplay` | LevelPlay のメディエーション：ネイティブ依存の解決、init より前の同意、リワード／インタースティシャル／バナーの広告ユニット、インプレッション単位の収益 |
-| | `unity-monetization` | IAP と広告 SDK が出荷とぶつかる場所：merged manifest、ストアでの申告、レシート |
-| | `unity-multiplayer` | 取り返しのつかない決定としてのトポロジー、加えてボイスチャットとマイクの奪い合い |
-| | `unity-multiplayer-services` | Sessions：プレイヤーが同じゲームに入るまで —— join code、一覧から選べる部屋、クイックジョイン、チケットマッチメイキング、relay、ホスト移行、専用サーバ |
-| | `unity-vivox` | ボイスとテキストチャットを呼び出し単位で：サインイン、group／echo／位置チャンネル、参加者一覧、ミュートと push-to-talk、マイク権限 |
+Unity の中での作業には、アセットパイプラインや動画のツールはどれも要りません。スマートフォン向けのビルドに要るのは、そのプラットフォームがもともと求めるものだけです。
 
-## この repo で作業する
+## 実際の動き
 
-```bash
-python3 tools/lint-skills.py            # frontmatter、name とディレクトリ名の一致、サイズ上限、実行ファイルの構文
-python3 tools/check-consistency.py      # manifest の一致、外部依存の宣言
-python3 tools/check-registry.py        # アセット台帳の selftest とフィクスチャ、予算表は一か所だけ
-python3 tools/sync-codex-manifests.py   # Codex 用 manifest を再生成
-claude plugin validate .                # manifest の形
+### 一枚の絵から、動くリグ付きキャラクターへ
+
+<div align="center">
+<img src="media/motion.gif" alt="上：機械生成したキャラクターの二台カメラ動画（正面と側面）。下：その動画から推定したモーションで動くキャラクターのリグ" width="640">
+<p><sub>上：生成した二台カメラの動画。下：そこから推定したモーションで動くキャラクターのリグ。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`character-autorig`](../skills/character-autorig/SKILL.md) →
+[`humanoid-motion`](../skills/humanoid-motion/SKILL.md) →
+[`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
+
+3D モデル、リグ、モーションは自分のマシンで作ります。`codex` CLI を通るのは 2D アートだけです。二台カメラからのモーション推定は [anymove](https://github.com/patch-gg/anymove)（Apache-2.0、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を参照）から移植したものです。動画は MiniMax H3 で機械生成したもので、オープンウェイトを MiniMax H3 Community License Agreement のもとローカルで実行しています。
+
+## 仕組み
+
+```mermaid
+flowchart LR
+    A["あなたの依頼"] --> B["SKILL.md<br/>症状の表"]
+    B --> C["reference/<br/>必要な部分だけ"]
+    C --> D["scripts/ · resources/ · templates/"]
+    D --> E{"ゲート<br/>終了コードと証拠"}
+    E -->|不合格| C
+    E -->|合格| F["完了（証拠付き）"]
 ```
 
-`.claude-plugin/*` が正本です。`.codex-plugin/plugin.json` と
-`.agents/plugins/marketplace.json` は**生成物です —— 手で編集しないでください。**
+- **言葉から正しい手順にたどり着きます**。各 skill は平易な言葉で書いた症状の表から始まり、三つの「まずここから」の skill がゲームプレイ・UI・キャラクターの依頼を振り分けます。
+- **助言ではなく、コードを動かします**。100 を超える Python スクリプト、170 を超える C# ファイル、50 を超えるテンプレートを、メモを打ち直す代わりにプロジェクトへコピーして使います。
+- **証明します**。手順の最後には、読んで確かめられるチェックがあります：probe スナップショット、journey test、再インポートした FBX、端末のログ。
+- **コンテキストが軽く、自己完結しています**。`SKILL.md` は振り分けるだけで、詳しい内容は状況が必要とするときに読み込まれます。ほかの plugin は要りません。skill 同士は Scope の節を通じて互いに引き継ぎます。
 
-この repo の外にある plugin へのルーティングは**宣言された依存**として扱います。`tools/check-consistency.py` の
-`COMPANIONS` に理由付きで追加してください。宣言のないものは gate で落ちます。
+## Skill 一覧
 
-このリリースの内容：[CHANGELOG.md](../CHANGELOG.md)。
+> [!TIP]
+> どこから始めればよいか迷ったら、ゲームプレイの依頼には `unity-gameplay`、UI の依頼には `unity-game-ui`、画像からリグ付きキャラクターを作るなら `game-character-pipeline` を使ってください。
+
+<details>
+<summary><b>全ステージ共通 —— ターミナルと検索</b>：Unity CLI と、プロジェクト内で何でも探すこと</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-cli`](../skills/unity-cli/SKILL.md) | ターミナルから Unity を動かす。リトライしてよいかを終了コードが示す |
+| [`unity-search`](../skills/unity-search/SKILL.md) | 「どこにある？何が参照している？」に、一本の Unity Search クエリで答える |
+
+</details>
+
+<details>
+<summary><b>コンセプト</b>：ブリーフ、初日のプロジェクト設定、ゲームプレイの振り分け</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-game-brief`](../skills/unity-game-brief/SKILL.md) | アイデアを、ブリーフ、固定した見た目、ゲームプレイのプレビュー、遊べる一つのインタラクションにする |
+| [`unity-new-project`](../skills/unity-new-project/SKILL.md) | 後から直すと高くつく初日の決定と、Editor なしで走るテスト |
+| [`unity-gameplay`](../skills/unity-gameplay/SKILL.md) | ゲームプレイの依頼は**まずここから**。プロジェクトのフィンガープリントを取り、作業を振り分ける |
+
+</details>
+
+<details>
+<summary><b>3C プロトタイプ</b>：入力、カメラ、2D と 3D のコントローラー、アニメーション、物理、プレイハーネス</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-input`](../skills/unity-input/SKILL.md) | 出なかったり二度出たりするジャンプ。ゲームプレイは一つの入力 struct だけを読む |
+| [`unity-camera`](../skills/unity-camera/SKILL.md) | ガタつく、レベルの外を映す、壁を突き抜けるカメラ |
+| [`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md) | 坂を滑り落ちる、壁に張り付く 2D キャラクター。キネマティックなモーターを一つに |
+| [`unity-3d-controller`](../skills/unity-3d-controller/SKILL.md) | `isGrounded` がちらつく、フレームレートでジャンプの高さが変わる。3D のモーターを一つに |
+| [`unity-animation`](../skills/unity-animation/SKILL.md) | ステートから抜けない Animator、勝手に再生される攻撃 |
+| [`unity-physics-2d`](../skills/unity-physics-2d/SKILL.md) | 発火しない 2D の衝突やトリガーを、Box2D 自身の語彙でトリアージ |
+| [`unity-physics-3d`](../skills/unity-physics-3d/SKILL.md) | 発火しない衝突やトリガー、またはゲーム自身が積分するボール |
+| [`unity-play-harness`](../skills/unity-play-harness/SKILL.md) | ゲームを操作できるようにする：一行の probe スナップショットと、不変条件をアサートする journey test |
+
+</details>
+
+<details>
+<summary><b>バーティカルスライス —— 2D ワールド</b>：データとしてのレベル、グリッド盤面、タイルパレット、描画順と 2D ライト</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-2d-level`](../skills/unity-2d-level/SKILL.md) | データとしての 2D レベル。シード生成で、すべてのピックアップに到達できるか確かめる |
+| [`unity-2d-grid`](../skills/unity-2d-grid/SKILL.md) | 正方形・アイソメトリック・ヘックスのグリッドで動く、タクティクスやタイルパズルの盤面ロジック |
+| [`unity-tilemap`](../skills/unity-tilemap/SKILL.md) | 描いてもつながらないタイル。手持ちのシートから RuleTile を作り、グリッドごとにパレットを用意 |
+| [`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md) | 前後が逆に描かれるスプライト、すべてを黒くしてしまう `Light2D` |
+
+</details>
+
+<details>
+<summary><b>バーティカルスライス —— 3D ワールド</b>：メトリクスどおりのグレーボックス、URP のライティング、NavMesh のエージェント</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-3d-level`](../skills/unity-3d-level/SKILL.md) | メトリクス表から組み、歩行 journey で証明する 3D のグレーボックス |
+| [`unity-lighting`](../skills/unity-lighting/SKILL.md) | URP で、何も変わらないベイクや、ベイクした壁の横で真っ黒になるキャラクター |
+| [`unity-navigation`](../skills/unity-navigation/SKILL.md) | 動かない、壁を抜けて歩くエージェント：NavMesh、リンク、Transform の所有権 |
+
+</details>
+
+<details>
+<summary><b>バーティカルスライス —— システム</b>：ドアとピックアップ、ダメージ、敵 AI、シーンとセーブ</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-interaction`](../skills/unity-interaction/SKILL.md) | ちらつく、二度開く「E で開ける」。対象は一つ、プロンプトも一つ |
+| [`unity-combat`](../skills/unity-combat/SKILL.md) | 二回当たる一振り、見張りをすり抜ける弾。ヒットは一回ずつ |
+| [`unity-game-ai`](../skills/unity-game-ai/SKILL.md) | 壁越しに見つけてくる、決して諦めない敵。予算内に収める知覚 |
+| [`unity-scene-flow`](../skills/unity-scene-flow/SKILL.md) | 二重になったマネージャー、壊れたセーブ。Boot シーンと、バージョン付きのアトミックなセーブ |
+
+</details>
+
+<details>
+<summary><b>バーティカルスライス —— UI</b>：UI の振り分けと HUD、uGUI、UI Toolkit</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-game-ui`](../skills/unity-game-ui/SKILL.md) | UI の依頼は**まずここから**。UI システムを判定して振り分ける |
+| [`unity-ui-ugui`](../skills/unity-ui-ugui/SKILL.md) | 何も描かない Canvas UI。六つのチェックのあと、アンカーと Layout Group |
+| [`unity-ui-toolkit`](../skills/unity-ui-toolkit/SKILL.md) | 黙って何もしない USS プロパティ。UXML、flex レイアウト、バインディングも |
+
+</details>
+
+<details>
+<summary><b>量産 —— アセット</b>：アセット台帳、3D モデル、リグ付きキャラクター、スプライト、オーディオ、多言語</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`art-asset-registry`](../skills/art-asset-registry/SKILL.md) | 生成したアセットがどこから来て、どれが古くなったか。追記専用の台帳一つで追う |
+| [`unity-3d-models`](../skills/unity-3d-models/SKILL.md) | 3D モデルをゲームへ。予算はゲームカメラで見て選ぶ |
+| [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md) | Unity で T ポーズになるリグ付き FBX：インポート、Avatar、Animator、ゲームプレイ用リグ |
+| [`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) | スクリプトでスライスするスプライトシートと、再生できるクリップにするコマ |
+| [`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) | PSB から作るスケルタル 2D キャラクター。スキンと装備はランタイムで切り替え |
+| [`unity-2d-pixel-perfect`](../skills/unity-2d-pixel-perfect/SKILL.md) | ぼける、カメラが動くとちらつく、継ぎ目が出るドット絵 |
+| [`unity-sprite-atlas`](../skills/unity-sprite-atlas/SKILL.md) | 同じドローコールに載せたいスプライトを、スクリプトから V2 アトラスにパック |
+| [`unity-audio`](../skills/unity-audio/SKILL.md) | ゲームの音を悪くせずに、オーディオのメモリと CPU を削る。再インポートの前に報告する |
+| [`unity-localization`](../skills/unity-localization/SKILL.md) | 複数言語での出荷。破綻しやすい箇所である CJK フォントのパイプラインも含めて |
+
+</details>
+
+<details>
+<summary><b>量産 —— AI アセット生成</b>：キャラクターの工程順、2D アート、オーディオ・動画・3D、リグとモーション</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 画像からリグ付きキャラクターを作るなら**まずここから**。S0–S13 の各工程に、それぞれゲート |
+| [`codex-visual`](../skills/codex-visual/SKILL.md) | `codex` の画像モデルで作る 2D アート。一冊のアートバイブルでスタイルを保つ |
+| [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 自前の ComfyUI で作る音楽、効果音、動画、3D モデル。それぞれ一つのジョブで |
+| [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | キャラクターの静止画一枚を、生成した動画を通して透過スプライトのループにする |
+| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | 画像から 3D にしたキャラクターを Blender でリグ付けし、FBX は再インポートで証明 |
+| [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 既製のクリップを自分の Blender のリグへ。足滑り、ジッター、ポップでゲート |
+| [`character-autorig`](../skills/character-autorig/SKILL.md) | 自分の Auto-Rig Pro で、人型をローカルでリグ付け。ヘッドレスのコマンド一つで |
+| [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 動きを一本のクリップに。二台カメラの動画から、骨格へ直接推定する |
+
+</details>
+
+<details>
+<summary><b>仕上げと最適化</b>：ゲームフィール、URP、移行、プロファイリング、シーンのコスト、検証</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-game-feel`](../skills/unity-game-feel/SKILL.md) | 手応えのないヒット。ゲームプレイのイベントごとに、予算付きのフィードバック行を一つ |
+| [`unity-render-urp`](../skills/unity-render-urp/SKILL.md) | 出てこないポストプロセスと、出荷前にレビューする Render Graph の機能 |
+| [`unity-urp-migration`](../skills/unity-urp-migration/SKILL.md) | Built-in から URP へ、ゲート付きの五つのフェーズで。途中まで移行したプロジェクトの診断も |
+| [`unity-profiling`](../skills/unity-profiling/SKILL.md) | 遅いフレーム、ばらつくフレームが何をしているか。比べられる 90 フレームの窓で |
+| [`unity-scene-optimisation`](../skills/unity-scene-optimisation/SKILL.md) | カウンターがコストを特定したあとの修正。同じカウンターで読み戻す |
+| [`unity-debug`](../skills/unity-debug/SKILL.md) | 目に見えない変更の検証。まずハーネスが本当のことを言っていると証明してから |
+
+</details>
+
+<details>
+<summary><b>出荷</b>：実機テスト、Android、iOS、Web</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-device-testing`](../skills/unity-device-testing/SKILL.md) | 実機のスマートフォンでの受け入れ。エージェントが操作し、物理的な手順は人が行う |
+| [`unity-android-release`](../skills/unity-android-release/SKILL.md) | 署名済みの APK または AAB。成果物を読み返して証明する |
+| [`unity-ios-build`](../skills/unity-ios-build/SKILL.md) | Xcode を開かずに、Unity プロジェクトを iPhone で動くアプリにする |
+| [`unity-web-release`](../skills/unity-web-release/SKILL.md) | 待ってもらえるほど小さく速い WebGL／WebGPU ビルド |
+
+</details>
+
+<details>
+<summary><b>バックエンドと収益化</b>：バックエンドの規律、Gaming Services、課金、広告、マルチプレイヤー、ボイス</summary>
+
+| Skill | 使うとき |
+|---|---|
+| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | ゲームを安全にバックエンドへ載せる。オフライン経路を先に設計して |
+| [`unity-ugs`](../skills/unity-ugs/SKILL.md) | 何も初期化されておらず例外を投げるサービス。Gaming Services を正しい順で |
+| [`unity-iap`](../skills/unity-iap/SKILL.md) | 二重に、あるいはまったく付与されないコンテンツ。In-App Purchasing v5 を呼び出し単位で |
+| [`unity-ads-levelplay`](../skills/unity-ads-levelplay/SKILL.md) | 広告が出ない、広告の依存でビルドが壊れる。LevelPlay で、初期化より前に同意を取る |
+| [`unity-monetization`](../skills/unity-monetization/SKILL.md) | ビルド、マニフェスト、ストアでの申告を壊す課金・広告 SDK |
+| [`unity-multiplayer`](../skills/unity-multiplayer/SKILL.md) | まずトポロジーを選ぶ。ボイスチャットがほかの機能のマイクを奪わないようにする |
+| [`unity-multiplayer-services`](../skills/unity-multiplayer-services/SKILL.md) | プレイヤーが同じゲームに入るまで。参加コードからホスト移行まで |
+| [`unity-vivox`](../skills/unity-vivox/SKILL.md) | 参加は成功したのに誰にも聞こえないボイス。Vivox のチャットを、サインインからプッシュトゥトークまで |
+
+</details>
+
+## コントリビュート
+
+ツール、チェック、リポジトリのルール：[CONTRIBUTING.md](CONTRIBUTING.md)。各リリースの内容：[CHANGELOG.md](../CHANGELOG.md)。
 
 ## ライセンス
 
-MIT —— [LICENSE](../LICENSE) を参照してください。他のプロジェクトから移植したコードは元のライセンスのままです：[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を参照。
+ライセンスは MIT です。詳しくは [LICENSE](../LICENSE) を参照してください。他のプロジェクトから移植したコードは、それぞれ元のライセンスのままです：[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

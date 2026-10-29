@@ -1,4 +1,4 @@
-"""brt_arp.py — drive the user's own Auto-Rig Pro: Smart markers, match, bind, retarget.
+"""brt_arp.py — drive the user's own Auto-Rig Pro: Smart markers, match, bind, retarget, pipeline, export.
 
 Runs inside Blender; not a command-line script (the stub is in brt_common.py).
 
@@ -22,6 +22,9 @@ it needs is missing.
     brt_arp.run({"op": "bind", "armature": "RunnerRig", "mesh": "Runner"})
     brt_arp.run({"op": "source_bones", "fbx": ["//clips/jog_lane_left.fbx"],
                  "map": {"c_arm_fk.l": "LeftArm", "c_forearm_fk.l": "LeftForeArm"}})
+    brt_arp.run({"op": "pipeline", "mesh": "Runner", "markers": "//rig/runner.markers.json",
+                 "fbx": "//export/runner.fbx"})
+    brt_arp.run({"op": "export", "armature": "RunnerRig", "fbx": "//export/runner.fbx"})
     brt_arp.run({"op": "retarget", "armature": "RunnerRig", "dry_run": True,
                  "map": {"c_root_master.x": "Hips", "c_arm_fk.l": "LeftArm", "c_forearm_fk.l": "LeftForeArm"},
                  "exclude": ["LeftHand", "RightHand"], "family": "courier-pack",
@@ -118,8 +121,51 @@ retarget  `clips`: [{"name", "fbx", "map"?, "frame_start"?, "frame_end"?, "align
           rewrites the clip results as JSON after each clip. Gates
           arp.retarget_clips (bakes that left an action with a slot and curves),
           arp.metadata_clips (metadata written), each == the clips run.
+pipeline  one call from a prepared mesh to a skeleton JSON, no Smart and no window
+          (`blender -b` works: the 3D view comes from the file's own screens). `mesh`, `markers`
+          (an arp_markers.py result from the character-autorig skill, or its path), `fbx` (the
+          file the export writes); optional `armature` (default "<mesh>Rig"; an existing
+          object of that name refuses with rig_exists), `preset` ("human"), `spine_count`
+          (the add-on's Count, which includes its root: 4 = three spine bones; default the
+          markers' arp_spine_count), the bind keys and `option_names` as for `bind`,
+          `max_influences` (4) and `limit_influences` (True), `units_x100` (True, the add-on's
+          default for Unity), `skeleton_out` (default <fbx>.skeleton.json). Refuses, changing
+          nothing, a mesh with an Armature modifier (already_bound), one whose scale or
+          rotation is not applied (transform_not_applied), markers without arp_refs or a
+          required reference bone (markers_invalid), and an exporter scene setting the add-on
+          lacks (export_setting_missing). Steps: append the preset (arp.append_arp); set the
+          spine Count through arp.show_limb_params on root_ref.x when it differs; write each
+          reference bone's head and tail from arp_refs (world -> rig space; a .l bone without
+          its .r twin is mirrored), keeping the preset's roll direction, turned with the hand
+          for hand and finger bones; Match to Rig; bind as `bind` does; limit every vertex to
+          `max_influences` deform weights and normalise (Unity keeps 4 by default); export
+          with the add-on's FBX exporter for Unity, humanoid, the master trajectory c_traj as
+          the root bone (scene settings set for the call and put back); import the file again,
+          write its skeleton (skeleton/1, armature space in metres, Z up; `deform` is true for a
+          bone some vertex is weighted to, since the FBX importer marks every bone deform) and
+          take the import back. Gates arp.rig_appended, arp.spine_bones (== Count - 1),
+          arp.refs_placed (every name exists on the preset, each end within 1e-4 m),
+          arp.bone_count, arp.vertices_without_group, arp.export_written,
+          arp.export_armatures (1), arp.export_unweighted (0), arp.export_max_influences
+          (<= max_influences). A failed gate before the bind stops the call and removes the rig
+          it appended (rolled_back); after the bind the mesh keeps its groups. `next` is the
+          contract check: contract_map.py map <skeleton> --map arp --require contract
+          --min-fingers 30 (unity-rigged-character). The record carries
+          licence {source: "auto-rig-pro", territory: "worldwide"}.
+export    the pipeline's export and read-back again, for a rig it bound whose weights were
+          repaired since (brt_weights): `armature` (the bound rig), `fbx`, optional `mesh` (one
+          name or a list; default every mesh whose Armature modifier targets the rig),
+          `max_influences` (4), `limit_influences` (True: limit and normalise again, as a
+          transfer can add a fifth weight), `units_x100` (True), `skeleton_out`. The same
+          scene settings (Unity, humanoid, c_traj root), the same skeleton/1 file and the same
+          record licence as `pipeline`. Refuses export_path_missing, not_bound (no mesh holds a
+          deform weight of the rig), export_setting_missing and no_view3d_area, changing
+          nothing. Gates arp.vertices_without_group, arp.export_written, arp.export_armatures,
+          arp.export_unweighted, arp.export_max_influences.
 
-Selection, active object, mode and frame are put back after every op. A
+Selection, active object, mode and frame are put back after every op. Without a window (a
+`blender -b` run) markers, match, bind, pipeline and export use the first 3D view area of the file's
+screens; they refuse with no_view3d_area only when the file has none. A
 failure removes the datablocks the call created, but not ARP's own edits to
 datablocks that existed before (the rig's bones after match, the mesh's groups
 after bind, the body's applied rotation after markers): save the file first.
@@ -144,7 +190,8 @@ _NAME = "auto_rig_pro"
 OPERATORS = ("arp.go_detect", "arp.match_to_rig", "arp.bind_to_rig", "arp.retarget",
              "arp.freeze_armature", "arp.build_bones_list", "arp.redefine_rest_pose",
              "arp.copy_bone_rest", "arp.save_pose_rest", "arp.import_config_preset",
-             "arp.import_config")
+             "arp.import_config", "arp.append_arp", "arp.show_limb_params",
+             "arp.arp_export_fbx_panel")
 _REMAP = ("arp.freeze_armature", "arp.build_bones_list", "arp.redefine_rest_pose",
           "arp.copy_bone_rest", "arp.save_pose_rest", "arp.retarget")
 # keyword arguments retarget hands each operator; checked against its RNA before any change
@@ -163,6 +210,7 @@ _SWITCH = "ik_fk_switch"
 # ARP's value convention for its switch bones: 1 FK, 0 IK. Arms bake onto FK controls, feet stay IK.
 _SWITCH_CONVENTION = {"c_hand_ik": 1.0, "c_foot_ik": 0.0}
 _BONES_LIST = "bones_map_v2"
+_NO_VIEW = "a 3D view: neither a window nor this file's screens have one"
 _CLIP_KINDS = ("objects", "meshes", "armatures", "materials", "images", "textures",
                "actions", "collections")
 
@@ -312,16 +360,25 @@ def _probe() -> dict:
 # --- running it --------------------------------------------------------------
 
 def _view3d_override() -> dict | None:
-    """window, screen, area and region of a 3D viewport, for bpy.context.temp_override."""
+    """window, screen, area, region and space of a 3D viewport, for bpy.context.temp_override.
+
+    Headless (`blender -b`) there is no window, but the file's screens still hold their 3D view
+    areas: the first one is used without a window. The add-on's operators read
+    `context.space_data` (append reads its overlay), so the space is always in the override.
+    """
     windows = [bpy.context.window] if bpy.context.window else []
     windows += [w for w in bpy.context.window_manager.windows if w not in windows]
-    for window in windows:
-        for area in window.screen.areas:
+    screens = [(w, w.screen) for w in windows] + [(None, s) for s in bpy.data.screens]
+    for window, screen in screens:
+        for area in screen.areas:
             if area.type != 'VIEW_3D':
                 continue
             region = next((r for r in area.regions if r.type == 'WINDOW'), None)
             if region is not None:
-                return {"window": window, "screen": window.screen, "area": area, "region": region}
+                out = {"screen": screen, "area": area, "region": region, "space_data": area.spaces.active}
+                if window is not None:
+                    out["window"] = window
+                return out
     return None
 
 
@@ -497,7 +554,7 @@ def _markers(params: dict, info: dict) -> dict:
         space = rigs[0].matrix_world.copy()
     override = _view3d_override()
     if override is None:
-        return _refuse(params, info, "no_view3d_area", "markers need a 3D viewport: run with the UI open")
+        return _refuse(params, info, "no_view3d_area", "markers need " + _NO_VIEW)
 
     state = C.save_state(scene, meshes)
     placed, markers = 0, {}
@@ -547,7 +604,7 @@ def _match(params: dict, info: dict) -> dict:
                        bound=bound)
     override = _view3d_override()
     if override is None:
-        return _refuse(params, info, "no_view3d_area", "match needs a 3D viewport: run with the UI open")
+        return _refuse(params, info, "no_view3d_area", "match needs " + _NO_VIEW)
 
     state = C.save_state(bpy.context.scene, [rig])
     try:
@@ -628,7 +685,7 @@ def _bind(params: dict, info: dict) -> dict:
                                                if "bind" in p.identifier.lower()))
     override = _view3d_override()
     if override is None:
-        return _refuse(params, info, "no_view3d_area", "bind needs a 3D viewport: run with the UI open")
+        return _refuse(params, info, "no_view3d_area", "bind needs " + _NO_VIEW)
 
     scene = bpy.context.scene
     state = C.save_state(scene, [rig, *meshes])
@@ -1266,9 +1323,378 @@ def _source_bones(params: dict) -> dict:
     return C.report(params, gates, op="source_bones", files=out,
                     skeletons=len({e["skeleton"] for e in out if "skeleton" in e}))
 
+# --- pipeline: markers -> match -> bind -> export -> skeleton ---------------------
+
+# reference bones the markers must place (the .r side is mirrored from .l)
+_REQUIRED_REFS = ("root_ref.x", "neck_ref.x", "head_ref.x", "shoulder_ref.l", "arm_ref.l",
+                  "forearm_ref.l", "hand_ref.l", "thigh_ref.l", "leg_ref.l", "foot_ref.l", "toes_ref.l")
+# scene settings of the add-on's exporter: Unity, humanoid, the master trajectory as the root bone
+_EXPORT_SCENE = {"arp_engine_type": 'UNITY', "arp_export_rig_type": 'HUMANOID', "arp_ge_master_traj": True}
+_LICENCE = {"source": "auto-rig-pro", "territory": "worldwide"}
+
+
+def _mirror_name(name: str) -> str:
+    return name[:-2] + ".r" if name.endswith(".l") else name
+
+
+def _load_markers(value) -> tuple[dict | None, str | None]:
+    if isinstance(value, str):
+        try:
+            with open(os.path.abspath(bpy.path.abspath(value)), encoding="utf-8") as handle:
+                value = json.load(handle)
+        except (OSError, ValueError) as exc:
+            return None, f"markers file unreadable: {exc}"
+    if not isinstance(value, dict) or not isinstance(value.get("arp_refs"), dict):
+        return None, "markers need an arp_markers.py result (an `arp_refs` object)"
+    bad = [k for k, v in value["arp_refs"].items()
+           if not (isinstance(v, dict) and all(isinstance(v.get(e), (list, tuple)) and len(v[e]) == 3
+                                               for e in ("head", "tail")))]
+    missing = [k for k in _REQUIRED_REFS if k not in value["arp_refs"]]
+    if bad or missing:
+        return None, f"arp_refs malformed {bad} or missing {missing}"
+    return value, None
+
+
+def _spine_refs(rig) -> list[str]:
+    return sorted(b.name for b in rig.data.bones if b.name.startswith("spine_") and b.name.endswith("_ref.x"))
+
+
+def _set_spine(rig, count: int, override: dict, idname: str) -> None:
+    """Auto-Rig Pro's spine Count (its root counts: 4 = root + three spine bones)."""
+    _select_only([rig], rig)
+    bpy.ops.object.mode_set(mode='EDIT')
+    try:
+        bones = rig.data.edit_bones
+        for eb in bones:
+            eb.select = eb.select_head = eb.select_tail = False
+        root = bones["root_ref.x"]
+        root.select = root.select_head = root.select_tail = True
+        bones.active = root
+        with bpy.context.temp_override(selected_editable_bones=[root], active_bone=root, **override):
+            result = _op(idname)('EXEC_DEFAULT', limb_type="spine", spine_count=count)
+        if 'FINISHED' not in result:
+            raise RuntimeError(f"{idname} returned {sorted(result)}")
+    finally:
+        _object_mode()
+
+
+def _hand_turn(rig_space: Matrix, refs: dict, frames: dict, old: dict):
+    """The rotation taking the preset's left hand frame to the measured one, or None."""
+    frame = frames.get(".L") if isinstance(frames, dict) else None
+    if not frame or "hand_ref.l" not in old:
+        return None
+    head, tail, z = old["hand_ref.l"]
+    x_p = (tail - head).normalized()
+    z_p = (z - x_p * z.dot(x_p)).normalized()
+    p = Matrix((x_p, z_p.cross(x_p), z_p)).transposed()
+    to_rig = rig_space.to_3x3()
+    x_n = (to_rig @ Vector(frame["x"])).normalized()
+    z_n = to_rig @ Vector(frame["z"])
+    z_n = (z_n - x_n * z_n.dot(x_n)).normalized()
+    n = Matrix((x_n, z_n.cross(x_n), z_n)).transposed()
+    return n @ p.transposed()
+
+
+def _place_refs(rig, refs: dict, frames: dict) -> dict:
+    """Write each ref bone's head and tail (world -> rig space), .l mirrored to .r.
+
+    A bone keeps the preset's roll direction (align_roll to its old Z); hand and finger bones
+    turn that Z with the hand, so a palm-in hand gets palm-in finger rolls. Returns
+    {placed, missing, worst_miss_m}.
+    """
+    inv = rig.matrix_world.inverted()
+    wanted = {}
+    for name, ends in refs.items():
+        head, tail = Vector(ends["head"]), Vector(ends["tail"])
+        wanted[name] = (inv @ head, inv @ tail)
+        if name.endswith(".l") and _mirror_name(name) not in refs:
+            wanted[_mirror_name(name)] = (inv @ Vector((-head.x, head.y, head.z)),
+                                          inv @ Vector((-tail.x, tail.y, tail.z)))
+    _select_only([rig], rig)
+    bpy.ops.object.mode_set(mode='EDIT')
+    missing, worst = [], 0.0
+    try:
+        bones = rig.data.edit_bones
+        old = {n: (bones[n].head.copy(), bones[n].tail.copy(), bones[n].z_axis.copy())
+               for n in wanted if n in bones}
+        turn = _hand_turn(inv, refs, frames, old)
+        mirror = Matrix.Scale(-1, 3, Vector((1, 0, 0)))
+        # parents first, so a connected child's head lands where its parent's tail was put
+        order = sorted((n for n in wanted if n in bones), key=lambda n: len(bones[n].parent_recursive))
+        for name in order:
+            eb = bones[name]
+            z_old = old[name][2]
+            head, tail = wanted[name]
+            eb.head, eb.tail = head, tail
+            stem = name.split("_", 1)[0].rstrip("0123456789")
+            if turn is not None and stem in ("hand", "thumb", "index", "middle", "ring", "pinky"):
+                z_new = turn @ (mirror @ z_old) if name.endswith(".r") else turn @ z_old
+                z_old = mirror @ z_new if name.endswith(".r") else z_new
+            eb.align_roll(z_old)
+        missing = sorted(n for n in wanted if n not in bones)
+        for name in order:
+            eb = bones[name]
+            worst = max(worst, (eb.head - wanted[name][0]).length, (eb.tail - wanted[name][1]).length)
+    finally:
+        _object_mode()
+    return {"placed": len(wanted) - len(missing), "missing": missing, "worst_miss_m": worst}
+
+
+def _weighted(rig, meshes) -> tuple[set, dict]:
+    """(bone names some vertex holds a weight > 0 for, per mesh {vertices, unweighted, max_influences})."""
+    bones = {b.name for b in rig.data.bones}
+    used, stats = set(), {}
+    for obj in meshes:
+        names = {g.index: g.name for g in obj.vertex_groups if g.name in bones}
+        unweighted, most = 0, 0
+        for v in obj.data.vertices:
+            hits = [names[g.group] for g in v.groups if g.group in names and g.weight > 0]
+            used.update(hits)
+            unweighted += not hits
+            most = max(most, len(hits))
+        stats[obj.name] = {"vertices": len(obj.data.vertices), "unweighted": unweighted,
+                           "max_influences": most}
+    return used, stats
+
+
+def _reimport(fbx: str) -> tuple[dict | None, dict, str | None]:
+    """Import the FBX, read its skeleton and skin, take the import back. (skeleton, stats, error)."""
+    sub = C.Tracker()
+    try:
+        bpy.ops.import_scene.fbx(filepath=fbx)
+        objects = sub.new("objects")
+        rigs = [o for o in objects if o.type == 'ARMATURE']
+        if len(rigs) != 1:
+            return None, {"armatures": len(rigs)}, f"the file holds {len(rigs)} armatures, 1 expected"
+        rig = rigs[0]
+        meshes = [o for o in objects if o.type == 'MESH'
+                  and any(m.type == 'ARMATURE' and m.object == rig for m in o.modifiers)]
+        used, stats = _weighted(rig, meshes)
+        mw = rig.matrix_world
+        bones = [{"name": b.name, "parent": b.parent.name if b.parent else None,
+                  "head": [round(x, 6) for x in mw @ b.head_local],
+                  "tail": [round(x, 6) for x in mw @ b.tail_local],
+                  "deform": b.name in used} for b in rig.data.bones]
+        skeleton = {"schema": "skeleton/1", "source": "auto-rig-pro export (FBX re-import)",
+                    "up": "+Z", "forward": "-Y", "units": "m", "bones": bones}
+        return skeleton, {"armatures": 1, "armature_scale": list(rig.scale), "meshes": stats}, None
+    finally:
+        sub.rollback()
+
+
+def _scene_settings(scene, wanted: dict) -> tuple[dict, list]:
+    """(previous values, names the scene does not have) for the add-on's scene settings."""
+    props = scene.bl_rna.properties
+    missing = [k for k in wanted if k not in props]
+    return {k: getattr(scene, k) for k in wanted if k in props}, missing
+
+
+def _export_and_read(params: dict, ids: dict, override: dict, scene, export: dict, rig, meshes: list,
+                     fbx: str, limit: int, gates: list, out: dict) -> None:
+    """Export the rig and its meshes with the add-on's FBX exporter (the scene settings in
+    `export` set for the call and put back), import the file again, write its skeleton and take
+    the import back. Appends the export gates to `gates` and the results to `out`."""
+    previous, _ = _scene_settings(scene, export)
+    try:
+        for name, value in export.items():
+            setattr(scene, name, value)
+        if os.path.exists(fbx):
+            os.remove(fbx)
+        _select_only([rig, *meshes], rig)
+        _call(ids["arp.arp_export_fbx_panel"], override, filepath=fbx)
+    finally:
+        for name, value in previous.items():
+            with contextlib.suppress(AttributeError, TypeError, ValueError):
+                setattr(scene, name, value)
+        _object_mode()
+    size = os.path.getsize(fbx) if os.path.exists(fbx) else 0
+    gates.append(C.gate("arp.export_written", size, "> 0", size > 0))
+    out["export"] = {"fbx": fbx, "bytes": size, "scene_settings": export}
+    if not size:
+        return
+    skeleton, stats, err = _reimport(fbx)
+    out["reimport"] = stats
+    gates.append(C.gate("arp.export_armatures", stats.get("armatures"), 1, err is None))
+    if err is not None:
+        return
+    loose = sum(m["unweighted"] for m in stats["meshes"].values())
+    most = max((m["max_influences"] for m in stats["meshes"].values()), default=0)
+    gates.append(C.gate("arp.export_unweighted", loose, 0, loose == 0))
+    gates.append(C.gate("arp.export_max_influences", most, limit, most <= limit))
+    out["skeleton_bones"] = len(skeleton["bones"])
+    path = os.path.abspath(bpy.path.abspath(params.get("skeleton_out") or fbx[:-4] + ".skeleton.json"))
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(skeleton, handle, indent=1)
+    out["skeleton"] = path
+    out["next"] = (f"python3 <unity-rigged-character>/scripts/contract_map.py map {path} "
+                   "--map arp --require contract --min-fingers 30")
+
+
+def _limit_influences(meshes: list, limit: int) -> None:
+    """Unity keeps 4 weights per vertex by default and renormalises; do it here, where the deform
+    gate sees it, over deform bones only."""
+    for mesh in meshes:
+        _select_only([mesh], mesh)
+        bpy.ops.object.vertex_group_limit_total(group_select_mode='BONE_DEFORM', limit=limit)
+        bpy.ops.object.vertex_group_normalize_all(group_select_mode='BONE_DEFORM', lock_active=False)
+
+
+def _export(params: dict, info: dict) -> dict:
+    """Re-export a rig the pipeline bound (after a weight repair) with the pipeline's settings."""
+    rigs, err = _objects(params, "armature", 'ARMATURE')
+    if err:
+        return _refuse(params, info, "object_missing", err)
+    rig = rigs[0]
+    if params.get("mesh"):
+        meshes, err = _objects(params, "mesh", 'MESH')
+        if err:
+            return _refuse(params, info, "object_missing", err)
+    else:
+        meshes = [o for o in bpy.data.objects if o.type == 'MESH'
+                  and any(m.type == 'ARMATURE' and m.object == rig for m in o.modifiers)]
+    fbx = os.path.abspath(bpy.path.abspath(params.get("fbx") or "")) if params.get("fbx") else ""
+    if not fbx.lower().endswith(".fbx"):
+        return _refuse(params, info, "export_path_missing", "`fbx` names the FBX file the export writes")
+    used, _ = _weighted(rig, meshes)
+    if not meshes or not used & {b.name for b in rig.data.bones if b.use_deform}:
+        return _refuse(params, info, "not_bound",
+                       f"no mesh holds weights for a deform bone of {rig.name!r}: bind it first (op pipeline)")
+    scene = bpy.context.scene
+    export = dict(_EXPORT_SCENE, arp_units_x100=bool(params.get("units_x100", True)))
+    _, missing = _scene_settings(scene, export)
+    if missing:
+        return _refuse(params, info, "export_setting_missing",
+                       f"the installed add-on keeps no scene setting {missing}; read its export panel")
+    override = _view3d_override()
+    if override is None:
+        return _refuse(params, info, "no_view3d_area", "the export needs " + _NO_VIEW)
+    limit = int(params.get("max_influences", 4))
+    gates, out = [], {"op": "export", "armature": rig.name, "meshes": [m.name for m in meshes]}
+    state = C.save_state(scene, meshes)
+    try:
+        _object_mode()
+        if params.get("limit_influences", True):
+            _limit_influences(meshes, limit)
+        deform = {b.name for b in rig.data.bones if b.use_deform}
+        loose = sum(_unweighted(m, deform) for m in meshes)
+        gates.append(C.gate("arp.vertices_without_group", loose, 0, loose == 0))
+        out["influences_limited_to"] = limit if params.get("limit_influences", True) else None
+        _export_and_read(params, info["operator_idnames"], override, scene, export, rig, meshes, fbx, limit,
+                         gates, out)
+    finally:
+        C.restore_state(state)
+    result = C.report(params, gates, **out)
+    result["record"]["licence"] = dict(_LICENCE)
+    return result
+
+
+def _pipeline(params: dict, info: dict, tracker: C.Tracker) -> dict:
+    meshes, err = _objects(params, "mesh", 'MESH')
+    if err:
+        return _refuse(params, info, "object_missing", err)
+    mesh = meshes[0]
+    markers, err = _load_markers(params.get("markers"))
+    if err:
+        return _refuse(params, info, "markers_invalid", err)
+    fbx = os.path.abspath(bpy.path.abspath(params.get("fbx") or "")) if params.get("fbx") else ""
+    if not fbx.lower().endswith(".fbx"):
+        return _refuse(params, info, "export_path_missing", "`fbx` names the FBX file the export writes")
+    rig_name = params.get("armature") or f"{mesh.name}Rig"
+    if bpy.data.objects.get(rig_name) is not None:
+        return _refuse(params, info, "rig_exists",
+                       f"an object named {rig_name!r} exists: rename or remove it")
+    if any(m.type == 'ARMATURE' for m in mesh.modifiers):
+        return _refuse(params, info, "already_bound", f"{mesh.name!r} already has an Armature modifier")
+    if any(abs(x - 1) > 1e-4 for x in mesh.scale) or any(abs(x) > 1e-4 for x in mesh.rotation_euler):
+        return _refuse(params, info, "transform_not_applied",
+                       f"{mesh.name!r} has scale {tuple(mesh.scale)} / "
+                       f"rotation {tuple(mesh.rotation_euler)}: "
+                       "apply them first (the contract wants scale 1)")
+    scene = bpy.context.scene
+    export = dict(_EXPORT_SCENE, arp_units_x100=bool(params.get("units_x100", True)))
+    _, missing = _scene_settings(scene, export)
+    if missing:
+        return _refuse(params, info, "export_setting_missing",
+                       f"the installed add-on keeps no scene setting {missing}; read its export panel")
+    idname = info["operator_idnames"]["arp.bind_to_rig"]
+    kwargs, scene_values, unmatched = _bind_options(params, idname)
+    if unmatched:
+        return _refuse(params, info, "bind_option_not_found",
+                       f"bind options {unmatched} match no operator or scene property")
+    override = _view3d_override()
+    if override is None:
+        return _refuse(params, info, "no_view3d_area", "the pipeline needs " + _NO_VIEW)
+    spine_count = int(params.get("spine_count") or markers.get("arp_spine_count") or 4)
+    ids = info["operator_idnames"]
+    gates, out, warnings = [], {"op": "pipeline", "armature": rig_name, "mesh": mesh.name}, []
+    state = C.save_state(scene, [mesh])
+    before = set(bpy.data.objects)
+
+    def stop(reason: str) -> dict:
+        removed = tracker.rollback() if not out.get("bound") else {}
+        return C.report(params, gates, stopped_at=reason, rolled_back=removed, warnings=warnings, **out)
+    try:
+        _object_mode()
+        _call(ids["arp.append_arp"], override, rig_preset=params.get("preset", "human"))
+        _object_mode()
+        rigs = [o for o in bpy.data.objects if o not in before and o.type == 'ARMATURE']
+        if len(rigs) != 1:
+            gates.append(C.gate("arp.rig_appended", len(rigs), 1, False))
+            return stop("append")
+        rig = rigs[0]
+        rig.name = rig_name
+        out["armature"] = rig.name
+        gates.append(C.gate("arp.rig_appended", 1, 1, True))
+        if len(_spine_refs(rig)) != spine_count - 1:
+            _set_spine(rig, spine_count, override, ids["arp.show_limb_params"])
+        spines = len(_spine_refs(rig))
+        gates.append(C.gate("arp.spine_bones", spines, spine_count - 1, spines == spine_count - 1))
+        placed = _place_refs(rig, markers["arp_refs"], markers.get("hand_frames") or {})
+        out["refs"] = placed
+        ok = not placed["missing"] and placed["worst_miss_m"] <= 1e-4
+        gates.append(C.gate("arp.refs_placed", placed["missing"] or placed["worst_miss_m"],
+                            "all, <= 1e-4 m", ok))
+        if not all(g["pass"] for g in gates):
+            return stop("refs")
+        _select_only([rig], rig)
+        _call(ids["arp.match_to_rig"], override)
+        _object_mode()
+        out["bone_count"] = len(rig.data.bones)
+        out["deform_bone_count"] = sum(1 for b in rig.data.bones if b.use_deform)
+        gates.append(C.gate("arp.bone_count", out["bone_count"], "> 0", out["bone_count"] > 0))
+        previous = {name: getattr(scene, name) for name in scene_values}
+        try:
+            for name, value in scene_values.items():
+                setattr(scene, name, value)
+            _select_only([mesh], rig)
+            _call(idname, override, **kwargs)
+            out["bound"] = True
+        finally:
+            for name, value in previous.items():
+                with contextlib.suppress(AttributeError, TypeError, ValueError):
+                    setattr(scene, name, value)
+            _object_mode()
+        limit = int(params.get("max_influences", 4))
+        if params.get("limit_influences", True):
+            _limit_influences([mesh], limit)
+        deform = {b.name for b in rig.data.bones if b.use_deform}
+        loose = _unweighted(mesh, deform)
+        gates.append(C.gate("arp.vertices_without_group", loose, 0, loose == 0))
+        out["bind"] = {"operator_kwargs": kwargs, "scene_settings": scene_values,
+                       "influences_limited_to": limit if params.get("limit_influences", True) else None}
+        _export_and_read(params, ids, override, scene, export, rig, [mesh], fbx, limit, gates, out)
+    finally:
+        C.restore_state(state)
+    result = C.report(params, gates, warnings=warnings, **out)
+    result["record"]["licence"] = dict(_LICENCE)
+    return result
+
 
 _OPS = {"markers": (_markers, ()), "match": (_match, ("arp.match_to_rig",)),
-        "bind": (_bind, ("arp.bind_to_rig",)), "retarget": (_retarget, _REMAP)}
+        "bind": (_bind, ("arp.bind_to_rig",)), "retarget": (_retarget, _REMAP),
+        "pipeline": (_pipeline, ("arp.append_arp", "arp.show_limb_params", "arp.match_to_rig",
+                                 "arp.bind_to_rig", "arp.arp_export_fbx_panel")),
+        "export": (_export, ("arp.arp_export_fbx_panel",))}
 
 
 @C.step
@@ -1295,4 +1721,6 @@ def run(params: dict, tracker: C.Tracker) -> dict:
         return _refuse(params, info, "operator_missing",
                        f"the installed add-on (version {info['version']}) registers no {missing}. "
                        "Nothing was changed.")
+    if op == "pipeline":
+        return fn(params, info, tracker)
     return fn(params, info)

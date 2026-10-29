@@ -43,6 +43,10 @@ rig with the `.blend` it came from, a clip, a QA sheet a decision rests on.
 - **Facts, never secrets.** `params` holds `prompt_file` and `prompt_sha256`, never the prompt
   text, and `server_label`, never a URL. Purchased and third-party files carry `source`, `license`
   and `vendor: true`, and stay out of git.
+- **Where it may be sold travels with it.** A model or footage with a territory limit is recorded
+  as `licence: {source, id, territory}`; `ART_DIRECTION.md` declares `Sales territory:`; `check`
+  fails an approved asset whose licence, or one up its `parent` and `depends-on` links, excludes
+  part of it, and only warns while the territory is undecided.
 - **The method lives here; the records live in the project.** This skill holds the schema and the
   scripts. Ledgers, assets and purchased packs stay in each project.
 
@@ -54,6 +58,7 @@ rig with the `.blend` it came from, a clip, a QA sheet a decision rests on.
 | Starting a ledger, recording after a generation, `check` and its fixes, setting a status, stale after an upstream change, a change record and which evidence wins, moving a file, rows for the manifest, several writers at once | `reference/workflow.md` |
 | A project with a hand-written manifest and no ledger: reading it once into records, dry run first, the manifest never edited | `reference/adopt.md` |
 | A producer's JSON output (a codex call, a frames sidecar, a Blender report) turned into records | `reference/ingest.md` |
+| A model with a territory limit, the `Sales territory:` line, the known licence sources and their territories | `reference/licences.md` |
 | The flags of one command | `scripts/registry.py <command> --help` and the module docstrings |
 
 ## Commands
@@ -62,7 +67,7 @@ rig with the `.blend` it came from, a clip, a QA sheet a decision rests on.
 |---|---|---|
 | `init` | creates the empty ledger; warns when git ignores it | 0 · 3 |
 | `record` | appends a record built from a partial record (`--json FILE` or stdin) and flags (`--art-version N`, `--link REL=TO`); hashes every file and the `.blend` named in `file`; refuses a schema break, an unknown parent or link, a cycle, a file another id holds | 0 · 2 refused · 3 bad input |
-| `check [--strict]` | every rule, then orphans under `ArtDirection/` | 0 · 2 · 3 |
+| `check [--strict]` | every rule, a licence that excludes part of the declared sales territory among them, then orphans under `ArtDirection/` | 0 · 2 · 3 |
 | `stale [--art-version N] [--at NS:KEY=N]` | current candidate and approved records with a link behind: an upstream asset with newer bytes, or an outside version given here; writes nothing | 0 · 3 |
 | `status ID STATE` | the status change as a new revision; `approved` refuses what `check` would fail; `superseded --by ID` refuses an unknown, dead or circular successor | 0 · 2 · 3 |
 | `history ID` | every revision, with the current version and the previous good one marked | 0 · 3 |
@@ -130,7 +135,7 @@ The courier run: `Runner` has a locked anchor, a run sheet, a hammer prop `Malle
 | Retargeting clips onto a rig in Blender | `blender-retarget` |
 | Which stage of a character comes next, and its gate | `game-character-pipeline` |
 | Triangle and texture budgets, the import audit in Unity | `unity-3d-models` |
-| Which packs may be bought and which licences may ship | The project's own policy; the ledger records `source` and `license` and keeps vendor files out of git |
+| Which packs may be bought, and the reading of a licence's terms | The project's own policy; the ledger records `source`, `license` and `licence`, keeps vendor files out of git, and holds what `reference/licences.md` lists against the declared territory |
 
 ## Related skills
 

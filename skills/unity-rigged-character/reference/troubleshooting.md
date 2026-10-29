@@ -33,7 +33,7 @@
 | Visible in Scene, invisible in Game | model imported on layer 0, camera culls it | set model + children to the prefab root's layer (`unity-import.md` §2) |
 | Pose a few degrees off Blender, a held prop 10+ cm off the hand | the clip plays through Humanoid muscle space | Generic for clips retargeted in Blender; Anim. Compression Off when the prop must line up (`unity-import.md` §1) |
 | One joint bent far wrong on Humanoid only | the pose is outside the muscle limits and was clamped | Generic, or fix the pose in Blender (`unity-import.md` §1) |
-| The chest does not move on Humanoid, or the spine bends oddly | the automatic mapping left a bone such as `Chest` unmapped | Configure: map every bone, re-check `isValid` (`unity-import.md` §1) |
+| The chest does not move on Humanoid, or the spine bends oddly | the automatic mapping left a bone such as `Chest` unmapped | Build Humanoid Avatar: an explicit map with Chest and the fingers (`humanoid-contract.md`); or Configure by hand, re-check `isValid` (`unity-import.md` §1) |
 | Humanoid Avatar built on the wrong pose | the default pose is the clip's first frame, not the Blender rest | Enforce T-Pose, or an explicit skeleton (`unity-import.md` §1) |
 | Extra bones (ears, a tail) frozen on a Humanoid | they sit outside the humanoid map | check in Play mode; Generic when the game needs no body-part mask (`unity-import.md` §1) |
 | A prop socket under the hand is missing | Optimize Game Objects removed the bone Transforms | list it in Extra Transforms to Expose (`unity-import.md` §3) |

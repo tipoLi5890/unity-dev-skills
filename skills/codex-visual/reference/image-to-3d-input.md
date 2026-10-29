@@ -85,6 +85,22 @@ Swapped sides leave a near-symmetric prop's geometry intact and show up as **col
 turns yellow-green and hues bleed across neighbouring faces. Re-seeding does not fix it; swapping
 the two side views does.
 
+`audit_3d_source.py --views` checks that the two side views **face opposite ways**. It cuts each
+side view's silhouette (alpha, or distance from the corner colour) to its box, resizes both to
+one square, and compares IoU(left, right) with IoU(left, mirrored right). Two true side views
+are mirror images, so the mirrored pair matches better:
+
+| Result | Reading | Action |
+|---|---|---|
+| `opposite` | mirrored IoU higher by more than `--facing-margin` (0.05) | pass; still open both views for which one is left |
+| `same` | plain IoU higher by more than the margin | **fail**: one side view was drawn facing the wrong way or repeated; redraw or flip it |
+| `inconclusive` | the two within the margin: a symmetric profile, a crate | WARN, not a fail; open both side views |
+
+It catches a sheet whose two profiles both face one way, and only that: a pair that faces
+opposite ways but sits in the wrong slots passes, and still shows only as the hue shift above.
+`audit_3d_source.py --selftest` runs a synthetic profile (nose and toes forward) through the
+three cases.
+
 ## 7. Prompt templates — the courier-run pickup crate
 
 English, single-quoted, after the `STYLE PREAMBLE`, prompt first and `-i` last
@@ -136,7 +152,8 @@ regenerate; a conversion costs minutes, this a second. What no script reads:
 
 1. No shadow attached to the subject, no glow, no rim light, no thin floating part (§3).
 2. Single image: front, one side and the top all visible (§2).
-3. Turnaround: `left.png` has the front pointing left (§6).
+3. Turnaround: `left.png` has the front pointing left (§6); the script checks only that the two
+   side views face opposite ways.
 
 Then hand off: conversion to `comfyui-asset-generation`, import to `unity-3d-models`.
 

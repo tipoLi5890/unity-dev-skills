@@ -186,6 +186,8 @@ mallet at the latch of a gate.
 | IK, foot planting, facial rigs, cloth or physics bones | Not covered — this is FK on a hand-specified skeleton |
 | Installing Blender, the add-on or the MCP server | The user's, on request only |
 | The character's stage order: preview or ship track, the game mesh before the rig | `game-character-pipeline` |
+| A humanoid rigged headless onto the humanoid contract: Auto-Rig Pro from measured markers, the mesh and deformation gates | `character-autorig` |
+| Clips from two-camera video onto the contract, contact bake | `humanoid-motion` |
 
 ## Related skills
 

@@ -6,7 +6,10 @@
 Auto-Rig Pro builds a control rig from a handful of markers, skins the mesh to it, and remaps
 clips onto its controls. `brt_arp` drives the user's own installed copy through the MCP code tool
 in six ops: `probe`, `source_bones`, `markers`, `match`, `bind`, `retarget` (parameters in its
-docstring).
+docstring). Two more serve `character-autorig`: `pipeline` rigs a mesh onto the humanoid contract
+in one call, and `export` re-exports a bound rig after a weight repair with the pipeline's settings,
+4-influence limit and licence. The elbow and knee repair recipe is in `character-autorig` →
+`reference/arp-pipeline.md`.
 
 ## When this route fits
 
