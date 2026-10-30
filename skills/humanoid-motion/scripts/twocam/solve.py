@@ -759,8 +759,16 @@ def sha256(path) -> str | None:
         return None
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="solve.py", description=__doc__.split("\n")[0])
+    p = UsageParser(prog="solve.py", description=__doc__.split("\n")[0])
     p.add_argument("det"); p.add_argument("rig_info"); p.add_argument("out")
     p.add_argument("--samples-out"); p.add_argument("--no-align", action="store_true")
     p.add_argument("--fix-swaps", action="store_true"); p.add_argument("--iters", type=int, default=1500)
@@ -1009,7 +1017,7 @@ def selftest() -> int:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
     return run(argv)
 

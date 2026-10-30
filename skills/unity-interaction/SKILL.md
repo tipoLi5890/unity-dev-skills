@@ -1,16 +1,8 @@
 ---
 name: unity-interaction
 description: >-
-  Make things usable in 2D and 3D through one contract: an IInteractable
-  interface, an interactor that keeps one selected target (trigger list, cone
-  overlap, camera ray, adjacent cell or pointer hit, by perspective), one
-  prompt, pickups, switches, gates as state machines, locked doors, pointer
-  hotspots, and a journey proving a gate opens once. Load for: "press E to open
-  the door", "the prompt flickers between two objects", "the door opens twice",
-  "I can use the switch through the wall", "the coin gets collected twice",
-  "walk over and then use it". Damage and hits are unity-combat; the casts
-  themselves are unity-physics-3d and unity-physics-2d; which UI system draws
-  is unity-game-ui.
+  Press-to-use in 2D and 3D: doors, switches, gates, pickups, use prompts,
+  point-and-click hotspots.
 ---
 
 # unity-interaction — detection is chosen by perspective; the contract is the same everywhere
@@ -20,6 +12,18 @@ description: >-
 > about the overlap call. They are about selecting **one** target and keeping it, and about who
 > owns the change. The fix is the same in every view: the interactor selects and delivers a
 > press; the interactable decides what the press means, and refuses on its own.
+
+## Symptom → where to look
+
+| The report | Go to |
+|---|---|
+| "press E to open the door", locked doors, switches, gates | §1, `reference/doors-and-switches.md` |
+| "the prompt flickers between two objects", "I can use the switch through the wall" | `reference/detection-choice.md` |
+| "the door opens twice" | `reference/interactable-contract.md` (the double-press guard) |
+| "the coin gets collected twice", pickups | `reference/pickups.md` |
+| "walk over and then use it", point-and-click hotspots | `reference/point-and-click.md` |
+| The use prompt: placement, glyph, hold ring | `reference/prompts.md` |
+| Which detection for this camera | §0 |
 
 ```
 RunInput ──► interactor ──────────────► interactable ───────────► the world

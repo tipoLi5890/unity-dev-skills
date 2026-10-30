@@ -1,15 +1,8 @@
 ---
 name: blender-retarget
 description: >-
-  Retarget stock or purchased clips onto a character already rigged in
-  Blender, driven through its MCP server. Load for: "put these clips on my
-  rig", arms twist or flare, a T-pose source on an A-pose rig, a retargeted
-  arm still follows its IK target, actions renamed ".001", a library of many
-  clips that needs previews and one NLA review track, a shoulder or upper back
-  that collapses when the arm lifts (local weight repair), a prop that must
-  stay on the hand bone in every clip, handing the library to Unity. Auto-Rig
-  Pro when installed. One pack's clips: fit, not retarget (measured bake-off);
-  rig by position: blender-character-rig; Unity: unity-rigged-character.
+  Put stock or purchased clips on a rigged character in Blender: retarget,
+  clip library, weight repair.
 ---
 
 # blender-retarget — map the rest pose, then move the clips
@@ -19,6 +12,23 @@ rotation-frame problem, not a matter of rotating a bone a few degrees: two skele
 differently give the same four numbers two meanings. A clip that looks wrong on the target is
 almost always the frame (a T-pose source read against an A-pose rest, a bone mapped by name
 instead of by role) or the mode (an arm baked onto FK controls and played in IK), not the keys.
+
+## Start here — the request, and where it is answered
+
+| The request or symptom | Read |
+|---|---|
+| "Put these clips on my rig": the order of the steps | [Pipeline](#pipeline); one call per module, `reference/modules.md` |
+| Arms twist, flare or cross; a T-pose source on an A-pose rig; the constant `K`, sign continuity, mapping by role, when `K` is recomputed | `reference/rest-pose-and-conjugation.md` |
+| Auto-Rig Pro, when installed: when the route fits, the probe, markers, Match then Bind, the source skeleton probed for the map, the per-clip sequence and its dry run; a retargeted arm that still follows its IK target (IK/FK switches) | `reference/arp-route.md` |
+| One pack supplies every clip — fit, not retarget: the measured bake-off, added foot slide, late-starting and missing curves, a clip from another skeleton converted once | `reference/route-bakeoff.md` |
+| Clips: the manifest, a stock library in the user's browser, a purchased pack and its variants, fps, licence | `reference/clip-sources.md` |
+| Actions renamed ".001"; a library of many clips that needs previews and one NLA review track; layered actions and slots, fake users, asset marks and the catalog, check renders | `reference/action-library.md` |
+| A shoulder or upper back that collapses or drags when the arm lifts: probe, mask, transfer, deform-only normalising, backup and restore | `reference/weight-repair.md` |
+| A prop that must stay on the hand bone in every clip | `brt_drift`, [Pipeline](#pipeline) step 9; `reference/modules.md` |
+| The quality target first; which layer is wrong (geometry, skinning, animation, material), a fixed grip, stop rules, the failure log | `reference/defect-triage-and-stop.md` |
+| Handing the library to Unity: which skeleton, which clips, what survives the FBX, the minimal validation | `reference/unity-handoff.md` |
+| A worked example: a T-pose stock clip and a pack clip onto the runner | `reference/worked-example.md` |
+| The parameters of one module | its docstring, `scripts/brt_*.py` |
 
 > **Convert the frame, prove one clip, then widen.** A wrong conversion is wrong in the same way
 > on every clip, so a batch only multiplies it.
@@ -47,44 +57,6 @@ in `scripts/` that returns a dict of gates.
 - **Auto-Rig Pro only when the user has installed it.** `brt_retarget` and `brt_arp` op
   `source_bones` need stock Blender alone.
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Arms flare, cross or twist; a T-pose source on an A-pose rig; the constant `K`, sign continuity, mapping by role, when `K` is recomputed | `reference/rest-pose-and-conjugation.md` |
-| Auto-Rig Pro: when the route fits, the probe, markers, Match then Bind, the source skeleton probed for the map, the per-clip sequence, its dry run, IK/FK switches | `reference/arp-route.md` |
-| Clips: the manifest, a stock library in the user's browser, a purchased pack and its variants, fps, licence | `reference/clip-sources.md` |
-| Layered actions and slots, `.001` names, fake users, asset marks and the catalog, the review track, previewing one action alone, check renders | `reference/action-library.md` |
-| A shoulder or upper back that dents or drags in a pose: probe, mask, transfer, deform-only normalising, backup and restore | `reference/weight-repair.md` |
-| The quality target first; which layer is wrong (geometry, skinning, animation, material), a fixed grip, stop rules, the failure log | `reference/defect-triage-and-stop.md` |
-| The export contract for Unity: which skeleton, which clips, what survives the FBX, the minimal validation | `reference/unity-handoff.md` |
-| Fit or retarget: the measured bake-off, added foot slide, late-starting and missing curves, a clip from another skeleton converted once | `reference/route-bakeoff.md` |
-| The parameters of one module | its docstring, `scripts/brt_*.py` |
-
-| Module | Does | Gates |
-|---|---|---|
-| `brt_common` | shared helpers: the gate and report shape, slot assignment, layered-action F-curves, scene state saved and put back, finite sampling | — |
-| `brt_arp` | drives the user's Auto-Rig Pro: ops `probe`, `source_bones` (no add-on), `markers`, `match`, `bind`, `retarget`, `pipeline` (`character-autorig`), `export`; a missing name fails `arp.precondition` with a `reason`, no change | `arp.addon_present`, `arp.source_skeleton_found`, `arp.map_sources_found`, `arp.markers_placed`, `arp.bone_count`, `arp.vertices_without_group`, `arp.retarget_clips`, `arp.metadata_clips` |
-| `brt_retarget` | the rotation of mapped bones, conjugated from a source skeleton into a new action or, with `into_action`, one that exists; the root-most moving bone's translation scaled by the hip-height ratio `k` (`translate`) | `retarget.output_is_new` or `retarget.channels_free`, `retarget.finite_keys`, `retarget.translation_kept`, `retarget.first_equals_last` (with `loop`) |
-| `brt_weights` | local weight repair: ops `probe`, `snapshot`, `transfer`, `normalize`, `restore` | `weights.region_vertices`, `weights.snapshot_written`, `weights.changed_vertices`, `weights.weight_sum_error`, `weights.deform_only`, `weights.restored` |
-| `brt_library` | slots, fake users, asset marks, one review track, a catalog; actions found by name, provenance property or manifest | `library.every_action_has_slot`, `library.finite_at_3_frames`, `library.strips_equal_clips` |
-| `brt_drift` | a carried prop against its anchor bone, sampled over every clip, position and rotation | `drift.max_drift`, `drift.max_rotation` |
-| `brt_audit` | the saved .blend read back in a fresh Blender; exit 0 pass, 1 fail, 2 refused input | `audit.expect_matches`, `audit.props_parented` (with `props`) |
-| `clip_metrics.py` (host, numpy) | a clip on the character against the same clip on the reference body: plants, added foot slide, limb direction, arm pose, pops; exit 0/1/2 | `added_slide_p95_m`, `added_slide_max_m`, `limb_direction_p95_deg`, `pops` |
-| `motion_metrics.py` (host, numpy) | one clip: plant slide, penetration, jitter, limits, loop seam, drift, pops; exit 0/2/1 | `foot_slide_p95_m`, `loop_seam_ratio`, `pops` |
-| `bakeoff_report.py` (host, stdlib) | `clip_metrics` reports per route → one markdown table, misses in bold; exit 0/1/2 | — |
-
-**Calling a module.** Through the Blender MCP server's code tool, put this skill's `scripts`
-directory on `sys.path`, import `brt_common` and the module, reload both (Blender keeps
-`sys.modules` for the whole session), and assign `result = brt_<module>.run(params)`: the code tool
-hands that dict back, and the worked example below is the stub. Every `run` returns `ok`, `gates`
-(each with `name`, `value`, `limit`, `pass`), `created` (the datablocks it added) and `blender`,
-plus the keys its docstring lists; `report_path` also writes it as JSON. A call that raises removes
-what it created; edits to datablocks that already existed are not undone, and each docstring says
-which it makes. When Blender cannot read the skill directory, send the sources in one call the way
-`blender-character-rig` does, `brt_common` first. `brt_audit` alone also runs from the host shell:
-`Blender --background <file>.blend --factory-startup --python brt_audit.py -- --expect '{...}'`.
-
 ## Pipeline
 
 In order. A row is done when its gates pass or, where it says picture, when someone has looked.
@@ -106,39 +78,6 @@ In order. A row is done when its gates pass or, where it says picture, when some
 
 Numbers cannot close steps 5, 7 and 8: a clip passes every retarget gate with each arm pointing
 the wrong way, and a repaired region passes every weight gate while it still looks hollow.
-
-## Worked example
-
-`Runner`, rigged as `RunnerRig` with an A-pose rest, takes `HurdleVault` from a T-pose stock rig
-and `GateLatchSwing` from a purchased pack. No Auto-Rig Pro and short limbs: `brt_retarget`.
-
-1. **Manifest.** Two entries with file, fps and direction; of the pack's two-person take only the
-   actor who swings goes onto `Runner`.
-2. **One clip.** `HurdleVaultRig`'s frame 1 stands arms down, near `RunnerRig`'s rest, so it is
-   the `reference_frame`; without it every arm hangs lower by the T-to-A difference. The map runs
-   root outward and by role (`arm_l` is the upper arm; `shoulder_l` is a clavicle the target lacks);
-   hands stay out of the first map.
-
-   ```python
-   import sys, importlib
-   p = "<skill>/scripts"                      # this skill's scripts directory, absolute
-   if p not in sys.path: sys.path.insert(0, p)
-   import brt_common, brt_retarget; importlib.reload(brt_common); importlib.reload(brt_retarget)
-   m = {"Hips": "hips", "Spine": "spine_01", "Chest": "spine_02",          # target: source
-        "UpperArm.L": "arm_l", "LowerArm.L": "forearm_l", "UpperArm.R": "arm_r", "LowerArm.R": "forearm_r"}
-   result = brt_retarget.run({"source": "HurdleVaultRig", "target": "RunnerRig", "map": m,
-                              "reference_frame": 1, "output_action": "Runner_HurdleVault"})
-   ```
-
-   `retarget.output_is_new` passes, `retarget.finite_keys` 0; `max_step` equal to
-   `source_max_step` says how fast the vault moves, not whether the map is right;
-   `translation: "retargeted"` with `translation_k`; `retarget.translation_kept` passes.
-3. **Look**, first, middle and last frame beside the source. A hand aimed at a tail that does not
-   lie along the palm swings wrong, so the grip comes from the prop's anchor instead.
-4. **The pack clip** rests in another A-pose with other names: its own map, its own `K`.
-5. **Batch, library, prop.** One clip at a time; each `output_action` into the manifest's
-   `action`; `brt_library` with `manifest`; `brt_drift` for `Mallet` on `Hand.R`; save when asked,
-   `brt_audit --props`, then the minimal export.
 
 ## Discipline
 
@@ -162,14 +101,6 @@ and `GateLatchSwing` from a purchased pack. No Auto-Rig Pro and short limbs: `br
 | The controller that moves the character | `unity-3d-controller` |
 | Finger capture, hand retopology | Not covered |
 | Left-hand grips, two-person positioning | Not covered |
+| The character's stage order, and where retargeting sits in it | `game-character-pipeline` |
+| Proving the clips play in the running game | `unity-debug` |
 | Purchasing content, accounts, credentials, bulk downloaders | The user's, never automated; fetching one stock clip at a time in the user's own browser is in `reference/clip-sources.md` |
-
-## Related skills
-
-`game-character-pipeline` · `blender-character-rig` for a rig built from measured landmarks and
-the FBX round trip ·
-`unity-rigged-character` for the importer and the Avatar once the FBX reaches Unity ·
-`unity-animation` for states, events, root motion and IK on the clips ·
-`comfyui-asset-generation` for the mesh, and for a shell that is wrong at the source ·
-`unity-3d-controller` for who moves the character · `unity-debug` for proving the clips play in
-the running game.

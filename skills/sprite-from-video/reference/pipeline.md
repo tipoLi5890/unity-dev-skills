@@ -180,7 +180,7 @@ The frame folder `out/runner_walk/` holds `runner_walk_000.png …` and `frames.
 and report sit beside it, so the folder can be copied under `Assets/` as it is.
 
 - **Unity** — `unity-2d-sprites` → `reference/sprite-animation.md`: copy the folder under
-  `Assets/`, then build the clip from it with `resources/SheetToAnimationClip.cs`, one pivot for
+  `Assets/`, then build the clip from it with `resources/Editor/SheetToAnimationClip.cs`, one pivot for
   every frame from `pivot_norm`:
 
 ```bash

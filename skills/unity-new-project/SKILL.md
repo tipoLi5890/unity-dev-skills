@@ -1,16 +1,7 @@
 ---
 name: unity-new-project
 description: >-
-  Start a Unity 6 project with the decisions that are expensive to retrofit
-  made on day one: editor version pinning, version-control setup (Library/
-  ignored, .meta committed, LFS), UPM git dependencies pinned to annotated
-  tags, IL2CPP/Android baseline, asmdef module boundaries, and the single-
-  input-funnel abstraction. Load when starting a Unity project, onboarding a
-  repo to version control, adding a UPM git dependency, publishing an
-  existing project to a git remote, reviewing early project structure, or
-  when a freshly created template project does not compile. This skill owns
-  the DECISIONS; the `unity` commands that execute them are unity-cli. It
-  scaffolds no gameplay code.
+  Start a new Unity 6 project: pin the editor, git and LFS, pinned UPM packages, asmdef layout.
 ---
 
 # unity-new-project — day-one decisions for a Unity 6 project
@@ -18,6 +9,21 @@ description: >-
 > **Everything here is cheap now and expensive later.** None of it is urgent on day one, which
 > is exactly why it gets skipped — and every item is something that, once a team and a history
 > exist, costs a migration rather than a setting.
+
+## Request → where to look
+
+| Request or symptom | Go to |
+|---|---|
+| Starting a Unity project; which editor version; render pipeline at creation | §1 |
+| A freshly created template project does not compile | §1, then [`reference/package-bootstrap.md`](reference/package-bootstrap.md) |
+| Onboarding a repo to version control: `.meta`, ignores, LFS from day one | §2, [`reference/version-control-setup.md`](reference/version-control-setup.md) |
+| Publishing an existing project to a git remote | [`reference/version-control-setup.md`](reference/version-control-setup.md) §4 |
+| Adding a UPM git dependency; pinning it to an annotated tag | §3 |
+| Mobile is even "maybe": IL2CPP / Android baseline | §4 |
+| Installing packages; which packages a starting project needs | §4b, [`reference/package-selection.md`](reference/package-selection.md) |
+| Reviewing early project structure: asmdef module boundaries, the single input funnel, Boot scene | [`reference/project-structure.md`](reference/project-structure.md) |
+| Tests for pure assemblies without opening the Editor | [`reference/pure-test-lane.md`](reference/pure-test-lane.md) |
+| A scaffolder that wipes Inspector values; generated ScriptableObjects | [`reference/generated-assets.md`](reference/generated-assets.md) |
 
 ## 1. Pin the editor, first commit
 
@@ -144,48 +150,14 @@ with — with nothing left to ask, just wait.
 > and which packages go in the list, so a batch of questions collected up front produces a setup
 > that has to be redone. Nothing is scaffolded before those answers exist.
 
-## 5. Structure that survives growth
+## 5. Structure that survives growth → `reference/project-structure.md`
 
-- **asmdef per module** (Input / Gameplay / UI / Integrations) — without
-  them every script change recompiles everything, and layering violations
-  are invisible. A native sensing package's Layer 0/1/2 split
-  (capture → DSP → sensor, everything else `internal`) is the reference
-  shape.
-- **One assembly with `"noEngineReferences": true`** for scoring/state/decision logic buys a test
-  lane that never opens Unity — and costs you engine serialization inside it. `JsonUtility` lives
-  in UnityEngine, so it is unavailable there (and cannot parse dynamic JSON anyway: no
-  dictionaries, unknown fields dropped). Adding an HTTP API, for example, means hand-writing a
-  small JSON writer + parser inside that assembly while the `UnityWebRequest` client stays in the
-  engine-referencing one. Decide the boundary knowing serialization sits on the wrong side of it.
-  A ready-to-copy simulation / presenter / test skeleton already shaped this way — three asmdefs and
-  the tests that run without a scene — lives in `unity-game-brief` resources.
-- Write rule/decision classes as **plain C# with the clock and RNG seed injected** by the
-  constructor, even when they live in an engine-referencing assembly. Then the only tests that
-  cannot run under `dotnet test` are the ones touching `ScriptableObject`, `AssetDatabase`,
-  `RectTransform`/`Canvas` or `JsonUtility` — which is what the boundary is *for*.
-- **Run the pure assemblies' tests without the Editor**, with the compiler, runtime and NUnit the
-  Editor already ships: `scripts/pure_tests.py run --tests <folder>` compiles each pure asmdef
-  under its own name, excludes (and names) every test file that touches the engine, and exits
-  0/2/3 in seconds. → `reference/pure-test-lane.md`
-- **Single input funnel from day one**: gameplay depends on abstract actions, never on device
-  specifics — touch, keyboard, gamepad and a sensing SDK all converge on one router (device
-  details come from the sensing layer; the funnel is universal). The action asset and the struct
-  gameplay reads: `unity-input`.
-- Scenes: a bootstrap scene that loads content scenes additively beats one
-  mega-scene — merge conflicts on a single scene file are unresolvable. The Boot scene and its
-  services: `unity-scene-flow` → `reference/bootstrap.md`.
-- Art pipeline: if assets are AI-generated, set up the art bible + grid
-  workflow before mass production (`codex-visual`); 3D import/decimation
-  discipline lives in `unity-3d-models`.
-- **Assets a script generates are build output.** If a scaffolder recreates a ScriptableObject on
-  every run, anything typed into the Inspector is silently lost at the next run — change the
-  generator, rerun it, and keep a test pinning the values. Two traps that cost a debugging session
-  each: `EditorSceneManager.NewScene` destroys ScriptableObjects that were never saved
-  (`SaveAssets()` first, then re-`LoadAssetAtPath` after every scene change), and
-  `EditorUtility.CopySerialized` wipes `m_Name` so `Resources.Load<T>(…).name` returns `""` →
-  `reference/generated-assets.md`
+asmdef per module, a `noEngineReferences` assembly and its pure test lane, injected clock and
+seed, one input funnel, a Boot scene, the art pipeline, generated assets as build output.
 
 ## Scope — what this skill does NOT do
+
+This skill owns the **decisions**; the `unity` commands that execute them are `unity-cli`.
 
 **No gameplay scaffolding.** A generic genre skeleton produces throwaway mock primitives that
 have to be deleted before real work starts, so this skill stops at a clean, correctly-configured
@@ -216,7 +188,7 @@ Assets: `unity-3d-models` · `unity-2d-sprites` · `unity-rigged-character`.
 Runtime domains: `unity-physics-3d` · `unity-navigation` · `unity-render-urp` ·
 `unity-audio` · `unity-localization`.
 Shipping: `unity-android-release` · `unity-web-release`.
-Backend & commerce: `unity-live-services` · `unity-monetization` ·
-`unity-multiplayer`.
+Backend & commerce: `unity-live-services` (routes) → `unity-ugs` ·
+`unity-multiplayer-services` · `unity-vivox` · `unity-iap` · `unity-ads-levelplay`.
 
 Consistent AI art: `codex-visual`.

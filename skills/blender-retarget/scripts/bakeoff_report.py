@@ -12,7 +12,7 @@ usage:
     bakeoff_report.py selftest            (or --selftest)
 
 --route NAME=FILE[,FILE...]   clip_metrics.py reports, the same clips in the same order for every
-                              route; a report that was refused (exit 2) is an error here too.
+                              route; a report that was refused (exit 1, "refused") is an error here too.
 --metrics METRICS.json        which numbers to show, as
                               [{"label": "added slide p95", "path": "foot_slide_added_m.p95",
                                 "scale": 100, "unit": "cm", "digits": 2, "limit": 1.5}, ...]

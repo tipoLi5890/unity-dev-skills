@@ -99,8 +99,8 @@ Metrics and gates (a gate appears only when its input exists):
 Prints one JSON report (also to --out): per-metric p50/p95/max/n, plants, loop, gates, ok.
 Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed; 1 refused input
 (unreadable file, wrong schema, a named joint missing, frame counts that differ, a non-finite
-value) or a failed --selftest. clip_metrics.py, which imports the plant helpers from here, keeps its
-own codes (1 gate, 2 refused). Requires numpy.
+value), a usage error or a failed --selftest. clip_metrics.py, which imports the plant helpers from
+here, uses the same codes. Requires numpy.
 """
 # ---------------------------------------------------------------------------
 # Third-party code. The period and cut search (lag_profile, local_minima,
@@ -724,8 +724,16 @@ def measure(doc: dict, a) -> dict:
     return out
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="motion_metrics.py", description=__doc__.split("\n")[0])
+    p = UsageParser(prog="motion_metrics.py", description=__doc__.split("\n")[0])
     p.add_argument("samples")
     p.add_argument("--out")
     p.add_argument("--state", choices=sorted(STATE_PROFILES), default=None)

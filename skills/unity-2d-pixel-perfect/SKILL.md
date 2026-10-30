@@ -1,16 +1,8 @@
 ---
 name: unity-2d-pixel-perfect
 description: >-
-  Pixel art that renders soft, shimmering or seam-ridden in Unity 2D — camera,
-  import and snapping settings across both components called
-  PixelPerfectCamera. Load for: blurry or washed-out sprites at any zoom,
-  pixels that crawl while the camera moves, hairline gaps between tilemap
-  tiles, "which PixelPerfectCamera do I add", a component that compiles but
-  does nothing after a render-pipeline change, Cinemachine and the pixel camera
-  fighting over orthographic size, UI text gone soft when the scene did not,
-  post-processing blurring the frame, stuttering physics sprites, or choosing
-  a reference resolution. The pipeline in force decides which same-named
-  component is correct, so resolve it first.
+  Blurry, shimmering or seamed pixel art in Unity: Pixel Perfect Camera,
+  import settings, snapping.
 ---
 
 # unity-2d-pixel-perfect — two components with the same name, and only one of them is yours
@@ -21,24 +13,24 @@ description: >-
 > driven by booleans. Adding the wrong one costs you nothing at compile time and everything at
 > runtime, so **the pipeline in force decides the component, and you resolve it first.**
 
-## Symptom → where to look
+## Start here — symptom → where to look
 
 | Symptom | Go to |
 |---|---|
-| "Which `PixelPerfectCamera` do I add" | §1 |
-| The component is on the camera and nothing snaps | §1 — wrong implementation for the pipeline |
+| "Which `PixelPerfectCamera` do I add"; the pipeline in force decides which same-named component | §1 |
+| The component is on the camera and nothing snaps; it compiles but does nothing after a render-pipeline change | §1, §9 — wrong implementation for the pipeline |
 | `PixelPerfectCamera` will not resolve in an Editor script | §1 — assembly names |
 | Sprites are soft or washed out at every zoom | §2 |
-| Sprites sharp at one zoom, soft at another | §3 — non-integer scale factor |
+| Sprites sharp at one zoom, soft at another; choosing a reference resolution | §3 — non-integer scale factor |
 | Hairline gaps between tilemap tiles | §5 |
 | Pixels crawl or shimmer while the camera pans | §4 `gridSnapping`, then §8 |
-| The camera jitters and framing pops between shots | §6 — Cinemachine |
+| The camera jitters and framing pops between shots; Cinemachine and the pixel camera fight over orthographic size | §6 — Cinemachine |
 | UI text went soft; the scene did not | §7 |
 | Post-processing blurs the entire frame | §7 |
 | A physics-driven sprite stutters while everything else is smooth | §8 |
 | Black bars, or the scene stretched to a wrong aspect | §4 `cropFrame`, §3 |
 | Compiler errors naming `UnityEngine.Experimental.Rendering.Universal` | §9 |
-| Property tables, enum values, old-bool mapping | [`reference/api-and-enums.md`](reference/api-and-enums.md) |
+| Property tables, enum values, old-bool mapping | `reference/api-and-enums.md` |
 
 ## 1. Resolve the pipeline, then pick the component
 
@@ -70,7 +62,7 @@ every quality tier overriding it; `currentRenderPipeline` folds the tier in and 
 trust. The six reads and the grep trap: `reference/pipeline-and-migration.md` §1; the full
 procedure: `unity-render-urp` → `reference/resolve-active-pipeline.md`.
 
-Code: [`resources/PipelineDetection.cs`](resources/PipelineDetection.cs) — pipeline probe,
+Code: `resources/PipelineDetection.cs` — pipeline probe,
 component-type lookup for either pipeline, and the mismatch check §9 uses.
 
 > **Report, then wait.** Fixing import settings reimports textures and rewrites `.meta` files
@@ -82,56 +74,21 @@ Reaching a live Editor for any of these reads: `unity-debug` → `reference/edit
 
 ## 2. The four import settings that decide sharpness
 
-Bilinear filtering is the single most common cause of soft pixel art, and it is the import
-default — not a setting anyone chose — so every untouched sprite is on `FilterMode.Bilinear`.
-
-| Setting | Value | Why |
-|---|---|---|
-| `filterMode` | `FilterMode.Point` | Bilinear interpolates between texels; every edge in the art softens |
-| `mipmapEnabled` | `false` | A mip chain hands the GPU a pre-blurred texture the moment scale drops below 1:1 |
-| `textureCompression` | `Uncompressed` | Block compression invents colours that were never in the palette |
-| `spritePixelsPerUnit` | one value, project-wide | Mixed PPU means two sprites disagree about the size of a pixel |
-
-Two more that are not on the importer:
-
-- `QualitySettings.antiAliasing = 0` and `anisotropicFiltering = Disable`, plus the URP asset's
-  `msaaSampleCount = 1`: AA exists to soften edges. Read them rather than assume, since the values
-  belong to the **active quality level** and another tier can differ.
-- On the camera: `allowHDR`, `allowMSAA` and `allowDynamicResolution` all `false`.
-
-> **A centre pivot on an odd-sized sprite lands on half a pixel.** A 15×15 sprite pivoted at
-> `(0.5, 0.5)` anchors at 7.5 px, and the whole sprite renders half a pixel off the grid — which
-> reads as "only this one sprite is blurry". Set `alignment = SpriteAlignment.Custom` and a pivot
-> that resolves to a whole pixel, or author on even dimensions. Editing pivots and rects is
-> `unity-2d-sprites`.
-
-**Editor grid snapping**, so hand-placed objects land on pixels: grid size `1 / assetsPPU` on all
-axes (PPU 16 → 0.0625, PPU 100 → 0.01), snapping enabled in the Grid and Snap overlay, and
-*Align Selected → All Axes* to pull objects that are already off-grid back on.
-
-Code: [`resources/SpriteImportFix.cs`](resources/SpriteImportFix.cs) — survey and fix, one
-texture at a time, with the reimport that makes it real.
+Bilinear filtering is the import default and the most common cause of soft pixel art. Set
+`filterMode = Point`, mipmaps off, `Uncompressed`, one `spritePixelsPerUnit` project-wide; AA 0 in
+the **active** quality level, MSAA 1 on the URP asset, and `allowHDR`/`allowMSAA`/
+`allowDynamicResolution` off on the camera. A centre pivot on an odd-sized sprite lands on half a
+pixel ("only this one sprite is blurry"). Editor grid snapping: `1 / assetsPPU`. The table, the
+why and the snapping steps: `reference/sharpness.md` §2. Code:
+`resources/SpriteImportFix.cs`.
 
 ## 3. Reference resolution, chosen once
 
-Pick it before art production and do not move it: it sets the pixel size of every asset, and
-changing it later is a re-draw.
-
-| Reference resolution | 1920×1080 | 2560×1440 | 3840×2160 |
-|---|---|---|---|
-| 320 × 180 | 6× | 8× | 12× |
-| 480 × 270 | 4× | 5.33× | 8× |
-| 640 × 360 | 3× | 4× | 6× |
-
-320×180 fits the three common targets at whole numbers, which is why it is the safe default.
-A fractional factor is where pixel decimation comes from: at 5.33× some source pixels occupy 5
-screen pixels and their neighbours 6, and the art looks unevenly ribbed. Screens with no integer
-fit at all (1366×768 against 320×180 is 4.27×) are handled by giving up the extra pixels rather
-than the grid — `cropFrame = Windowbox` — not by stretching.
-
-`Camera.orthographicSize` follows from the choice: `(refResolutionY / 2f) / assetsPPU`. At
-320×180 and PPU 16 that is `90 / 16 = 5.625`. The component's own `orthographicSize` is a
-separate, read-only value; do not conflate the two.
+Pick it before art production: 320×180 fits 1080p, 1440p and 2160p at whole numbers (6×, 8×,
+12×), which is why it is the safe default; a fractional factor ribs the art, and a screen with no
+integer fit gets `cropFrame = Windowbox`, not a stretch. `Camera.orthographicSize =
+(refResolutionY / 2f) / assetsPPU` (320×180 at PPU 16 → 5.625), separate from the component's own
+read-only value. The table: `reference/sharpness.md` §3.
 
 ## 4. `gridSnapping` and `cropFrame`
 
@@ -149,25 +106,15 @@ problems in §7.
 > per-texture `filterMode` (§2).
 
 Property tables for both components, the old-bool mapping, recommended combinations and the
-`pixelSnapSpacing` formula: [`reference/api-and-enums.md`](reference/api-and-enums.md).
+`pixelSnapSpacing` formula: `reference/api-and-enums.md`.
 
 ## 5. Tilemap seams — work the ladder in order
 
-Hairline gaps between tiles have six ordinary causes and one that only appears in motion. Work
-top to bottom; the popular workarounds (a negative cell gap, PPU 31.99 for a 32 px tile) break the
-moment the camera moves.
-
-| # | Check | If it fails |
-|---|---|---|
-| 1 | Atlas: Tight Packing **off**, Padding **≥ 4**, packing actually enabled | Neighbouring tiles bleed into each other's edge texels |
-| 2 | Mipmaps off on the tileset textures **and** on the atlas | A mip level is sampled and the tile edge fades |
-| 3 | AA 0 in the active quality level, MSAA off on the camera | §2 |
-| 4 | Compression `Uncompressed` | Block artefacts land on the tile boundary |
-| 5 | Every tile sprite has **even** pixel dimensions | Odd sizes put the grid on a half pixel — §2 |
-| 6 | `assetsPPU` equals the tile's pixel width (16×16 → 16) | A PPU mismatch is a real gap in world space, not a sampling one |
-| 7 | Gaps appear **only while the camera moves**, everything above passing | This is the case pixel snapping exists for: set `gridSnapping = PixelSnapping` |
-
-Rows 1 and 2 are atlas territory — `unity-sprite-atlas` owns packing, padding and packer mode;
+Hairline gaps have six ordinary causes and one that appears only in motion; work them top to
+bottom, never a negative cell gap or PPU 31.99: atlas Tight Packing off and Padding ≥ 4 → mipmaps
+off on tileset and atlas → AA and MSAA off → `Uncompressed` → even pixel dimensions → `assetsPPU`
+equal to the tile's width → gaps only while the camera moves: `gridSnapping = PixelSnapping`. The
+ladder with each failure: `reference/sharpness.md` §5. Rows 1 and 2 are `unity-sprite-atlas`;
 authoring the tilemap is `unity-tilemap`.
 
 ## 6. Cinemachine writes orthographic size too
@@ -230,13 +177,15 @@ filtering and snapping make smooth art look wrong.
 
 ## Reference
 
-- [`reference/api-and-enums.md`](reference/api-and-enums.md) — both components member by member,
+- `reference/api-and-enums.md` — both components member by member,
   enums with old-bool equivalents, combinations, `pixelSnapSpacing`.
-- [`reference/pipeline-and-migration.md`](reference/pipeline-and-migration.md) — pipeline reads,
+- `reference/sharpness.md` — the import settings table, reference
+  resolutions, the tilemap seam ladder.
+- `reference/pipeline-and-migration.md` — pipeline reads,
   assembly names, migration steps.
-- [`reference/motion-and-upscale.md`](reference/motion-and-upscale.md) — the Cinemachine rule, the
+- `reference/motion-and-upscale.md` — the Cinemachine rule, the
   upscale's side effects, physics stutter.
-- Code: [`PipelineDetection.cs`](resources/PipelineDetection.cs) (resolve the pipeline, pick the
-  type, detect a mismatch), [`CameraSetupURP.cs`](resources/CameraSetupURP.cs) (enum-style),
-  [`CameraSetupBuiltIn.cs`](resources/CameraSetupBuiltIn.cs) (bool-style, standalone package),
-  [`SpriteImportFix.cs`](resources/SpriteImportFix.cs) (the four import settings from §2).
+- Code: `PipelineDetection.cs` (resolve the pipeline, pick the
+  type, detect a mismatch), `CameraSetupURP.cs` (enum-style),
+  `CameraSetupBuiltIn.cs` (bool-style, standalone package),
+  `SpriteImportFix.cs` (the four import settings from §2).

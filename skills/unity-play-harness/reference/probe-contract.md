@@ -1,8 +1,8 @@
 # The probe contract: one line the agent can read
 
 > Part of the `unity-play-harness` skill. What the line contains, where the values come from on
-> Unity 6, and the four ways to read it. `resources/GameProbe.cs` is the file; copy it into a
-> Runtime assembly with the game.
+> Unity 6, and the four ways to read it. `resources/GameProbe.cs` is the file, and
+> `resources/GameProbeReporter.cs` its log reporter; copy both into a Runtime assembly with the game.
 
 A probe is not instrumentation. Instrumentation is temporary and gets deleted; this is a
 **contract** the game keeps so that every other tool in the skill — situations, journeys,

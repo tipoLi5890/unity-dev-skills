@@ -1,16 +1,8 @@
 ---
 name: unity-lighting
 description: >-
-  Diagnose and set up 3D lighting and global illumination on URP in Unity 6: a
-  symptom ladder over light modes, the bake, probes, shadows and the
-  environment, with a read-only scene audit and a bake that reads its result
-  back. Load for: "the bake did nothing", "the character is black beside the
-  baked walls", "reflections show the sky indoors", "shadows flicker when the
-  camera turns", "stripes on lit surfaces", "shadows stop a few metres away",
-  "the scene looks flat", "lighting is right in the editor and wrong on the
-  phone". Lights for sprites are unity-2d-rendering; post-processing is
-  unity-render-urp; a stale bake after a pipeline switch is
-  unity-urp-migration; frame cost is unity-profiling.
+  3D lighting and GI on URP: bakes, light probes, reflections, shadows, a flat
+  or black-lit scene.
 ---
 
 # unity-lighting — a light's mode decides what it can ever light
@@ -20,12 +12,10 @@ description: >-
 > at runtime, a lightmap lights only the surface it is painted on, and nothing warns when
 > either leaves an object dark. Read the scene first; change one switch; read it again.
 
-URP on Unity 6, 3D scenes. Worked example: the gate room — baked walls, one Mixed sun through
-the doorway, the runner and a sentry on probes.
+URP on Unity 6, 3D scenes. Worked example: the gate room — baked walls, a Mixed sun through the
+doorway, the runner and a sentry on probes.
 
-## Symptom → where to look
-
-First match wins. **Stop at the first cause you confirm.**
+## Symptom → where to look (first match wins; stop at the first cause you confirm)
 
 | Symptom | Go to |
 |---|---|
@@ -34,12 +24,12 @@ First match wins. **Stop at the first cause you confirm.**
 | Lightmaps are blotchy, seamed, or black on one mesh | §1 steps 4–5 |
 | The runner is black, flat or the wrong colour beside baked walls | §2 |
 | A light affects the walls and not the character, or the reverse | §2 |
-| A fifth light flickers or drops out as the camera moves | §2 — the per-object limit |
+| A fifth light, or its shadows, flicker or drop out as the camera turns | §2 — the per-object limit |
 | Metal is black; a floor reflects the sky indoors; reflections slide | §3 |
 | No shadow; stripes; a shadow detached from its caster; crawling edges | §4 |
 | Shadows end a few metres from the camera | §4 — Max Distance |
 | A point or spot light casts no shadow | §4 — additional-light shadows |
-| Everything is lit and the scene is flat, or too dark with the lights right | §5 |
+| "The scene looks flat", or too dark with the lights right | §5 |
 | Changing the skybox changed nothing | §5 — ambient is baked |
 | Right in the Editor, wrong on the phone | §6 |
 | Lighting costs too much on the phone | §6 — the order to cut in |
@@ -203,8 +193,7 @@ The whole set, the cut order and a worked gate room:
 Lights, shadows and normal maps for sprites are `unity-2d-rendering`. Post-processing Volumes,
 exposure, tonemapping, renderer features and whether URP is the pipeline in force are
 `unity-render-urp`; moving a Built-in project to URP and the stale bake it leaves behind are
-`unity-urp-migration`. HDRP is out. Shader authoring is out. Measuring what a light or a shadow
-pass costs is `unity-profiling`; LOD, occlusion, batching and culling distances are
-`unity-scene-optimisation`. Building the room — kits, collision proxies, terrain — is
-`unity-3d-level`; importing and decimating its meshes is `unity-3d-models`. Reading the result
-on a real device is `unity-device-testing`.
+`unity-urp-migration`. HDRP and shader authoring are out. What a light or shadow pass costs is
+`unity-profiling`; LOD, occlusion, batching and culling are `unity-scene-optimisation`. Building
+the room is `unity-3d-level`; importing its meshes is `unity-3d-models`; reading the result on a
+real device is `unity-device-testing`.

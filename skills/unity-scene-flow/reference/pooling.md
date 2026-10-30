@@ -1,8 +1,9 @@
 # Pooling — reuse is cheap, a dirty instance is the bug
 
-> Part of the `unity-scene-flow` skill. `resources/PickupObjectPool.cs` is the file: a component in the
-> Boot scene wrapping `UnityEngine.Pool.ObjectPool<T>`. Worked setting: the **lane run** and the
-> **gate room** — pickups collected, and the same objects set out again after a respawn.
+> Part of the `unity-scene-flow` skill. `resources/PickupObjectPool.cs` is the file (with
+> `resources/PooledPickup.cs`, the marker each instance carries): a component in the Boot scene
+> wrapping `UnityEngine.Pool.ObjectPool<T>`. Worked setting: the **lane run** and the **gate room**
+> — pickups collected, and the same objects set out again after a respawn.
 
 ## 1. When a pool earns its place
 

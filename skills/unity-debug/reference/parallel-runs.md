@@ -308,7 +308,7 @@ is this block. Two ways out, preferred first:
 ## Multiplayer: one role per lane
 
 Two lanes give you a host and a client on one machine, both under test, no human in the loop. It is
-a first pass: two Editors on one machine share a network and a clock (`unity-multiplayer` §4).
+a first pass: two Editors on one machine share a network and a clock (`unity-live-services` → `reference/multiplayer.md` §4).
 
 **One role per lane:** an environment variable on each run, or a role file in the lane folder like
 ParrelSync's `.parrelsyncarg`, read through one helper:

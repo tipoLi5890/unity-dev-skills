@@ -1,18 +1,28 @@
 ---
 name: unity-navigation
 description: >-
-  NavMesh pathfinding in Unity with the AI Navigation package — baking walkable
-  surfaces, NavMeshAgent movement and steering, obstacles and carving, links
-  across gaps, area costs and modifiers, and coupling an agent to its animation.
-  Load for "click-to-move", an agent that walks a patrol route or chases,
-  "the agent won't move / walks through walls / stutters at corners", "the agent
-  slides instead of walking", NavMesh baking at runtime, agents that ignore an
-  obstacle, or a working agent script rather than an explanation. What an enemy
-  sees and decides is unity-game-ai; rigs and Animator setup are
-  unity-rigged-character; PhysX collision is unity-physics-3d.
+  NavMesh pathfinding: baking, NavMeshAgent movement, obstacles, links, click-to-move and patrols.
 ---
 
 # unity-navigation — walkable surfaces, and the agent that owns the transform
+
+## Symptom → where to look
+
+| Symptom | Go to |
+|---|---|
+| The agent does not move at all | §2 |
+| It moves but slides instead of walking / fights the animation | §3 |
+| It walks through a wall, or ignores an obstacle | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §4 |
+| It stutters or overshoots at corners | §3 |
+| It reaches *near* the target and stops short | §2 `pathPending` |
+| It cannot cross a gap, stairs, a ledge | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §5 links |
+| Agents avoid an area they should prefer, or vice versa | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §5 areas and costs |
+| NavMesh baking at runtime; a generated or streamed level | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §6 |
+| It will not enter a doorway or cross a narrow ledge | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §6 — voxel size, before anything else |
+| Generate Links produced no links at all | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §6 — the agent type's Drop Height / Jump Distance |
+| Carving obstacles are costing frames | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §4, then §6 tile size |
+| Click-to-move, a patrol route, a chase — a working agent script rather than an explanation; also corner speed, locomotion, runtime bake | [`reference/recipes.md`](reference/recipes.md) |
+| `agent.target` or `NavMesh.Bake()` will not compile | [`reference/agent-api.md`](reference/agent-api.md) |
 
 > **Two things own the transform and only one can win.** A `NavMeshAgent` writes
 > `transform.position` every frame; so does root motion, and so does any movement script you
@@ -32,24 +42,6 @@ against the package: `System.Type.GetType("Unity.AI.Navigation.NavMeshSurface, U
 returns null without it. Installing the package headlessly: `unity-new-project` →
 `reference/package-bootstrap.md`.
 
-## Symptom → where to look
-
-| Symptom | Go to |
-|---|---|
-| The agent does not move at all | §2 |
-| It moves but slides / fights the animation | §3 |
-| It walks through a thing that should block it | §4 |
-| It stutters or overshoots at corners | §3 |
-| It reaches *near* the target and stops short | §2 `pathPending` |
-| It cannot cross a gap, stairs, a ledge | §5 links |
-| Agents avoid an area they should prefer, or vice versa | §5 areas and costs |
-| Runtime-generated or streamed level | §6 |
-| It will not enter a doorway or cross a narrow ledge | §6 — voxel size, before anything else |
-| Generate Links produced no links at all | §6 — the agent type's Drop Height / Jump Distance |
-| Carving obstacles are costing frames | §4, then §6 tile size |
-| A working script to paste — chase, click-to-move, patrol, corner speed, locomotion, runtime bake | [`reference/recipes.md`](reference/recipes.md) |
-| `agent.target` or `NavMesh.Bake()` will not compile | [`reference/agent-api.md`](reference/agent-api.md) |
-
 ## 1. Inspect before you add anything
 
 A project that already has navigation has already made these decisions, and adding a second
@@ -64,7 +56,7 @@ not defaults**, and baking with the wrong ones produces a mesh that is subtly to
 
 > **Two layers steer, and they fail differently.** A\* over the baked polygons picks the *route*;
 > RVO local avoidance picks the *next step*. A wrong route is §5–§6, a crowd that shoves or stalls
-> is §4.
+> is §4 — both in [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md).
 
 ```csharp
 agent.destination = target.position;   // or agent.SetDestination(pos), which returns
@@ -158,79 +150,11 @@ knowing before you "tune" anything: [`reference/agent-api.md`](reference/agent-a
 above, runnable, with the blend tree root motion expects, head look-at, and (§4) a corner speed
 limiter.
 
-## 4. Obstacles: carve or avoid
+## 4–6. Obstacles, links and areas, baking → `reference/obstacles-links-baking.md`
 
-`NavMeshObstacle` has two very different modes and the wrong one is expensive rather than broken.
-
-| The obstacle | Carve | Why |
-|---|---|---|
-| Moving vehicle, another character | **Off** | Local avoidance handles it; carving a moving object re-cuts the mesh continuously |
-| Stationary crate, barrel | **On** | Agents path around it globally; the cut is recomputed only when it moves |
-| Large slow mover (a tank) | **On**, Carve Only Stationary **off** | Re-carves past a movement threshold |
-| Many small scattered props | **Off** | Avoidance is far cheaper than many cuts |
-| Anything that fully blocks a corridor | **On** | Without a carve, agents keep planning through it and jam at the mouth |
-
-The rule underneath: **carving changes the map; avoidance changes the walk.** If the agent needs
-to find a different route, it must be a carve. If it just needs to step aside, it must not be.
-
-Avoidance has two dials: **`avoidancePriority` is 0–99 and the lower number wins** — the agent
-that must not be shoved off its lane gets the low one — and **Quality**, the first thing to drop
-when a crowd costs frames (`None` switches avoidance off).
-
-**An agent walking through a wall** is almost always that the wall was not in the bake — it was
-added later, is on a layer the surface does not collect, or has no collider at all. Navigation does
-not consult PhysX at runtime; a collider that was absent at bake time does not exist for pathing.
-That is the boundary with `unity-physics-3d`: it will still *collide*, it just will not be *pathed
-around*.
-
-## 5. Links, areas and costs
-
-**`NavMeshLink`** connects surfaces that do not touch — stairs between platforms, a jump, a ladder,
-a doorway between two separately-baked areas. Width `0` makes it a point-to-point line; positive
-gives it a span. It can be one-way (`Bidirectional` off), and it can carry a cost modifier so agents
-treat it as a last resort — **`costModifier`**; `costOverride` is deprecated in its favour.
-
-With `autoTraverseOffMeshLink` off you own the crossing, and **forgetting the final
-`agent.CompleteOffMeshLink()` leaves the agent stuck on the link forever** — a very common hang.
-The sequence, and why `OffMeshLink` is the legacy component:
-[`reference/agent-api.md`](reference/agent-api.md) §4.
-
-**Areas and costs** express preference, not possibility. A high-cost "Water" area is still
-walkable; agents route around it when a cheaper path exists and through it when one does not.
-Per-agent overrides let one character type ignore what another avoids:
-
-```csharp
-agent.SetAreaCost(3, 5.0f);     // area index 3 costs 5× for this agent only
-```
-
-The built-in area indices, the `distance × cost` arithmetic, `areaMask` and `agent.Raycast`:
-[`reference/recipes.md`](reference/recipes.md) §8.
-
-`NavMeshModifier` overrides area or walkability per GameObject; `NavMeshModifierVolume` does it for
-a region of space regardless of what is in it — the one for "this doorway is off-limits" where no
-object exists to mark. **Where volumes overlap, the highest area index wins, and Not Walkable wins
-outright**, so a blocking volume is safe to drop over a hazard (`reference/recipes.md` §7).
-Confirm the precedence with a two-volume test bake before a level depends on it.
-
-## 6. Baking, including at runtime
-
-`NavMeshSurface.BuildNavMesh()` bakes; `UpdateNavMesh(navMeshData)` updates incrementally and is
-the one for streamed or procedurally-generated levels. Bake quality is a voxelisation: **voxel
-size trades accuracy for bake time and memory**.
-
-A surface collects geometry by render meshes or by physics colliders, filtered by layer. Get
-that filter wrong and the mesh is either missing your level or full of decorative props.
-
-The knobs and what each one actually costs — voxels per agent radius (**3** by default, 1–2 for
-open ground, 4–6 for tight interiors, beyond 8 pointless), **Override Tile Size 64–128** when
-many obstacles carve, Minimum Region Area for the litter of unreachable islands, Build Height
-Mesh for stairs, and the agent-type **Drop Height / Jump Distance** that decide what
-Generate Links can generate — are in [`reference/recipes.md`](reference/recipes.md) §6–§7, with
-the runtime baker.
-
-> **A coarse voxel does not produce a broken mesh, it produces no mesh.** Large relative to the
-> agent radius, it rounds a doorway shut during rasterisation, so that surface is never generated.
-> The report is "the agent refuses to use the door", and nothing about the agent is wrong.
+§4 carve or avoid, and why a wall missing from the bake is walked through; §5 `NavMeshLink`,
+areas and costs, modifiers and volumes; §6 `BuildNavMesh` / `UpdateNavMesh`, voxel size and the
+runtime baker. Same numbering there.
 
 ## 7. Verify it
 
@@ -247,7 +171,7 @@ completes in milliseconds from a batch-mode Editor and produces a live `navMeshD
 afterwards. So bake-and-query is a real automated test you can write, even though agent
 *movement* is not — build the surface from `CollectObjects.Children`, bake, call
 `NavMesh.CalculatePath`, and **assert on `path.status`, never on the bool**. The snippet:
-[`reference/recipes.md`](reference/recipes.md) §6. Time the bake on your own scene (§6).
+[`reference/recipes.md`](reference/recipes.md) §6. Time the bake on your own scene (`reference/obstacles-links-baking.md` §6).
 
 Driving the Editor to run it: `unity-debug` → `reference/editor-control.md`.
 

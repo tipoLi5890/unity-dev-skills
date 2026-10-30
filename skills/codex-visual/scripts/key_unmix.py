@@ -616,8 +616,16 @@ def save_rgba(c, a255, path):
     Image.fromarray(out, "RGBA").save(path)
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Key a flat chroma field out by un-mixing the boundary band, "
+    ap = UsageParser(description="Key a flat chroma field out by un-mixing the boundary band, "
                                              "or de-fringe sprites that are already keyed.")
     ap.add_argument("inputs", nargs="+", help="an opaque sheet on a flat key field; with --defringe, keyed "
                                               "PNG files or directories of them")
@@ -870,6 +878,6 @@ def selftest():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--selftest"]:
+    if sys.argv[1:] in (["--selftest"], ["selftest"]):
         sys.exit(selftest())
     sys.exit(main())

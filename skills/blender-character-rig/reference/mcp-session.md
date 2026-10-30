@@ -88,7 +88,25 @@ then the module that imports it. Every `run` returns the same envelope:
   `(rolled back: …)` listing the datablocks it removed.
 - **`report_path`** in the params also writes the dict as JSON to that path — the way to keep a
   result too long to carry in the conversation.
-- When the Blender process cannot import from that path, `SKILL.md` has the fallback.
+- **Reload in order**: `bcr_common` first, and `bcr_pose` before `bcr_fbx`, which imports it.
+- `scripts/rig_gate.py` and `scripts/frames_preview.py` run on the host and never go through the server.
+
+**When Blender cannot read the skill directory** (another machine, a sandboxed install), send the
+source followed by the run call, in one call:
+
+```python
+import sys, types
+def load(name, source):
+    module = types.ModuleType(name)
+    sys.modules[name] = module               # so `import bcr_common` in the next one resolves
+    exec(compile(source, name + ".py", "exec"), module.__dict__)
+    return module
+load("bcr_common", r'''<contents of bcr_common.py>''')
+bcr_skin = load("bcr_skin", r'''<contents of bcr_skin.py>''')
+result = bcr_skin.run({"mesh": "Runner", "armature": "RunnerRig"})
+```
+
+Load `bcr_common` first; `bcr_fbx` also needs `bcr_pose` loaded before it.
 
 ### Only send code composed here
 

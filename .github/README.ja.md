@@ -4,7 +4,7 @@
 
 <p><b>Claude Code と Codex に慎重な Unity 開発者のように仕事をさせ、その一歩一歩を証明させる Unity 6 の skill 集。</b></p>
 
-<p><i>最初のアイデアから、スマートフォンの実機で動くビルドまで。60 を超える skill。</i></p>
+<p><i>最初のアイデアから、スマートフォンの実機で動くビルドまで。60 の skill。</i></p>
 
 <p>
 <a href="../.claude-plugin/plugin.json"><img alt="バージョン" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -116,7 +116,7 @@ flowchart LR
     E -->|合格| F["完了（証拠付き）"]
 ```
 
-- **言葉から正しい手順にたどり着きます**。各 skill は平易な言葉で書いた症状の表から始まり、三つの「まずここから」の skill がゲームプレイ・UI・キャラクターの依頼を振り分けます。
+- **言葉から正しい手順にたどり着きます**。各 skill は平易な言葉で書いた症状の表から始まり、四つの「まずここから」の skill がゲームプレイ・UI・キャラクター・バックエンドの依頼を振り分けます。
 - **助言ではなく、コードを動かします**。100 を超える Python スクリプト、170 を超える C# ファイル、50 を超えるテンプレートを、メモを打ち直す代わりにプロジェクトへコピーして使います。
 - **証明します**。手順の最後には、読んで確かめられるチェックがあります：probe スナップショット、journey test、再インポートした FBX、端末のログ。
 - **コンテキストが軽く、自己完結しています**。`SKILL.md` は振り分けるだけで、詳しい内容は状況が必要とするときに読み込まれます。ほかの plugin は要りません。skill 同士は Scope の節を通じて互いに引き継ぎます。
@@ -124,7 +124,7 @@ flowchart LR
 ## Skill 一覧
 
 > [!TIP]
-> どこから始めればよいか迷ったら、ゲームプレイの依頼には `unity-gameplay`、UI の依頼には `unity-game-ui`、画像からリグ付きキャラクターを作るなら `game-character-pipeline` を使ってください。
+> どこから始めればよいか迷ったら、ゲームプレイの依頼には `unity-gameplay`、UI の依頼には `unity-game-ui`、画像からリグ付きキャラクターを作るなら `game-character-pipeline`、バックエンド・オンライン・収益化の依頼には `unity-live-services` を使ってください。
 
 <details>
 <summary><b>全ステージ共通 —— ターミナルと検索</b>：Unity CLI と、プロジェクト内で何でも探すこと</summary>
@@ -235,7 +235,7 @@ flowchart LR
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | `codex` の画像モデルで作る 2D アート。一冊のアートバイブルでスタイルを保つ |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 自前の ComfyUI で作る音楽、効果音、動画、3D モデル。それぞれ一つのジョブで |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | キャラクターの静止画一枚を、生成した動画を通して透過スプライトのループにする |
-| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | 画像から 3D にしたキャラクターを Blender でリグ付けし、FBX は再インポートで証明 |
+| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` が合わないときに Blender で手作りするリグ。FBX は再インポートで証明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 既製のクリップを自分の Blender のリグへ。足滑り、ジッター、ポップでゲート |
 | [`character-autorig`](../skills/character-autorig/SKILL.md) | 自分の Auto-Rig Pro で、人型をローカルでリグ付け。ヘッドレスのコマンド一つで |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 動きを一本のクリップに。二台カメラの動画から、骨格へ直接推定する |
@@ -273,12 +273,10 @@ flowchart LR
 
 | Skill | 使うとき |
 |---|---|
-| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | ゲームを安全にバックエンドへ載せる。オフライン経路を先に設計して |
+| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | バックエンド・オンライン・収益化の入口。オフライン経路、マルチプレイヤーのトポロジー、SDK とストア申告の境目 |
 | [`unity-ugs`](../skills/unity-ugs/SKILL.md) | 何も初期化されておらず例外を投げるサービス。Gaming Services を正しい順で |
 | [`unity-iap`](../skills/unity-iap/SKILL.md) | 二重に、あるいはまったく付与されないコンテンツ。In-App Purchasing v5 を呼び出し単位で |
 | [`unity-ads-levelplay`](../skills/unity-ads-levelplay/SKILL.md) | 広告が出ない、広告の依存でビルドが壊れる。LevelPlay で、初期化より前に同意を取る |
-| [`unity-monetization`](../skills/unity-monetization/SKILL.md) | ビルド、マニフェスト、ストアでの申告を壊す課金・広告 SDK |
-| [`unity-multiplayer`](../skills/unity-multiplayer/SKILL.md) | まずトポロジーを選ぶ。ボイスチャットがほかの機能のマイクを奪わないようにする |
 | [`unity-multiplayer-services`](../skills/unity-multiplayer-services/SKILL.md) | プレイヤーが同じゲームに入るまで。参加コードからホスト移行まで |
 | [`unity-vivox`](../skills/unity-vivox/SKILL.md) | 参加は成功したのに誰にも聞こえないボイス。Vivox のチャットを、サインインからプッシュトゥトークまで |
 

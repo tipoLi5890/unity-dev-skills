@@ -451,8 +451,16 @@ def _train(a, log, views) -> dict:
             "gates": [gate], "ok": gate["pass"]}
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser():
-    p = argparse.ArgumentParser(prog="train.py", description=__doc__.split("\n")[0])
+    p = UsageParser(prog="train.py", description=__doc__.split("\n")[0])
     p.add_argument("dataset"); p.add_argument("rig_info"); p.add_argument("out")
     p.add_argument("--epochs", type=int, help="the cosine schedule's span, run in full by default (20; 12 with --init)")
     p.add_argument("--batch", type=int, default=20)
@@ -695,7 +703,7 @@ def selftest() -> int:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
     return run(argv)
 

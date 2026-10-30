@@ -264,11 +264,19 @@ def selftest() -> int:
     return 0 if ok else 1
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv=None, quiet=False) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
-    ap = argparse.ArgumentParser(prog="exam.py", description=__doc__.split("\n")[0])
+    ap = UsageParser(prog="exam.py", description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("make"); p.add_argument("rig_info"); p.add_argument("out")
     p.add_argument("--seed", type=int, default=0); p.add_argument("--frames", type=int, default=120)

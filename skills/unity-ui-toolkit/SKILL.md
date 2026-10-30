@@ -1,15 +1,7 @@
 ---
 name: unity-ui-toolkit
 description: >-
-  Author UI Toolkit interfaces in Unity 6: UXML, USS, flex layout, custom
-  elements, Painter2D, manipulators and runtime binding. Load for requests
-  naming .uxml, .uss, UI Toolkit, UIElements, UIDocument, PanelSettings,
-  VisualElement or Manipulator, and for "the USS property does nothing", "the
-  hover transition only animates one way", "the layout ignores my width", "the
-  bound label never updates", drag-and-drop between inventory or crafting
-  slots, a custom element that will not resolve from UXML, or an editor
-  window, custom inspector or property drawer. Canvas-based UI is
-  unity-ui-ugui; runtime IMGUI HUDs are unity-game-ui.
+  UI Toolkit (UXML, USS, UIDocument): flex layout, binding, custom elements, editor windows.
 ---
 
 # unity-ui-toolkit — USS is a subset of CSS, and it fails quietly
@@ -21,27 +13,28 @@ description: >-
 
 Not sure the project is UI Toolkit? `unity-game-ui` §0 has the detection ladder.
 
-**There is no automated design-file import in this toolchain.** A link to a mockup in a
-browser-based design tool converts to nothing here. Say that plainly rather than promising a
-conversion, then ask for a description or a screenshot and build the screen the ordinary way.
-
 ## Symptom → where to look
 
 | Symptom | Go to |
 |---|---|
-| Nothing renders at all, and the Console is clean | §3 — a `UIDocument` with no `PanelSettings` |
-| A style property has no effect | §1 — it probably does not exist |
+| Authoring `.uxml` / `.uss`, a `UIDocument`, `VisualElement` or `Manipulator` from scratch | §0, then §1–§4 |
+| Nothing renders at all, and the Console is clean | [`reference/flex-layout.md`](reference/flex-layout.md) — a `UIDocument` with no `PanelSettings` |
+| "The USS property does nothing" — a style property has no effect | §1 — it probably does not exist |
 | A rule loses to another rule; tokens, hover states, 9-slice | `reference/uss-patterns.md` |
-| Hover animates in but snaps back out | §2 |
-| Elements ignore the width/height you set | §3 |
+| The hover transition only animates one way: in, then snaps back out | §2 |
+| "The layout ignores my width" — elements ignore the width/height you set | [`reference/flex-layout.md`](reference/flex-layout.md) |
 | The layout is right but nothing responds to clicks | §4 |
 | It parses but renders wrong | §2 |
 | Need a gradient, a custom shape, a meter | §5 |
-| Drag-and-drop, an inventory or crafting slot | §4 |
-| A bound value never updates, or updates one way only | §4 |
+| Drag-and-drop between inventory or crafting slots | §4 |
+| The bound label never updates, or updates one way only | §4 |
 | A custom element does not resolve from UXML | §5 |
 | An editor window, custom inspector or property drawer | §6 |
-| Text needs a font asset, or shows tofu | §3, then `unity-localization` |
+| Text needs a font asset, or shows tofu | [`reference/flex-layout.md`](reference/flex-layout.md), then `unity-localization` |
+
+**There is no automated design-file import in this toolchain.** A link to a mockup in a
+browser-based design tool converts to nothing here. Say that plainly rather than promising a
+conversion, then ask for a description or a screenshot and build the screen the ordinary way.
 
 ## 0. You cannot validate these files from outside the Editor
 
@@ -110,58 +103,10 @@ symptom is "the rule after the broken one stopped applying".
 **Hardcoded percentage widths** are the flex equivalent of absolute positioning: `width: 33%`
 breaks the moment padding, margin or a scrollbar exists. `flex-grow: 1` is what you meant.
 
-## 3. Flex is the layout model — let it be
+## 3. Flex is the layout model → `reference/flex-layout.md`
 
-- Use `flex-grow`, `flex-shrink` and percentages; set explicit pixel sizes only on a root
-  container or where a fixed size is genuinely required.
-- Children should adapt to available space rather than declare their own dimensions. An element
-  that "ignores" its width is usually being sized by a flex parent that was told to.
-- `flex-direction: column` is already the default — writing it is noise.
-- `flex: 1` already sets grow, shrink and basis; adding them separately is a contradiction
-  waiting to happen.
-- Do not add `min-width` / `max-width` around a fixed `width` that is already fixed.
-- Use the simplest selector that works, and never define the same selector twice.
-
-**Every UXML file:** declares its namespace, links its stylesheet, has exactly one top-level
-container, and carries no `style` attributes.
-
-```uxml
-<ui:UXML xmlns:ui="UnityEngine.UIElements">
-  <ui:Style src="Panel.uss" />
-  <ui:VisualElement name="root" class="panel">
-    <!-- content -->
-  </ui:VisualElement>
-</ui:UXML>
-```
-
-**Naming, and it is not one convention but two:** the `name` attribute is camelCase
-(`submitButton`); classes and USS selectors are kebab-case (`.submit-button`). Files live in
-feature folders (`Assets/UI/Inventory/`), not in a global `Scripts/UI/`. Match whatever the
-project already does before applying any of this.
-
-### Getting it on screen: `UIDocument` needs a `PanelSettings`
-
-> **A `UIDocument` with no `PanelSettings` assigned renders nothing.** The symptom is exactly the
-> one §0 cannot catch: the file imported, the Console is clean, the hierarchy looks right, and the
-> screen is empty. Check the field first, before doubting the markup — and look in a windowed
-> Editor, since nothing renders under `-batchmode` either way.
-
-Runtime UI is a `UIDocument` component holding a `VisualTreeAsset` plus a `PanelSettings` asset.
-`UIDocument.panelSettings` and `UIDocument.visualTreeAsset` are both settable properties, so a
-scripted setup assigns both. Reuse the project's existing `PanelSettings` rather than adding a
-second scale mode and theme. Its properties, which parallel a Canvas Scaler's, and where to create
-one: [`reference/panel-settings-and-text.md`](reference/panel-settings-and-text.md).
-
-**Editor UI needs none of this** — an `EditorWindow`, a custom inspector or a property drawer has
-its own panel. §6.
-
-**Text here is TextCore, not TextMeshPro.** A UI Toolkit label takes
-`UnityEngine.TextCore.Text.FontAsset`; `TMPro.TMP_FontAsset` is **not** assignable to it. From USS
-the property is `-unity-font-definition`; from C#,
-`style.unityFontDefinition = FontDefinition.FromSDFFont(fontAsset)`. A CJK or multi-locale project
-needs a real font pipeline — `unity-localization` → `reference/font-pipeline.md` — plus the
-TextCore asset built alongside it. Type hierarchy, settings assets and the TextCore generator:
-[`reference/panel-settings-and-text.md`](reference/panel-settings-and-text.md).
+Why elements ignore the width you set, grow and shrink, a `UIDocument` that renders nothing
+without `PanelSettings`, and text that needs a font asset.
 
 ## 4. Interactivity, and the data behind it
 
@@ -232,7 +177,7 @@ The Console catches parse errors; nothing catches §2. So:
   never picked the file up", and those look identical.
 - If nothing appears at all, check the `UIDocument`'s Panel Settings field before anything else:
   a missing `PanelSettings` gives an empty screen, a clean Console, and passes every other check
-  here (§3).
+  here (`reference/flex-layout.md`).
 - Read back the properties you set. A property that does not exist was accepted, ignored, and
   reported nowhere.
 - Look at the screen at two window sizes. A layout that only works at one size is the usual
@@ -252,6 +197,7 @@ live Editor to reimport what you wrote is `unity-debug`.
 
 ## Reference
 
+- [`reference/flex-layout.md`](reference/flex-layout.md) — §3: flex layout, `PanelSettings`, fonts
 - [`reference/runtime-binding.md`](reference/runtime-binding.md) — data binding
 - [`reference/manipulators-and-drag-drop.md`](reference/manipulators-and-drag-drop.md) — drags,
   drop targets, inventory and crafting

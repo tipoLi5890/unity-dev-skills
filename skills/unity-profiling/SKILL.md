@@ -1,21 +1,37 @@
 ---
 name: unity-profiling
 description: >-
-  Measure the work behind a slow or uneven frame in a Unity 6 game as numbers an
-  agent can compare across changes: ProfilerRecorder counters without the
-  Profiler window, 90-frame windows with median/p95/worst, work-accounting
-  counters (scheduled / completed / discarded) for streaming and pooling, and a
-  before/after table. Load for "the frame rate drops when…", "it hitches when
-  the third pickup spawns", "how many draw calls is this", "is it the GC", "did
-  my change actually help", "it is slow only on the phone", "which counters
-  exist on my version". A driven run is not a hardware benchmark. Turning a feel
-  complaint into a reproducible situation is unity-play-harness.
+  Measure frame time, hitches and GC with ProfilerRecorder counters; before/after numbers.
 ---
 
 # unity-profiling — measure the work, then compare the table
 
 "It feels smoother now" survives exactly until someone else plays it. A frame time on its own is
 barely better: one number, from one moment, on one machine, with nothing to hold it against.
+
+## Load what the situation needs
+
+| The situation | Read |
+|---|---|
+| Starting from nothing; "how many draw calls is this"; "which counters exist on my version"; a counter reads zero | `reference/counters.md` |
+| "The frame rate drops when…" — taking the measurement: warm-up, window size, run modes, the log line and the JSONL schema | `reference/frame-windows.md` |
+| "It hitches when the third pickup spawns" — hitches around spawning, streaming or pooling; a system that builds the same thing twice | `reference/work-counters.md` |
+| "did my change actually help"; building the before/after table; a comparison that refuses | `reference/compare.md` |
+| A window in hand and no cause yet: first-appearance hitch, GC, synchronous loads, distant geometry | `reference/where-the-time-goes.md` |
+| No counter names the cost and you need the marker inside the frame | `reference/raw-capture.md` |
+| A frame-time budget that a test fails on, every run, against this machine's recorded baseline | `reference/perf-tests.md` · `templates/PerfRegressionTest.cs` |
+| "is it the GC" and whose: allocation calls per Update and LateUpdate phase; `GetAllocatedBytesForCurrentThread` reads 0 | `reference/gc-per-phase.md` · `resources/GcAllocProbe.cs` |
+| Memory grows by a step each time a screen or match is rebuilt; runtime materials and meshes | `reference/runtime-asset-leaks.md` · `resources/OwnedAssets.cs` · `templates/AssetLeakSoakTest.cs` |
+| A frame time read on a shared machine; post-processing cost; CPU or GPU in the Editor | `reference/frame-hygiene.md` |
+
+## Files and instruments
+
+Files to copy into `Assets/` — namespace `UnityDev.Perf`, Runtime, no package required:
+`resources/CounterCatalog.cs`, `resources/FrameSampler.cs`, `resources/WorkCounters.cs`,
+`resources/ProfilerRawCapture.cs`, plus `resources/GcAllocProbe.cs` with `GcAllocProbeOpener.cs`
+for allocation by phase and `resources/OwnedAssets.cs` for runtime-asset ownership (that one is
+gameplay code). The rest are instrumentation, not gameplay; keep them behind a
+development-build check before shipping.
 
 What settles a performance question is a **window** — a fixed number of frames of a named
 situation, summarised into one row — taken twice, with one thing changed in between.
@@ -68,33 +84,6 @@ together, and a table that says why.
 
 ---
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Starting from nothing; "which counters exist on my version"; a counter reads zero | `reference/counters.md` |
-| Taking the measurement: warm-up, window size, run modes, the log line and the JSONL schema | `reference/frame-windows.md` |
-| Hitches around spawning, streaming or pooling; a system that builds the same thing twice | `reference/work-counters.md` |
-| "did my change actually help"; building the before/after table; a comparison that refuses | `reference/compare.md` |
-| A window in hand and no cause yet: first-appearance hitch, GC, synchronous loads, distant geometry | `reference/where-the-time-goes.md` |
-| No counter names the cost and you need the marker inside the frame | `reference/raw-capture.md` |
-| A frame-time budget that a test fails on, every run, against this machine's recorded baseline | `reference/perf-tests.md` · `templates/PerfRegressionTest.cs` |
-| "is it the GC" and whose: allocation calls per Update and LateUpdate phase; `GetAllocatedBytesForCurrentThread` reads 0 | `reference/gc-per-phase.md` · `resources/GcAllocProbe.cs` |
-| Memory grows by a step each time a screen or match is rebuilt; runtime materials and meshes | `reference/runtime-asset-leaks.md` · `resources/OwnedAssets.cs` · `templates/AssetLeakSoakTest.cs` |
-| A frame time read on a shared machine; post-processing cost; CPU or GPU in the Editor | `reference/frame-hygiene.md` |
-| Booting straight into the moment to be measured, and driving it identically twice | skill `unity-play-harness` |
-| Running Unity, reading Editor.log, screenshots, proving the harness told the truth | skill `unity-debug` |
-| Deciding what the budget should be in the first place | skill `unity-game-brief` |
-
-Files to copy into `Assets/` — namespace `UnityDev.Perf`, Runtime, no package required:
-`resources/CounterCatalog.cs`, `resources/FrameSampler.cs`, `resources/WorkCounters.cs`,
-`resources/ProfilerRawCapture.cs`, plus `resources/GcAllocProbe.cs` with `GcAllocProbeOpener.cs`
-for allocation by phase and `resources/OwnedAssets.cs` for runtime-asset ownership (that one is
-gameplay code). The rest are instrumentation, not gameplay; keep them behind a
-development-build check before shipping.
-
----
-
 ## Where the time goes
 
 A router, read against a window you already have. Depth for the first four rows is in
@@ -112,7 +101,7 @@ A router, read against a window you already have. Depth for the first four rows 
 | Shadow caster count high | `unity-lighting` |
 | Pixel art shimmering as well as slow | `unity-2d-pixel-perfect` |
 | Slow only in the browser | `unity-web-release` |
-| Slow only on the device | `unity-android-release`, after a development-player window taken on it |
+| Slow only on the device, fine in the editor | `unity-device-testing`, after a development-player window taken on it |
 | Frame time is fine and it still feels wrong | `unity-play-harness` |
 
 ---
@@ -155,6 +144,7 @@ A router, read against a window you already have. Depth for the first four rows 
 | Configuring post-processing and renderer features | `unity-render-urp` |
 | Browser download size, headers and memory ceilings | `unity-web-release` |
 | Building, signing and reading a device artifact back | `unity-android-release` |
+| Stutters on the device, runs fine in the Editor — a window taken on the phone | `unity-device-testing` |
 | Audio memory, load types and mixer cost | `unity-audio` |
 | Deciding what the budget should be | `unity-game-brief` |
 | Where a character's frame windows fall: the budget ladder, the import check | `game-character-pipeline` |

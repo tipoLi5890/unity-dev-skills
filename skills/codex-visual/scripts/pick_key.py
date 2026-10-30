@@ -361,8 +361,16 @@ def selftest():
     return 1 if fails else 0
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Choose the chroma key (magenta, green, cyan, blue) a base image can be "
+    ap = UsageParser(description="Choose the chroma key (magenta, green, cyan, blue) a base image can be "
                                              "keyed on without erasing any of its subject.")
     ap.add_argument("image", help="the base still: the subject on a flat field, or on transparency")
     ap.add_argument("--min-distance", type=float, default=MIN_DISTANCE,
@@ -388,6 +396,6 @@ def main():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--selftest"]:
+    if sys.argv[1:] in (["--selftest"], ["selftest"]):
         sys.exit(selftest())
     sys.exit(main())

@@ -1403,6 +1403,9 @@ def build_parser():
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["--selftest"]:                      # `selftest` and `--selftest` are one command
+        argv[0] = "selftest"
     args = build_parser().parse_args(argv)
     ctx = Ctx(args)
     rep = Report()

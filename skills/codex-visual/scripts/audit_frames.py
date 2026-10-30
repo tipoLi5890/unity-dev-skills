@@ -521,6 +521,6 @@ def selftest():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--selftest"]:
+    if sys.argv[1:] in (["--selftest"], ["selftest"]):
         sys.exit(selftest())
     sys.exit(main())

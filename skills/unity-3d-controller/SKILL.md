@@ -1,15 +1,8 @@
 ---
 name: unity-3d-controller
 description: >-
-  Move a 3D character with one owner of its transform: a CharacterController
-  motor that finds ground by its own cast (slopes, steps, moving platforms),
-  third-person, first-person, top-down and lane-runner controllers reading one
-  input struct, the Animator bridge, and journeys proving ramp, step, apex and
-  lane change. Load for: "isGrounded flickers", "the capsule slides down the
-  ramp", "can't climb the step", "jump height changes with frame rate",
-  "forward flips when the camera cuts", "the pitch doesn't clamp", "the lane
-  change overshoots". Greybox and kits are unity-3d-level; PhysX callbacks are
-  unity-physics-3d; agents are unity-navigation; camera rigs are unity-camera.
+  Move a 3D character: CharacterController grounding, slopes, steps,
+  third/first-person, lane runner.
 ---
 
 # unity-3d-controller — choose who owns the transform before writing a line of movement
@@ -19,6 +12,42 @@ description: >-
 > under a script that calls `Move`: each pair jitters, rubber-bands or sinks, and no tuning of
 > either half fixes it. The first decision is not speed or gravity. It is which one component
 > writes the position — and everything else then hands that owner a velocity.
+
+## The situation → what to read
+
+| The situation | Read |
+|---|---|
+| The first runner, step by step, and the journey that proves it | §1; `reference/gate-room.md` |
+| Which component owns the transform; what each costs; two owners; handing over to an agent | `reference/model-choice.md` |
+| "`isGrounded` flickers", "the capsule slides down the ramp", "can't climb the step"; the ground cast and its normal; slope limit; sliding off steep ground; sticking going downhill; step offset, skin width and the jump; moving and turning platforms; pushing bodies | `reference/grounding-and-slopes.md` |
+| "Jump height changes with frame rate": gravity and jump velocity from apex and time; why the apex changes and the two fixes; coyote time, the buffer, variable height, air control | `reference/jump-and-air.md` |
+| "Forward flips when the camera cuts": camera-relative movement; turn rate; facing by movement, strafing and locking on to a target | `reference/third-person.md` |
+| "The pitch doesn't clamp": yaw on the body and pitch on the head; pointer counts against stick rates; eye height; crouch; footstep cadence | `reference/first-person.md` |
+| World-axis movement under a fixed or overhead camera; pointer aim; click-to-move; the lane runner ("the lane change overshoots") | `reference/topdown-and-fixed.md` |
+| The script that writes `Grounded`, `MoveBlend`, `MoveSpeed` and `Hurt`; damping; root motion off | `reference/animator-bridge.md` |
+| Feet skate only at top speed because the mover outruns every clip; a swing that starts while the body still slides to a stop; what the mover must expose (acceleration, predicted stop) | `reference/animator-bridge.md` §2 |
+| Stride and orientation warping, pelvis drop, foot lock — the animation side of a fast mover | `unity-animation` → `reference/sim-driven-animation.md` |
+| Reach tables, door and corridor numbers, the measuring scripts | `unity-gameplay` → `reference/level-metrics.md` |
+| The input struct, the press latch and its buffer, a scripted driver; action assets, rebinding | `unity-input` → `reference/reading-input.md` |
+| Pointer and stick aim; mouse delta against stick rate | `unity-input` → `reference/pointer-and-aim.md` |
+| Swipes and on-screen sticks for the lane run | `unity-input` → `reference/touch-and-on-screen.md` |
+| Camera rigs: orbit, first-person and fixed; look axes; boom collision; lock-on framing | `unity-camera` → `reference/follow-3d.md` |
+| A camera that jitters behind the runner | `unity-camera` → `reference/update-order-and-jitter.md` |
+| Casts, layer masks, a query that misses; collider set-up, the layer matrix, a callback that never fires, ragdolls | `unity-physics-3d` → `reference/queries.md` |
+| NavMesh baking, agents, destinations, patrols, click-to-move scripts | `unity-navigation` → `reference/recipes.md` |
+| The parameter contract the bridge follows | `unity-animation` → `reference/parameter-contract.md` |
+| Locomotion and strafe blend trees | `unity-animation` → `reference/blend-trees.md` |
+| Root motion as the mover; Animator graphs, events, IK | `unity-animation` → `reference/root-motion.md` |
+| Importing a rigged character; the Animator asset the bridge feeds | `unity-rigged-character` → `reference/editor-scripts.md` |
+| A greybox room built to these numbers; kits, prefabs, terrain | `unity-3d-level` → `reference/greybox.md` |
+| Ramp colliders over stairs | `unity-3d-level` → `reference/collision-proxies.md` |
+| Journeys proving ramp, step, apex and lane change; recorders, situations, the probe, the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
+
+Copy the `resources/` files the owner needs into a Runtime assembly beside `RunInput.cs`
+(`unity-input` → `resources/`); every controller and the bridge need `CharacterMotor3D.cs`,
+which holds `IMoveFacts3D`, and the motor needs `MovingPlatform3D.cs`. The journey goes from
+`templates/` into a PlayMode test assembly that also references the harness. The runtime files need no package — physics and animation are
+built-in modules; the journey needs `com.unity.test-framework`.
 
 Once the owner is a `CharacterController`, the controller is two halves that never mix:
 
@@ -59,82 +88,16 @@ The built-in `CharacterController` needs no package. `com.unity.charactercontrol
 Entities package and is not this. What each owner gives and costs, the pairs that fight, and the
 grep that finds a second writer: `reference/model-choice.md`.
 
-## 1. Start here — the gate room
+## 1. The gate room — the first runner, in order
 
-1. **Decide the body and six numbers** before the room exists: capsule 1.8 high, radius 0.4,
-   skin 0.04; slope limit 45°, step offset 0.3; run speed 5; apex 1.2 in 0.35 s. Gravity (19.6)
-   and jump velocity (6.86) are derived, never typed in.
-2. **Build the runner.** `CharacterController` + `RunInputReader` + `CharacterMotor3D` +
-   `ThirdPersonController`, with `view` set to the camera. No `Rigidbody`. Set the motor's
-   `ground` mask to the level's layers, without the runner's own. The model and its Animator go
-   on a child; an empty `Chest` child sits at the capsule's centre.
-3. **Register with the probe**, where the game wires its harness:
-
-```csharp
-GameProbe.SetPlayerVelocity(() => chest, () => run.Velocity);   // the centre, not the feet
-GameProbe.Register("grounded", () => run.Grounded);             // the motor's, never isGrounded
-GameProbe.SetState(() => run.State);                            // Grounded · Rising · Falling
-```
-
-4. **Prove it** with `templates/Controller3DJourneyTest.cs`, which builds its own room from box
-   colliders:
-
-| Test | Asserts |
-|---|---|
-| `ThirdPerson_Ramp_IsClimbedGroundedAndHeld` | Every frame on a 30° ramp is grounded; over 2 units climbed in 0.8 s; at rest it slides under 0.02 in 0.5 s |
-| `ThirdPerson_LowStep_IsClimbed` · `ThirdPerson_TallStep_IsRefused` | Feet on top of a 0.3 step; stopped at the face of a 0.6 one |
-| `ThirdPerson_Jump_ReachesTheConfiguredApex` | A held jump peaks at 1.2 within 0.05, 0.35 s after the press |
-| `ThirdPerson_Stick_IsRelativeToTheView` | With the view yawed 90°, stick up runs along +X |
-| `FirstPerson_YawTurnsTheBody_PitchClampsOnTheHead` | 900 pointer counts turn the body 90°; pitch stops at 85°; the body never pitches |
-| `LaneRunner_Change_LandsOnTheLaneInTheConfiguredTime` | x = ±1.3 within 0.01 after 0.15 s; a change asked for mid-change is kept; one past the edge is refused |
-| the on-foot tests | `JourneyAsserts.NeverInside` reports nothing |
-
-5. **Show the gate can fail.** `CONTROLLER3D_JOURNEY_BREAK=slope`, `=step`, `=tallstep`, `=tap`,
-   `=pitch` and `=lane` each turn one test red. A journey nobody has seen fail proves nothing.
-6. **Measure the jump** with `unity-gameplay` → `scripts/jump_report.py` against the timeline
-   the jump test wrote, then build the room to the table `scripts/level_metrics.py
-   --integrator exact` prints.
-7. **Add the picture.** `AnimatorBridge3D` on the runner; the camera from `unity-camera`.
-
-First person is step 2 with `FirstPersonController` and a `Head` child; the depot is
-`TopDownController3D`; the lane run is `LaneRunnerController` alone, with no motor.
-
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Which component owns the transform; what each costs; two owners; handing over to an agent | `reference/model-choice.md` |
-| `isGrounded` flickering; the ground cast and its normal; slope limit; sliding off steep ground; sticking going downhill; step offset, skin width and the jump; moving and turning platforms; pushing bodies | `reference/grounding-and-slopes.md` |
-| Gravity and jump velocity from apex and time; why the apex changes with frame rate and the two fixes; coyote time, the buffer, variable height, air control | `reference/jump-and-air.md` |
-| Camera-relative movement; turn rate; facing by movement, strafing and locking on to a target | `reference/third-person.md` |
-| Yaw on the body and pitch on the head; pointer counts against stick rates; eye height; crouch; footstep cadence | `reference/first-person.md` |
-| World-axis movement under a fixed or overhead camera; pointer aim; click-to-move; the lane runner | `reference/topdown-and-fixed.md` |
-| The script that writes `Grounded`, `MoveBlend`, `MoveSpeed` and `Hurt`; damping; root motion off | `reference/animator-bridge.md` |
-| Feet skate only at top speed because the mover outruns every clip; a swing that starts while the body still slides to a stop; what the mover must expose (acceleration, predicted stop) | `reference/animator-bridge.md` §2 |
-| Stride and orientation warping, pelvis drop, foot lock — the animation side of a fast mover | `unity-animation` → `reference/sim-driven-animation.md` |
-| Reach tables, door and corridor numbers, the measuring scripts | `unity-gameplay` → `reference/level-metrics.md` |
-| The input struct, the press latch and its buffer, a scripted driver | `unity-input` → `reference/reading-input.md` |
-| Pointer and stick aim; mouse delta against stick rate | `unity-input` → `reference/pointer-and-aim.md` |
-| Swipes and on-screen sticks for the lane run | `unity-input` → `reference/touch-and-on-screen.md` |
-| Orbit, first-person and fixed rigs; boom collision; lock-on framing | `unity-camera` → `reference/follow-3d.md` |
-| A camera that jitters behind the runner | `unity-camera` → `reference/update-order-and-jitter.md` |
-| Casts, layer masks, a query that misses | `unity-physics-3d` → `reference/queries.md` |
-| Agents, destinations, patrols | `unity-navigation` → `reference/recipes.md` |
-| The parameter contract the bridge follows | `unity-animation` → `reference/parameter-contract.md` |
-| Locomotion and strafe blend trees | `unity-animation` → `reference/blend-trees.md` |
-| Root motion as the mover | `unity-animation` → `reference/root-motion.md` |
-| The Animator asset the bridge feeds | `unity-rigged-character` → `reference/editor-scripts.md` |
-| A greybox room built to these numbers | `unity-3d-level` → `reference/greybox.md` |
-| Ramp colliders over stairs | `unity-3d-level` → `reference/collision-proxies.md` |
-| Journeys, the probe, the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
-
-Copy the `resources/` files the owner needs into a Runtime assembly beside `RunInput.cs`
-(`unity-input` → `resources/`); every controller and the bridge need `CharacterMotor3D.cs`,
-which holds `IMoveFacts3D`, and the motor needs `MovingPlatform3D.cs`. The journey goes from
-`templates/` into a PlayMode test assembly that also references the harness. The runtime files need no package — physics and animation are
-built-in modules; the journey needs `com.unity.test-framework`.
-
----
+Decide the capsule (1.8 × 0.4, skin 0.04), slope 45°, step 0.3, run 5, apex 1.2 in 0.35 s — gravity
+and jump velocity derived. Build `CharacterController` + `RunInputReader` + `CharacterMotor3D` +
+`ThirdPersonController`, no `Rigidbody`; register velocity, the motor's `grounded` and the state
+with the probe; prove ramp, step, apex, view-relative stick, pitch clamp and lane change with
+`templates/Controller3DJourneyTest.cs`; turn each test red once with
+`CONTROLLER3D_JOURNEY_BREAK`; measure the jump with `unity-gameplay` → `scripts/jump_report.py`;
+then the bridge and the camera. First person, top-down and the lane run swap one component. Every
+step, the probe lines and the test table: `reference/gate-room.md`.
 
 ## Discipline
 
@@ -172,16 +135,8 @@ built-in modules; the journey needs `com.unity.test-framework`.
 | Not here | Go to |
 |---|---|
 | Which perspective and movement model the game has; genre recipes; reach tables | `unity-gameplay` |
-| Action assets, the reader, touch controls, rebinding | `unity-input` |
-| Camera rigs, orbit and look axes, boom collision, jitter | `unity-camera` |
-| Collider set-up, the layer matrix, a callback that never fires, ragdolls | `unity-physics-3d` |
-| NavMesh baking, agents, click-to-move scripts | `unity-navigation` |
-| Greybox, kits, prefabs, collision proxies, terrain | `unity-3d-level` |
 | Lights, baking, probes, shadows | `unity-lighting` |
 | Draw calls, LOD, occlusion | `unity-scene-optimisation` |
-| Animator graphs, blend trees, events, IK, root motion | `unity-animation` |
-| Importing a rigged character and building its Animator asset | `unity-rigged-character` |
-| Recorders, situations, the probe contract | `unity-play-harness` |
 | Pressing use on a switch, a gate or a pickup | `unity-interaction` |
 | Health, hurt, invincibility frames and when a hit asks for knock-back | `unity-combat` |
 | 2D characters | `unity-2d-controller` |

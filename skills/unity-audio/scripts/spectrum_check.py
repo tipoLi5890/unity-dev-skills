@@ -162,7 +162,7 @@ def selftest():
 
 
 def main(argv):
-    if argv[:1] == ["selftest"]:
+    if argv[:1] in (["selftest"], ["--selftest"]):
         return selftest()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("paths", nargs="+", help="WAV files or folders (searched recursively)")

@@ -236,7 +236,7 @@ def selftest() -> tuple:
 
 def main():
     args = B.script_args()
-    if "--selftest" in args:
+    if "--selftest" in args or args[:1] == ["selftest"]:
         return selftest()
     if len(args) < 4:
         raise ValueError("usage: -- TWOCAM.blend RIG_INFO.json MOTION.json OUT_DIR [options]")

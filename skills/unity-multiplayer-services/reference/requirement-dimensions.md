@@ -30,8 +30,8 @@ as confident and is unrecoverable when wrong.
 | **Existing stack and team** | Netcode for GameObjects or Netcode for Entities, and what the team has actually shipped with | Extend what `manifest.json` already has. Introducing a second net model without being asked is a rewrite disguised as a recommendation |
 
 The topology decision itself — what each option costs later, and why it is expensive to reverse —
-belongs to `unity-multiplayer`. This file is about establishing which one the project needs; that
-skill is about living with it.
+belongs to `unity-live-services` → `reference/multiplayer.md`. This file is about establishing which one the project
+needs; that file is about living with it.
 
 ## Language
 

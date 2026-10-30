@@ -198,7 +198,8 @@ void Start()
 
 The flag is one piece of a child-directed release, not the whole of it: non-personalised ads only,
 Google Play Families requirements if shipping there, age ratings in both stores, and a privacy policy
-that states what is collected from children. The store-facing half is `unity-monetization`.
+that states what is collected from children. The store-facing half is
+`unity-live-services` → `reference/monetization.md`.
 
 ## All three together
 

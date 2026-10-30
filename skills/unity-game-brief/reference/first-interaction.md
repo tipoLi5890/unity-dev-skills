@@ -117,3 +117,12 @@ Each of these looks like progress and costs the session its output:
   `codex-visual` and the asset skills, and it starts once the interaction is worth dressing.
 - **A second interaction.** The most tempting one. Build it after the first one has been played,
   changed, and played again.
+
+## Role contract
+
+| The human decides | The agent decides, and reports |
+|---|---|
+| How it looks and how it feels | The implementation and the file layout |
+| What is worth building next, and what gets cut | The tests, and what each one asserts on |
+| Whether an invariant's number is the right number | How that number is measured |
+| Whether it is done | What is provably true right now |

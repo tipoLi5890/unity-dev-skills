@@ -1,16 +1,7 @@
 ---
 name: unity-multiplayer-services
 description: >-
-  Online play on Unity Multiplayer Services (com.unity.services.multiplayer)
-  through its Sessions API: create and join, join codes, a browsable game
-  list, quick join, ticket matchmaking, relay or direct connectivity, host
-  migration, reconnect, dedicated-server sessions. Load for: "how do players
-  get into a game together", a room / party / lobby list, matchmaking into a
-  playable match, Netcode for GameObjects on a session's network, code
-  reaching straight for Unity.Services.Lobbies / Matchmaker / Relay, a server
-  build broken by Unity.Services.Multiplayer.Server, or a ticket that finds
-  nothing because the queue was never deployed. Choosing the topology is
-  unity-multiplayer.
+  Sessions API: create/join, join codes, matchmaking, relay, host migration, dedicated servers.
 ---
 
 # unity-multiplayer-services — one session API, and the layers under it you should not reach for
@@ -20,6 +11,23 @@ description: >-
 > is *made of*, not three products to assemble by hand. Code that drops to one of those clients
 > directly takes on a second lifecycle to keep in step with the session's, and the composed calls
 > that were doing that work for it stop being usable.
+
+## Symptom → where to look
+
+| Symptom | Go to |
+|---|---|
+| "How do players get into a game together?" — create and join, join codes, quick join | §1, then [`reference/session-api.md`](reference/session-api.md) |
+| "Should this use Lobby, or Relay, or Matchmaker?"; code reaching straight for `Unity.Services.Lobbies` / `Matchmaker` / `Relay` | §2 — settle the requirement first; all three are below one API |
+| Netcode for GameObjects on a session's network; players join, but nothing is networked | §3 — the network is a session option, not a second start call |
+| Two gameplay netcode packages in `manifest.json` | §3 — pick one |
+| Server build breaks on `Unity.Services.Multiplayer.Server` types | §5 |
+| Ticket matchmaking into a playable match returns nothing — the queue was never deployed | §4 — the queue/environment does not exist yet |
+| Players drain out of a running dedicated match and never refill | §5 backfill |
+| A room / party / lobby list: filter and sort fields for a browsable game list | [`reference/session-api.md`](reference/session-api.md) |
+| Host migration | [`reference/session-api.md`](reference/session-api.md) — Host migration |
+| Reconnect after a phone loses signal | §1 `ReconnectToSessionAsync`, then `unity-live-services` → `reference/multiplayer.md` §2 |
+| The plan reads like a services brochure | §6 |
+| Something genuinely cannot be done through the session API | [`reference/lower-level-clients.md`](reference/lower-level-clients.md) |
 
 Authoritative source when specifics differ from recall: the Multiplayer Services SDK pages on
 [docs.unity.com](https://docs.unity.com/). There is a curated index of those pages at
@@ -38,22 +46,6 @@ package in Package Manager. Do not invent a signature from either. Check type na
 defaults and limits against the resolved package; when
 `PackageInfo.FindForAssetPath("Packages/com.unity.services.multiplayer/package.json")` returns
 null there is none, and `Unity.Services.Multiplayer.MultiplayerService` will not resolve.
-
-## Symptom → where to look
-
-| Symptom | Go to |
-|---|---|
-| "Which call gets two players into the same game?" | §1, then [`reference/session-api.md`](reference/session-api.md) |
-| "Should this use Lobby, or Relay, or Matchmaker?" | §2 — settle the requirement first; all three are below one API |
-| Players join, but nothing is networked | §3 — the network is a session option, not a second start call |
-| Two gameplay netcode packages in `manifest.json` | §3 — pick one |
-| Server build breaks on `Unity.Services.Multiplayer.Server` types | §5 |
-| Ticket matchmaking returns nothing, no error worth reading | §4 — the queue/environment does not exist yet |
-| Players drain out of a running dedicated match and never refill | §5 backfill |
-| Filter and sort fields for a game browser | [`reference/session-api.md`](reference/session-api.md) |
-| Reconnect after a phone loses signal | §1 `ReconnectToSessionAsync`, then `unity-multiplayer` §2 |
-| The plan reads like a services brochure | §6 |
-| Something genuinely cannot be done through the session API | [`reference/lower-level-clients.md`](reference/lower-level-clients.md) |
 
 ## 1. The surface you implement against
 
@@ -158,7 +150,7 @@ matchmaking and relay need a live UGS project to run at all.
 
 Choosing the topology at all — peer-to-peer versus a hosting player versus a fleet, who is allowed
 to be believed, what a disconnect means for the match, and microphone conflicts — is
-`unity-multiplayer`. That decision comes first; this skill is what you call once
+`unity-live-services` → `reference/multiplayer.md`. That decision comes first; this skill is what you call once
 it is made. Voice and text chat are `unity-vivox`. Anything that has to outlive the session —
 currency, unlocks, progression, leaderboards — is `unity-ugs` for the API and `unity-live-services`
 for the discipline around it. Netcode's own call-by-call surface (`NetworkBehaviour`, RPCs,

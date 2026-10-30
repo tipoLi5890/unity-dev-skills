@@ -1,16 +1,8 @@
 ---
 name: comfyui-asset-generation
 description: >-
-  Generate and validate audio, video and 3D assets on a self-hosted ComfyUI
-  server: MiniMax Music 3 vocal-free beds and jingles, Stable Audio 3 SFX,
-  MiniMax H3 text-, image- and reference-to-video with multi-frame guides,
-  Pixal3D / TRELLIS.2 props from one image or four views. Use for "generate
-  BGM / a jingle / sound effects", "instrumental, no vocals", "make a video
-  from this image", "turn this image into a 3D model", "the mesh came out
-  tilted", "MiniMax", "Stable Audio", "the ComfyUI queue is busy", "free the
-  model before switching", or running ComfyUI workflows over LAN or a private
-  network, one GPU job at a time (only /history proves completion). Unity
-  side: unity-audio, unity-3d-models.
+  Generate BGM, sound effects, video, or a 3D model from an image on a
+  self-hosted ComfyUI server.
 ---
 
 # ComfyUI asset generation
@@ -18,6 +10,33 @@ description: >-
 Create standalone audio, video or 3D assets through an existing ComfyUI
 installation. Works from Claude Code or Codex alike; nothing here assumes one agent. Do not install models, change server settings, expose ports, or
 infer permission to upload private inputs unless the user authorizes those actions.
+
+## Start here — route by task
+
+| Task | Read or use |
+|---|---|
+| API, config, uploads, submission, download; a server over LAN or a private network (only `/history` proves completion) | `reference/comfyui-api.md`, `scripts/comfy_asset_client.py` |
+| "The ComfyUI queue is busy", "free the model before switching": queue order (one GPU job at a time), model reuse, switching, cleanup | `reference/operations.md` |
+| Example inventory: saved workflows, model-family mapping | `reference/server-inventory.md` |
+| "Generate BGM / a jingle": MiniMax Music 3 vocal-free beds and jingles | `reference/minimax-music3.md`, `templates/minimax_music3_api.json` |
+| "Instrumental, no vocals": a background bed with no vocals: wording, worked captions, length, the voice check | `reference/instrumental-bgm.md`, `scripts/check_instrumental.py` |
+| "Generate sound effects": Stable Audio 3 SFX or music | `reference/stable-audio3.md`, `templates/stable_audio3_medium_api.json` |
+| "Make a video from this image": any MiniMax H3 mode (text-, image-, reference-to-video) | `reference/minimax-h3.md` and the matching H3 template |
+| H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
+| A multi-step clip from keyframes: first/last-frame segments, one camera across keyframes, stall and still-end measurement, assembly | `reference/h3-keyframe-segments.md`, `templates/minimax_h3_fl2v_api.json`, `scripts/video_motion.py`, `scripts/assemble_segments.py` |
+| Keyframe layout maps drawn from ground coordinates, crossing moves found before generating, a camera gate with a reject-and-retry loop | `reference/h3-keyframe-segments.md` §2–3, `scripts/layout_map.py`, `scripts/camera_gate.py` |
+| "Turn this image into a 3D model": a static Pixal3D / TRELLIS.2 prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
+| Four views cleaned before upload: BiRefNet removal, RGBA + mask preview + black composite, mask polarity checked per tool, unique upload names | `reference/image-to-3d.md` (Background removal for four views) |
+| A character to be rigged: multi-view only, four A-pose views at one scale, the preset the class's row names | `reference/image-to-3d.md` (A character); `templates/four_view_background_removal_api.json` (the four views' backgrounds out first), `templates/pixal3d_multiview_to_model_api.json` |
+| Before tuning: the project graph against the official template, node by node | `scripts/graph_diff.py`; `reference/image-to-3d-tuning.md` (Diff against the official template) |
+| Generation presets (Small … Template, 70000 faces by default … Showcase; none is a target), node knobs, occlusion, sheets or slabs diagnosed by stage, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` (`--class` + `--budgets ART_DIRECTION.md` for a class's row, which `unity-3d-models` sets) |
+| H3 character motion transfer, pace matching, or side-by-side QA | Also read `reference/h3-motion-transfer.md`; normalize non-24 fps sources with `scripts/prepare_h3_motion_reference.py` |
+
+Read only the references relevant to the current request.
+
+`agents/openai.yaml` is host packaging rather than method: it registers this skill
+with the Codex host — display name, one-line summary, and the
+`$comfyui-asset-generation` prompt that invokes it. Nothing below depends on it.
 
 ## Working contract
 
@@ -40,33 +59,6 @@ infer permission to upload private inputs unless the user authorizes those actio
   `/history/{prompt_id}`, successful output download, and media inspection.
 - Stop after one unchanged validation or runtime failure. Report the failing node
   instead of repeatedly consuming GPU time.
-
-## Route by task
-
-| Task | Read or use |
-|---|---|
-| API, config, uploads, submission, download | `reference/comfyui-api.md`, `scripts/comfy_asset_client.py` |
-| Queue order, model reuse, switching, cleanup | `reference/operations.md` |
-| Example inventory: saved workflows, model-family mapping | `reference/server-inventory.md` |
-| MiniMax Music 3 | `reference/minimax-music3.md`, `templates/minimax_music3_api.json` |
-| A background bed with no vocals: wording, worked captions, length, the voice check | `reference/instrumental-bgm.md`, `scripts/check_instrumental.py` |
-| Stable Audio 3 music or SFX | `reference/stable-audio3.md`, `templates/stable_audio3_medium_api.json` |
-| Any MiniMax H3 video mode | `reference/minimax-h3.md` and the matching H3 template |
-| H3 semantic references or timeline guides | Also read `reference/multiframe-reference.md` |
-| A multi-step clip from keyframes: first/last-frame segments, one camera across keyframes, stall and still-end measurement, assembly | `reference/h3-keyframe-segments.md`, `templates/minimax_h3_fl2v_api.json`, `scripts/video_motion.py`, `scripts/assemble_segments.py` |
-| Keyframe layout maps drawn from ground coordinates, crossing moves found before generating, a camera gate with a reject-and-retry loop | `reference/h3-keyframe-segments.md` §2–3, `scripts/layout_map.py`, `scripts/camera_gate.py` |
-| A static 3D prop from one image or four views: path choice, input, run, acceptance | `reference/image-to-3d.md`; `templates/pixal3d_image_to_model_api.json`, `templates/trellis2_image_to_model_api.json`, `templates/pixal3d_multiview_to_model_api.json` |
-| Four views cleaned before upload: BiRefNet removal, RGBA + mask preview + black composite, mask polarity checked per tool, unique upload names | `reference/image-to-3d.md` (Background removal for four views) |
-| A character to be rigged: multi-view only, four A-pose views at one scale, the preset the class's row names | `reference/image-to-3d.md` (A character); `templates/four_view_background_removal_api.json` (the four views' backgrounds out first), `templates/pixal3d_multiview_to_model_api.json` |
-| Before tuning: the project graph against the official template, node by node | `scripts/graph_diff.py`; `reference/image-to-3d-tuning.md` (Diff against the official template) |
-| Generation presets (Small … Template, 70000 faces by default … Showcase; none is a target), node knobs, occlusion, sheets or slabs diagnosed by stage, a mesh that came out tilted, shredded or discoloured | `reference/image-to-3d-tuning.md`; gate every GLB with `scripts/inspect_glb.py` (`--class` + `--budgets ART_DIRECTION.md` for a class's row, which `unity-3d-models` sets) |
-| H3 character motion transfer, pace matching, or side-by-side QA | Also read `reference/h3-motion-transfer.md`; normalize non-24 fps sources with `scripts/prepare_h3_motion_reference.py` |
-
-Read only the references relevant to the current request.
-
-`agents/openai.yaml` is host packaging rather than method: it registers this skill
-with the Codex host — display name, one-line summary, and the
-`$comfyui-asset-generation` prompt that invokes it. Nothing below depends on it.
 
 ## Execution outline
 

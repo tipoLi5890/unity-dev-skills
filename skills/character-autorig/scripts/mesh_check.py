@@ -476,8 +476,16 @@ def _pair(text: str) -> list[float]:
     return [a, b]
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="mesh_check.py", description=__doc__.split("\n")[0],
+    p = UsageParser(prog="mesh_check.py", description=__doc__.split("\n")[0],
                                 epilog="Exit codes: 0 pass, 2 a gate failed, 1 refused input.")
     p.add_argument("mesh", nargs="?", type=Path)
     p.add_argument("--up", choices=("y", "z"), default="y", help="the file's up axis (default y: glTF, OBJ)")
@@ -686,7 +694,7 @@ def selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
     code, report = run(argv)
     print(json.dumps(report, indent=2))

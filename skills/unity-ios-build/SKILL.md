@@ -1,15 +1,8 @@
 ---
 name: unity-ios-build
 description: >-
-  Take a Unity project to an app RUNNING on a real iPhone or iPad from a
-  terminal, and prove it: headless iOS build, the generated Xcode project,
-  signing with what this Mac actually has, devicectl install, launch with the
-  console attached. Load for "build for iOS", "run it on my iPhone", "No Account
-  for Team", "No profiles for … were found", "is Xcode managed", "which team
-  id", "how do I read the iOS log", "it launches and nothing happens", "pull a
-  file off the iPhone", or writing a native .mm plugin ("cannot use @try",
-  "DllImport __Internal"). Android artifacts are unity-android-release; driving
-  the running app is unity-device-testing; CLI and licences are unity-cli.
+  Build and run on a real iPhone or iPad from the terminal: Xcode project,
+  signing, devicectl, iOS log.
 ---
 
 # unity-ios-build — from a Unity project to a process on the phone, without opening Xcode
@@ -26,6 +19,16 @@ An iOS build is **two builds and a delivery**, and each one fails in its own voc
 > screenshot verb; what the app prints is what you know.
 
 So "it built" is three separate claims. Make each one separately, and read each one back.
+
+## Symptom → where to look
+
+| The request | Go to |
+|---|---|
+| "build for iOS", "run it on my iPhone" | *The pipeline*, *Ready-made templates* |
+| "No Account for Team", "No profiles for … were found", "is Xcode managed", "which team id" | `reference/signing-from-the-terminal.md` |
+| "how do I read the iOS log", "it launches and nothing happens", "pull a file off the iPhone" | `reference/install-launch-console.md` |
+| A native `.mm` plugin: "cannot use @try", "DllImport __Internal" | `reference/native-plugins.md` |
+| Unity exits 0 and nothing was produced | `reference/headless-build.md` |
 
 ---
 
@@ -112,9 +115,4 @@ at it costs a full build per guess.
 | Installing editors and modules, licences, CI wiring | `unity-cli` |
 | Behaviour that is also wrong in the Editor | `unity-debug` |
 | WebGL / WebGPU | `unity-web-release` |
-
-## Related skills
-
-`unity-device-testing` once the process is up · `unity-android-release` for the other phone ·
-`unity-cli` when Unity itself will not start · `unity-new-project` for bundle id and asmdef
-decisions made on day one.
+| Bundle id and asmdef decisions made on day one | `unity-new-project` |

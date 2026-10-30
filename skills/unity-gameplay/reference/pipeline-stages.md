@@ -171,7 +171,7 @@ slice journey and survives a kill and relaunch on a real device, and the store-s
 configuration it talks to is the production one.
 
 Skills: `unity-android-release`, `unity-ios-build`, `unity-web-release`, `unity-device-testing`;
-`unity-monetization`, `unity-iap`, `unity-ads-levelplay` where the game sells anything;
+`unity-live-services` → `reference/monetization.md`, `unity-iap`, `unity-ads-levelplay` where the game sells anything;
 `unity-live-services` and `unity-ugs` where it talks to a backend.
 
 ---

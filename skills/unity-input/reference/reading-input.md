@@ -182,3 +182,21 @@ repeater keeps its own clock either way, so a blocked step does not restart the 
 - Run the journey in both ratios. It prints `polled=` beside `launches=`: what a `FixedUpdate`
   poll would have counted on the same run — above the tap count in the fast-fixed case, below it
   in the slow one.
+
+## The read from gameplay, in full
+
+The shape SKILL.md §1 step 4 describes — levels from `Peek`, a press spent once with `TryUse`:
+
+```csharp
+IRunInputSource _input;
+
+void FixedUpdate()
+{
+    if (!RunInputSource.Resolve(gameObject, ref _input)) return;   // no enabled source
+    RunInput i = _input.Peek();                       // levels: move, aim, held
+    _motor.Move(i.move);
+    if (_grounded && _input.TryUse(RunButton.Launch)) // a press: spent once, buffered 0.12 s
+        Launch();
+    if (_rising && !i.launchHeld) CutLaunch();        // variable height reads the level
+}
+```

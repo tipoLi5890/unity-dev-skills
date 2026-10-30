@@ -178,7 +178,7 @@ Unity -batchmode -nographics -projectPath . \
 
 The method behind it — start asynchronously, poll `Lightmapping.isRunning`, treat a bake still
 running at the end of a turn as a boundary and not a result, count evidence on disk — is
-`unity-urp-migration` → `resources/LightingMigration.cs`. Related calls:
+`unity-urp-migration` → `resources/Editor/LightingMigration.cs`. Related calls:
 
 | Call | Does |
 |---|---|

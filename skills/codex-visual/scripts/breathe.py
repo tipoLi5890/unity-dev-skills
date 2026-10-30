@@ -674,10 +674,18 @@ def selftest():
     return 0 if not failed else 1
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main():
     if sys.argv[1:] == ["selftest"]:
         return selftest()
-    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p = UsageParser(description=__doc__.split("\n")[0])
     p.add_argument("image", nargs="?", help="the still idle pose (RGBA, transparent background)")
     p.add_argument("--out-dir", help="where the frames and frames.json go")
     p.add_argument("--frames", type=int, default=12, help="frames in the loop (default 12)")

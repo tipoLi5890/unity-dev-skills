@@ -1,7 +1,7 @@
 #if UNITY_EDITOR
 // One page, packed tallest-first so the wasted strip above each shelf stays small.
 //
-// Read ScriptablePackerExample.cs first: the shape of the type (Pack public, Fit protected,
+// Read GridAtlasPacker.cs first: the shape of the type (Pack public, Fit protected,
 // the nested data types, the NativeArray write-back) is stated there and assumed here.
 //
 // Two things worth knowing before reaching for this file:

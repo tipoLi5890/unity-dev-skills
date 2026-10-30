@@ -68,3 +68,20 @@ unity bug --title … --steps … --share-project .
 > **`unity logs` reads the Hub log.** Not `Editor.log`, not your game's output. Reaching for it to
 > debug a build returns something plausible and irrelevant. Editor logs and how to read them are in
 > `unity-debug` → `reference/cli-harness.md`.
+
+## 4. The conventions that apply to every command
+
+| | |
+|---|---|
+| Output | `--format human\|json\|tsv\|ndjson\|github`; `--json` is the second, and `github` changes only a **failure**, into an `::error::` annotation (`reference/ci-surface.md` §1) |
+| CI | `--non-interactive` together with `--yes` |
+| Env | All `UNITY_`-prefixed (`UNITY_PROJECT_PATH`, `UNITY_EDITOR_VERSION`, `UNITY_FORMAT`, `UNITY_RUN_TIMEOUT`, `UNITY_BUILD_TIMEOUT`…). **A flag always beats an env var** |
+| Paging | Off for non-TTY, machine formats, `--quiet`, `TERM=dumb`; `--no-pager` (`UNITY_NO_PAGER`) forces it off |
+| Language | `unity language --set <code>` picks from ten display languages, and **it translates the error messages too** |
+
+## 5. Surface the skill does not cover — run `--help`
+
+`unity plugin` (install / remove / upgrade / list / changelog) · `unity hub install` ·
+`unity collaboration` · `unity projects size|clone|export|import|pin` · `unity test --affected`
+and `--affected-compare` · `unity config proxy` and `config get|set|list|unset` ·
+`unity vcs uvcs review` · `unity auth consumers|revoke`.

@@ -1,16 +1,8 @@
 ---
 name: unity-2d-level
 description: >-
-  Put a 2D level together as data: a serialisable level (tile ids, spawn,
-  gate, pickups, entities) painted into a fixed stack of Tilemap layers,
-  runtime tile edits, rooms and doors, chunks stitched into an endless run,
-  Tiled and LDtk import, SpriteShape terrain, seeded generation with
-  reachability checked per level. Load for: "load this level from JSON",
-  "import my Tiled map", "which Tilemap layers do I need", "no floor collider
-  right after SetTile", "generate a level from a seed", "a pickup is
-  unreachable", "stitch chunks for an endless runner". Palettes and rule tiles
-  are unity-tilemap; collider settings are unity-physics-2d; draw order is
-  unity-2d-rendering; cell boards are unity-2d-grid.
+  2D level layout as data: Tiled/LDtk import, rooms, endless chunks, seeded
+  levels, jump reachability.
 ---
 
 # unity-2d-level — a level is data with invariants, and the Tilemap is one renderer of it
@@ -21,6 +13,35 @@ description: >-
 > a native call per cell; its bounds grow when painted and never shrink when erased; and its
 > collider catches up with its tiles later in the frame. None of that is a bug — a Tilemap is a
 > renderer. The level is the small data structure it was painted from.
+
+## The situation → what to read
+
+| The situation | Read |
+|---|---|
+| "Which Tilemap layers do I need": which Tilemaps a level needs, which collide, where each sorts; painting entities as marker tiles | `reference/layer-stack.md` |
+| "Load this level from JSON": the level file's keys (tile ids, spawn, gate, pickups, entities), cell indexing, ids instead of asset references, versions, asset or JSON | `reference/level-data.md` |
+| `SetTile` or `SetTiles` or `SetTilesBlock`; a block that painted nothing; bounds that will not shrink; cell to world; "no floor collider right after SetTile", the floor missing for one step after a load; breaking tiles in play | `reference/runtime-tilemap.md` |
+| Rooms and doors, their enter event, a room graph, soft locks, "stitch chunks for an endless runner", the difficulty ramp, additive room scenes | `reference/rooms-and-chunks.md` |
+| "Import my Tiled map"; Tiled and LDtk: what they export, the row flip, global tile ids and flip bits, object anchors, converter or importer package | `reference/external-editors.md` |
+| SpriteShape terrain: hills, caves and bridges as splines; corner sprites; the collider a shape generates | `reference/sprite-shape.md` |
+| "A pickup is unreachable", "generate a level from a seed": the reach rule the validator applies; generating so the gate is reachable by construction; seeds and determinism | `reference/procedural.md` |
+| Creating a Tile Palette, building a rule tile and its rule order, hex and isometric palette sizing | `unity-tilemap` |
+| Composite and tilemap collider settings, one-way effectors and their arcs, a body that tunnels or snags on seams | `unity-physics-2d` → `reference/tilemap-colliders.md` |
+| Sorting layers and order across the stack, sorting by position, 2D lights, parallax; the runner behind and in front of one wall | `unity-2d-rendering` → `reference/sort-order.md` |
+| Confining the camera to the current room; a runner camera; blends between rooms | `unity-camera` → `reference/follow-2d.md` |
+| Gap, ledge, step and door sizes from the controller's numbers | `unity-gameplay` → `reference/level-metrics.md` |
+| The motor that walks the level: grounding, slopes, one-way drop-through | `unity-2d-controller` → `reference/platformer.md` |
+| Cell coordinates, neighbours, paths and turn order on a board | `unity-2d-grid` → `reference/coordinates.md` |
+| Invariant shapes and ids; the brief's invariants; the lane-run generator this pattern extends | `unity-game-brief` → `reference/invariants.md` |
+| A journey that plays the level; recorders, situations; the 2D never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
+| Slicing the tileset, pivots, 9-slice borders | `unity-2d-sprites` |
+| Frame cost of a load or a tile edit | `unity-profiling` |
+| Tiles with hairline gaps or shimmer between them, pixel snapping | `unity-2d-pixel-perfect` |
+
+Copy `resources/LevelData.cs`, `TilemapLevelLoader.cs`, `RoomBounds.cs` and `ChunkStitcher.cs`
+into a Runtime assembly, and `resources/Editor/TilemapLayerStackBuilder.cs` into an Editor one.
+They need the built-in Tilemap and 2D physics modules and no package. The two scripts are
+Python 3, standard library only.
 
 ```
 Tiled .tmj ── tiled_to_level.py ──┐
@@ -88,35 +109,6 @@ the data, checked without opening a scene.
 | Curved, organic ground | A spline with a generated collider, outside the cell search | `reference/sprite-shape.md` |
 | A board of rect, isometric or hexagonal cells (sorting yard) | Cells are the gameplay, not just the art | `unity-2d-grid` |
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Which Tilemaps a level needs, which collide, where each sorts; painting entities as marker tiles | `reference/layer-stack.md` |
-| The level file's keys, cell indexing, ids instead of asset references, versions, asset or JSON | `reference/level-data.md` |
-| `SetTile` or `SetTiles` or `SetTilesBlock`; a block that painted nothing; bounds that will not shrink; cell to world; the floor missing for one step after a load; breaking tiles in play | `reference/runtime-tilemap.md` |
-| Rooms and their enter event, a room graph, soft locks, chunk stitching, the difficulty ramp, additive room scenes | `reference/rooms-and-chunks.md` |
-| Tiled and LDtk: what they export, the row flip, global tile ids and flip bits, object anchors, converter or importer package | `reference/external-editors.md` |
-| Hills, caves and bridges as splines; corner sprites; the collider a shape generates | `reference/sprite-shape.md` |
-| The reach rule the validator applies; generating so the gate is reachable by construction; seeds and determinism | `reference/procedural.md` |
-| Creating a Tile Palette, building a rule tile, hex and isometric grid sizing | `unity-tilemap` |
-| Composite and tilemap collider settings, one-way effectors, a body that snags on seams | `unity-physics-2d` → `reference/tilemap-colliders.md` |
-| Sorting layers and order across the stack; the runner behind and in front of one wall | `unity-2d-rendering` → `reference/sort-order.md` |
-| Confining the camera to the current room; a runner camera | `unity-camera` → `reference/follow-2d.md` |
-| Gap, ledge, step and door sizes from the controller's numbers | `unity-gameplay` → `reference/level-metrics.md` |
-| The motor that walks the level: grounding, slopes, one-way drop-through | `unity-2d-controller` → `reference/platformer.md` |
-| Cell coordinates, neighbours, paths and turn order on a board | `unity-2d-grid` → `reference/coordinates.md` |
-| Invariant shapes and ids; the seeded generator this pattern extends | `unity-game-brief` → `reference/invariants.md` |
-| A journey that plays the level; the 2D never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
-| Tiles with gaps or shimmer between them | `unity-2d-pixel-perfect` |
-
-Copy `resources/LevelData.cs`, `TilemapLevelLoader.cs`, `RoomBounds.cs` and `ChunkStitcher.cs`
-into a Runtime assembly, and `resources/Editor/TilemapLayerStackBuilder.cs` into an Editor one.
-They need the built-in Tilemap and 2D physics modules and no package. The two scripts are
-Python 3, standard library only.
-
----
-
 ## Discipline
 
 - **The data is the truth; the Tilemap is painted from it.** Gameplay asks `LevelData.IsSolid`,
@@ -150,20 +142,8 @@ Python 3, standard library only.
 
 ## Scope — what this skill does NOT do
 
-| Not here | Go to |
-|---|---|
-| Tile Palettes, rule tiles and their rule order, hexagonal and isometric palette sizing | `unity-tilemap` |
-| Slicing the tileset, pivots, 9-slice borders | `unity-2d-sprites` |
-| Why the composite is set as it is, effector arcs, bodies that tunnel or snag | `unity-physics-2d` |
-| Sorting priority, sorting by position, 2D lights and shadows, parallax | `unity-2d-rendering` |
-| The motor that runs and jumps on the level | `unity-2d-controller` |
-| Cell coordinates, hexagonal and isometric maths, pathfinding, occupancy, turn order | `unity-2d-grid` |
-| Camera rigs, confiners, blends between rooms | `unity-camera` |
-| Deriving reach from apex, time to apex and run speed | `unity-gameplay` → `reference/level-metrics.md` |
-| Writing the brief's invariants; the lane-run generator | `unity-game-brief` |
-| Recorders, situations, journeys that play a level | `unity-play-harness` |
-| Hairline gaps between tiles, pixel snapping | `unity-2d-pixel-perfect` |
-| Frame cost of a load or a tile edit | `unity-profiling` |
-
-What is left is the part no single-system skill holds: **what a level is when nothing is
-drawing it, and the checks that can therefore run on it.**
+Every neighbouring system — palettes and rule tiles (`unity-tilemap`), colliders
+(`unity-physics-2d`), draw order (`unity-2d-rendering`), the motor (`unity-2d-controller`), cell
+boards (`unity-2d-grid`), cameras, metrics, journeys — is a row of the table at the top. What is
+left is the part no single-system skill holds: **what a level is when nothing is drawing it, and
+the checks that can therefore run on it.**

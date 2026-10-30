@@ -207,7 +207,7 @@ def main() -> int:
     parser.add_argument("--ignore", action="append", default=[], metavar="INPUT",
                         help="An input name to leave out on every node (filename_prefix, image); repeatable")
     parser.add_argument("--selftest", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(["--selftest"] if sys.argv[1:] == ["selftest"] else None)
     if args.selftest:
         return selftest()
     if args.a is None or args.b is None:

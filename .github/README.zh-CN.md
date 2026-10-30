@@ -4,7 +4,7 @@
 
 <p><b>让 Claude Code 和 Codex 像一位严谨的 Unity 开发者那样工作，并且每一步都拿出证据的 Unity 6 skills。</b></p>
 
-<p><i>60 多个 skill，从最初的想法一直到真机上的构建。</i></p>
+<p><i>60 个 skill，从最初的想法一直到真机上的构建。</i></p>
 
 <p>
 <a href="../.claude-plugin/plugin.json"><img alt="版本" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -120,8 +120,8 @@ flowchart LR
     E -->|通过| F["完成，并附上证据"]
 ```
 
-- **听懂你的描述，找到对的方法**：每个 skill 开头都有一张用日常语言写成的症状表，另有三个“从这里开始”的
-  skill 负责分派任何玩法、UI 或角色需求。
+- **听懂你的描述，找到对的方法**：每个 skill 开头都有一张用日常语言写成的症状表，另有四个“从这里开始”的
+  skill 负责分派任何玩法、UI、角色或后端需求。
 - **跑的是代码，不是建议**：100 多个 Python 脚本、170 多个 C# 文件和 50 多个模板，直接复制进你的项目，不用照着笔记重敲。
 - **拿出证据**：每个方法最后都有一项你能读懂的检查，比如探针快照、journey 测试、重新导入的 FBX、设备日志。
 - **占用上下文少，自成一体**：`SKILL.md` 只负责路由，深入的内容等情况需要时才加载。不需要任何其他插件：skill 之间通过各自的 Scope 段落互相交接。
@@ -129,7 +129,7 @@ flowchart LR
 ## Skill 一览
 
 > [!TIP]
-> 不知道从哪里开始？任何玩法需求用 `unity-gameplay`，任何 UI 需求用 `unity-game-ui`，从一张图做出绑骨角色用 `game-character-pipeline`。
+> 不知道从哪里开始？任何玩法需求用 `unity-gameplay`，任何 UI 需求用 `unity-game-ui`，从一张图做出绑骨角色用 `game-character-pipeline`，任何后端、联机或商业化需求用 `unity-live-services`。
 
 <details>
 <summary><b>所有阶段——终端与搜索</b>：Unity CLI，以及在项目里查找任何东西</summary>
@@ -240,7 +240,7 @@ flowchart LR
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | 通过 `codex` 图像模型出 2D 美术，用一份美术圣经保持风格统一 |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音乐、音效、视频和 3D 模型，每种各一个任务 |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 通过一段生成的视频，把一张角色静态图变成透明的 sprite 循环 |
-| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | 在 Blender 里给图生 3D 的角色绑骨，导出的 FBX 用重新导入来验证 |
+| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` 不适用时在 Blender 里手工绑骨，导出的 FBX 用重新导入来验证 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把现成的动作 clip 套到你的 Blender 骨架上，按脚滑、抖动和跳变把关 |
 | [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地给人形角色绑骨，一条无头命令完成 |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 把一个动作做成 clip，从双机位视频直接解算到骨架上 |
@@ -278,12 +278,10 @@ flowchart LR
 
 | Skill | 什么时候用 |
 |---|---|
-| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | 安全地把游戏接上后端，并先设计好离线路径 |
+| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | 后端、联机与商业化的起点：离线路径、多人联机拓扑、SDK 与商店声明的接缝 |
 | [`unity-ugs`](../skills/unity-ugs/SKILL.md) | 服务因为没有初始化而抛异常：按正确的顺序初始化 Gaming Services |
 | [`unity-iap`](../skills/unity-iap/SKILL.md) | 内容发了两次或者一次都没发：逐个调用讲清 In-App Purchasing v5 |
 | [`unity-ads-levelplay`](../skills/unity-ads-levelplay/SKILL.md) | 广告不出现，或者广告依赖把构建弄坏：LevelPlay，初始化之前先取得同意 |
-| [`unity-monetization`](../skills/unity-monetization/SKILL.md) | 内购和广告 SDK 弄坏了构建、manifest 或商店声明 |
-| [`unity-multiplayer`](../skills/unity-multiplayer/SKILL.md) | 先选定网络拓扑，并且别让语音聊天抢走其他功能的麦克风 |
 | [`unity-multiplayer-services`](../skills/unity-multiplayer-services/SKILL.md) | 玩家怎么进到同一局游戏，从加入码到主机迁移 |
 | [`unity-vivox`](../skills/unity-vivox/SKILL.md) | 进了语音频道却没人听得见：Vivox 聊天，从登录到按键说话 |
 

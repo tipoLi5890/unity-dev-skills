@@ -1,15 +1,7 @@
 ---
 name: unity-play-harness
 description: >-
-  Design a Unity game so an agent can drive it and read it: a one-line GameProbe
-  snapshot readable from a live Editor eval, a project command, Editor.log and
-  PlayMode tests; named situations that boot straight into a moment and wait on a
-  readiness set, never a sleep; journey tests that sample the probe into a timeline
-  and assert invariants; and the method that turns a feel report into a repeatable
-  test. Load for: "boot straight into the boss", "how would a test reach this
-  screen", "comes in too fast", "disappears while it loads", "looks inconsistent",
-  "I can't measure what the player felt". Verifying a fix or trusting a run is
-  unity-debug; frame-time counters are unity-profiling.
+  Playtest and journey tests: a GameProbe, boot into a moment, does the runner reach the gate?
 ---
 
 # unity-play-harness — build the game so an agent can play it and read it
@@ -18,6 +10,32 @@ A game an agent cannot drive is a game that gets checked once, by hand, by whoev
 at the keyboard. The work here is not testing; it is **making the game observable and reachable**
 so that everything else — a verification, a measurement, an answer to a complaint — becomes cheap
 enough to do on every change.
+
+## Load what the situation needs
+
+| The situation | Read |
+|---|---|
+| "Playtest this"; a journey test — does the runner reach the gate, every run | the four parts below, then `reference/journeys.md` |
+| Designing the one-line snapshot; a value you need is not in it; reading it from eval, a command, the log or a test | `reference/probe-contract.md` |
+| "boot straight into the boss"; "how would a test reach this screen"; a wait that times out | `reference/situations.md` |
+| Writing the test that drives and samples; which invariants are worth asserting over a run | `reference/journeys.md` |
+| A screenshot pass over every situation; situations that must not write the player's saves; the same ids in a built player | `reference/situations.md` → "A shot list over every situation" |
+| A match that has to play itself; an autoplayer through the real input funnel; the smoke run that rides on it | `reference/situations.md` → "the autoplayer" · `reference/journeys.md` → "The autoplayer smoke run" |
+| Reading, comparing or handing over a recorded run | `reference/timeline-format.md` |
+| A feel report with no number in it — "comes in too fast", "disappears while it loads", "looks inconsistent", "I can't measure what the player felt"; deciding what stays a human judgement | `reference/complaint-to-test.md` |
+| Minutes of random but plausible input over every situation; a seed that replays a red run | `reference/soak.md` · `templates/SoakTest.cs` |
+| What to build first, where a threshold comes from, simulation/presentation split | `unity-game-brief` |
+| A results file you are about to believe; exit codes; state leaking between runs | `unity-debug` → `reference/harness-trust.md` |
+| Running the suite headless: `-runTests`, test filters, tests not found | `unity-debug` → `reference/cli-harness.md` |
+| Driving a live Editor, `unity command`, Safe Mode | `unity-debug` → `reference/editor-control.md` |
+| Needing to SEE the moment: windowed runs, settle time, reading the pixels | `unity-debug` → `reference/visual-checks.md` |
+
+Copy `resources/GameProbe.cs`, `resources/GameProbeReporter.cs`, `resources/Situations.cs`,
+`resources/SituationBoot.cs` and `resources/JourneyRecorder.cs` into a
+Runtime assembly, `resources/Editor/ProbeCommands.cs` into an Editor one, and start from
+`templates/CourierSituations.cs` and `templates/JourneyTest.cs`. A 2D game starts from
+`templates/CourierSituations2D.cs` instead and adds `resources/JourneyInvariants2D.cs`, which is
+a separate file so that a project without the 2D physics module still compiles the rest.
 
 Four parts, each with a condition that says it is actually there:
 
@@ -50,33 +68,6 @@ poll, and wait until they are all true **with a timeout that names the ones stil
 
 Never `yield return new WaitForSeconds(3f)`. A sleep that is long enough today is a flake next
 month, and when it fails it tells you only that three seconds passed.
-
----
-
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Designing the one-line snapshot; a value you need is not in it; reading it from eval, a command, the log or a test | `reference/probe-contract.md` |
-| "boot straight into the boss"; "how would a test reach this screen"; a wait that times out | `reference/situations.md` |
-| Writing the test that drives and samples; which invariants are worth asserting over a run | `reference/journeys.md` |
-| A screenshot pass over every situation; situations that must not write the player's saves; the same ids in a built player | `reference/situations.md` → "A shot list over every situation" |
-| A match that has to play itself; an autoplayer through the real input funnel; the smoke run that rides on it | `reference/situations.md` → "the autoplayer" · `reference/journeys.md` → "The autoplayer smoke run" |
-| Reading, comparing or handing over a recorded run | `reference/timeline-format.md` |
-| A feel report with no number in it; deciding what stays a human judgement | `reference/complaint-to-test.md` |
-| Minutes of random but plausible input over every situation; a seed that replays a red run | `reference/soak.md` · `templates/SoakTest.cs` |
-| Frame-time counters, draw calls, GC, "did my change actually help" | `unity-profiling` |
-| What to build first, where a threshold comes from, simulation/presentation split | `unity-game-brief` |
-| A results file you are about to believe; exit codes; state leaking between runs | `unity-debug` → `reference/harness-trust.md` |
-| Running the suite headless: `-runTests`, test filters, tests not found | `unity-debug` → `reference/cli-harness.md` |
-| Driving a live Editor, `unity command`, Safe Mode | `unity-debug` → `reference/editor-control.md` |
-| Needing to SEE the moment: windowed runs, settle time, reading the pixels | `unity-debug` → `reference/visual-checks.md` |
-
-Copy `resources/GameProbe.cs`, `resources/Situations.cs` and `resources/JourneyRecorder.cs` into a
-Runtime assembly, `resources/Editor/ProbeCommands.cs` into an Editor one, and start from
-`templates/CourierSituations.cs` and `templates/JourneyTest.cs`. A 2D game starts from
-`templates/CourierSituations2D.cs` instead and adds `resources/JourneyInvariants2D.cs`, which is
-a separate file so that a project without the 2D physics module still compiles the rest.
 
 ---
 
@@ -133,7 +124,7 @@ something is broken.
 
 | Not here | Go to |
 |---|---|
-| Running Unity, exit codes, screenshots, proving the harness is honest | `unity-debug` |
+| Running Unity, exit codes, screenshots, verifying a fix, trusting a run, proving the harness is honest | `unity-debug` |
 | Frame-time counters, draw calls, GC, a before/after table of numbers | `unity-profiling` |
 | The brief, the constraints, which interaction to build first | `unity-game-brief` |
 | Installing editors, licences, templates, the CLI's own surface | `unity-cli` |

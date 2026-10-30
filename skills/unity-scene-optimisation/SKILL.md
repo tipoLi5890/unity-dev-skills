@@ -1,15 +1,7 @@
 ---
 name: unity-scene-optimisation
 description: >-
-  Change the scene once a profiling counter has named the cost in a Unity 6 URP
-  game: batching paths, LODGroup and Mesh LOD, baked and GPU occlusion culling,
-  per-layer cull distances, texture size and mipmap streaming, sprite and
-  particle overdraw. Load for "draw calls are too high, what do I change", "the
-  SRP Batcher is not batching", "GPU instancing does nothing", "set up LODs for
-  this prop", "it still draws the room behind the wall", "occlusion culling
-  does nothing", "small props pop in", "texture memory is over budget", "is it
-  overdraw". Taking the measurement is unity-profiling; decimating a mesh is
-  unity-3d-models; shadows are unity-lighting; atlases are unity-sprite-atlas.
+  Cut draw calls, triangles and texture memory: batching, LOD, occlusion, cull distances.
 ---
 
 # unity-scene-optimisation — optimise the counter that moved, not the one you remember
@@ -26,17 +18,17 @@ Read the row off a window you already have. First match wins.
 
 | The window says | Go to |
 |---|---|
-| SetPass calls or draw calls high, triangles ordinary | §1 — batching |
+| "Draw calls are too high, what do I change"; the SRP Batcher is not batching; GPU instancing does nothing | §1 — batching |
 | Draw calls rose after a tint, a flash or a per-object colour was added | §1 — a property block left the batch |
-| Triangles high looking down the lane, lower looking at the floor | §2 — LOD |
+| "Set up LODs for this prop"; triangles high looking down the lane, lower looking at the floor | §2 — LOD |
 | Low-tier trees or props missing after an FBX import; a fixed camera never switches level | §2 — `reference/lod.md`, the importer's `LODGroup` |
 | Triangles high at every distance | `unity-3d-models` → `reference/import-and-decimate.md` |
-| Draw calls and triangles stay high facing a wall | §3 — occlusion |
-| Draw calls climb with view distance, and what is added is a few pixels tall | §4 — culling distances |
-| A second camera doubled every render counter | §4 — the culling mask |
-| Texture memory over budget, or textures soft after streaming was turned on | §5 |
-| GPU frame time far above the CPU times; frame time follows the resolution | §6 — fill |
-| A 2D scene with more draw calls than sprites on screen warrant | §6 — sort order and atlases |
+| It still draws the room behind the wall; occlusion culling does nothing | §3 — occlusion |
+| Draw calls climb with view distance, and what is added is a few pixels tall; small props pop in | [`reference/distance-texture-fill.md`](reference/distance-texture-fill.md) §4 — culling distances |
+| A second camera doubled every render counter | [`reference/distance-texture-fill.md`](reference/distance-texture-fill.md) §4 — the culling mask |
+| Texture memory over budget, or textures soft after streaming was turned on | [`reference/distance-texture-fill.md`](reference/distance-texture-fill.md) §5 |
+| "Is it overdraw?" GPU frame time far above the CPU times; frame time follows the resolution | [`reference/distance-texture-fill.md`](reference/distance-texture-fill.md) §6 — fill |
+| A 2D scene with more draw calls than sprites on screen warrant | [`reference/distance-texture-fill.md`](reference/distance-texture-fill.md) §6 — sort order and atlases |
 | Shadow caster count high | `unity-lighting` → `reference/shadows.md` |
 | Allocation per frame, a spike on spawn, discarded work | `unity-profiling` → `reference/where-the-time-goes.md` |
 
@@ -139,59 +131,10 @@ stop.
 Accept a culling change only with a second window looking through the doorway, where the
 counters must not have fallen. [`reference/occlusion.md`](reference/occlusion.md).
 
-## 4. Too far to matter — culling distances
+## 4–6. Distance, texture memory, fill → `reference/distance-texture-fill.md`
 
-**Cheapest test:** halve `Camera.farClipPlane` for one window, then put it back — the fix is
-per layer, because the far plane also removes the gate.
-
-- **`Camera.layerCullDistances` takes exactly 32 floats**; 0 keeps the far plane for that
-  layer. Small props at 45 m, medium at 90 m, the gate on the far plane.
-- **Derive the distance from size**: an object under 8 px tall is not read. At 60° and 1080p
-  that is 117 × its height.
-- **`layerCullSpherical = true`** on any camera the player turns, or props pop at the screen
-  edge.
-- **A layer is shared with physics.** Put the renderer on a child with the culling layer and
-  keep the collider on the root.
-- **Under Cinemachine the far plane is on the rig's lens** — `unity-camera`.
-- **Mask a second camera**, or a minimap draws the whole scene again.
-
-[`reference/culling-distances.md`](reference/culling-distances.md).
-
-## 5. Texture memory
-
-**Cheapest test:** `QualitySettings.globalTextureMipmapLimit = 1` for one window and one
-screenshot. Matching screenshots mean the textures are larger than the screen can show.
-
-- **Size and compression first.** A 2048 texture is 21.3 MB uncompressed and 2.4 MB in ASTC
-  6×6; halving it divides by four. The audit lists `textures.largeNotStreaming`.
-- **Streaming needs three switches**: the quality level's Texture Mipmap Streaming, the
-  texture's Stream Mipmap Levels, and mipmaps.
-- **The budget (512 MB) counts what cannot stream.** When UI and sprites alone exceed it, every
-  streaming texture drops two levels and the scene goes soft.
-- **Sprites and UI have no mipmaps**: streaming does nothing for a 2D game.
-- **Read `Texture.desiredTextureMemory` against `targetTextureMemory`**, not the look.
-
-What a build carries is `unity-android-release` → `reference/size-and-stripping.md` and
-`unity-web-release` → `reference/settings-and-verification.md`. The settings, the readback line
-and camera cuts: [`reference/texture-streaming.md`](reference/texture-streaming.md).
-
-## 6. Overdraw, fill and 2D draw cost
-
-**Cheapest test:** set the URP Asset's `renderScale` to 0.5 for one window. Frame time falling
-by half or more is fill; unchanged is draws, and §1 applies.
-
-- **Every sprite pixel inside its mesh is blended, alpha 0 included.** Tight meshes for
-  characters and props; full rect only for tiles and sliced panels.
-- **Each screen-covering layer is one more blend per pixel.** Make the bottom layer opaque.
-- **Sprites batch only when consecutive in sort order on one texture and material** —
-  `unity-2d-rendering` → `reference/sort-order.md`, `unity-sprite-atlas`.
-- **A Tilemap floor stays in Chunk mode**; Individual is one sprite's work per tile.
-- **Particles cost by size on screen, not count.** Cap `ParticleSystemRenderer.maxParticleSize`
-  at 0.1 and crop the texture's empty border.
-- **A panel at alpha 0 still fills the screen.** Disable it.
-
-Post-processing a mobile frame can afford is `unity-render-urp` §3.
-[`reference/2d-draw-cost.md`](reference/2d-draw-cost.md).
+§4 per-layer cull distances and a second camera's culling mask; §5 texture size and mipmap
+streaming; §6 overdraw, fill and 2D draw cost. Same numbering there.
 
 ## The tools
 

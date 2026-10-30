@@ -73,5 +73,5 @@ Targeting API level 33 or higher, the advertising identifier needs an explicit p
 
 Without it, advertising-ID access fails on Android 13 and later devices. This permission also has to
 be declared to the store, and it arrives in the merged manifest whether or not you wrote it —
-`unity-monetization` owns that half, and reading the merged manifest back off the built artifact is
+`unity-live-services` → `reference/monetization.md` owns that half, and reading the merged manifest back off the built artifact is
 `unity-android-release`.

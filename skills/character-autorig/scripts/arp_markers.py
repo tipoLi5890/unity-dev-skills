@@ -644,8 +644,16 @@ def _pair(text):
     return (a, b)
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser():
-    p = argparse.ArgumentParser(prog="arp_markers.py", description=__doc__.split("\n")[0],
+    p = UsageParser(prog="arp_markers.py", description=__doc__.split("\n")[0],
                                 epilog="Exit codes: 0 pass, 2 a gate failed, 1 refused input.")
     p.add_argument("file", nargs="?", type=Path, help="host mode: a .glb/.gltf/.obj")
     p.add_argument("--up", choices=("y", "z"), default="y")
@@ -905,6 +913,8 @@ def main() -> None:
     blender = in_blender()
     argv = sys.argv[sys.argv.index("--") + 1:] if (blender and "--" in sys.argv) else \
         ([] if blender else sys.argv[1:])
+    if argv[:1] == ["selftest"]:                        # `selftest` and `--selftest` are one command
+        argv = ["--selftest", *argv[1:]]
     args = parser().parse_args(argv)
     if args.selftest:
         checks, failed, _ = selftest_host()

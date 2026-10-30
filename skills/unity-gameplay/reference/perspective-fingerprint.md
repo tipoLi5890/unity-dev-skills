@@ -124,3 +124,26 @@ The user wins on intent; the fingerprint wins on what exists. "Make it first-per
 project fingerprinted as third-person is a request to change a constraint: write the new value
 into `templates/GAMEPLAY_RECIPE.md`, list the rows that change with it (camera rig, controller
 facing, which animations are ever seen), and change those — nothing else.
+
+## A sample result, read as a whole
+
+```json
+{"dimension":  {"value": "2d", "evidence": {"physics_2d": 41, "physics_3d": 0, "decided_by": "physics components"}},
+ "projection": {"value": "orthographic", "evidence": {"orthographic_cameras": 2, "perspective_cameras": 0}},
+ "view":       {"value": "side", "evidence": {"gravity_2d_y": -9.81, "platform_effectors": 6}},
+ "movement_model": {"hints": [{"model": "dynamic-body-2d", "evidence": {"bodies": 9}}]},
+ "packages":   {"cinemachine": {"version": "3.1.7", "major": 3}}}
+```
+
+Read the result as a whole, not key by key:
+
+- **An installed package is not a signal.** Templates add the 2D feature set, Input System and
+  Cinemachine to projects that use none of them. Components in scenes and prefabs are evidence.
+- **Physics outranks renderers.** A 3D game has sprites in its HUD; a 2D game has a mesh or two.
+  The body the player object carries is what a controller is written against.
+- **3D physics under an orthographic camera is 2.5D**, not a contradiction: the controller follows
+  the physics, the camera follows the projection.
+- **The Cinemachine major changes the namespace and most class names.** Read it before writing
+  a camera line; `unity-camera` starts from the same number.
+- **Everything `unknown` means no evidence**: a new project, the wrong directory, or binary
+  scenes (`notes` says which). Go to the default ladder in SKILL.md §0.

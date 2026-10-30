@@ -1,16 +1,7 @@
 ---
 name: unity-rigged-character
 description: >-
-  The Unity-side contract for a rigged character: FBX import → Avatar (Generic
-  by default; Humanoid, built from an explicit map, when the game needs IK or a
-  mask) → Animator → gameplay rig. Owns the humanoid contract skeleton and its
-  role maps (Mixamo, Auto-Rig Pro, clip packs). Load for rig type and
-  Configure, Chest and fingers mapped, `@Clip` naming and loopPose, a prop
-  socket under Optimize Game Objects, curveless bones, an upper-body mask, PBR
-  maps an FBX drops, a hitbox, batchmode sampling. Symptoms: T-poses in place, clips named
-  mixamo.com, a held prop off the hand, a white mannequin. Props:
-  unity-3d-models; rigging: blender-character-rig; clip libraries:
-  blender-retarget.
+  Rigged FBX into Unity: Avatar (Generic or Humanoid), Animator, prop sockets, T-pose fixes.
 ---
 
 # unity-rigged-character — the Unity-side character contract
@@ -18,6 +9,37 @@ description: >-
 A skinned FBX reaches Unity; this skill makes it a character the game can drive:
 **import → Avatar → Animator → gameplay rig**. Where the FBX came from is upstream, and each
 upstream route has its own skill. An asset with no skeleton belongs to `unity-3d-models`.
+
+## Request or symptom → where to look
+
+| Request or symptom | Go to |
+|---|---|
+| Rig type and Configure: Generic by default, Humanoid for a body-part mask or IK | `reference/unity-import.md` §1 |
+| Humanoid built from an explicit map — Chest and fingers mapped; role maps for Mixamo, Auto-Rig Pro, clip packs | `reference/humanoid-contract.md` |
+| An upper-body mask | `reference/unity-import.md` §1 (Generic masks list transform paths) |
+| Every clip is named `mixamo.com` (or `Take 001`) and clips overwrite each other; `@Clip` naming; `loopPose` | below, then `reference/unity-import.md` |
+| The character T-poses in place | below, then `reference/unity-import.md` |
+| A held prop is left behind or sits off the hand; a prop socket under Optimize Game Objects | below, then `reference/unity-import.md` §3 |
+| A white mannequin; PBR maps an FBX drops | below, then `reference/textures.md` |
+| A hitbox far wider than the character | below, then `reference/gameplay-rig.md` |
+| Curveless bones, root aliases, sampling and skinning in batchmode on a clip pack's skeleton | `reference/shared-skeleton-generic.md` |
+| Which Editor script automates which step | [Editor scripts](#editor-scripts), `reference/editor-scripts.md` |
+| Anything else that looks wrong after import | `reference/troubleshooting.md` |
+
+## The five things that go wrong, and where they are answered
+
+- **Every clip is named `mixamo.com`** (or `Take 001`, or after the Blender scene) and clips
+  overwrite each other → one FBX per clip, named `<name>@<Clip>.fbx`; the importer renames.
+  `reference/unity-import.md`
+- **The character T-poses in place** → each animation file built its own Avatar: Copy From Other
+  Avatar, re-run as a command. `reference/unity-import.md`
+- **A held prop is left behind, or sits off the hand** → Optimize Game Objects removed the
+  socket (expose it), or a Blender-retargeted clip plays through Humanoid (import it Generic).
+  `reference/unity-import.md`
+- **A white mannequin, or uniform plastic** → maps not reattached; a Blender or Mixamo FBX never
+  arrives with its metallic map bound, and smoothness is not roughness. `reference/textures.md`
+- **The hit box is far wider than the character** → it was sized from the skinned renderer,
+  whose box is fixed at import and looser than the body. `reference/gameplay-rig.md`
 
 > **Unity never retargets across skeletons here.** Every clip arrives already on the character's
 > skeleton — retargeted in Blender, by Mixamo on that route, or played as bought on a character
@@ -88,21 +110,6 @@ Unity's human map (`reference/humanoid-contract.md`).
 
 ---
 
-## The five things that go wrong, and where they are answered
-
-- **Every clip is named `mixamo.com`** (or `Take 001`, or after the Blender scene) and clips
-  overwrite each other → one FBX per clip, named `<name>@<Clip>.fbx`; the importer renames.
-  `reference/unity-import.md`
-- **The character T-poses in place** → each animation file built its own Avatar: Copy From Other
-  Avatar, re-run as a command. `reference/unity-import.md`
-- **A held prop is left behind, or sits off the hand** → Optimize Game Objects removed the
-  socket (expose it), or a Blender-retargeted clip plays through Humanoid (import it Generic).
-  `reference/unity-import.md`
-- **A white mannequin, or uniform plastic** → maps not reattached; a Blender or Mixamo FBX never
-  arrives with its metallic map bound, and smoothness is not roughness. `reference/textures.md`
-- **The hit box is far wider than the character** → it was sized from the skinned renderer,
-  whose box is fixed at import and looser than the body. `reference/gameplay-rig.md`
-
 ## Scope — what this skill does NOT do
 
 | Not here | Go to |
@@ -111,7 +118,8 @@ Unity's human map (`reference/humanoid-contract.md`).
 | Static props — coins, obstacles, environment; triangle and texture budgets | `unity-3d-models` |
 | Generating the reference art, T-pose or A-pose | `codex-visual` |
 | Turning the image into a mesh | `comfyui-asset-generation` |
-| Rigging, skinning and keying an action in Blender | `blender-character-rig` |
+| Rigging the character — the default one-command Auto-Rig Pro route | `character-autorig` |
+| A hand-built Blender rig (the fallback), skinning, keying an action in Blender | `blender-character-rig` |
 | Retargeting a clip library onto a rig; a grip held across clips; the export Unity receives | `blender-retarget` |
 | Tracking which FBX, clip and map is current, approved or superseded | `art-asset-registry` |
 | What the character costs per frame | `unity-profiling` |

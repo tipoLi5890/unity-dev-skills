@@ -1,16 +1,7 @@
 ---
 name: unity-render-urp
 description: >-
-  URP rendering on a frame budget: post-processing that actually appears, and
-  reviewing a Render Graph ScriptableRendererFeature before it ships. Load for:
-  "I added bloom/tonemapping/vignette and nothing happened", "post-processing
-  works in Scene view but not Game view", "is URP actually active — changing
-  the URP asset does nothing", "ColorGrading or ColorAdjustments", the real
-  default and range of a Volume parameter, scripting a profile and a Global
-  Volume, a grade preset, which effects a mobile build can afford, "review my
-  renderer feature", or turning an HLSL function into a reflected Shader Graph
-  custom node. Shader authoring and HDRP stay out; lighting setup is
-  unity-lighting.
+  URP rendering: post-processing that won't show, Volume profiles and grades, Render Graph features.
 ---
 
 # unity-render-urp — make it appear, then make it affordable
@@ -23,18 +14,18 @@ description: >-
 
 | Symptom | Go to |
 |---|---|
-| Added an effect, see no change | §1 pre-flight, in order |
+| Added bloom, tonemapping or vignette and nothing happened | §1 pre-flight, in order |
 | Want the pre-flight as one paste-in call against a live Editor | [`reference/preflight-snippet.md`](reference/preflight-snippet.md) |
-| A URP asset is right there, but editing it changes nothing | §1 step 1 — it may be a dormant asset |
+| Is URP actually active? A URP asset is right there, but editing it changes nothing | §1 step 1 — it may be a dormant asset |
 | Works in Scene view, not in Game view | §1 — Scene view has its own post-processing toggle |
-| Code compiles against `PostProcessVolume` / `GetSetting<T>` / `ColorGrading` | §2 — those are the old stack |
+| Code compiles against `PostProcessVolume` / `GetSetting<T>` / `ColorGrading`; "ColorGrading or ColorAdjustments?" | [`reference/api-renames.md`](reference/api-renames.md) — those are the old stack |
 | Need a Volume parameter's real default, type or range | [`reference/effect-reference.md`](reference/effect-reference.md) |
-| A value "does not take" on an override | §2, then the parameter's range — a `Clamped*Parameter` clamps silently |
+| A value "does not take" on an override | [`reference/api-renames.md`](reference/api-renames.md), then the parameter's range — a `Clamped*Parameter` clamps silently |
 | Scripting a profile, a Global Volume or a runtime grade tween | [`reference/volume-templates.md`](reference/volume-templates.md) |
 | Want a grade to start from rather than a blank profile | [`reference/volume-templates.md`](reference/volume-templates.md) — four presets |
-| Effect appears, costs too much on device | §3 |
+| Effect appears, costs too much on device; which effects a mobile build can afford | §3 |
 | Effect is suspected of costing too much, and no number says so | §3, then a before/after frame-time window — `unity-profiling` |
-| Reviewing a `ScriptableRendererFeature` | §4 |
+| "Review my renderer feature" — a Render Graph `ScriptableRendererFeature` | §4 |
 | Turning an HLSL function into a Shader Graph node | §5 |
 | A script-made material changes again after it was saved; an emissive lost its glow; every rebuild leaves a `.mat` diff | [`reference/material-validation.md`](reference/material-validation.md) |
 | A see-through fence or mesh shimmers or vanishes at distance; fog missing only in the player | [`reference/material-validation.md`](reference/material-validation.md) §3–4 |
@@ -94,37 +85,10 @@ All five as **one read-only `eval` block** that returns a numbered report — th
 turn "nothing happened" into a line you can act on:
 → [`reference/preflight-snippet.md`](reference/preflight-snippet.md).
 
-## 2. The API renamed almost everything
+## 2. The API renamed almost everything → `reference/api-renames.md`
 
-| Wrong — old Post Processing Stack | Correct — URP Volume framework |
-|---|---|
-| `PostProcessVolume` | `Volume` (`UnityEngine.Rendering`) |
-| `PostProcessLayer` | `UniversalAdditionalCameraData.renderPostProcessing` (bool) |
-| `profile.GetSetting<T>()` | `profile.TryGet<T>(out var t)` |
-| `profile.AddSettings<T>()` | `profile.Add<T>()` — throws if present, so `Has<T>()` first |
-| `VolumeManager.instance.stack.GetComponent<T>()` | `volume.profile.TryGet<T>(…)` |
-| Mutating `sharedProfile` at runtime | `volume.profile` — it clones to an instance for you |
-
-> **`VolumeProfile` exposes**
-> `Add · Remove · Has · HasSubclassOf · TryGet · TryGetSubclassOf · TryGetAllSubclassOf`.
-> There is **no `GetSetting`** and no `AddSettings` — code using them is from the pre-URP stack
-> and will not compile. Enumerate the type rather than trusting a snippet:
-> `foreach (var m in typeof(UnityEngine.Rendering.VolumeProfile).GetMethods()) …`
-
-The component names moved too: **the class is `ColorAdjustments`;
-`UnityEngine.Rendering.Universal.ColorGrading` does not resolve at all**. All sixteen
-`VolumeComponent` types, every parameter with its type, default and range:
-→ [`reference/effect-reference.md`](reference/effect-reference.md).
-
-`Add` takes an `overrides` flag (`Add(bool overrides = false)`, `Add(Type, bool overrides =
-false)`), so `Add<T>(true)` is the shortest route past the `overrideState` trap above. Building a
-profile and a Volume from a snippet, the `sharedProfile` versus `profile` choice (mutating
-`sharedProfile` at runtime edits the asset on disk), and why `Undo.RecordObject` produces no undo
-entry from `eval`: → [`reference/volume-templates.md`](reference/volume-templates.md).
-
-Local Volumes have three parameters worth knowing: `priority` (higher wins where they overlap),
-`blendDistance` (world units of falloff outside the collider; 0 means a hard switch at the
-boundary), and `weight` (0–1 overall influence).
+`PostProcessVolume`, `GetSetting<T>` and `ColorGrading` are the old stack; the URP Volume names,
+`TryGet<T>`, `ColorAdjustments`, and the override flag that a set value needs.
 
 ## 3. What a mobile frame can afford
 

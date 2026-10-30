@@ -1,15 +1,8 @@
 ---
 name: character-autorig
 description: >-
-  Rig a humanoid mesh locally and headless with the user's own Auto-Rig Pro:
-  check the mesh is riggable (fused limbs, double shell), measure joint markers
-  from slices with front/side pictures for a person, then append, place
-  reference bones, Match, bind and export a Unity humanoid FBX in one call, map
-  it onto the humanoid contract, and pose six extremes for volume loss and
-  self-intersection. Hand-built rig as the fallback; never cloud rigging. Load
-  for: "auto-rig this character", "Auto-Rig Pro without the UI", "arms fused to
-  the body", "elbow collapses when bent", "skin pokes through in a squat",
-  "markers are off". Contract: unity-rigged-character; clips: blender-retarget.
+  Rig this humanoid character: Auto-Rig Pro headless in one command, markers
+  from the mesh, gates.
 ---
 
 # character-autorig — a humanoid rig from the mesh, locally, gated
@@ -18,6 +11,19 @@ A generated humanoid mesh reaches this skill normalised (`blender-character-rig`
 `reference/import-and-survey.md`: +Z up, facing −Y, soles on Z 0, scale applied). It leaves as an
 FBX on the **humanoid contract** (`unity-rigged-character` → `reference/humanoid-contract.md`),
 so every clip made for any contract character plays on it.
+
+## Start here — the request, and where it is answered
+
+| The request or symptom | Read |
+|---|---|
+| "Auto-rig this character", "rig this character": the default route, one command | [The stages](#the-stages), `scripts/autorig.py` |
+| "Auto-Rig Pro without the UI": the `pipeline` op step by step (append, reference bones, Match, bind, Unity humanoid FBX), export settings, the read-back skeleton, refusals | `reference/arp-pipeline.md` |
+| Is the mesh riggable — "arms fused to the body", legs one tube, a double shell; what mesh_check and deform_gate measure, their limits | `reference/gates.md` |
+| "Markers are off": how each marker is found from slices, the windows, the front/side pictures for a person, `--adjust`, the output file | `reference/markers.md` |
+| "Elbow collapses when bent", "skin pokes through in a squat", or any failed gate | `reference/failures.md`; the elbow/knee weight repair in `reference/arp-pipeline.md` |
+| No add-on, or a chibi outside the marker windows: the hand-built fallback from the same markers | [Which route](#which-route); `reference/hand-built-route.md` |
+| Auto-Rig Pro's other ops (probe, retarget clips onto its controls) | `blender-retarget` → `reference/arp-route.md` |
+| The contract skeleton, role maps, Unity Avatar | `unity-rigged-character` → `reference/humanoid-contract.md` |
 
 > **Rigging is always local.** The default route drives the user's own Auto-Rig Pro; the
 > fallback builds the skeleton by hand from the same markers (`blender-character-rig`). No cloud
@@ -41,7 +47,7 @@ so every clip made for any contract character plays on it.
   add-ons off: run the Auto-Rig Pro stage without it.
 - **Save before the rig stage.** A failed gate before the bind removes the rig it appended; after
   the bind the mesh keeps its vertex groups. Work on a copy of the normalised file.
-- **A gate failure is fixed locally** (the table below), never by loosening the limit for one
+- **A gate failure is fixed locally** (`reference/failures.md`), never by loosening the limit for one
   character.
 
 ## The stages
@@ -51,9 +57,9 @@ so every clip made for any contract character plays on it.
 | 1 | Riggable mesh | `scripts/mesh_check.py` (host, numpy) | legs part below the crotch, both arms hang clear in the arm band, double shell ≤ 0.25 (an inward-facing inner shell is reported as `inner_shell`, kept, not gated) | regenerate: back to the views or the 3D generation (`game-character-pipeline` S1/S3) |
 | 2 | Markers | `scripts/arp_markers.py` (Blender or host) | heights in their windows, left/right within 0.02 H, upper arm 30–60° below horizontal; a **person** accepts the two pictures | `--adjust` the marker that is off; outside the windows → the hand-built route |
 | 3 | Auto-Rig Pro | `blender-retarget` → `brt_arp` op `pipeline` | the preset appended, three spine bones, every reference bone placed, Match, bind with no unweighted vertex, ≤ 4 influences, the Unity FBX written and read back | read the failing gate; the rig is rolled back before the bind |
-| 4 | Contract | `unity-rigged-character` → `contract_map.py map … --map arp --require contract --min-fingers 30` | 53 bones, chains, sides, axes, Root non-deform at the origin, A-pose | two spine bones: Count 4 (below); mitten hands: drop `--min-fingers` |
+| 4 | Contract | `unity-rigged-character` → `contract_map.py map … --map arp --require contract --min-fingers 30` | 53 bones, chains, sides, axes, Root non-deform at the origin, A-pose | two spine bones: Count 4 (`reference/failures.md`); mitten hands: drop `--min-fingers` |
 | 5 | Skin | the pipeline's weight gates; `blender-retarget` → `brt_weights` `probe` | deform weight sum 1 everywhere | `blender-retarget` → `reference/weight-repair.md` |
-| 6 | Deformation | `scripts/deform_gate.py` (Blender) | six poses (five without `fist` when the markers say `fingers.mode` `fixed`), on the outward-facing skin: volume loss ≤ 0.35 at hinge and spine joints, every bent elbow and knee measured, new self-intersection p95 ≤ 8 % | the fixes below; look at `--render` |
+| 6 | Deformation | `scripts/deform_gate.py` (Blender) | six poses (five without `fist` when the markers say `fingers.mode` `fixed`), on the outward-facing skin: volume loss ≤ 0.35 at hinge and spine joints, every bent elbow and knee measured, new self-intersection p95 ≤ 8 % | `reference/failures.md`; look at `--render` |
 | 7 | FBX | the pipeline's export and read-back (Auto-Rig Pro); `bcr_fbx` + `rig_gate.py` (hand-built) | names, parents, weights and influences read back from the file | re-export; never hand-edit the FBX |
 
 Then `unity-rigged-character` (import, Generic by default) and `art-asset-registry` (record the rig
@@ -118,25 +124,6 @@ The hand-built route uses the same markers: `arp_markers.py` writes `contract_bo
 `rig_gate.py`; `contract_map.py --map contract` and `deform_gate.py --armature … --mesh …` gate it
 the same way (`reference/hand-built-route.md`).
 
-## Failures, fixed locally
-
-| What failed | Fix |
-|---|---|
-| `legs_separated` (mesh_check) | the legs are one tube or a long garment: regenerate the views with a gap between the legs, or the mesh; no marker helps |
-| `arms_separated` | arms glued to the ribs, held against the body, or a T-pose: regenerate in an A-pose with the arms 30–60° down and clear of the torso |
-| `double_shell` | a same-facing inner twin, or two skins pressed together: regenerate. A back-to-back inward-facing inner shell does not fail it (`inner_shell`): keep it, the deformation gate reads the outer skin |
-| `markers.windows` | proportions this route was not made for: hand-built route |
-| `markers.symmetry` | the pose is not symmetric (one arm higher, a turned foot): regenerate, or `--adjust` each marker it names and accept the mirror (`asymmetry_accepted`) |
-| a marker looks off in the pictures | `--adjust` with that marker's position (`reference/markers.md`), run again, look again |
-| `arp.spine_bones` | the rig holds a different number of spine bones than Count − 1 asked for: run `scripts/tests/test_arp_pipeline.py` on this Blender and add-on before trusting the rig |
-| `arp.refs_placed` | the markers name a reference bone the preset lacks; regenerate the markers file |
-| `arp.vertices_without_group`, `arp.export_unweighted` | a part the bind did not reach: join it to the body, or separate it and put it on a bone (`blender-character-rig` → `reference/prop-on-bone.md`) |
-| contract `UpperChest` missing | the rig has two spine bones (Count 3): rerun with `spine_count: 4`, the markers file's default; the add-on's Count counts its root |
-| `deform.volume_loss_max` at an elbow or knee | the blend across that joint is too wide. First two `brt_weights` transfers around the joint, `brt_arp` `export`, gate again, on a copy (`autorig.py` does this); if that does not pass, by hand, one at a time: a finer bind (`resolution`), the marker moved to the crease (`reference/arp-pipeline.md`) |
-| `deform.joints_measured` | an elbow or knee the volume gate could not read (an opening, too few triangles there): fix the mesh, never drop the pose |
-| `deform.self_intersection_p95` from `fist` on a hand whose markers say `fingers.mode` `fixed` | a mitten, or fingers held together, folds into itself in a fist: gate the other five poses (`--poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120`), as stage 4 drops `--min-fingers` |
-| `deform.self_intersection_p95` (other poses) | a hard seam (skin follows one bone rigidly): smooth the weights over the joint; in a squat, thighs crossing the belly mean the hip markers sit too low |
-
 ## Fingers
 
 `arp_markers.py --fingers auto` (default) finds index to little where the hand splits into four
@@ -154,13 +141,16 @@ Because the skeleton is the contract, the clips made during the demo play on the
 unchanged. Record the new mesh in `art-asset-registry` with its own licence; the rig keeps
 `auto-rig-pro`.
 
-## Load what the situation needs
+## Scope — what this skill does NOT do
 
-| The situation | Read |
+| Not here | Go to |
 |---|---|
-| How each marker is found, the windows, the pictures, `--adjust`, the output file | `reference/markers.md` |
-| The `pipeline` op step by step, export settings, the read-back skeleton, refusals; the `export` op and the elbow/knee weight repair | `reference/arp-pipeline.md` |
-| What mesh_check and deform_gate measure, their limits, reading a failure | `reference/gates.md` |
-| The hand-built fallback from the same markers | `reference/hand-built-route.md` |
-| Auto-Rig Pro's other ops (probe, retarget clips onto its controls) | `blender-retarget` → `reference/arp-route.md` |
-| The contract skeleton, role maps, Unity Avatar | `unity-rigged-character` → `reference/humanoid-contract.md` |
+| Normalising the mesh first: import, height, facing, soles on Z 0 | `blender-character-rig` → `reference/import-and-survey.md` |
+| A positional skin for a mascot body, a mesh fitted to one clip pack's skeleton | `blender-character-rig` |
+| A mesh that fails stage 1: new views or a new generation | `game-character-pipeline` (S1/S3) · `codex-visual` · `comfyui-asset-generation` |
+| The contract itself, `contract_map.py`, the Unity import (Generic by default) | `unity-rigged-character` |
+| Clips onto the rig: packs retargeted, a clip library, a held prop | `blender-retarget` |
+| Clips from two-camera video onto the contract | `humanoid-motion` |
+| Recording the rig and its licence | `art-asset-registry` |
+| The character's stage order and tracks | `game-character-pipeline` |
+| A cloud rigging service | Never used: rigging is always local |

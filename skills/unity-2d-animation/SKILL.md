@@ -1,16 +1,8 @@
 ---
 name: unity-2d-animation
 description: >-
-  Rig, skin and swap skeletal 2D characters with the 2D Animation and PSD
-  Importer packages: a PSB imported as a character rig, bones then geometry
-  then weights in the Skinning Editor, SpriteSkin bindings and CPU or GPU
-  deformation, Sprite Library skins and equipment swapped through
-  SpriteResolver, IK Manager 2D limbs, and an audit of what a rig costs.
-  Load for: "import this PSB as a character", "the elbow folds like paper",
-  "the bones came off after a layer was renamed", "swap the helmet at
-  runtime", "bones or frame-by-frame", "the 2D leg bends backwards". The
-  Animator graph is unity-animation; frame clips are unity-2d-sprites; draw
-  order is unity-2d-rendering.
+  Skeletal 2D characters: PSB rig, bones and weights, sprite swaps, 2D IK (2D
+  Animation package).
 ---
 
 # unity-2d-animation — a skeletal sprite is a mesh, and it costs like one
@@ -21,6 +13,30 @@ description: >-
 > twelve skinned meshes; a patrol of twenty sentries is two hundred and forty. Frame animation
 > pays in texture memory and nothing per frame; skeletal animation pays per vertex, per part, per
 > frame. Choose per character, and count before the art is drawn.
+
+## The situation → what to read
+
+| The situation | Read |
+|---|---|
+| "Bones or frame-by-frame"; what a rig costs in memory, CPU and draw calls; when GPU deformation is on and why a part fell back; mixing both on one character | `reference/skeletal-vs-frames.md` |
+| "Import this PSB as a character"; importing a PSB; mosaic, rig and layer-group settings; a `.psd` that imports as one flat texture; "the bones came off after a layer was renamed"; sharing one skeleton between two PSBs | `reference/psd-to-rig.md` |
+| Skinning Editor order; "the elbow folds like paper"; a part left behind when the body moves; `SpriteSkin` states, Auto Rebind, bounds and culling; one part passing in front of another on the same sprite | `reference/bones-and-weights.md` |
+| Sprite Library assets, categories and labels; "swap the helmet at runtime"; a whole-skin swap; animating the resolver; variant libraries; a swapped part frozen in its bind pose | `reference/sprite-library.md` |
+| IK Manager 2D; Limb, CCD or FABRIK; "the 2D leg bends backwards"; IK on top of a clip; feet on a slope | `reference/ik-2d.md` |
+| Frame clips: equal-canvas frames into an `AnimationClip` | `unity-2d-sprites` → `reference/sprite-animation.md` |
+| Sprite metadata from script; the bone and mesh data providers on the importer | `unity-2d-sprites` → `reference/data-provider.md` |
+| Animator parameters and the bridge that writes them | `unity-animation` → `reference/parameter-contract.md` |
+| The idle, run, jump, fall, hurt graph over these clips | `unity-animation` → `reference/sprite-state-graph.md` |
+| Footsteps, hit windows and other events on a clip | `unity-animation` → `reference/events-and-windows.md` |
+| A limb drawn over the torso when it should be under; Sorting Group on a multi-part character | `unity-2d-rendering` → `reference/sort-order.md` |
+| Packing the parts with the rest of the art | `unity-sprite-atlas` |
+| Where the frame time goes once the rig is in the scene | `unity-profiling` → `reference/where-the-time-goes.md` |
+| Adding the 2D packages to a project | `unity-new-project` → `reference/package-bootstrap.md` |
+
+Copy `resources/SkinSwap.cs` into a Runtime assembly that references `Unity.2D.Animation.Runtime`,
+and `resources/Editor/SpriteLibraryBuilder.cs` and `resources/Editor/SkinningAudit.cs` into an
+Editor one that also references `Unity.2D.Animation.Editor`. IK types live in a third assembly,
+`Unity.2D.IK.Runtime`, under `UnityEngine.U2D.IK`.
 
 ```
 PSB layers ─► PSD Importer ─► sprites + a prefab ─► Skinning Editor ─► SpriteSkin on each part
@@ -106,32 +122,6 @@ Off-screen cost is a switch on each side: `SpriteSkin.alwaysUpdate` and `IKManag
 both default to on. Turn them off on anything that is not the runner and a culled sentry stops
 deforming and solving.
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| "Bones or frame-by-frame"; what a rig costs in memory, CPU and draw calls; when GPU deformation is on and why a part fell back; mixing both on one character | `reference/skeletal-vs-frames.md` |
-| Importing a PSB; mosaic, rig and layer-group settings; a `.psd` that imports as one flat texture; "the bones came off after a layer was renamed"; sharing one skeleton between two PSBs | `reference/psd-to-rig.md` |
-| Skinning Editor order; "the elbow folds like paper"; a part left behind when the body moves; `SpriteSkin` states, Auto Rebind, bounds and culling; one part passing in front of another on the same sprite | `reference/bones-and-weights.md` |
-| Sprite Library assets, categories and labels; "swap the helmet at runtime"; a whole-skin swap; animating the resolver; variant libraries; a swapped part frozen in its bind pose | `reference/sprite-library.md` |
-| IK Manager 2D; Limb, CCD or FABRIK; "the 2D leg bends backwards"; IK on top of a clip; feet on a slope | `reference/ik-2d.md` |
-| Frame clips: equal-canvas frames into an `AnimationClip` | `unity-2d-sprites` → `reference/sprite-animation.md` |
-| Sprite metadata from script; the bone and mesh data providers on the importer | `unity-2d-sprites` → `reference/data-provider.md` |
-| Animator parameters and the bridge that writes them | `unity-animation` → `reference/parameter-contract.md` |
-| The idle, run, jump, fall, hurt graph over these clips | `unity-animation` → `reference/sprite-state-graph.md` |
-| Footsteps, hit windows and other events on a clip | `unity-animation` → `reference/events-and-windows.md` |
-| A limb drawn over the torso when it should be under; Sorting Group on a multi-part character | `unity-2d-rendering` → `reference/sort-order.md` |
-| Packing the parts with the rest of the art | `unity-sprite-atlas` |
-| Where the frame time goes once the rig is in the scene | `unity-profiling` → `reference/where-the-time-goes.md` |
-| Adding the 2D packages to a project | `unity-new-project` → `reference/package-bootstrap.md` |
-
-Copy `resources/SkinSwap.cs` into a Runtime assembly that references `Unity.2D.Animation.Runtime`,
-and `resources/Editor/SpriteLibraryBuilder.cs` and `resources/Editor/SkinningAudit.cs` into an
-Editor one that also references `Unity.2D.Animation.Editor`. IK types live in a third assembly,
-`Unity.2D.IK.Runtime`, under `UnityEngine.U2D.IK`.
-
----
-
 ## Discipline
 
 - **Count before drawing.** Vertices × parts × instances is decided when the artist splits the
@@ -171,15 +161,12 @@ Editor one that also references `Unity.2D.Animation.Editor`. IK types live in a 
 
 | Not here | Go to |
 |---|---|
-| Animator parameters, state graphs, blend trees, events, override controllers | `unity-animation` |
-| Frame-by-frame clips, slicing, pivots, an Aseprite or sheet source | `unity-2d-sprites` → `reference/sprite-animation.md` |
-| Sorting layers, order in layer, Sorting Group, 2D lights and shadows on the character | `unity-2d-rendering` → `reference/sort-order.md` |
+| Animator state graphs, blend trees, override controllers; 2D lights and shadows on the character | `unity-animation`; `unity-2d-rendering` |
+| Slicing, pivots, an Aseprite or sheet source | `unity-2d-sprites` |
 | Moving the character: grounding, jumps, slopes, facing from velocity | `unity-2d-controller` |
 | Colliders and hitboxes that follow a bone | `unity-physics-2d` |
-| Atlas packing and texture memory for the parts | `unity-sprite-atlas` |
 | Pixel-art filtering and camera snapping | `unity-2d-pixel-perfect` |
 | 3D rigs, Humanoid Avatars, Mixamo | `unity-rigged-character` |
-| Rigging and animating a mesh in Blender | `blender-character-rig` |
+| Rigging and animating a 3D mesh in Blender | `character-autorig` (default) · `blender-character-rig` (hand-built fallback) |
 | Generating the layered artwork | `codex-visual` |
-| Frame time, draw calls and where they go | `unity-profiling` |
 | Recording a run and asserting on it | `unity-play-harness` |

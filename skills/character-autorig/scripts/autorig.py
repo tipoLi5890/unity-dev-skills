@@ -462,7 +462,7 @@ def parse(argv) -> argparse.Namespace:
 
 def main(argv=None, osname=None, env=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
     for stream in (sys.stdout, sys.stderr):   # a legacy-code-page console must not stop on a child's line
         if hasattr(stream, "reconfigure"):

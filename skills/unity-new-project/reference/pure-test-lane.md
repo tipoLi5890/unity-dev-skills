@@ -2,7 +2,7 @@
 
 > Part of the `unity-new-project` skill. Script: `scripts/pure_tests.py`.
 
-§5 of the skill puts scoring, state and decision logic in assemblies with
+[`reference/project-structure.md`](project-structure.md) puts scoring, state and decision logic in assemblies with
 `"noEngineReferences": true`. That buys a test lane that never opens Unity, and this page is how to
 run it. In a tennis game whose whole simulation (ball physics, shot solver, rules, bots, replay)
 lived in three pure assemblies, the rules tests (64, later 68) ran in a few seconds on a quiet machine, against
@@ -36,7 +36,7 @@ python3 scripts/pure_tests.py selftest [--e2e <a project whose Editor and Librar
 5. **Counts every leaf result, and a suite that failed with no failing leaf counts as a failure**
    (a fixture set-up or a `TestCaseSource` that threw). Exit 0 green, 2 a failed or inconclusive
    test, 3 a harness failure, including **zero tests run**: a filter that matches nothing is not
-   green.
+   green; 1 a usage error.
 
 ## What it is not
 

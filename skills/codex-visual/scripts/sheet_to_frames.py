@@ -880,8 +880,16 @@ def metric_rows(metas, cw, ch, dup_threshold, dup_metric, dup):
     return ([(n, p) for n, p, _ in rows], {n: j for n, _, j in rows}, aux)
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main():
-    ap = argparse.ArgumentParser(
+    ap = UsageParser(
         description="Cut an animation sheet into equal frames and seat them: by silhouette on one reference "
                     "(--register ground | free), by centroid (effects), or at their in-cell position (keep).")
     ap.add_argument("sheet", help="animation sheet: RGBA already keyed, or RGB + --bg-color")
@@ -2109,6 +2117,6 @@ def selftest():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--selftest"]:
+    if sys.argv[1:] in (["--selftest"], ["selftest"]):
         sys.exit(selftest())
     sys.exit(main())

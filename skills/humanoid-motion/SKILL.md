@@ -1,15 +1,8 @@
 ---
 name: humanoid-motion
 description: >-
-  Make humanoid clips from video onto the humanoid contract skeleton with two
-  cameras: a front and a side view of the character in one frame, animated by
-  local H3 image-to-video, read by a reader trained for that character and
-  fitted straight onto its skeleton (twocam.py prepare, ref, film, dataset,
-  train, capture, bake), then contact bake, loop cut, motion_metrics gates,
-  FBX, Unity and a ledger record with the sales territory. Load for "two-camera
-  mocap", "turn this move into an animation", "train the reader", "the solve
-  pops", "feet slide", "lock the feet", "where to cut the walk loop". Rig:
-  character-autorig; packs: blender-retarget; Unity: unity-rigged-character.
+  Turn a move into a humanoid animation from video: two-camera mocap, foot
+  lock, loop cut, gates.
 ---
 
 # humanoid-motion — a generated two-view take in, a gated clip on the contract out
@@ -19,6 +12,23 @@ move together, and ends as an action on the **humanoid contract skeleton**
 (`unity-rigged-character` → `reference/humanoid-contract.md`), so every contract character plays
 it unchanged. The front half solves the motion straight onto the character's own rig; the back
 half cleans, gates and ships it.
+
+## Start here — symptom → where to look
+
+| Symptom | Go to |
+|---|---|
+| "Turn this move into an animation"; two-camera mocap; which source (video or a pack) | [Which source](#which-source); `reference/two-camera.md`, then `reference/pipeline.md` |
+| The halves of the H3 take play out of step, colours swap, a limb vanishes | reroll the seed (`reference/two-camera.md`, Limits) |
+| `reader.val_mean_px` fails; train the reader | `reference/two-camera.md` (Reader) |
+| `two_view_agreement` fails | `reference/two-camera.md` (Gates): the views were animated differently; reroll |
+| "The solve pops": `pops` in the solve; `pops_in_source` | `reference/pipeline.md` §4 |
+| Jitter on a clean overlay | raise `solve.py --acc-weight` (`reference/two-camera.md`, Fit) |
+| "Feet slide", "lock the feet"; no plant found | `twocam.py bake`; `reference/pipeline.md` §2 (`--rig-info`) |
+| `reach_m` or `contact_height_m` fails | `reference/pipeline.md` §4 |
+| Where to cut the walk loop; the loop pops at the seam | `reference/pipeline.md` §2 |
+| A clip without travel for a controller | `blender-retarget` (in place) |
+| Fingers flat or wrong | `reference/hands.md` |
+| Can this clip be sold in the EU? | `reference/pipeline.md` §3; `art-asset-registry` → `reference/licences.md` |
 
 > **The solve is raw material, never the clip.** Each stage has a gate that can fail, and a take
 > that fails is re-rolled, re-filmed or trimmed, not hand-repaired. Nothing here retimes a clip or
@@ -110,23 +120,6 @@ torch (`reference/two-camera.md`).
 - **The licence travels by link.** The video carries `licence`; the clip links to it with
   `depends-on`, so a local H3 video's exclusion (`minimax-h3-local`: US, EU, UK, KR) reaches every
   clip solved from it.
-
-## Symptom → where to look
-
-| Symptom | Go to |
-|---|---|
-| Turn this move into an animation; two-camera mocap | `reference/two-camera.md`, then `reference/pipeline.md` |
-| The halves of the H3 take play out of step, colours swap, a limb vanishes | reroll the seed (`reference/two-camera.md`, Limits) |
-| `reader.val_mean_px` fails; train the reader | `reference/two-camera.md` (Reader) |
-| `two_view_agreement` fails | `reference/two-camera.md` (Gates): the views were animated differently; reroll |
-| `pops` in the solve; `pops_in_source` | `reference/pipeline.md` §4 |
-| Jitter on a clean overlay | raise `solve.py --acc-weight` (`reference/two-camera.md`, Fit) |
-| Feet slide; no plant found | `twocam.py bake`; `reference/pipeline.md` §2 (`--rig-info`) |
-| `reach_m` or `contact_height_m` fails | `reference/pipeline.md` §4 |
-| Where to cut the walk loop; the loop pops at the seam | `reference/pipeline.md` §2 |
-| A clip without travel for a controller | `blender-retarget` (in place) |
-| Fingers flat or wrong | `reference/hands.md` |
-| Can this clip be sold in the EU? | `reference/pipeline.md` §3; `art-asset-registry` → `reference/licences.md` |
 
 ## Scope — what this skill does NOT do
 

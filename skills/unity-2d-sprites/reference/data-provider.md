@@ -159,9 +159,9 @@ used in its report rather than leaving it implied.
 
 ## 4. What each runnable script adds
 
-- `resources/SliceSheet.cs` — the grid slicer; it ends on `SKILL.md` §6's acceptance test and
+- `resources/Editor/SliceSheet.cs` — the grid slicer; it ends on `SKILL.md` §6's acceptance test and
   throws when the sprite count differs from the rects written.
-- `resources/IsometricSliceSheet.cs` — the diamond walk: rows stepping half a cell and
+- `resources/Editor/IsometricSliceSheet.cs` — the diamond walk: rows stepping half a cell and
   alternating a half-cell shift, alpha-sampled inside the diamond so empty cells are dropped
   rather than published, the three rect modes of §3, and a diamond render outline per tile
   through `ISpriteOutlineDataProvider`. Its signature is
@@ -170,7 +170,7 @@ used in its report rather than leaving it implied.
   against the source image's dimensions**, which that call gives you: a Max Size of 2048 on a
   4096 sheet halves every coordinate the importer reports, and the cells come out at half the
   size the artist authored.
-- `resources/AutomaticSliceSheet.cs` — the same two gates, with the Sprite Editor's own rect
+- `resources/Editor/AutomaticSliceSheet.cs` — the same two gates, with the Sprite Editor's own rect
   generators doing the cutting: `UnityEditorInternal.InternalSpriteUtility`'s
   `GenerateAutomaticSpriteRectangles(Texture2D, int minRectSize, int extrudeSize)` for islands of
   opaque pixels, and `GenerateGridSpriteRectangles(Texture2D, Vector2 offset, Vector2 size,
@@ -185,7 +185,7 @@ used in its report rather than leaving it implied.
 - `resources/SpriteToPng.cs` — one sprite's own pixels as PNG bytes. `GetPixels` on
   `sprite.texture` returns the whole page, so the sprite's triangles are drawn into a temporary
   `RenderTexture` the size of its `textureRect` first.
-- `resources/SheetToAnimationClip.cs` — a folder of frame PNGs or one sliced sheet into a clip,
+- `resources/Editor/SheetToAnimationClip.cs` — a folder of frame PNGs or one sliced sheet into a clip,
   plus an optional one-state controller (`reference/sprite-animation.md`).
 - `resources/Tests/SpriteFramesAudit.cs` — not an edit: an EditMode fixture that re-measures
   shipped animation frames from their own bytes (feet line, slip from the reference, key fringe

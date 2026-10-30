@@ -35,13 +35,21 @@ Examples:
   merge_results.py --since "$START" "$RUN/edit.xml" "$RUN/play-smoke.xml" "$RUN/play-full.xml"
   merge_results.py --since "$START" --inventory /tmp/courier_full_play.xml "$RUN"/play-*.xml
 
+`merge_results.py selftest` (or --selftest) writes synthetic shards to a temp dir and checks a
+green merge (0), a red one (2) and a stale, duplicate, empty or inconclusive one (3); one JSON
+line, exit 0 or 1. Standard library only.
+
 --inventory takes a report from an earlier unsplit run; give it once per platform when the shards
 cover EditMode and PlayMode. Tests added since that run show up as extra= (information only);
 tests deleted since that run show up as missing, so refresh the inventory after a full run.
 """
 import argparse
+import json
 import os
+import subprocess
 import sys
+import tempfile
+import time
 import xml.etree.ElementTree as ET
 
 COUNTS = ("total", "passed", "failed", "inconclusive", "skipped")
@@ -236,5 +244,65 @@ def main():
     return code
 
 
+def _shard(path, cases, mtime=None):
+    """Write an NUnit3 report: cases is a list of (fullname, result)."""
+    counts = {k: sum(1 for _, r in cases if r.lower() == k) for k in COUNTS if k != "total"}
+    body = "".join('<test-case fullname="%s" result="%s"/>' % c for c in cases)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write('<test-run total="%d" passed="%d" failed="%d" inconclusive="%d" skipped="%d">%s'
+                 "</test-run>" % (len(cases), counts["passed"], counts["failed"],
+                                  counts["inconclusive"], counts["skipped"], body))
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
+    return path
+
+
+def selftest():
+    checks, failed = 0, []
+
+    def run(*args):
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), *args], capture_output=True,
+                           text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        return r.returncode, r.stdout
+
+    def check(name, cond):
+        nonlocal checks
+        checks += 1
+        if not cond:
+            failed.append(name)
+
+    with tempfile.TemporaryDirectory(prefix="merge-selftest-") as d:
+        since = str(int(time.time()) - 5)
+        j = lambda n: os.path.join(d, n)   # noqa: E731
+        a = _shard(j("a.xml"), [("Courier.Runner.Jumps", "Passed"), ("Courier.Runner.Lands", "Passed")])
+        b = _shard(j("b.xml"), [("Courier.Gate.Opens", "Passed")])
+        red = _shard(j("red.xml"), [("Courier.Gate.Opens", "Failed")])
+        code, out = run("--since", since, a, b)
+        check("two fresh green shards: exit 0", code == 0 and "verdict=green" in out)
+        code, out = run("--since", since, a, red)
+        check("a failed test: exit 2", code == 2 and "verdict=failed" in out)
+        code, out = run("--since", since, a, b, j("none.xml"))
+        check("a missing shard: exit 3", code == 3 and "verdict=harness" in out)
+        old = _shard(j("old.xml"), [("Courier.Sentry.Sees", "Passed")], mtime=time.time() - 3600)
+        code, out = run("--since", since, a, old)
+        check("a stale shard: exit 3", code == 3)
+        code, out = run("--since", since, a, _shard(j("dup.xml"), [("Courier.Runner.Jumps", "Passed")]))
+        check("a test in two shards: exit 3", code == 3 and "dup=1" in out)
+        code, out = run("--since", since, a, _shard(j("empty.xml"), []))
+        check("an empty shard: exit 3", code == 3)
+        inc = _shard(j("inc.xml"), [("Courier.Pickup.Counts", "Inconclusive")])
+        check("an inconclusive test: exit 3", run("--since", since, a, inc)[0] == 3)
+        check("--allow-inconclusive: exit 0", run("--since", since, "--allow-inconclusive", a, inc)[0] == 0)
+        full = _shard(j("full.xml"), [("Courier.Runner.Jumps", "Passed"), ("Courier.Runner.Lands", "Passed"),
+                                      ("Courier.Gate.Opens", "Passed"), ("Courier.Launch.Fires", "Passed")])
+        code, out = run("--since", since, "--inventory", full, a, b)
+        check("a gap against the inventory: exit 3", code == 3 and "missing=1" in out)
+        check("a bad argument: exit 3", run("--no-such-flag")[0] == 3)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
+    return 0 if not failed else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["selftest"], ["--selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

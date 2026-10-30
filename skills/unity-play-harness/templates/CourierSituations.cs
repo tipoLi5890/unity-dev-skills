@@ -134,6 +134,7 @@ public sealed class CourierSituations : MonoBehaviour
 // ---------------------------------------------------------------------------------------------
 // The four shapes this template assumes. Delete this block and point the fields above at the
 // real components; it is here so the file reads as a complete example rather than as a sketch.
+// check-csharp: placeholders below (stand-ins for the game's own components, deleted on adoption)
 // ---------------------------------------------------------------------------------------------
 
 public enum RunPhase { Idle, Launched, Approach, AtGate, Crashed, Done }

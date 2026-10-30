@@ -1141,7 +1141,7 @@ def selftest():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--selftest"]:
+    if sys.argv[1:] in (["--selftest"], ["selftest"]):
         sys.exit(selftest())
     print("pixel_ops.py is a module: import it, or run `pixel_ops.py --selftest`", file=sys.stderr)
     sys.exit(1)

@@ -1,16 +1,7 @@
 ---
 name: unity-ui-ugui
 description: >-
-  Build and repair Canvas-based UI in Unity: Canvas and CanvasScaler,
-  RectTransform anchors, Layout Groups, ScrollView, and UI built entirely from
-  C#. Load for requests naming Canvas, uGUI, RectTransform, Layout Group,
-  CanvasRenderer, a custom Graphic or a .prefab containing UI, and for "the
-  button does nothing when I click it", "the element is invisible", "my custom
-  Graphic draws nothing", "the layout collapses to zero height", text that
-  vanishes instead of truncating, "the HUD is cut off on a tablet", "the
-  pressed button turns black", "the screenshot is one flat colour".
-  Undetermined UI systems and runtime IMGUI HUDs start at unity-game-ui;
-  UXML/USS is unity-ui-toolkit.
+  Canvas UI (uGUI): CanvasScaler, RectTransform anchors, Layout Groups, ScrollView, UI built from C#.
 ---
 
 # unity-ui-ugui — Canvas UI, and the six ways it renders nothing
@@ -26,16 +17,17 @@ Not sure the project is uGUI? `unity-game-ui` §0 has the detection ladder.
 
 | Symptom | Go to |
 |---|---|
-| The element is invisible | §2 visibility checklist |
-| A custom `Graphic` / `MaskableGraphic` subclass draws nothing | §2, then `reference/code-built-ui.md` §2 |
-| Clicking does nothing | §5 interaction readiness |
-| Layout collapses, or children ignore the sizes you set | §3 |
+| Canvas, uGUI, RectTransform, Layout Group, `CanvasRenderer`, a UI `.prefab` — working rules first | §0 |
+| "The element is invisible" | §2 visibility checklist |
+| "My custom Graphic draws nothing" — a `Graphic` / `MaskableGraphic` subclass | §2, then `reference/code-built-ui.md` §2 |
+| "The button does nothing when I click it" | §5 interaction readiness |
+| The layout collapses to zero height, or children ignore the sizes you set | §3 |
 | Content won't scroll, or the list duplicates on every reopen | §3 ScrollView |
-| Wrong at another resolution; fine on a phone, cut off on a tablet | §1, then `reference/canvas-scaler-and-anchors.md` |
-| A label renders nothing at all instead of truncating | §4 |
+| Wrong at another resolution; "the HUD is cut off on a tablet" | [`reference/canvas-and-text.md`](reference/canvas-and-text.md) §1, then `reference/canvas-scaler-and-anchors.md` |
+| Text vanishes instead of truncating | [`reference/canvas-and-text.md`](reference/canvas-and-text.md) §4 |
 | Text cards overlap once real content arrives | §3, then `reference/text-and-image-traps.md` §1 |
-| A dark button goes almost black while pressed | §5 |
-| The whole screenshot is one flat colour | `reference/no-mask-lists-and-motion.md` §1 |
+| "The pressed button turns black" | §5 |
+| "The screenshot is one flat colour" | `reference/no-mask-lists-and-motion.md` §1 |
 | Transitions freeze on the pause screen | `reference/no-mask-lists-and-motion.md` §3 |
 | The UI is built from C# with no prefabs | `reference/code-built-ui.md` |
 | Ambiguous-type compile errors on `Image` / `Button` | §0 |
@@ -61,36 +53,9 @@ These are not style preferences; each one prevents a specific cascade.
 Edit the hierarchy through a live Editor, not `.prefab` / `.unity` YAML — `unity-debug` →
 `reference/editor-control.md`; the reasons are in `unity-cli`.
 
-## 1. Canvas and CanvasScaler
+## 1. Canvas and CanvasScaler → `reference/canvas-and-text.md` §1
 
-```
-Canvas  (Screen Space - Overlay, or Screen Space - Camera)
-├─ CanvasScaler
-└─ GraphicRaycaster
-```
-
-> **Set `renderMode` explicitly, always.** `AddComponent<Canvas>()` gives `renderMode = WorldSpace`,
-> not the menu's Screen Space Overlay — an invisible quad at the origin. `CanvasScaler`'s default is
-> not a decision either: [`reference/code-built-ui.md`](reference/code-built-ui.md) §1.
-
-**CanvasScaler is the resolution answer.** `Scale With Screen Size` at the design target's reference
-resolution. `Constant Pixel Size` suits only pixel-art or a fixed-resolution target; as the default,
-an existing one counts as unconfigured unless the layout shows otherwise. Changing it moves every
-element — say so first.
-
-> **`MatchWidthOrHeight = 0.5` is the common default, and it crops real devices**: at reference
-> 1920×1080 a 4:3 tablet (2048×1536) gets **1663 × 1247** design px, so a panel at x 1260–1860
-> loses everything past 1663.
-> **`ScreenMatchMode.Expand` is the safer default for a fixed design frame:** it scales by
-> `min(w/1920, h/1080)`, so the design space always *contains* the reference; the surplus is
-> letterbox margin. Keep Match 0.5 only when the art must fill every aspect ratio and the edges are
-> verified. Under `Expand`, **anything that must hug a corner anchors to it**. Per-aspect table and
-> `DesignSize(w,h)`:
-> [`reference/canvas-scaler-and-anchors.md`](reference/canvas-scaler-and-anchors.md).
-
-`Screen Space - Camera`: read the camera's setup first — a Canvas can land behind or in front of
-world geometry. Prefer anchors and Layout Groups to absolute positions; convert a position into a
-new anchor's space *before* animating across regions, or it teleports (same reference, §4).
+Render mode, the scaler's match and reference resolution, and why the HUD is cut off on a tablet.
 
 ## 2. RectTransform, anchoring, and why it is invisible
 
@@ -159,26 +124,9 @@ Without masks, a slot pool or a repainted page replaces a `ScrollRect` —
 
 **When layout is wrong, look at the parent first.** The mistake is nearly always one level up.
 
-## 4. Text and components
+## 4. Text and components → `reference/canvas-and-text.md` §4
 
-- **TextMeshPro for all text**, worldspace included; legacy `Text` is not the current path. Sizing,
-  contrast, CJK: `unity-game-ui` → `reference/text-and-cjk.md`.
-- Text set from code: `LayoutRebuilder.ForceRebuildLayoutImmediate(parent)`, or the box keeps the
-  old string's size. Active child swapped: `LayoutRebuilder.MarkLayoutForRebuild(column)`.
-- **`NoWrap` + `TextOverflowModes.Ellipsis` in a short box renders nothing at all** — use
-  `TextOverflowModes.Overflow` and clamp with layout. **`Image.preserveAspect = true` overrides the
-  RectTransform** — set it false, use `Image.Type.Sliced`
-  ([`reference/text-and-image-traps.md`](reference/text-and-image-traps.md) §2, §4).
-- **`Raycast Target = false` on every non-interactive Graphic** — it defaults to **`true`**;
-  each is tested on every pointer event, and one left on is a common cause of "the
-  button under it doesn't work" ([`reference/code-built-ui.md`](reference/code-built-ui.md) §4).
-- **A widget that caches "what I last drew" must invalidate that cache in `OnEnable`**
-  ([`reference/code-built-ui.md`](reference/code-built-ui.md) §5).
-- **Rebuilds are per-Canvas**: per-frame values get their own child Canvas; every extra Canvas gets
-  an explicit `sortingOrder`, since equal orders guarantee nothing about which is on top.
-- Sprite atlases for more than a handful of sprites — unless the kit is geometry (§6).
-- **Importing TMP essentials headlessly:** `TMP_PackageResourceImporter.ImportResources()`, never
-  the menu item — [`reference/code-built-ui.md`](reference/code-built-ui.md) §7.
+TextMeshPro labels that render nothing instead of truncating, and the components a control needs.
 
 ## 5. Interaction readiness — the four-item gate
 
@@ -241,13 +189,14 @@ screen at a second aspect ratio — one resolution proves nothing about a Canvas
 
 ## Scope — what this skill does NOT do
 
-Runtime `OnGUI` HUDs (`unity-game-ui`), UXML/USS (`unity-ui-toolkit`), type scale and contrast
+A UI request whose system is not yet determined, and runtime `OnGUI` HUDs (`unity-game-ui`), UXML/USS (`unity-ui-toolkit`), type scale and contrast
 (`unity-game-ui`), multi-language text pipelines (`unity-localization`), sprite import metadata and
 9-slice borders (`unity-2d-sprites`), taking the screenshots this skill tells you to read
 (`unity-debug`).
 
 ## Reference
 
+- `reference/canvas-and-text.md` (§1, §4)
 - `reference/code-built-ui.md`
 - `reference/canvas-scaler-and-anchors.md`
 - `reference/layout-groups-and-scrollview.md`

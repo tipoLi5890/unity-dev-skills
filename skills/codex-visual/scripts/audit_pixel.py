@@ -261,8 +261,16 @@ def cell(v, spec="d"):
     return "-" if v == "" else format(v, spec)
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Gate delivered pixel art: one block lattice, binary alpha, "
+    ap = UsageParser(description="Gate delivered pixel art: one block lattice, binary alpha, "
                                              "the colour count and the palette, read off the files.")
     ap.add_argument("targets", nargs="+",
                     help="PNG files (together one set), directories holding frames.json or PNGs, or frames.json paths")

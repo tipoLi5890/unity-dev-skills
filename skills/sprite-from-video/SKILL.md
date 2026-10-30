@@ -1,16 +1,8 @@
 ---
 name: sprite-from-video
 description: >-
-  Turn one character still into transparent sprite frames through a generated
-  video: pad the still onto an exact-key canvas sized for the motion, generate
-  an in-place MiniMax H3 image-to-video clip on a self-hosted ComfyUI, key every
-  frame, find the loop period or cut a one-shot, and write equal-canvas frames
-  plus frames.json. Load for "turn this still into a walk loop", "make a run or
-  idle loop from a video", "cut the jump out of this clip", "the loop pops at
-  the seam", "the clip is half a stride", "green rim on the frames", "the
-  character drifts across the loop". Generation: comfyui-asset-generation;
-  stills, sheets, breathing idles: codex-visual; Unity import:
-  unity-2d-sprites.
+  Walk, run or jump sprite loops from one still via generated video: keyed
+  frames, clean seam.
 ---
 
 # sprite-from-video — one still, one clip, one clean cut
@@ -19,6 +11,26 @@ An image model draws a pose; a video model moves it. This skill takes **one appr
 character on a chroma key, has a video model perform one motion **in place** on it, and cuts that
 clip into frames a sprite pipeline can ship: transparent, on one canvas, with the loop seam or the
 one-shot's ends found by measurement rather than by eye.
+
+## Start here — symptom → where to look
+
+| Symptom | Go to |
+|---|---|
+| "Turn this still into a walk loop"; a run, or an idle with a weight shift, from a video (a breathing idle: `codex-visual` `breathe.py`) | `reference/pipeline.md` §1–6 |
+| Which canvas: the jump leaves the top of the frame, the attack hits the side | `reference/pipeline.md` §3; `video_canvas.py --state/--shape` |
+| `video_canvas.py` exit 2 or 3: the still's corners disagree or are not a key | `reference/loop-detection.md` §7 |
+| The clip came back frozen, zooming, panning or walking out of frame | `reference/video-prompts.md` §1–2, then re-roll |
+| Green rim on the frames, or key colour left at the edge | `reference/loop-detection.md` §7 (`video_frames.py` exit 3, residual) |
+| A limb or the head leaves the frame | `reference/loop-detection.md` §7 (exit 3, subject) — a taller or wider canvas |
+| A frame keyed to nearly nothing transparent | `reference/loop-detection.md` §7 (exit 2) — the field is not the key |
+| The loop pops at the seam | `reference/loop-detection.md` §3, §8 (seam over 2.0) |
+| The clip is half a stride; the legs swap at the wrap | `reference/loop-detection.md` §2 (half-step guard) |
+| The loop holds two strides, or `verdict.ok` is false | `reference/loop-detection.md` §2, §8 (exit 3) |
+| No period found in a walk | `reference/loop-detection.md` §8 — the motion does not repeat: re-roll |
+| The character drifts across the loop | `reference/loop-detection.md` §5 (drift ramp) |
+| "Cut the jump out of this clip"; the jump cut starts mid-crouch or ends mid-landing | `reference/pipeline.md` §6 — `--mode once` |
+| The animation plays too fast or too slow in Unity | `reference/pipeline.md` §7 — `fps_hint`, never 24 |
+| The walk slides in Unity's frame audit | `reference/pipeline.md` §7 (register ground) |
 
 > **The clip is raw material, never the asset.** Every stage has a gate, and a clip that fails a
 > gate is re-rolled (a new seed, a better prompt) rather than repaired. Nothing here interpolates,
@@ -86,26 +98,6 @@ The commands in full, the per-motion choices and a worked runner walk: `referenc
 | idle with a weight shift | `idle` (square) | in place, continuous | `--state idle` (no periodicity gate) |
 | jump, launch | `jump` (tall 3:4, head-room 0.34) | one jump from standing, still for the last second | `--state jump --mode once` |
 | attack, swipe | `attack` (wide 16:9, lead 0.28) | one attack from standing, back to stance | `--state attack --mode once`, or `oneshot` for a self-contained beat |
-
-## Symptom → where to look
-
-| Symptom | Go to |
-|---|---|
-| Turn this still into a walk, run or idle loop | `reference/pipeline.md` §1–6 |
-| Which canvas: the jump leaves the top of the frame, the attack hits the side | `reference/pipeline.md` §3; `video_canvas.py --state/--shape` |
-| `video_canvas.py` exit 2 or 3: the still's corners disagree or are not a key | `reference/loop-detection.md` §7 |
-| The clip came back frozen, zooming, panning or walking out of frame | `reference/video-prompts.md` §1–2, then re-roll |
-| Green rim on the frames, or key colour left at the edge | `reference/loop-detection.md` §7 (`video_frames.py` exit 3, residual) |
-| A limb or the head leaves the frame | `reference/loop-detection.md` §7 (exit 3, subject) — a taller or wider canvas |
-| A frame keyed to nearly nothing transparent | `reference/loop-detection.md` §7 (exit 2) — the field is not the key |
-| The loop pops at the seam | `reference/loop-detection.md` §3, §8 (seam over 2.0) |
-| The clip is half a stride; the legs swap at the wrap | `reference/loop-detection.md` §2 (half-step guard) |
-| The loop holds two strides, or `verdict.ok` is false | `reference/loop-detection.md` §2, §8 (exit 3) |
-| No period found in a walk | `reference/loop-detection.md` §8 — the motion does not repeat: re-roll |
-| The character drifts across the loop | `reference/loop-detection.md` §5 (drift ramp) |
-| The jump cut starts mid-crouch or ends mid-landing | `reference/pipeline.md` §6 — `--mode once` |
-| The animation plays too fast or too slow in Unity | `reference/pipeline.md` §7 — `fps_hint`, never 24 |
-| The walk slides in Unity's frame audit | `reference/pipeline.md` §7 (register ground) |
 
 ## Outputs
 

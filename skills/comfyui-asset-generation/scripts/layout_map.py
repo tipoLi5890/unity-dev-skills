@@ -49,7 +49,8 @@ layouts.json `paths` with `clearance_m` (negative = how deep the overlap).
 Prints one JSON line: frames written, crossings found. Exit codes: 0 written,
 no crossings; 2 written, crossings found (--check-paths); 3 the scene cannot be
 read or is invalid (a wrong type, a non-finite number, a coordinate past 1e4 m),
-or DIR cannot be written (every frame is drawn before the first file is written).
+or DIR cannot be written (every frame is drawn before the first file is written);
+1 a usage error or a failed selftest.
 
 Requires Python 3.9+, Pillow and numpy.
 """
@@ -435,11 +436,19 @@ def selftest() -> int:
     return 0 if not failed else 1
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv in (["selftest"], ["--selftest"]):
         return selftest()
-    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p = UsageParser(description=__doc__.split("\n")[0])
     p.add_argument("scene", help="SCENE.json")
     p.add_argument("--out", required=True, help="output folder")
     p.add_argument("--check-paths", action="store_true", help="report moves whose swept footprints touch")

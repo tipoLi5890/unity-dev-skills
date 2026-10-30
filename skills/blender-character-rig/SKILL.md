@@ -1,16 +1,8 @@
 ---
 name: blender-character-rig
 description: >-
-  Rig and animate an image-to-3D character in Blender, interactively through
-  its MCP server or headless as stages (blender -b, gates JSON, exit 0/1/2,
-  byte-identical FBX): measure landmarks, build an armature or fit a clip
-  pack's skeleton to the mesh, skin by position (bone heat fails on a double
-  shell), prop on a hand bone, key an action, skinned LODs, export FBX and
-  prove it by re-import. Load for: "rig this GLB", "chibi / short limbs",
-  "automatic weights failed", "the ears tear when posed", "fit my character to
-  the mocap pack's skeleton", "run Blender headless", "LOD spikes", KeyError
-  'Principled BSDF'. Unity import: unity-rigged-character; clips from other
-  skeletons: blender-retarget.
+  Hand-built Blender rig, fallback to the default character-autorig: mascot
+  bodies, pack-skeleton fit.
 ---
 
 # blender-character-rig — measure the mesh, compute the weights, prove the file
@@ -19,6 +11,29 @@ A generated character is a mesh and nothing else: no skeleton, no scale, a thin 
 several islands. An auto-rigger wants standard proportions and one watertight body; automatic
 weights want a surface every bone can see. A short-limbed mascot with long ears gives neither.
 
+> **A standard humanoid goes to `character-autorig` first** — Auto-Rig Pro, headless, onto the
+> humanoid contract. This skill is the hand-built fallback: a custom body that rig cannot take, or
+> a mesh fitted to one clip pack's skeleton.
+
+## Start here — the request, and where it is answered
+
+| The request or symptom | Read |
+|---|---|
+| "Rig this GLB" by hand: a mascot body the default auto-rig cannot take | [the pipeline](#1-the-pipeline), then `reference/import-and-survey.md` |
+| "Chibi / short limbs", "automatic weights failed" (bone heat on a double shell), "the ears tear when posed": the bone spec, radii, the positional rule, gradient chains, symptom → fix | `reference/armature-and-skinning.md` |
+| "Fit my character to the mocap pack's skeleton": what may change, canonical and display scale, soles on the floor, hip width, the skin method by measured intersection | `reference/fit-to-clip-skeleton.md` |
+| "Run Blender headless": stage layout (`blender -b`), gates JSON, exit 0/1/2, byte-identical FBX, a Unity lab outside the repo | `reference/headless-pipeline.md` |
+| Registering the server, the cheapest probes, running a module through it (the stub, the reload order, the loader when Blender cannot read the skill directory), where a render really lands | `reference/mcp-session.md` |
+| Someone else's scene: collections, hiding, a second scene, translated UI names (`KeyError 'Principled BSDF'`), what to report | `reference/scene-discipline.md` |
+| Importing the GLB, origin, height, facing, the weld, reading landmarks from slices and boxes | `reference/import-and-survey.md` |
+| A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting | `reference/prop-on-bone.md` |
+| Poses in armature axes, keying an action, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
+| The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake | `reference/game-mesh.md` |
+| Exporter options, clip naming, export FBX and prove it by re-import, the Unity check | `reference/fbx-export.md` |
+| "LOD spikes": lighter skinned levels on one skeleton — hidden shells, shard props, normals, boundary weights, names Unity will not turn into a LODGroup | `reference/skinned-lod.md` |
+| A worked example: the plush runner with long ears and a mallet, every step | `reference/worked-example.md` |
+| The call contract of each module (its docstring) | `scripts/bcr_*.py`, `scripts/rig_gate.py`, `scripts/frames_preview.py` |
+
 > **Nothing here is placed by eye or solved.** Joints are read from slices of the mesh, weights
 > are computed from where each vertex is, the swing is measured at the contact frame before it is
 > rendered, and the FBX is imported back and compared.
@@ -26,7 +41,8 @@ weights want a surface every bone can see. A short-limbed mascot with long ears 
 Every step is one call to a module in `scripts/` that returns a dict of gates: through the MCP
 server of a Blender the user already has open, for one character explored by hand; or from a stage
 script under `blender -b --factory-startup --python`, for a character rebuilt the same way every
-time. Every module runs unchanged headless (`reference/headless-pipeline.md`).
+time. Every module runs unchanged headless (`reference/headless-pipeline.md`); through the server,
+a short stub imports and reloads it and `result` is the dict it returns (`reference/mcp-session.md`).
 
 > **One clip pack supplies the motion? Fit, do not build.** Move the pack's skeleton onto the
 > mesh once (names, parents and rest rotations kept) and the clips play unchanged:
@@ -51,23 +67,6 @@ time. Every module runs unchanged headless (`reference/headless-pipeline.md`).
   `.blend` and gates JSON; it never opens the user's file for writing. Exit 0 pass, 1 a gate
   failed, 2 refused input; two runs give the same mesh hashes and FBX bytes.
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Registering the server, the cheapest probes, running code, where a render really lands | `reference/mcp-session.md` |
-| Someone else's scene: collections, hiding, a second scene, translated UI names, what to report | `reference/scene-discipline.md` |
-| Importing the GLB, origin, height, facing, the weld, reading landmarks from slices and boxes | `reference/import-and-survey.md` |
-| The bone spec, radii, why automatic weights fail, the positional rule, gradient chains, symptom → fix | `reference/armature-and-skinning.md` |
-| A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting | `reference/prop-on-bone.md` |
-| Poses in armature axes, the key table, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
-| The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake from the showcase | `reference/game-mesh.md` |
-| Exporter options, clip naming, the round trip, the Unity check | `reference/fbx-export.md` |
-| Running the modules as headless stages: stage layout, gates JSON, exit codes, deterministic FBX, a Unity lab outside the repo | `reference/headless-pipeline.md` |
-| Fitting a clip pack's skeleton to the mesh: what may change, canonical scale and display scale, soles on the floor, hip width, the skin method by measured intersection | `reference/fit-to-clip-skeleton.md` |
-| Lighter skinned levels on one skeleton: hidden shells, shard props, normals, boundary weights, names Unity will not turn into a LODGroup | `reference/skinned-lod.md` |
-| The call contract of each module (its docstring) | `scripts/bcr_*.py`, `scripts/rig_gate.py`, `scripts/frames_preview.py` |
-
 ## 1. The pipeline
 
 In order. A row is done when its gates pass or, where it says picture, when someone has looked.
@@ -87,78 +86,6 @@ In order. A row is done when its gates pass or, where it says picture, when some
 
 Numbers cannot close steps 6 and 9: a mesh passes every weight gate and still tears; a swing
 lands on a target that stands between the camera and the character.
-
-## 2. Running a module through the server
-
-The modules run inside Blender, not on a command line. Send this through the server's code tool:
-
-```python
-import sys, importlib
-p = "<skill>/scripts"                      # absolute path of this skill's scripts directory
-if p not in sys.path: sys.path.insert(0, p)
-import bcr_common, bcr_skin
-importlib.reload(bcr_common); importlib.reload(bcr_skin)
-result = bcr_skin.run({"mesh": "Runner", "armature": "RunnerRig"})
-```
-
-- **`result` is the return value**: the code tool hands back the JSON-serialisable dict assigned
-  to it. Object keys come back as strings — a frame table is keyed `"18"`, not `18`.
-- **Reload every time.** Blender keeps `sys.modules` alive for the session, so a plain `import`
-  returns the copy the first call loaded. Reload `bcr_common` first (and `bcr_pose` before
-  `bcr_fbx`, which imports it).
-- **Every `run` returns one shape**, plus the keys its docstring lists; `report_path` in the
-  params also writes it to a file.
-
-```python
-{"ok": True,                                   # every gate passed
- "gates": [{"name": "unweighted_vertices", "value": 0, "limit": 0, "pass": True}, ...],
- "created": {"objects": [...], "meshes": [...]},   # datablocks this call added, by kind
- "blender": [major, minor, patch],
- "dominant_vertices": {...}}                   # module-specific keys
-```
-
-**When Blender cannot read the skill directory** (another machine, a sandboxed install), send the
-source followed by the run call, in one call:
-
-```python
-import sys, types
-def load(name, source):
-    module = types.ModuleType(name)
-    sys.modules[name] = module               # so `import bcr_common` in the next one resolves
-    exec(compile(source, name + ".py", "exec"), module.__dict__)
-    return module
-load("bcr_common", r'''<contents of bcr_common.py>''')
-bcr_skin = load("bcr_skin", r'''<contents of bcr_skin.py>''')
-result = bcr_skin.run({"mesh": "Runner", "armature": "RunnerRig"})
-```
-
-Load `bcr_common` first; `bcr_fbx` also needs `bcr_pose` loaded before it.
-
-`scripts/rig_gate.py` and `scripts/frames_preview.py` run on the host and never go through the server.
-
-## 3. Worked example
-
-The courier run's runner: a plush mascot with short limbs and long ears, swinging a delivery
-mallet at the latch of a gate.
-
-1. **Prep.** `name: "Runner"`, `collection: "Character"`, `height: 1.2`. A 20,000-triangle GLB
-   goes from 14,991 vertices to 9,994 with every face kept, in 13 islands.
-2. **Survey.** 20 z slices; boxes for each hand, foot, ear base, ear tip and the tail.
-3. **Armature.** `RunnerRig`, 22 bones with `mirror: true`: `Root` (non-deform), `Hips`, `Spine`,
-   `Chest`, `Head`, `Tail`, and per side `Ear`, `EarTip`, `UpperArm`, `LowerArm`, `Hand`,
-   `UpperLeg`, `LowerLeg`, `Foot`. Radii: torso 0.20–0.21, head 0.30, arms 0.062, legs 0.10.
-4. **Skin.** Defaults, plus one `gradients` chain per ear (`Ear`, `EarTip`, parent `Head`).
-5. **Extreme pose.** One arm straight up, the other forward, head turned, spine bent, one ear
-   folded, a leg lifted; one still; reset.
-6. **Prop.** `Mallet`, prepped without a weld, attached to `Hand.R` with `length: 0.62`.
-7. **Action.** `GateLatchSwing`, frames 1–40 at 24 fps, `loop: true`, 10 bones keyed at frames 1,
-   8, 13, 15, 18, 20, 23, 27, 34, 40; contact is frame 18.
-8. **Probe.** A first pass that swings too far reads `direction_z` near −1 with the striking edge
-   at floor height; the keys are corrected before any render. `GateLatch` goes at the measured
-   contact, the probe is rerun with `target`, and `key_object` keys `GateLatchPop` on the latch.
-9. **Preview.** Frames [1, 20] and [21, 40] at 50%, then the GIF and a sheet of the key frames.
-10. **FBX.** `RunnerRig`, `Runner` and `Mallet` exported, re-imported into a scene `FbxCheck`,
-    gated, discarded. The baked take has 229 f-curves against 30 authored: expected.
 
 ## Discipline
 
@@ -188,11 +115,4 @@ mallet at the latch of a gate.
 | The character's stage order: preview or ship track, the game mesh before the rig | `game-character-pipeline` |
 | A humanoid rigged headless onto the humanoid contract: Auto-Rig Pro from measured markers, the mesh and deformation gates | `character-autorig` |
 | Clips from two-camera video onto the contract, contact bake | `humanoid-motion` |
-
-## Related skills
-
-`comfyui-asset-generation` for the GLB this starts from · `codex-visual` for the image and
-four-view sheet that job is fed · `unity-rigged-character` for the Mixamo route and everything
-after the FBX reaches Unity · `blender-retarget` for stock or purchased clips moved onto this rig
-and kept as a library · `unity-3d-models` for props that stay static · `unity-debug` for proving
-the action plays in the running game.
+| Proving the action plays in the running game | `unity-debug` |

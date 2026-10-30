@@ -804,4 +804,4 @@ def run(rep):
 
 
 if __name__ == "__main__":
-    sys.exit(_registry().main(["selftest", *sys.argv[1:]]))
+    sys.exit(_registry().main(["selftest", *[a for a in sys.argv[1:] if a not in ("selftest", "--selftest")]]))

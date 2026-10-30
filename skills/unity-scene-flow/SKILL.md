@@ -1,16 +1,7 @@
 ---
 name: unity-scene-flow
 description: >-
-  Hold a game together across scenes: a Boot scene that never unloads and owns
-  the services, additive loading with progress and one operation in flight, a
-  game phase machine in which pause is a state, a versioned save with
-  migrations and an atomic write, checkpoints that rebuild, object pools,
-  ScriptableObject config. Load for: "my managers are duplicated after
-  returning to the menu", "the loading screen hangs at 90%", "pausing doesn't
-  stop everything", "add a save system", "the save got corrupted", "progress
-  resets in the build, not in the editor", "respawn at the checkpoint". Cloud
-  saves are unity-ugs; music across a pause is unity-audio; booting a test
-  into a moment is unity-play-harness.
+  Boot scene and additive loading, pause as a state, save files with migrations, checkpoints, pools.
 ---
 
 # unity-scene-flow — one scene that never unloads owns what must survive a load; everything else is rebuilt from data
@@ -22,6 +13,31 @@ description: >-
 > file. A game that can rebuild a room from data already has saving, checkpoints and a retry
 > button; a game that keeps objects alive across loads has to invent all three later, against
 > its own structure.
+
+## Load what the situation needs
+
+| The situation | Read |
+|---|---|
+| "My managers are duplicated after returning to the menu"; what goes in Boot; the service registry; initialisation order; pressing Play from any scene; `DontDestroyOnLoad` against a persistent scene; duplicated managers | `reference/bootstrap.md` |
+| `LoadSceneAsync`, `allowSceneActivation`, what the active scene decides, unloading, "the loading screen hangs at 90%" (stuck at 0.9), scene paths, streaming neighbours, Addressables scenes | `reference/additive-scenes.md` |
+| "Pausing doesn't stop everything"; the phases and their legal transitions; what `timeScale` 0 stops and what it does not; backgrounding and quitting on a phone; the phase on the probe | `reference/game-state-and-pause.md` |
+| "Add a save system"; "the save got corrupted"; what a save holds and never holds; the atomic write; versions and migrations; `JsonUtility` limits; where the file lives | `reference/save-format.md` |
+| "Respawn at the checkpoint"; a checkpoint as a small save; respawn without reloading; what resets; the teleport | `reference/checkpoints.md` |
+| `ObjectPool<T>` parameters, prewarming, resetting an instance, pooled objects in triggers, whether the pool helps | `reference/pooling.md` |
+| Config assets, ids for kinds of thing, runtime sets, event channels; "progress resets in the build, not in the editor" | `reference/scriptable-objects.md` |
+| Music and fades across a pause; `ignoreListenerPause` | `unity-audio` → `reference/music-playback.md` |
+| Switching action maps for the pause menu · clearing presses on resume | `unity-input` → `reference/action-asset.md` · `unity-input` → `reference/reading-input.md` |
+| A menu fade that became a state machine | `unity-game-ui` → `reference/screen-transitions.md` |
+| Telling the camera a respawn was a cut; cameras at `timeScale` 0 | `unity-camera` → `reference/update-order-and-jitter.md` |
+| Hit stop and slow motion beside a pause | `unity-game-feel` → `reference/hit-stop-and-time.md` |
+| Baked lighting for scenes loaded together | `unity-lighting` → `reference/bake-setup.md` |
+| `Physics.IgnoreCollision` lost on a reused instance | `unity-physics-3d` → `reference/editor-vs-build.md` |
+| Scheduled, completed and discarded work for a pool or a streamer | `unity-profiling` → `reference/work-counters.md` |
+| Cloud saves: access classes, locks, conflicts | `unity-ugs` → `reference/cloud-save.md` |
+| Scenes and atlases delivered through Addressables | `unity-sprite-atlas` → `reference/addressables-delivery.md` |
+| Rooms and chunks stitched in a 2D level | `unity-2d-level` → `reference/rooms-and-chunks.md` |
+| Booting a test into a moment; journeys and timelines | `unity-play-harness` → `reference/situations.md` · `unity-play-harness` → `reference/journeys.md` |
+| Rules as plain data with no scene | `unity-game-brief` → `reference/sim-presentation-split.md` |
 
 ```
 Boot scene — build index 0, never unloaded        content scene — one at a time, additive
@@ -94,33 +110,6 @@ Runtime assembly; the journey also needs the harness (`unity-play-harness` → `
 `com.unity.test-framework`. `GameState` publishes its phase on `GameProbe` by reflection, so the
 runtime files compile with no harness in the project.
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| What goes in Boot; the service registry; initialisation order; pressing Play from any scene; `DontDestroyOnLoad` against a persistent scene; duplicated managers | `reference/bootstrap.md` |
-| `LoadSceneAsync`, `allowSceneActivation`, what the active scene decides, unloading, a loading screen stuck at 0.9, scene paths, streaming neighbours, Addressables scenes | `reference/additive-scenes.md` |
-| The phases and their legal transitions; what `timeScale` 0 stops and what it does not; backgrounding and quitting on a phone; the phase on the probe | `reference/game-state-and-pause.md` |
-| What a save holds and never holds; the atomic write; versions and migrations; `JsonUtility` limits; where the file lives | `reference/save-format.md` |
-| A checkpoint as a small save; respawn without reloading; what resets; the teleport | `reference/checkpoints.md` |
-| `ObjectPool<T>` parameters, prewarming, resetting an instance, pooled objects in triggers, whether the pool helps | `reference/pooling.md` |
-| Config assets, ids for kinds of thing, runtime sets, event channels; "it saves in the Editor and not in the build" | `reference/scriptable-objects.md` |
-| Music and fades across a pause; `ignoreListenerPause` | `unity-audio` → `reference/music-playback.md` |
-| Switching action maps for the pause menu · clearing presses on resume | `unity-input` → `reference/action-asset.md` · `unity-input` → `reference/reading-input.md` |
-| A menu fade that became a state machine | `unity-game-ui` → `reference/screen-transitions.md` |
-| Telling the camera a respawn was a cut; cameras at `timeScale` 0 | `unity-camera` → `reference/update-order-and-jitter.md` |
-| Hit stop and slow motion beside a pause | `unity-game-feel` → `reference/hit-stop-and-time.md` |
-| Baked lighting for scenes loaded together | `unity-lighting` → `reference/bake-setup.md` |
-| `Physics.IgnoreCollision` lost on a reused instance | `unity-physics-3d` → `reference/editor-vs-build.md` |
-| Scheduled, completed and discarded work for a pool or a streamer | `unity-profiling` → `reference/work-counters.md` |
-| Cloud saves: access classes, locks, conflicts | `unity-ugs` → `reference/cloud-save.md` |
-| Scenes and atlases delivered through Addressables | `unity-sprite-atlas` → `reference/addressables-delivery.md` |
-| Rooms and chunks stitched in a 2D level | `unity-2d-level` → `reference/rooms-and-chunks.md` |
-| Booting a test into a moment; journeys and timelines | `unity-play-harness` → `reference/situations.md` · `unity-play-harness` → `reference/journeys.md` |
-| Rules as plain data with no scene | `unity-game-brief` → `reference/sim-presentation-split.md` |
-
----
-
 ## Discipline
 
 - **Every load is additive, and only `SceneLoader` loads.** One single-mode `LoadScene` unloads
@@ -162,23 +151,15 @@ runtime files compile with no harness in the project.
 | Not here | Go to |
 |---|---|
 | Menus, HUD, the loading screen's look, transitions | `unity-game-ui` |
-| Music, mixers, audio import settings | `unity-audio` |
-| Action assets, the reader, rebinding and where bindings are stored | `unity-input` |
-| Cloud Save, accounts, Remote Config | `unity-ugs` |
-| Situations, the probe contract, journey tooling | `unity-play-harness` |
+| Music and mixers, action assets and rebinding, Cloud Save and accounts, test situations and journeys, the brief, lightmaps, frame-time counters, Addressables delivery, 2D rooms | the handoff rows of the table at the top: `unity-audio` · `unity-input` · `unity-ugs` · `unity-play-harness` · `unity-game-brief` · `unity-lighting` · `unity-profiling` · `unity-sprite-atlas` · `unity-2d-level` |
 | Assemblies, version control, project creation | `unity-new-project` |
-| The brief, the architecture proposal, the simulation and presentation split | `unity-game-brief` |
-| Lightmaps, probes, light modes | `unity-lighting` |
 | LOD, occlusion, batching, texture streaming | `unity-scene-optimisation` |
 | Building a 3D level: kits, prefabs, terrain | `unity-3d-level` |
-| 2D level data, rooms and chunks | `unity-2d-level` |
 | What a pickup, a switch or a door does | `unity-interaction` |
 | Damage, projectiles, hit windows | `unity-combat` |
 | Sentry behaviour, spawners and waves | `unity-game-ai` |
 | Hit stop, shake, particles, haptics | `unity-game-feel` |
-| Frame time, counters, before and after | `unity-profiling` |
-| Addressables groups and atlas delivery | `unity-sprite-atlas` |
-| Networked scene management and host migration | `unity-multiplayer` |
+| Networked scene management and host migration | Out of scope — netcode APIs are out of scope for this plugin; topology and authority: `unity-live-services` → `reference/multiplayer.md` |
 
 What is left is the frame the rest hangs on: **what exists for the whole session, how one room
 replaces another, which phase the game is in, and the facts that put a room back.**

@@ -1,21 +1,28 @@
 ---
 name: unity-search
 description: >-
-  Turn "find", "where is", "which prefabs use", "what references X" into a
-  Unity Search query — asset type filters, folders, labels, ref=
-  relationships, scene component queries — show it, and optionally open the
-  Search window in a live Editor. Load for "find all materials in Assets/UI",
-  "what references this texture", "which scene objects have a Rigidbody",
-  "show every Light in the scene", "what Unity Search query do I use", "open
-  the Search window with that". Read-only: it never selects, moves or edits a
-  result. Scripted asset audits and driving the Editor are unity-debug; a
-  project-wide dependency graph is out of scope.
+  Find assets or what references X: build a Unity Search query and open it in a live Editor.
 ---
 
 # unity-search — one query, shown before it runs
 
 A request shaped like *find*, *locate*, *list*, *where is*, *which ones use*, *what references* has
 one good answer: a single Unity Search query, written out, with a word about what it searches.
+
+## Load what the request needs
+
+| The situation | Read |
+|---|---|
+| "Where is X", "find all materials in Assets/UI", "which prefabs use X" | §Building the query, then §The answer, always two lines |
+| "What references this texture" — `ref=` relationships | `reference/query-patterns.md` §1–§3 |
+| "Which scene objects have a Rigidbody", "show every Light in the scene" — scene component queries | §Building the query — say it searches the loaded scenes |
+| "What Unity Search query do I use"; "open the Search window with that" | §Building the query, §Open it in a live Editor |
+| Anything past a bare `t:<type>` — folders, labels, references, expressions | `reference/query-patterns.md` §1–§3 |
+| Mapping the user's wording onto a query shape | `reference/query-patterns.md` §4 |
+| Opening the window, or an open attempt that failed | §Open it in a live Editor |
+| The question is one Search cannot settle — shader properties, missing scripts, a full audit | §When Search cannot answer, then `unity-debug` → `reference/editor-control.md` |
+| "Which assets does this change affect" — a diff question, not a find question | `unity vcs affected` in `unity-cli` → `reference/version-control.md` |
+| The CLI is not installed, or no Editor answers | skill `unity-cli` |
 
 Two things happen every time, whether or not an Editor is reachable:
 
@@ -28,17 +35,6 @@ If a live Editor is there, opening the Search window with the query is a bonus, 
 > **"This", "the selected one", "the current material" — with no name or path in the conversation,
 > ask.** A guessed asset name produces a query that returns nothing, and an empty result reads as
 > "there are none" rather than "you searched for the wrong thing".
-
-## Load what the request needs
-
-| The situation | Read |
-|---|---|
-| Anything past a bare `t:<type>` — folders, labels, references, expressions | `reference/query-patterns.md` §1–§3 |
-| Mapping the user's wording onto a query shape | `reference/query-patterns.md` §4 |
-| Opening the window, or an open attempt that failed | §Open it in a live Editor |
-| The question is one Search cannot settle — shader properties, missing scripts, a full audit | §When Search cannot answer, then `unity-debug` → `reference/editor-control.md` |
-| "Which assets does this change affect" — a diff question, not a find question | `unity vcs affected` in `unity-cli` → `reference/version-control.md` |
-| The CLI is not installed, or no Editor answers | skill `unity-cli` |
 
 ## Building the query
 
@@ -147,7 +143,8 @@ Four things that snippet is shaped by:
 
 | Not here | Go to |
 |---|---|
-| Acting on results: select, rename, move, delete, re-import | Stop and ask; the Editor-side work is `unity-debug` |
+| Acting on results: select, rename, move, delete, re-import — this skill is read-only | Stop and ask; the Editor-side work is `unity-debug` |
+| A project-wide dependency graph | Out of scope |
 | A scripted audit that has to be exhaustive or property-aware | `unity-debug` → `reference/editor-control.md` |
 | Installing the CLI, connecting an Editor, the command catalogue | `unity-cli` |
 | "Which assets does this change affect" across a diff | `unity-cli` → `reference/version-control.md` |

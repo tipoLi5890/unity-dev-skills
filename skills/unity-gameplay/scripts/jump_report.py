@@ -15,7 +15,8 @@ Exit codes: 0 every checked arc is inside tolerance · 1 at least one violation 
 IO or parse error.
 A missing key counts as a violation, and so does a run with no jump in it or an --air-time
 that no level-ground arc could be checked against: a report that measured nothing must not
-read as a pass.
+read as a pass. `jump_report.py selftest` (or --selftest) writes synthetic jumps to a temp dir and
+checks a pass (0), each violation (1) and a parse error (2); one JSON line, exit 0 or 1.
 
 Examples:
   jump_report.py journeys/ledge-drop/timeline.jsonl --apex 2.85 --air-time 0.718
@@ -25,7 +26,10 @@ Examples:
 """
 import argparse
 import json
+import os
+import subprocess
 import sys
+import tempfile
 
 MISSING = object()
 AXES = {"x": 0, "y": 1, "z": 2}
@@ -342,5 +346,85 @@ def main(argv=None):
     return 1 if result["violations"] else 0
 
 
+# ------------------------------------------------------------------ selftest
+
+
+def _jumps(apex=2.85, air=0.718, count=1, hz=60.0, flag=True):
+    """Grounded runs of 0.5 s between `count` symmetric parabolic jumps, sampled at hz."""
+    samples, t, n = [], 0.0, 0
+    g = 8.0 * apex / (air * air)                      # rise and fall each take air / 2
+
+    def add(y, grounded):
+        nonlocal t, n
+        s = {"n": n, "frame": n, "t": round(t, 6), "pos": [0.5 * t, y, 0.0]}
+        if flag:
+            s["custom"] = {"grounded": grounded}
+        samples.append(s)
+        t += 1.0 / hz
+        n += 1
+
+    for _ in range(count):
+        start = t
+        while t - start < 0.5:
+            add(0.0, True)
+        t_off = t
+        while t - t_off < air:
+            dt = t - t_off
+            add(max(0.0, 0.5 * g * air * dt - 0.5 * g * dt * dt), False)
+    start = t
+    while t - start < 0.5:
+        add(0.0, True)
+    return samples
+
+
+def selftest():
+    checks, failed = 0, []
+
+    def check(name, cond):
+        nonlocal checks
+        checks += 1
+        if not cond:
+            failed.append(name)
+
+    with tempfile.TemporaryDirectory(prefix="jump-selftest-") as d:
+        def run(samples, *args):
+            path = os.path.join(d, "timeline.jsonl")
+            with open(path, "w", encoding="utf-8") as fh:
+                if isinstance(samples, str):
+                    fh.write(samples)
+                else:
+                    lines = [{"meta": True, "journey": "courier-jump"}] + samples + [{"end": True}]
+                    fh.write("".join(json.dumps(x) + "\n" for x in lines))
+            r = subprocess.run([sys.executable, os.path.abspath(__file__), path, *args], capture_output=True,
+                               text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            try:
+                return r.returncode, json.loads(r.stdout)
+            except ValueError:
+                return r.returncode, {}
+
+        designed = ["--apex", "2.85", "--air-time", "0.718"]
+        code, rep = run(_jumps(), "--grounded-key", "grounded", *designed)
+        check("the designed jump, grounded key: exit 0", code == 0 and len(rep["arcs"]) == 1)
+        code, rep = run(_jumps(flag=False), *designed)
+        check("the designed jump, height mode: exit 0", code == 0 and rep["mode"] == "height")
+        check("two jumps, --expect-arcs 2: exit 0",
+              run(_jumps(count=2), "--grounded-key", "grounded", "--expect-arcs", "2", *designed)[0] == 0)
+        code, rep = run(_jumps(apex=2.4), "--grounded-key", "grounded", "--apex", "2.85")
+        check("an apex 16% low: exit 1", code == 1 and rep["violations"][0]["rule"] == "apex")
+        code, rep = run(_jumps(air=0.9), "--grounded-key", "grounded", "--air-time", "0.718")
+        check("an air time 25% long: exit 1", code == 1 and rep["violations"][0]["rule"] == "air-time")
+        flat = [dict(s, pos=[s["pos"][0], 0.0, 0.0]) for s in _jumps()]
+        check("no jump in the run: exit 1", run(flat, "--grounded-key", "grounded", "--apex", "2.85")[0] == 1)
+        check("a missing grounded key: exit 1", run(_jumps(flag=False), "--grounded-key", "grounded")[0] == 1)
+        check("--expect-arcs 2 on one jump: exit 1",
+              run(_jumps(), "--grounded-key", "grounded", "--expect-arcs", "2")[0] == 1)
+        check("a line that is not JSON: exit 2", run("{\"meta\": true}\nnot json\n", "--apex", "2.85")[0] == 2)
+        check("a non-positive --apex: exit 2", run(_jumps(), "--apex", "0")[0] == 2)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
+    return 0 if not failed else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["selftest"], ["--selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

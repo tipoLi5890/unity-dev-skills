@@ -7,7 +7,7 @@
 
 ## What the snapshot has to carry
 
-Written by `resources/MaterialConverter.cs` to `Library/UrpMigration/material-snapshot.json`.
+Written by `resources/Editor/MaterialConverter.cs` to `Library/UrpMigration/material-snapshot.json`.
 Under `Library/` rather than `Assets/` so it is neither imported nor committed, and on disk
 rather than in memory so it survives the domain reload that conversion triggers.
 

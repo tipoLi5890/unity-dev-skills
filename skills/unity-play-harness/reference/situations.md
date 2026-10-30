@@ -1,7 +1,8 @@
 # Named situations: boot straight into the moment
 
 > Part of the `unity-play-harness` skill. A situation is a name, a way in, and the set of things
-> that must be true before anyone looks. `resources/Situations.cs` is the file;
+> that must be true before anyone looks. `resources/Situations.cs` is the file, with
+> `resources/SituationBoot.cs` for the command-line boot;
 > `templates/CourierSituations.cs` is a filled-in registration to copy, and
 > `templates/CourierSituations2D.cs` is the same registration for a 2D game.
 

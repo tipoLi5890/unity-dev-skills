@@ -1,16 +1,9 @@
 ---
 name: unity-gameplay
 description: >-
-  START HERE for a gameplay request naming no perspective or movement model:
-  fingerprints the project (2D or 3D, projection, view, movement model,
-  Cinemachine major) and routes controls, camera, animation and verification to
-  the skill owning each. Owns genre recipes written as constraints, level
-  metrics derived from controller numbers, and production stages with exit
-  checks. Load for: "make a platformer", "add a player character", "build a
-  top-down shooter", "which skills for a tactics game", "how wide can the gap
-  be", "the jump cannot reach the ledge", "is the prototype done". The brief
-  is unity-game-brief; input, camera and Animator work are unity-input,
-  unity-camera, unity-animation.
+  START HERE for any gameplay request: make a platformer, runner, top-down or
+  tactics game, add a player. Reads 2D or 3D and the view, routes each system;
+  level metrics, stages.
 ---
 
 # unity-gameplay — a genre is a set of constraints, and the constraints pick the skills
@@ -19,6 +12,18 @@ description: >-
 > transform, what the level unit is, or which clock the camera reads. Six constraints do, and two
 > games with the same label and a different transform owner share no controller code — while two
 > with different labels and the same six share almost all of it.
+
+## Request → where to go
+
+| The request | Go to |
+|---|---|
+| "make a platformer", "build a top-down shooter", "which skills for a tactics game" | §0, then the genre file it names |
+| "add a player character" | §0, then the controller row in *Load what the situation needs* |
+| "how wide can the gap be", "the jump cannot reach the ledge" | *Discipline* (numbers before levels) and `reference/level-metrics.md` |
+| "what do we build first", "is the prototype done" | `reference/pipeline-stages.md` |
+| The idea, the brief, the look, a preview before code | `unity-game-brief` |
+| Controls · camera · Animator work | `unity-input` · `unity-camera` · `unity-animation` |
+| Any other system a game needs | *Load what the situation needs* |
 
 | Constraint | Values | What it picks |
 |---|---|---|
@@ -54,28 +59,10 @@ read, changed or built.
 python3 scripts/fingerprint.py /path/to/project --indent 2
 ```
 
-```json
-{"dimension":  {"value": "2d", "evidence": {"physics_2d": 41, "physics_3d": 0, "decided_by": "physics components"}},
- "projection": {"value": "orthographic", "evidence": {"orthographic_cameras": 2, "perspective_cameras": 0}},
- "view":       {"value": "side", "evidence": {"gravity_2d_y": -9.81, "platform_effectors": 6}},
- "movement_model": {"hints": [{"model": "dynamic-body-2d", "evidence": {"bodies": 9}}]},
- "packages":   {"cinemachine": {"version": "3.1.7", "major": 3}}}
-```
-
-Read the result as a whole, not key by key:
-
-- **An installed package is not a signal.** Templates add the 2D feature set, Input System and
-  Cinemachine to projects that use none of them. Components in scenes and prefabs are evidence.
-- **Physics outranks renderers.** A 3D game has sprites in its HUD; a 2D game has a mesh or two.
-  The body the player object carries is what a controller is written against.
-- **3D physics under an orthographic camera is 2.5D**, not a contradiction: the controller follows
-  the physics, the camera follows the projection.
-- **The Cinemachine major changes the namespace and most class names.** Read it before writing
-  a camera line; `unity-camera` starts from the same number.
-- **Everything `unknown` means no evidence**: a new project, the wrong directory, or binary
-  scenes (`notes` says which). Go to the ladder.
-
-How each verdict is derived, and the same checks as `find`/`grep`: `reference/perspective-fingerprint.md`.
+Read the result as a whole, not key by key — packages are not a signal, physics outranks
+renderers, 3D physics under an orthographic camera is 2.5D, and the Cinemachine major changes the
+class names. A sample result, how each verdict is derived and the same checks as `find`/`grep`:
+`reference/perspective-fingerprint.md`.
 
 **Still ambiguous — the default ladder:**
 
@@ -133,18 +120,21 @@ row per need — open the genre file named above and build in its order.
 | NavMesh baking, agents, click-to-move | `unity-navigation` |
 | A rigged, animated character from source art, stage by stage · its Unity import | `game-character-pipeline` · `unity-rigged-character` |
 | HUD and menus · frame time and counters | `unity-game-ui` · `unity-profiling` |
+| URP renderer, post-processing, the look of the frame | `unity-render-urp` |
+| Music, sound import settings, mixers | `unity-audio` |
+| Packing sprites into atlases, draw calls from sprites | `unity-sprite-atlas` |
+| Trusting a test run, reading logs, screenshots | `unity-debug` |
 
 ### Given inline here
 
-Every genre file ends on a table that names, by file, the skill owning each need — controller,
-camera, level, physics, draw order or light, animation, interaction, combat, AI, scene flow and
-saving, feel, journeys. What no skill owns is carried here as essential method:
+Every genre file ends on a table naming the skill that owns each need. What no skill owns is
+carried here:
 
 | Need | Where the method is |
 |---|---|
 | Door, corridor, step and ceiling numbers from the body | `reference/level-metrics.md` §5 |
 | Playfield fit, bullets as one array of structs, the launch gesture | `reference/genre-2d-fixed-screen.md` |
-| A sim thread with a clock every thread can read; pause-aware timestamp conversion | `resources/SimHost.cs`, `resources/SimClock.cs`, pure C#: a plain assembly with no engine references, which the presentation references |
+| A sim thread with a clock every thread can read; pause-aware timestamp conversion | `resources/SimHost.cs`, `resources/SimClock.cs` — pure C# in a plain assembly with no engine references, which the presentation references |
 
 ---
 
@@ -155,21 +145,11 @@ saving, feel, journeys. What no skill owns is carried here as essential method:
   position and the others read it. Two writers produce jitter no camera setting removes.
 - **Numbers before levels.** Decide apex height, time to apex and run speed; derive gravity and
   jump velocity from them; then let `scripts/level_metrics.py` say how wide a gap may be. A level
-  built first fixes the jump by accident.
-
-  ```bash
-  python3 scripts/level_metrics.py --apex 3 --time-to-apex 0.4 --run-speed 8 \
-      --fall-multiplier 1.5 --gap 5 --height 1      # exit 1 when a number is outside reach
-  ```
-
+  built first fixes the jump by accident (`--gap 5 --height 1` exits 1 when a number is outside
+  reach; the commands are in `reference/level-metrics.md`).
 - **Measure the jump the game performs, not the one the constants describe.** A fixed step moves
-  the apex by `v0 · dt / 2`; drag, a clamped fall speed or a second writer move it further.
-
-  ```bash
-  python3 scripts/jump_report.py journeys/ledge-drop/timeline.jsonl \
-      --grounded-key grounded --apex 2.85 --air-time 0.72
-  ```
-
+  the apex by `v0 · dt / 2`; drag, a clamped fall speed or a second writer move it further —
+  `scripts/jump_report.py` reads it off a journey's `timeline.jsonl`.
 - **Gameplay reads a struct, never a device.** A gamepad, a touch overlay and a journey's
   scripted driver all fill the same struct, which is what makes the controller testable.
 - **Simulate on the fixed step, present on the frame.** Input is sampled on the frame and consumed
@@ -186,26 +166,11 @@ saving, feel, journeys. What no skill owns is carried here as essential method:
 
 ## Scope — what this skill does NOT do
 
-| Not here | Go to |
-|---|---|
-| Deciding what the game is: the brief, invariants, the look | `unity-game-brief` |
-| Creating the project, choosing packages | `unity-new-project` |
-| Action assets, reading input, touch controls, rebinding | `unity-input` |
-| Camera rigs, confiners, jitter, shake | `unity-camera` |
-| Animator graphs, events, IK, Timeline | `unity-animation` |
-| Building the probe, situations and journeys the checks here rely on | `unity-play-harness` |
-| The 2D motor, its scripts and its journey templates | `unity-2d-controller` |
-| A collision or trigger that does not fire, in 3D · in 2D | `unity-physics-3d` · `unity-physics-2d` |
-| Draw order, 2D lights, parallax | `unity-2d-rendering` |
-| Level construction and level data in 2D | `unity-2d-level` |
-| Cell maths, pathfinding, turn order | `unity-2d-grid` |
-| Skeletal sprite art | `unity-2d-animation` |
-| The 3D controller · 3D levels · lighting · LOD and occlusion | `unity-3d-controller` · `unity-3d-level` · `unity-lighting` · `unity-scene-optimisation` |
-| Switches, gates, pickups, hotspots · damage, hitboxes, projectiles | `unity-interaction` · `unity-combat` |
-| What a sentry sees and decides, waves, enemy turns | `unity-game-ai` |
-| Boot, scene loading, pause, saving, checkpoints, pools | `unity-scene-flow` |
-| Hit stop, flash, particles, trails, sound events, rumble | `unity-game-feel` |
-| Trusting a test run, reading logs, screenshots | `unity-debug` |
+Every row of *Load what the situation needs* that names another skill is that skill's work, not
+this one's: deciding what the game is (`unity-game-brief`), creating the project
+(`unity-new-project`), input, camera, Animator, controllers, levels, physics, draw order, light,
+interaction, combat, AI, scene flow, feel, journeys (`unity-play-harness`) and trusting a test run
+(`unity-debug`).
 
 What is left is what no single-system skill can hold: **deciding which constraints this game
 has, and so which skills to open** — plus the level numbers that follow from the controller and

@@ -19,6 +19,7 @@
 // With no subscriber the channel is silent, and Play still returns true.
 using System;
 using UnityEngine;
+using UnityDev.GameFeel;
 
 /// <summary>What the player chose. Every channel reads these; none of them is optional to honour.</summary>
 public static class FeelSettings

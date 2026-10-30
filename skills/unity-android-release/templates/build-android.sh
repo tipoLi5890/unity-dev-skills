@@ -372,10 +372,12 @@ info "(several minutes; log: $BUILD_LOG)"
 # macOS ships bash 3.2, where "${arr[@]}" on an EMPTY array is an unbound-variable error under
 # `set -u`. Bash 4.4 fixed it; a `env bash` shebang does not guarantee it.
 AAB_FLAG=(); if [[ "$FORMAT" == "aab" ]]; then AAB_FLAG=(-aab); fi
+# The passwords never go on Unity's command line (the process table and the log echo it):
+# BuildScript.cs reads UNITY_KEYSTORE_PASS and UNITY_KEY_ALIAS_PASS from the environment.
 SIGN_ARGS=()
 if [[ -n "$KEYSTORE" && -f "$KEYSTORE" ]]; then
-  SIGN_ARGS=(-keystore "$KEYSTORE" -keystorePass "${UNITY_KEYSTORE_PASS:-}"
-             -keyalias "${UNITY_KEY_ALIAS:-}" -keyaliasPass "${UNITY_KEY_ALIAS_PASS:-}")
+  export UNITY_KEYSTORE_PASS UNITY_KEY_ALIAS_PASS
+  SIGN_ARGS=(-keystore "$KEYSTORE" -keyalias "${UNITY_KEY_ALIAS:-}")
 fi
 
 set +e

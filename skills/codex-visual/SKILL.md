@@ -1,22 +1,37 @@
 ---
 name: codex-visual
 description: >-
-  Generate 2D game art with the `codex` CLI image model in one project art
-  style: an art bible (ART_DIRECTION.md) plus an anchor image, icon and sprite
-  sets as one grid sheet normalised to one size, short animations generated as
-  one sprite sheet and sliced into registered frames, transparency via chroma
-  key; also reads screenshots. Load for: "generate / edit a sprite, icon,
-  tileset or key art", "lock the art style", "the assets don't match / the
-  style drifted", "make a transparent PNG", "a fringed cut-out", "make a GIF /
-  an idle loop", "the animation jitters", or any `codex exec` image work (bare
-  `codex` hangs). Unity import: `unity-2d-sprites`; audio, video, 3D:
-  `comfyui-asset-generation`.
+  Generate 2D art in one locked style: sprites, icons, pixel-art tilesets,
+  sheets, breathing idles.
 ---
 
 # codex-visual — consistent asset generation via Codex CLI + a project art bible
 
 Image generation is **stateless**, so a project's look drifts as it grows. This skill routes
 visual work through **one canonical project spec**.
+
+## Start here — which mode am I in? (check first, every time)
+
+Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first, whatever was asked.
+**`Status: LOCKED`** → start from the request:
+
+| You want | Go to |
+|---|---|
+| A look for a new project; "lock the art style" | PHASE 1 → 2 |
+| "Generate / edit a sprite, icon, tileset or key art": one sprite, icon, key art or background | [job shape](#decide-the-shape-of-the-job) → PHASE 3 |
+| A pixel-art tileset or pixel sprites: snap to the grid and palette, `audit_pixel.py` | PHASE 3; `reference/pixel-grid.md` |
+| A matching set — icons, pickups, variants; one more for a shipped set | PHASE 3S |
+| "Make a GIF / an idle loop", a walk, an attack; "the animation jitters" | PHASE 3A; `reference/animation-route.md` |
+| A breathing idle loop from one still (`breathe.py`); jitter, cut feet, a boiling idle | `reference/animation-faults.md` §1a |
+| How many frames fit a sheet: the four locks, grid → cell, the style floors | `reference/job-shape.md` |
+| A transparent PNG; "a fringed cut-out"; which key colour | `reference/codex-runtime.md` §5 |
+| "Off-centre", "one is smaller"; a crosshair template | `reference/geometry-gate.md` |
+| "The assets don't match / the style drifted" | PHASE 4 |
+| A source image for image-to-3D | `reference/image-to-3d-input.md` |
+| A review sheet (8-view QA, clips, before/after), gated on checks | `reference/review-sheets.md` |
+| Read a screenshot; compare two images | `reference/codex-runtime.md` §7 |
+| Any `codex exec` image work by hand (bare `codex` hangs; exit 0 proves nothing) | Step 0; `reference/codex-runtime.md` §1–4 |
+| Which model rendered it; size and quality limits | `reference/image-model.md` |
 
 > **This skill decides no art.** Style, dimensionality (2D / 2.5D / 3D), the generation engine,
 > asset formats, palette and folder layout all live in the project's `/ART_DIRECTION.md`, chosen
@@ -66,73 +81,16 @@ Every `codex exec` call involves **two** models.
   nothing else**, renders **a fixed ~1,572,864-pixel budget** and has **no native transparency**
   (§2–4 there).
 
-## Which mode am I in? (check first, every time)
-
-Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first, whatever was asked.
-**`Status: LOCKED`** → start from the request:
-
-| You want | Go to |
-|---|---|
-| A look for a new project; "lock the art style" | PHASE 1 → 2 |
-| One sprite, icon, key art or background | job shape (below) → PHASE 3 |
-| A matching set — icons, pickups, variants; one more for a shipped set | PHASE 3S |
-| An idle loop, a walk, an attack, a GIF; "the animation jitters" | PHASE 3A |
-| A transparent PNG; "a fringed cut-out"; which key colour | `reference/codex-runtime.md` §5 |
-| "Off-centre", "one is smaller"; a crosshair template | `reference/geometry-gate.md` |
-| "The assets don't match / the style drifted" | PHASE 4 |
-| A source image for image-to-3D | `reference/image-to-3d-input.md` |
-| A review sheet (8-view QA, clips, before/after), gated on checks | `reference/review-sheets.md` |
-| Read a screenshot; compare two images | `reference/codex-runtime.md` §7 |
-| Which model rendered it; size and quality limits | `reference/image-model.md` |
-
 ## Decide the shape of the job
 
-Three shapes, three priorities; the wrong one makes a sheet unusable.
+Three shapes, three priorities; the wrong one makes a sheet unusable. Locks, grid → cell and the
+style floors for each: `reference/job-shape.md`.
 
 | Shape | Priority | Path |
 |---|---|---|
 | **Static single** — key art, hero, boss, background | **quality** | one generation at the full pixel budget, style anchor via `-i`, plus the family anchor if one exists → PHASE 3 |
 | **Static set** — icons, pickups, avatars, variants | **quality, then consistency** | 2x2 or 3x3 per sheet (627 / 418 px cells); more members → more sheets chained to the first; then `slice_grid.py` + normalize → PHASE 3S |
 | **Animation** — loop, one-shot, transformation, UI feedback | **stability** | frames → grid → cell px → style floor → split; key → `sheet_to_frames.py --register` (**never** `slice_grid.py`) → gate → onion skin + GIF → Unity handoff → PHASE 3A |
-
-### The four locks — every grid prompt opens with them
-
-After the verbatim `STYLE PREAMBLE`, in English, pasted from their only full copy
-(`reference/animation-sheets.md` §1): **1** fixed sheet structure · **2** position and scale
-locked · **3** nothing crosses a cell (~3% of the cell width as margin) · **4** one continuous
-action. **Static sets use locks 1–3; animation sheets all four.**
-
-### Grid from frame count — the built-in path
-
-The canvas is fixed, so **the grid alone decides the cell**: `cell = sqrt(1,572,864 / (rows *
-cols))` for a square sheet; a non-square ask is honoured by *aspect* (`w = round(sqrt(1,572,864 *
-cols / rows))`). The square sheet is 1254x1254:
-
-| Grid | 3x3 | 4x4 | 5x5 | 6x6 | 7x7 | 8x8 |
-|---|---|---|---|---|---|---|
-| Cell (px) | 418 | **313** | 250 | 209 | 179 | 157 |
-
-> **"Bigger grid → ask for more resolution" does NOT work here:** 2048x2048 comes back 1254x1254,
-> no error. **Bigger grid = smaller cells.**
-
-So: frame (or member) count → grid → cell → against the style floor → below it, split into sheets
-of the same cell size and aspect, each at most the style's maximum grid, every later sheet chained
-via `-i` to the FIRST sheet (drift compounds down a chain): `reference/animation-sheets.md` §3d.
-
-### The CLI-fallback path — where the rule does hold
-
-`gpt-image-2` via the bundled `image_gen.py` takes a real `size`, so the canvas scales with the grid,
-for an `OPENAI_API_KEY` and a user decision; cell sizes: `reference/image-model.md` §3.
-
-### Style floors — the smallest cell each style survives
-
-- **Pixel style:** working floor **128 px** per cell for a big-head character, so 5x5, 6x6 and
-  7x7 work on one built-in sheet; **8x8 (157 px) is the edge.** Confirm it on one test sheet
-  first (`reference/animation-scripts.md` §3).
-- **Normal style** (flat / cartoon / painterly): **≤ 4x4 per sheet** (313 px), **≤ 3x3** (418 px)
-  for a detailed character.
-- **Static sets:** 2x2 (627 px) or 3x3 (418 px); 4x4 (313 px) only for small icons that
-  ship at ≤ 128 px.
 
 ## PHASE 1 — Bootstrap a direction
 
@@ -187,7 +145,7 @@ So the canonical call is **style anchor + family anchor (chain) + grid layout, i
 then slice + normalize.
 
 - **New set of N≥2 siblings** → grid one-shot: `cols=ceil(√N)`, `rows=ceil(N/cols)`, leftover
-  cells blank or repeated, the static-set floors above, a related family's anchor chained. Too
+  cells blank or repeated, the static-set floors (`reference/job-shape.md`), a related family's anchor chained. Too
   many members? Split, chain every later sheet to the first, normalize all to one target.
 - **+1 member for an already-shipped set** → pure reference-chaining to that set's anchor +
   normalize (its sheet can't be re-generated).
@@ -202,28 +160,11 @@ Style anchor, then family anchor; locks 1–3; capture → key → slice → **g
 
 ## PHASE 3A — Animation sheets (one short motion as ONE gridded sheet)
 
-PHASE 3S's stack, but the cells are **moments of one character**. The sheet decides the drawings,
-**not where they sit**: frames are seated by silhouette afterwards, never centred per cell
-(`slice_grid.py` never touches the sheet). No skeletons here.
-
-1. **Shape the job** (above): idle 3–8, walk 6–12, attack 4–12 frames; 8 on a 3x3 as a half cycle
-   plus `--reverse-loop` beat 16 half-dead cells → `reference/animation-sheets.md` §3d, §3a.
-2. **Write the prompt:** `STYLE PREAMBLE` → the four locks → identity lock (colours as words
-   *and* hexes) → time structure; a one-shot over 12+ frames is **staged** → same file, §1, §3.
-3. **Anchors: order fixed, roles named in prose** — style, identity, family → same file, §2.
-4. **Generate, key, then measure before you write anything:** the `generated_images` original,
-   `key_unmix.py`, then `sheet_to_frames.py <keyed> … --report`. Empty cells, near-duplicates or
-   a subject cut by the sheet edge → re-generate → `reference/animation-faults.md` §2.
-5. **Write the frames — `--register` is required** (`ground` · `free` · `centroid` · `keep`; exit
-   3 = a failed gate), then `audit_frames.py` and `frames_to_anim.py --onion --bg`: **one frame
-   per cell on a contact sheet is not evidence about an animation** →
-   `reference/animation-scripts.md` §1, §2.
-6. **One cell wrong** → a new sheet or a local splice; **jitter, cut feet, a fringe, a boiling
-   idle** (→ `breathe.py`) → not a re-generation → `reference/animation-faults.md` §3, §1a. **Pixel style** →
-   post-process the whole sheet, then register → `reference/pixel-grid.md`.
-7. **Outputs and the handoff:** frames + `frames.json` (`pivot_norm` = the pivot) + the keyed
-   sheet (→ `anchors/sets/<action>.png` if the next animation must match) + previews →
-   `reference/animation-scripts.md` §4.
+PHASE 3S's stack, but the cells are **moments of one character**, seated by silhouette afterwards
+(never centred per cell; never `slice_grid.py`). Shape → prompt with the four locks → anchors →
+generate, `key_unmix.py`, `sheet_to_frames.py --report` → `--register` → `audit_frames.py` and
+`frames_to_anim.py --onion --bg` → frames + `frames.json` + previews. A boiling idle, or an idle
+loop from one still: `breathe.py`. Every step: `reference/animation-route.md`.
 
 ## PHASE 4 — Audit & evolve
 

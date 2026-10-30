@@ -1,16 +1,8 @@
 ---
 name: unity-2d-controller
 description: >-
-  Move a 2D character with one owner of its transform: a kinematic platformer
-  motor that asks physics where the ground is (slopes, one-way and moving
-  platforms, coyote time, variable jump, dash, wall jump), free top-down
-  movement with aim split from move, cell steps shown as tweens, the Animator
-  bridge, and journeys that prove apex, coyote and buffer. Load for: "the
-  character slides down slopes", "it sticks to walls", "the jump feels floaty",
-  "can't jump right at the edge", "falls through the moving platform",
-  "diagonal movement is faster", "the sprite faces the wrong way". Colliders,
-  layers and callbacks are unity-physics-2d; cell maths is unity-2d-grid;
-  reading the device is unity-input.
+  Move a 2D character: platformer jump, slopes, coyote time, moving platforms,
+  top-down movement.
 ---
 
 # unity-2d-controller — a platformer character asks physics where the ground is; it is not simulated by it
@@ -21,7 +13,37 @@ description: >-
 > fix is not a setting: the character stops being simulated, decides its own velocity, and uses
 > the engine only to ask what is in the way.
 
-So every controller here is two halves that never mix:
+## The situation → what to read
+
+| The situation | Read |
+|---|---|
+| Kinematic or dynamic; `Rigidbody2D.Slide`; who owns the transform; a second writer | `reference/model-choice.md` |
+| "The character slides down slopes", "it sticks to walls", "can't jump right at the edge", "falls through the moving platform": grounding, slopes, sliding downhill, one-way platforms and dropping through, moving platforms, coyote time, buffer, short hop, apex hang, dash, wall slide and wall jump, auto-run, abilities as data | `reference/platformer.md` |
+| "The jump feels floaty": gravity and jump velocity from height and time; rise and fall gravity; why the apex is 2.85 and not 3; measuring it | `reference/jump-maths.md` |
+| "Diagonal movement is faster": four-way, eight-way, analogue; the fast diagonal; acceleration and stopping; wall slide; twin-stick aim; screen clamp; knock-back | `reference/topdown-free.md` |
+| One cell per step: commit then tween, key repeat, one buffered step, a refused step, pushing a pickup | `reference/grid-step.md` |
+| "The sprite faces the wrong way": which way it faces; flipping against directional clips; the bridge that writes the Animator | `reference/facing-and-animator-bridge.md` |
+| Reach tables, gap and ledge checks, the measuring script | `unity-gameplay` → `reference/level-metrics.md` |
+| The input struct, the press latch and its buffer, a scripted driver; action assets, touch controls, rebinding | `unity-input` → `reference/reading-input.md` |
+| Stick and pointer aim resolved to a direction | `unity-input` → `reference/pointer-and-aim.md` |
+| Body types, simulation mode, interpolation; collider set-up, a callback that never fires | `unity-physics-2d` → `reference/bodies-and-simulation.md` |
+| Casts, contact filters, a query that misses | `unity-physics-2d` → `reference/queries-2d.md` |
+| Tile seams that catch the runner; composite colliders | `unity-physics-2d` → `reference/tilemap-colliders.md` |
+| Platform effectors for dynamic bodies | `unity-physics-2d` → `reference/effectors-and-joints.md` |
+| Which layers, and which pairs collide | `unity-physics-2d` → `reference/layers-and-matrix.md` |
+| Cell coordinates on rectangular, isometric and hexagonal boards | `unity-2d-grid` → `reference/coordinates.md` |
+| Occupancy, reservations, turn order, pathfinding | `unity-2d-grid` → `reference/occupancy-and-turns.md` |
+| Following the runner; a camera that jitters behind it; confiners | `unity-camera` → `reference/follow-2d.md` |
+| The state graph the bridge feeds, side-on | `unity-animation` → `reference/sprite-state-graph.md` |
+| Directional trees fed by the facing | `unity-animation` → `reference/blend-trees.md` |
+| Journeys that prove apex, coyote and buffer; recorders, situations, the probe, the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
+
+Copy the `resources/` files the model needs into a Runtime assembly beside `RunInput.cs`
+(`unity-input` → `resources/`), and the journey from `templates/` into a PlayMode test assembly
+that also references the harness. The runtime files need no package — 2D physics and animation are
+built-in modules; the journeys need `com.unity.test-framework`.
+
+Every controller here is two halves that never mix:
 
 ```
 RunInput ──► rules ──────────────► collision ─────────────► Rigidbody2D
@@ -89,38 +111,6 @@ The depot is the same loop with `TopDownMotor2D` and `templates/TopDownJourneyTe
 (diagonal speed, wall slide with `NeverInside2D`, stopping distance); the sorting yard with
 `GridStepMover` and two delegates.
 
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| Kinematic or dynamic; `Rigidbody2D.Slide`; who owns the transform; a second writer | `reference/model-choice.md` |
-| Grounding, slopes, sliding downhill, one-way platforms and dropping through, moving platforms, coyote time, buffer, short hop, apex hang, dash, wall slide and wall jump, auto-run, abilities as data | `reference/platformer.md` |
-| Gravity and jump velocity from height and time; rise and fall gravity; why the apex is 2.85 and not 3; measuring it | `reference/jump-maths.md` |
-| Four-way, eight-way, analogue; the fast diagonal; acceleration and stopping; wall slide; twin-stick aim; screen clamp; knock-back | `reference/topdown-free.md` |
-| One cell per step: commit then tween, key repeat, one buffered step, a refused step, pushing a pickup | `reference/grid-step.md` |
-| Which way the sprite faces; flipping against directional clips; the bridge that writes the Animator | `reference/facing-and-animator-bridge.md` |
-| Reach tables, gap and ledge checks, the measuring script | `unity-gameplay` → `reference/level-metrics.md` |
-| The input struct, the press latch and its buffer, a scripted driver | `unity-input` → `reference/reading-input.md` |
-| Stick and pointer aim resolved to a direction | `unity-input` → `reference/pointer-and-aim.md` |
-| Body types, simulation mode, interpolation | `unity-physics-2d` → `reference/bodies-and-simulation.md` |
-| Casts, contact filters, a query that misses | `unity-physics-2d` → `reference/queries-2d.md` |
-| Tile seams that catch the runner; composite colliders | `unity-physics-2d` → `reference/tilemap-colliders.md` |
-| Platform effectors for dynamic bodies | `unity-physics-2d` → `reference/effectors-and-joints.md` |
-| Which layers, and which pairs collide | `unity-physics-2d` → `reference/layers-and-matrix.md` |
-| Cell coordinates on rectangular, isometric and hexagonal boards | `unity-2d-grid` → `reference/coordinates.md` |
-| Occupancy, reservations, turn order | `unity-2d-grid` → `reference/occupancy-and-turns.md` |
-| Following the runner; a camera that jitters behind it | `unity-camera` → `reference/follow-2d.md` |
-| The state graph the bridge feeds, side-on | `unity-animation` → `reference/sprite-state-graph.md` |
-| Directional trees fed by the facing | `unity-animation` → `reference/blend-trees.md` |
-| Journeys, the probe, the never-inside invariant | `unity-play-harness` → `reference/journeys.md` |
-
-Copy the `resources/` files the model needs into a Runtime assembly beside `RunInput.cs`
-(`unity-input` → `resources/`), and the journey from `templates/` into a PlayMode test assembly
-that also references the harness. The runtime files need no package — 2D physics and animation are
-built-in modules; the journeys need `com.unity.test-framework`.
-
----
-
 ## Discipline
 
 - **One writer of the transform.** `Move` is called from one place; nothing else assigns
@@ -158,16 +148,11 @@ built-in modules; the journeys need `com.unity.test-framework`.
 | Not here | Go to |
 |---|---|
 | Which perspective and movement model the game has; genre recipes; reach tables | `unity-gameplay` |
-| Action assets, the reader, touch controls, rebinding | `unity-input` |
-| Body and collider set-up, the layer matrix, effectors, a callback that never fires | `unity-physics-2d` |
-| Cell coordinates, neighbours, pathfinding, occupancy, turn order | `unity-2d-grid` |
 | Tilemap layers, rooms, chunks, level data | `unity-2d-level` |
 | Sort order, sorting from above, 2D lights | `unity-2d-rendering` |
-| Animator graphs, blend trees, events | `unity-animation` |
 | Bones, skinned sprites, swapping parts | `unity-2d-animation` |
+| Animator graphs, blend trees, events (the bridge feeds them) | `unity-animation` |
 | Frames into clips, pivots | `unity-2d-sprites` |
-| Follow cameras, confiners, jitter | `unity-camera` |
-| Recorders, situations, the probe contract | `unity-play-harness` |
 | Pressing use on a switch, a gate or a pickup | `unity-interaction` |
 | Health, hurt, invincibility frames and when a hit asks for knock-back | `unity-combat` |
 | NavMesh agents and click-to-move | `unity-navigation` |

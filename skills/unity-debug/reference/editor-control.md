@@ -195,7 +195,7 @@ a path, and a **batch-mode Editor starts with an empty scene, so it has no camer
 scene first, or take screenshots from the windowed loop instead
 (`reference/visual-checks.md`). For before/after pairs outside a test run — aiming the Scene view
 at a chosen pivot and angle, writing each PNG to its own temp path — there is a drop-in script at
-`unity-urp-migration` → `resources/SceneCapture.cs`.
+`unity-urp-migration` → `resources/Editor/SceneCapture.cs`.
 
 ## Reading the envelope, not the exit line
 

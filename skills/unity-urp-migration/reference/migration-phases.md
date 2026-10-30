@@ -31,7 +31,7 @@ arrives — a long bake, deleting legacy assets, a custom shader rewrite.
 
 ## Phase 0 — inventory
 
-`resources/MigrationAudit.cs` answers, read-only:
+`resources/Editor/MigrationAudit.cs` answers, read-only:
 
 - **Pipeline, in two places.** The project default and every quality tier. One is not the other.
 - **Packages.** Whether URP is already present; whether the old post-processing package is.
@@ -75,7 +75,7 @@ from the project's existing settings. Where a script has to do it, create a
 both on your version — and check `postProcessData` is not null, because a null one means the
 post-processing pass does not exist and Phase 2 looks broken for a Phase 1 reason.
 
-Assign with `resources/PipelineAssignment.cs`: Graphics settings, then every tier. A console
+Assign with `resources/Editor/PipelineAssignment.cs`: Graphics settings, then every tier. A console
 message reading *"Default Renderer is missing"* afterwards is not a reason to stop at "setup
 complete" — re-query the renderer list and repair it.
 
@@ -96,7 +96,7 @@ Batch entry point:
 — confirm the overload and the `ConverterId` members on your version; `ConverterId.PPv2` only
 compiles where the old post-processing package is installed.
 
-Materials go through `resources/MaterialConverter.cs` in four steps — snapshot, convert, restore,
+Materials go through `resources/Editor/MaterialConverter.cs` in four steps — snapshot, convert, restore,
 verify — detailed in `reference/material-conversion.md`.
 
 Gate: every tier re-queried returns the intended asset; every converted material's `shader.name`
@@ -137,7 +137,7 @@ but state it as a choice rather than report "all tiers migrated".
 
 ## Phase 4 — capture and report
 
-Capture the representative scene with `resources/SceneCapture.cs`, before and after, under
+Capture the representative scene with `resources/Editor/SceneCapture.cs`, before and after, under
 distinct filenames — one that overwrites the other is a comparison with itself. Read the PNG;
 do not ask anyone what it looks like. Then six lines, nothing narrated around them:
 

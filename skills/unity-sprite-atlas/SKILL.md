@@ -1,16 +1,7 @@
 ---
 name: unity-sprite-atlas
 description: >-
-  Author, configure and ship Unity Sprite Atlases from script — the V2 editor
-  and runtime split, packing and platform settings, build-time generation, and
-  delivery. Load for: sprites that should share a draw call, an atlas asset
-  that never produces a texture, "sprite atlas packing is disabled", shipping
-  atlases in the player versus loading them through Addressables, a
-  half-resolution variant, an Editor script that will not compile against
-  SpriteAtlas or a cast on a platform format, atlases that go stale unless
-  somebody clicks a menu item, or a layout the built-in packer will not
-  produce. Atlas work rewrites assets and forces reimports, so this skill
-  reports before it changes anything.
+  Sprite Atlas from script: packing, the V2 API, variants, build-time generation, Addressables.
 ---
 
 # unity-sprite-atlas — an atlas can look finished and pack nothing
@@ -21,16 +12,11 @@ description: >-
 > workflow errors. Everything else in this skill is wasted effort until
 > `EditorSettings.spritePackerMode` is set **and read back**.
 
-> **Report, then wait.** Generating atlases writes new assets, rewrites importer settings and
-> forces reimports across the art folder. Survey what exists, state which atlases you would create
-> or reconfigure and with what values, and wait for confirmation before applying. Connecting to a
-> live Editor: `unity-debug` → `reference/editor-control.md`.
-
 ## Symptom → where to look
 
 | Symptom | Go to |
 |---|---|
-| Atlas asset exists, no texture is ever produced, sprites still load one by one | §1 |
+| Sprites that should share a draw call and do not; atlas asset exists, no texture is ever produced, sprites still load one by one | §1 |
 | The Inspector says atlas packing is disabled | §1 |
 | Editor script will not compile: `SpriteAtlas` has no `Add`, `GetPackables`, `SetTextureSettings` | §2 |
 | `new SpriteAtlas()` rejected, or a loaded `SpriteAtlas` will not take settings | §2 |
@@ -40,11 +26,16 @@ description: >-
 | `PackAtlases` rejects the array you hand it | `reference/common-errors.md` |
 | An atlas search picks up assets from `Packages/` | `reference/common-errors.md` |
 | Atlases go stale unless somebody remembers to click a menu item | §4 |
-| The atlas shipped inside the player and you wanted it downloadable | §5 |
-| `GetSprite` returns null on an atlas the game loaded itself | §5 — the callback registered too late |
-| `SetMasterAtlasPath` does not exist | §6 |
-| A lower-resolution build needs half-size art from the same sources | §6 |
-| The packer will not produce the layout the tooling downstream expects | §7 |
+| Shipping atlases in the player versus loading them through Addressables | [`reference/delivery-variants-packing.md`](reference/delivery-variants-packing.md) §5 |
+| `GetSprite` returns null on an atlas the game loaded itself | [`reference/delivery-variants-packing.md`](reference/delivery-variants-packing.md) §5 — the callback registered too late |
+| `SetMasterAtlasPath` does not exist | [`reference/delivery-variants-packing.md`](reference/delivery-variants-packing.md) §6 |
+| A half-resolution variant: a lower-resolution build from the same sources | [`reference/delivery-variants-packing.md`](reference/delivery-variants-packing.md) §6 |
+| The packer will not produce the layout the tooling downstream expects | [`reference/delivery-variants-packing.md`](reference/delivery-variants-packing.md) §7 |
+
+> **Report, then wait.** Generating atlases writes new assets, rewrites importer settings and
+> forces reimports across the art folder. Survey what exists, state which atlases you would create
+> or reconfigure and with what values, and wait for confirmation before applying. Connecting to a
+> live Editor: `unity-debug` → `reference/editor-control.md`.
 
 ## 1. Turn packing on, then prove it took
 
@@ -151,7 +142,7 @@ An atlas whose contents are decided by a folder or a naming rule should be regen
 build, through `IPreprocessBuildWithReport`. A `[MenuItem]` generator is one extra way to ship a
 stale atlas: it is correct exactly until somebody adds art and builds without clicking.
 
-`resources/AtlasBuildGenerator.cs` is the runnable shape: it corrects the packer mode only when it
+`resources/Editor/AtlasBuildGenerator.cs` is the runnable shape: it corrects the packer mode only when it
 is not already a V2 value, rebuilds one atlas per rule, configures the importer, and optionally
 registers the results with Addressables — adapt its rules, not its scaffolding. The one build that
 writes the mode rewrites the tracked `ProjectSettings/EditorSettings.asset`; commit the new value
@@ -163,78 +154,11 @@ Editor preview while authoring — under `Tools/Unity Dev/…`, clear of a proje
 `try/finally` and call `CleanupAtlasPacking()` in the `finally`, so a cancelled or thrown pack does
 not leave temporary state behind.
 
-## 5. Delivery: inside the player, or late-bound
+## 5–7. Delivery, variants, custom packing → `reference/delivery-variants-packing.md`
 
-One importer flag decides this; the rest follows from it.
-
-| Content | `includeInBuild` | What else is needed |
-|---|---|---|
-| Core UI, the first scene, anything always on screen | `true` | Nothing |
-| Level packs, cosmetics, per-locale art, seasonal content | `false` | Addressables entries, a content build, and a runtime supplier |
-
-Setting `includeInBuild = false` without the other three pieces — a prebuild step creating the
-Addressables entries, a postprocess step building the content, and a runtime component answering
-`SpriteAtlasManager.atlasRequested` — produces a build whose sprites resolve to nothing: the atlas
-is excluded exactly as asked and nobody delivers it. Setup and the Addressables API surface:
-`reference/addressables-delivery.md`.
-
-> **The supplier has to be listening before the first sprite resolves.** `atlasRequested` fires
-> once per tag, so a component that subscribes in `Start`, or lives in the second scene, leaves the
-> first scene's sprites blank for the session. Subscribe in `Awake` on an object that survives the
-> load, and unsubscribe in `OnDestroy`.
-
-## 6. Variants
-
-A variant is a second atlas reusing a master's packables at another scale — usually a
-reduced-resolution build from the same source art.
-
-```csharp
-var master = UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.U2D.SpriteAtlas>(masterPath);
-var variant = new UnityEditor.U2D.SpriteAtlasAsset();
-variant.SetIsVariant(true);
-variant.Add(UnityEditor.U2D.SpriteAtlasExtensions.GetPackables(master));  // §2's extension
-variant.SetMasterAtlas(master);           // takes the runtime SpriteAtlas
-UnityEditor.U2D.SpriteAtlasAsset.Save(variant, variantPath);
-UnityEditor.AssetDatabase.ImportAsset(variantPath);
-
-var importer = UnityEditor.AssetImporter.GetAtPath(variantPath)
-             as UnityEditor.U2D.SpriteAtlasImporter;
-importer.variantScale   = 0.5f;           // on the importer, not the asset
-importer.includeInBuild = true;
-importer.SaveAndReimport();
-```
-
-Two signatures decide whether this compiles: `SetMasterAtlas` takes a
-**`UnityEngine.U2D.SpriteAtlas`**, so a path string or a `SpriteAtlasAsset` is rejected; and there
-is **no `SetMasterAtlasPath`** to fall back on. Scale lives on the importer because
-`SpriteAtlasAsset.SetVariantScale` is one of the nine methods carrying `[Obsolete]`.
-
-Add the master's packables, not sprites you collected earlier: a variant listing a different set
-from its master is not a variant of it, and the mismatch shows up as missing sprites, not an error.
-
-## 7. Custom packing
-
-`ScriptablePacker` is a `ScriptableObject` with one abstract member, `Pack` (**public**), and one
-virtual member, `Fit` (**protected** — an override cannot widen access, so `public override bool
-Fit` will not compile). Attach an instance with `SpriteAtlasAsset.SetScriptablePacker`, which takes
-a `ScriptablePacker`, not a plain `Object`.
-
-Its input and output types are **nested inside `ScriptablePacker`** — `PackerData`, `SpriteData`,
-`SpritePack`, `TextureData` and `PackTransform` are all `ScriptablePacker.<Name>`, not free types
-in `UnityEditor.U2D`; a mis-qualified reference is the usual reason a packer will not compile.
-Field lists, two of them easy to get wrong from memory: `reference/v2-api.md`.
-
-Write to `sprite.output` and write the struct back into the array — `NativeArray<T>` hands out
-copies. Never dispose the arrays inside `PackerData`; the importer owns them.
-
-> **`Pack` returning `true` is the only report anyone downstream gets**, so check the output before
-> returning it: `resources/PackerValidation.cs` rejects a negative position, an unopened page and
-> an overlap, and says what landed on each page.
-
-Three layouts: `resources/ScriptablePackerExample.cs` (a fixed grid),
-`resources/MultiPagePacker.cs` (shelves, spilling onto a new page) and
-`resources/SizeOptimizedPacker.cs` (one page, tallest first). Padding is yours to apply — whatever
-`Pack` writes is the final position.
+§5 inside the player or late-bound through Addressables, and the `atlasRequested` callback that
+registers too late; §6 variants and the half-resolution build; §7 a custom packer for a layout the
+built-in one will not produce. Same numbering there.
 
 ## Scope — what this skill does NOT do
 
@@ -248,20 +172,21 @@ suits an art style.
 Download size and texture budget for a shipping build are `unity-web-release` and
 `unity-android-release` — atlas format and max size are one input to those, not the whole answer.
 Addressables as a content-delivery strategy (groups, catalogues, remote hosting, updates) is
-larger than §5, which covers only the three pieces an atlas needs.
+larger than §5 (`reference/delivery-variants-packing.md`), which covers only the three pieces an atlas needs.
 
 Generating the artwork is `codex-visual`.
 
 ## Reference
 
+- [`reference/delivery-variants-packing.md`](reference/delivery-variants-packing.md) — §5–§7: delivery, variants, custom packing.
 - [`reference/v2-api.md`](reference/v2-api.md) — every class and member as enumerated, absent and
   obsolete ones included.
 - [`reference/common-errors.md`](reference/common-errors.md) — the six costliest failures, each
   with the check that settles it.
 - [`reference/addressables-delivery.md`](reference/addressables-delivery.md) — late binding end to
   end.
-- `resources/`: `AtlasBuildGenerator.cs` (build-time generation, both delivery modes),
-  `AtlasContentBuild.cs` (the content build that pairs with it), `AtlasSupplier.cs` (the runtime
-  supplier), `ScriptablePackerExample.cs` (a grid packer and the shape of a custom one),
-  `MultiPagePacker.cs`, `SizeOptimizedPacker.cs` (two more layouts) and `PackerValidation.cs`
-  (a packer checking its own output).
+- `resources/Editor/`: `AtlasBuildGenerator.cs` (build-time generation, both delivery modes),
+  `AtlasContentBuild.cs` (the content build that pairs with it). `resources/`:
+  `AtlasSupplier.cs` (the runtime supplier), `GridAtlasPacker.cs` (a grid packer and the shape of
+  a custom one), `MultiPagePacker.cs`, `SizeOptimizedPacker.cs` (two more layouts) and
+  `PackerValidation.cs` (a packer checking its own output).

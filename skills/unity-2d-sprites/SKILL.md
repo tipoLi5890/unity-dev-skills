@@ -1,16 +1,8 @@
 ---
 name: unity-2d-sprites
 description: >-
-  Edit Unity sprite metadata from script — slice a sheet (grid, automatic,
-  isometric), set pivots, 9-slice borders, names and outlines, and turn frames
-  into a playable AnimationClip. Load for "slice this sprite sheet", "set the
-  pivot on every frame", "set up 9-slice on this panel", "the sheet imported as
-  one sprite", "turn these frames into an animation", "the character bobs", a
-  sprite loaded by filename returns null, new art never reaches the game,
-  import settings skip files already imported, an Editor script cannot see
-  ISpriteEditorDataProvider, or a stretched effect sprite stops short. Needs a
-  live Editor (unity-debug). Packing is unity-sprite-atlas; tilemaps are
-  unity-tilemap.
+  Slice sprite sheets, set pivots and 9-slice from script, and turn frames
+  into an AnimationClip.
 ---
 
 # unity-2d-sprites — the metadata is inside the importer, not in a file
@@ -19,6 +11,28 @@ description: >-
 > in importer data reached through `ISpriteEditorDataProvider`. There is no file to patch, and
 > **hand-editing the `.meta` corrupts it** — the capability checks in §2 exist precisely because
 > the importer's contract is not enforced by the type system.
+
+## Start here — symptom → where to look
+
+| Symptom | Go to |
+|---|---|
+| No live Editor, or no `eval` | [Getting there](#getting-there) — needs a live Editor (`unity-debug`) |
+| Sheet imported as a single sprite | §1 — `spriteImportMode` |
+| "Slice this sprite sheet" (grid, automatic, isometric); cut a sheet into frames | §3 |
+| Irregular frames, or a grid with padding between cells | §3 — `resources/Editor/AutomaticSliceSheet.cs` |
+| "Set the pivot on every frame"; frames right, pivots wrong | §3 pivots |
+| "Set up 9-slice on this panel"; a UI panel stretches its corners | §3 borders |
+| Slicing "worked" but the names are `sprite_0` | §3 naming |
+| Collider shape does not match the art | §4 outlines |
+| The script throws about capabilities | §2 — do not bypass it |
+| Loading a sprite **by filename** returns null, texture looks fine | §1 — `Multiple` with no rects |
+| Editor script will not compile, or cannot see `ISpriteEditorDataProvider`: the types "do not exist" | §0 — the asmdef reference |
+| New art in the folder never shows up in the game | §5 — the passes ran in the wrong order |
+| Import settings skip files that were already there | §5 — a postprocessor only fires on import |
+| A stretched effect sprite stops short of its target | `reference/sprite-geometry.md` §1 |
+| "Turn these frames into an animation" (an `AnimationClip`) | §7 — the clip, then the controller |
+| The character bobs or jumps between frames; an idle shimmers | §7 — the frames, not pivots |
+| The clip plays and nothing moves | §7 — the curve is bound to the wrong `path` |
 
 ## 0. The API is in a package, and a 3D project does not have it
 
@@ -60,27 +74,6 @@ here is fully qualified; saved as a `.cs` file, add the usings back. `unity comm
 30-second timeout; a large atlas needs `--timeout`. **The namespaces are not where you would
 guess** — `SpriteRect` and `SpriteNameFileIdPair` sit in `UnityEditor`, `GUID` is
 `UnityEngine.GUID` — so use the table in `reference/data-provider.md` §1, not reasoning.
-
-## Symptom → where to look
-
-| Symptom | Go to |
-|---|---|
-| Sheet imported as a single sprite | §1 — `spriteImportMode` |
-| Need to cut a sheet into frames | §3 |
-| Irregular frames, or a grid with padding between cells | §3 — `resources/AutomaticSliceSheet.cs` |
-| Frames are right, pivots are wrong | §3 pivots |
-| A UI panel stretches its corners | §3 borders |
-| Slicing "worked" but the names are `sprite_0` | §3 naming |
-| Collider shape does not match the art | §4 outlines |
-| The script throws about capabilities | §2 — do not bypass it |
-| Loading a sprite **by filename** returns null, texture looks fine | §1 — `Multiple` with no rects |
-| Editor script will not compile: the sprite types "do not exist" | §0 — the asmdef reference |
-| New art in the folder never shows up in the game | §5 — the passes ran in the wrong order |
-| Import settings skip files that were already there | §5 — a postprocessor only fires on import |
-| A stretched effect sprite stops short of its target | `reference/sprite-geometry.md` §1 |
-| Turn these frames into an animation | §7 — the clip, then the controller |
-| The character bobs or jumps between frames; an idle shimmers | §7 — the frames, not pivots |
-| The clip plays and nothing moves | §7 — the curve is bound to the wrong `path` |
 
 ## 1. The importer must be a Sprite, in Multiple mode, first
 
@@ -127,47 +120,14 @@ edit needs which: `reference/data-provider.md` §2.
 
 ## 3. Slicing, pivots, borders, names
 
-The three slicing shapes and what actually decides them:
-
-- **Grid** — fixed cell size, optional padding and offset, for a sheet authored on a grid.
-  Compute the cell count from the texture size; do not assume 16 columns.
-- **Automatic** — islands of non-transparent pixels, for irregular sheets; wrong where adjacent
-  frames touch (they merge into one rect) or a frame has a detached element (it splits in two).
-- **Isometric** — diamond cells for iso tilesets, where a grid slice cuts through neighbours.
-
-Slice against the real dimensions from `ITextureDataProvider`: the **importer's reported size can
-differ from the file's** once max-size and compression apply.
-
-**Pivots** are normalised `(0,0)`–`(1,1)` within each rect. Use the enum and cast it; never the
-raw number:
-
-```csharp
-r.alignment = UnityEngine.SpriteAlignment.Custom;   // not 9
-r.pivot     = new UnityEngine.Vector2(0.5f, 0f);    // bottom-centre: feet on the ground
-```
-
-`(0.5, 0)` is the one that matters for characters — a centre pivot sinks a character into the
-floor by half its height. The pivot goes wherever the sprite is anchored while it moves; other
-anchors and the transparent-margin check are in `reference/sprite-geometry.md`.
-
-**Borders** are `Vector4(left, bottom, right, top)` in pixels, and they are what 9-slice reads.
-A UI panel whose corners stretch has a zero border, not a scaling bug.
-
-**Names are the API surface of a sheet.** `Resources.Load`, Addressables and every animation
-clip reference sprites by name, so `sprite_0 … sprite_37` is a sheet nobody can use. Name during
-the slice, not after.
-
-> **On Unity 2021.2+, adding or removing sprites also requires updating the name↔fileID map**
-> (`SetNameFileIdPairs`), or existing references silently rebind to the wrong sprite —
-> `reference/data-provider.md` §3.
-
-**Re-slicing is not slicing.** A fresh `SpriteRect` with a fresh `GUID.Generate()` for a name that
-already exists throws away the identity everything serialised against — reuse the existing rect and
-replace only its `rect`, pivot and border. Where names are not stable the merge is geometric, in one
-of three modes: `reference/data-provider.md` §3.
-
-In `Single` mode there may be no rect to write to: for a pivot or a border, add one covering the
-whole texture, **named after the file stem** — the asset's API surface (§1).
+**Grid** (fixed cell; count cells from the texture size), **Automatic** (islands; merges touching
+frames, splits detached parts) or **Isometric** (diamond cells), against the real size from
+`ITextureDataProvider`. **Pivots** are normalised, set with `SpriteAlignment.Custom` (never `9`):
+`(0.5, 0)` for a character's feet. **Borders** are `Vector4(left, bottom, right, top)` in pixels —
+9-slice reads them; stretched corners mean a zero border. **Name during the slice** (`sprite_0` is
+unusable), update the name↔fileID map on 2021.2+, and **reuse existing rects when re-slicing**.
+In `Single` mode add a whole-texture rect named after the file stem. Each rule with its code:
+`reference/slicing-and-scripts.md` §3.
 
 ## 4. Outlines
 
@@ -178,32 +138,12 @@ other providers: `reference/data-provider.md` §1.
 
 ## 5. Style rules for generated scripts
 
-- **Standalone snippets only.** No `AssetPostprocessor`, no `MenuItem`: a postprocessor keeps
-  running against every future import, invisibly. **This rule is about scripts you write to do one
-  job once.** A committed, project-owned import postprocessor is a good shape — a human decided it
-  should exist forever — and `reference/import-pipeline.md` §2 covers it: it **only fires on
-  import**, and it takes `Single` vs `Multiple` from one helper shared with the slicer.
-- **Enums cast to their numeric type, never magic numbers.** `(int)SpriteAlignment.Center`, not
-  `1`. The numbering is not stable across versions and a raw number is unreadable at review.
-- **Verify afterwards** — read the rects back through a fresh provider (§6, and
-  `reference/data-provider.md` §2); skip the reimport and the in-memory change evaporates.
-
-**Ordering, when this is a project pipeline rather than one edit:** the metadata pass (reimport →
-mode → pivots, borders, slices) finishes before any generator writes `Sprite` references into
-ScriptableObjects, prefabs or catalogues — they capture references *at generation time*, so the
-other order serialises `null` with no error. Each pass is a separate headless invocation and
-**either can exit 0 having wired nothing**: assert on the artifacts, not the exit code.
-`reference/import-pipeline.md` §5.
-
-Scripts — adapt rather than rewrite. The slicers `resources/SliceSheet.cs` (grid),
-`resources/AutomaticSliceSheet.cs` (islands, or a padded grid) and
-`resources/IsometricSliceSheet.cs` run the checks above; `resources/SpriteToPng.cs` (pixels out)
-and `resources/SheetToAnimationClip.cs` (§7) open no provider at all. What each adds is in
-`reference/data-provider.md` §4.
-Run the §6 acceptance test (and the four reads in `reference/sprite-animation.md` §7 for a clip)
-before reporting any of them done.
-Project-scale pipeline: `reference/import-pipeline.md`; margins, motion-driven pivots, stretched
-borders: `reference/sprite-geometry.md`.
+Standalone snippets only (no `AssetPostprocessor`, no `MenuItem` for a one-off job; a committed
+project postprocessor is fine and **only fires on import**); enums cast, never magic numbers;
+verify by reading back through a fresh provider (§6). In a project pipeline the metadata pass
+finishes before any generator writes `Sprite` references, and either pass can exit 0 having wired
+nothing. The rules, the ordering and which script in `resources/` does what:
+`reference/slicing-and-scripts.md` §5.
 
 ## 6. The acceptance test: named sprites, not rects
 
@@ -233,7 +173,7 @@ plays while nothing moves); a new clip's **`frameRate = 60`**, so set it;
 between frames is fixed in the frames** (`codex-visual`), not in sixteen pivots; every
 rect takes ONE pivot, the sidecar's `pivot_norm`. **An idle that boils** plays one frame,
 moved in code. **Slice, `Apply()`, `SaveAndReimport()`, then build the clip** (§5), or the curve is
-full of nulls. The whole path is `reference/sprite-animation.md`; `resources/SheetToAnimationClip.cs`
+full of nulls. The whole path is `reference/sprite-animation.md`; `resources/Editor/SheetToAnimationClip.cs`
 runs it; `resources/Tests/SpriteFramesAudit.cs` re-measures the frames.
 
 ## Scope — what this skill does NOT do

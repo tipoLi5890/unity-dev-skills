@@ -653,11 +653,19 @@ def cmd_map(args) -> int:
     return 0 if report["ok"] else 2
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv in (["selftest"], ["--selftest"]):
         return selftest()
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0],
+    ap = UsageParser(description=__doc__.split("\n")[0],
                                  epilog="Exit codes: 0 pass, 2 a gate failed, 1 refused input.",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)

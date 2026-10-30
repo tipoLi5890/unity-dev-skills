@@ -4,7 +4,7 @@
 
 <p><b>Unity 6 skills that make Claude Code and Codex work like a careful Unity developer — and prove each step.</b></p>
 
-<p><i>60+ skills from the first idea to a build on a real phone.</i></p>
+<p><i>60 skills from the first idea to a build on a real phone.</i></p>
 
 <p>
 <a href=".claude-plugin/plugin.json"><img alt="version" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -128,7 +128,7 @@ flowchart LR
 ```
 
 - **Lands on the right method from your words.** Each skill opens with a table of symptoms in
-  plain language, and three start-here skills route any gameplay, UI or character request.
+  plain language, and four start-here skills route any gameplay, UI, character or backend request.
 - **Runs code, not advice.** 100+ Python scripts, 170+ C# files and 50+ templates you copy into
   your project instead of retyping notes.
 - **Proves it.** Methods end in a check you can read: a probe snapshot, a journey test, a re-imported FBX,
@@ -140,7 +140,8 @@ flowchart LR
 
 > [!TIP]
 > Not sure where to start? Use `unity-gameplay` for any gameplay request, `unity-game-ui` for any
-> UI request, and `game-character-pipeline` for a rigged character made from an image.
+> UI request, `game-character-pipeline` for a rigged character made from an image, and
+> `unity-live-services` for any backend, online or monetisation request.
 
 <details>
 <summary><b>Every stage — terminal & search</b> — the Unity CLI, and finding anything in a project</summary>
@@ -251,7 +252,7 @@ flowchart LR
 | [`codex-visual`](skills/codex-visual/SKILL.md) | 2D art through the `codex` image model, kept on-style by one art bible |
 | [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video and 3D models from your own ComfyUI, one job each |
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
-| [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | An image-to-3D character rigged in Blender, its FBX proven by re-import |
+| [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |
 | [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid rigged locally with your own Auto-Rig Pro, in one headless command |
 | [`humanoid-motion`](skills/humanoid-motion/SKILL.md) | A move as a clip, solved from a two-camera video straight onto the skeleton |
@@ -289,12 +290,10 @@ flowchart LR
 
 | Skill | Use it when |
 |---|---|
-| [`unity-live-services`](skills/unity-live-services/SKILL.md) | Putting a game on a backend safely, with the offline path designed first |
+| [`unity-live-services`](skills/unity-live-services/SKILL.md) | Start here for backend, online and monetisation: the offline path, multiplayer topology, the SDK-to-store seam |
 | [`unity-ugs`](skills/unity-ugs/SKILL.md) | A service that throws because nothing initialised: Gaming Services in the right order |
 | [`unity-iap`](skills/unity-iap/SKILL.md) | Content granted twice or not at all: In-App Purchasing v5, call by call |
 | [`unity-ads-levelplay`](skills/unity-ads-levelplay/SKILL.md) | No ads, or a build broken by ad dependencies: LevelPlay, consent before init |
-| [`unity-monetization`](skills/unity-monetization/SKILL.md) | Purchase and ad SDKs that break the build, the manifest or the store declaration |
-| [`unity-multiplayer`](skills/unity-multiplayer/SKILL.md) | Choosing the topology first, and keeping voice chat off another feature's microphone |
 | [`unity-multiplayer-services`](skills/unity-multiplayer-services/SKILL.md) | How players get into a game together, from join codes to host migration |
 | [`unity-vivox`](skills/unity-vivox/SKILL.md) | A voice join that succeeds while nobody hears: Vivox chat, sign-in to push-to-talk |
 

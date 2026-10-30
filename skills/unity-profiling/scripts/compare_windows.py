@@ -13,6 +13,9 @@ Exit codes, so a script can gate on this:
   3  the two sides are not comparable (different run mode, graphics device,
      screen size, vsync or warm-up) and --allow-mode-mismatch was not given
 
+`compare_windows.py selftest` (or --selftest) writes synthetic windows to a temp dir and checks
+each code above; one JSON line, exit 0 or 1.
+
 Examples:
 
   python3 compare_windows.py --show after.jsonl
@@ -26,8 +29,11 @@ Standard library only.
 import argparse
 import fnmatch
 import json
+import os
 import statistics
+import subprocess
 import sys
+import tempfile
 
 FRAME_STATS = ("median", "p95", "max")
 COMPARABILITY_KEYS = ("mode", "nullGraphics", "screen", "vsync")
@@ -300,8 +306,16 @@ def show(path):
 # ---------------------------------------------------------------- main
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def build_parser():
-    p = argparse.ArgumentParser(
+    p = UsageParser(
         description="Compare two perf-window JSONL files and flag regressions.",
         epilog="exit 0 clean · 1 usage · 2 regression · 3 not comparable")
     p.add_argument("baseline", nargs="?", help="JSONL written before the change")
@@ -392,5 +406,58 @@ def main(argv=None):
     return 2 if regressed else 0
 
 
+# ---------------------------------------------------------------- selftest
+
+
+def _window(label="hazard-lane", p95=16.0, draws=900, mode="player", warmup=60):
+    return {"schema": "perf-window/1", "label": label, "frames": 300, "warmup": warmup,
+            "run": {"mode": mode, "nullGraphics": False, "screen": "1920x1080", "vsync": 0},
+            "frameTime": {"median": p95 * 0.8, "p95": p95, "max": p95 * 1.5, "hitches": 0},
+            "counters": {"Render/Draw Calls Count": {"kind": "sampled", "median": draws, "p95": draws}}}
+
+
+def selftest():
+    checks, failed = 0, []
+
+    def run(*args):
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), *args], capture_output=True,
+                           text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        return r.returncode, r.stdout
+
+    def check(name, cond):
+        nonlocal checks
+        checks += 1
+        if not cond:
+            failed.append(name)
+
+    with tempfile.TemporaryDirectory(prefix="compare-selftest-") as d:
+        def jsonl(name, *windows):
+            path = os.path.join(d, name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("".join(json.dumps(w) + "\n" for w in windows))
+            return path
+
+        base = jsonl("before.jsonl", _window(), _window())
+        code, out = run(base, jsonl("same.jsonl", _window(p95=16.4)))
+        check("inside the threshold: exit 0", code == 0 and "result=clean" in out)
+        check("an improvement: exit 0", run(base, jsonl("fast.jsonl", _window(p95=12.0, draws=500)))[0] == 0)
+        code, out = run(base, jsonl("slow.jsonl", _window(p95=20.0)))
+        check("frameTime p95 +25%: exit 2", code == 2 and "REGRESSION" in out)
+        check("draw calls +50%: exit 2", run(base, jsonl("draws.jsonl", _window(draws=1350)))[0] == 2)
+        code, out = run("--format", "json", base, jsonl("slow2.jsonl", _window(p95=20.0)))
+        check("--format json regression: exit 2", code == 2 and json.loads(out)["regressed"] is True)
+        editor = jsonl("editor.jsonl", _window(mode="editor"))
+        check("another run mode: exit 3", run(base, editor)[0] == 3)
+        check("--allow-mode-mismatch: compared, exit 0", run("--allow-mode-mismatch", base, editor)[0] == 0)
+        check("no shared label: exit 1", run(base, jsonl("other.jsonl", _window(label="gate")))[0] == 1)
+        check("a line that is not a window: exit 1", run(base, jsonl("junk.jsonl", {"x": 1}))[0] == 1)
+        check("a missing file: exit 1", run(base, os.path.join(d, "none.jsonl"))[0] == 1)
+        check("a bad argument: exit 1", run("--no-such-flag")[0] == 1)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
+    return 0 if not failed else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["selftest"], ["--selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

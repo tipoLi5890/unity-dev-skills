@@ -170,7 +170,7 @@ column:
 | Per-layer culling distances | `unity-scene-optimisation` → `reference/culling-distances.md` |
 | Texture memory and mipmap streaming | `unity-scene-optimisation` → `reference/texture-streaming.md` |
 | Which interactable is selected: overlap on a tick in third person, a ray from the view in first person | `unity-interaction` → `reference/detection-choice.md` |
-| The switch and the gate: a switch owns a bool, the gate a state machine and its collider | `unity-interaction` → `reference/doors-and-switches.md` (`resources/GateSwitch.cs`, `templates/InteractionJourneyTest.cs`) |
+| The switch and the gate: a switch owns a bool, the gate a state machine and its collider | `unity-interaction` → `reference/doors-and-switches.md` (`resources/GateSwitch.cs`, `resources/GateTarget.cs`, `templates/InteractionJourneyTest.cs`) |
 | The use prompt, its glyph and hold ring | `unity-interaction` → `reference/prompts.md` |
 | Pickups counted once | `unity-interaction` → `reference/pickups.md` |
 | One swing, one damage event; hit and hurt layers | `unity-combat` → `reference/attack-windows.md`, then `unity-combat` → `reference/hit-and-hurt-layers.md` |

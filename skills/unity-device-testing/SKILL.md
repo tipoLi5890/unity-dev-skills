@@ -1,16 +1,8 @@
 ---
 name: unity-device-testing
 description: >-
-  Run acceptance tests on a REAL Android or iOS device from a terminal: an agent
-  drives, a human does only the physical part. A probe scene that logs one
-  tagged line per state change, an adb / devicectl driver that asserts on those
-  lines, system dialogs tapped for you, files pulled back, and three exit codes
-  that separate a real failure from a broken harness. Load for "test it on the
-  phone", "unplug / replug / background it and check", "the screenshot is
-  black", "adb lost the device", "how do I read logs from an iPhone", "passes
-  once, fails the next run", "compare two devices". Building the artifact is
-  unity-android-release or unity-ios-build; the editor-side harness is
-  unity-play-harness.
+  Test on a real Android or iOS phone from a terminal; stutters on device but
+  runs fine in the editor.
 ---
 
 # unity-device-testing — the phone is an instrument; prove it before you read it
@@ -26,6 +18,17 @@ them is the thing you were testing.
 
 So the rule is the one `unity-debug` applies to the editor, moved to hardware: **check the
 instrument first**, and make the run say which of the three parties failed.
+
+## Symptom → where to look
+
+| The report | Go to |
+|---|---|
+| "test it on the phone", an acceptance run on real hardware | *The four parts*, then *Pre-flight* |
+| "unplug / replug / background it and check" | `reference/human-in-the-loop.md`, `reference/android-driver.md` |
+| "the screenshot is black", "adb lost the device" | *Pre-flight* |
+| "how do I read logs from an iPhone" | *Two platforms, two log channels*, `reference/ios-driver.md` |
+| "passes once, fails the next run", "compare two devices" | `reference/verdicts-and-evidence.md` |
+| Stutters on device but runs fine in the editor | Confirm it on the device here (probe `diag` lines), then measure the frame-time window with `unity-profiling` |
 
 ## The four parts
 
@@ -111,16 +114,8 @@ Tools/ios-acceptance.sh --device <udid> --bundle com.example.probe --wait
 
 ## Scope — what this skill does NOT do
 
-| Not here | Go to |
-|---|---|
-| Building, signing, reading back an Android artifact | `unity-android-release` |
-| Unity → Xcode → signed → installed on an iPhone | `unity-ios-build` |
-| Probes, situations and journeys inside the editor | `unity-play-harness` |
-| Trusting a results file, exit codes, PlayMode side effects | `unity-debug` |
-| Frame-time windows and counters on the device | `unity-profiling` |
-| Device farms, cloud labs, store review testing | Not covered — this is one phone on your desk |
-
-## Related skills
-
-`unity-play-harness` for the same observability idea inside the editor · `unity-debug` for harness
-trust · `unity-android-release` and `unity-ios-build` for the artifact you install.
+The skills named in *Load what the situation needs* own their parts: building and signing the
+Android artifact (`unity-android-release`), getting onto an iPhone at all (`unity-ios-build`),
+probes and journeys inside the editor (`unity-play-harness`), trusting a results file or an exit
+code (`unity-debug`), and frame-time windows on the device (`unity-profiling`). Device farms,
+cloud labs and store review testing are not covered — this is one phone on your desk.

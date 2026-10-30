@@ -488,7 +488,8 @@ Settings > Custom Main Manifest**, then add inside the `<activity>`:
 ```
 
 Scheme and host come from the configured redirect URL. What that manifest edit does to the merged
-manifest and to the store submission is `unity-monetization`.
+manifest and to the store submission is
+`unity-live-services` → `reference/monetization.md`.
 
 ### A proxy page, for production
 

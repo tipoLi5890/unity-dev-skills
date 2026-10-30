@@ -488,7 +488,7 @@ def selftest(d):
 
 
 def _main(argv):
-    if argv == ["selftest"]:
+    if argv in (["selftest"], ["--selftest"]):
         with tempfile.TemporaryDirectory(prefix="registry-ingest-") as d:
             try:
                 selftest(d)

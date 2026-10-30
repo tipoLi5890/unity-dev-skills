@@ -39,8 +39,8 @@ already play on the character's skeleton: Unity never retargets across skeletons
 ## Exit codes differ between tools
 
 `mesh_check.py`, `arp_markers.py`, `deform_gate.py`, `contract_map.py`, `motion_metrics.py`,
-`contact_bake.py`, `autorig.py` and `twocam.py` exit 0 pass, 2 a gate failed, 1 refused input.
-`rig_gate.py` and `clip_metrics.py` exit 0 pass, 1 a gate failed, 2 refused. A stage runner reads
+`clip_metrics.py`, `contact_bake.py`, `autorig.py` and `twocam.py` exit 0 pass, 2 a gate failed,
+1 refused input or a usage error. `rig_gate.py` exits 0 pass, 1 a gate failed, 2 refused. A stage runner reads
 each tool's own table; it never treats every non-zero exit alike.
 
 ## Not a route here

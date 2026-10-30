@@ -230,8 +230,16 @@ def fetch_object_info(a) -> tuple:
     return {"tool": "film.py", "op": "object-info", "out": a.out, "spec": spec, "ok": True}, 0
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser():
-    ap = argparse.ArgumentParser(prog="film.py", description=__doc__.split("\n")[0])
+    ap = UsageParser(prog="film.py", description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("ref"); r.add_argument("prompt"); r.add_argument("out_dir")
@@ -373,7 +381,7 @@ def _selftest(check, checks) -> int:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
     a = parser().parse_args(argv)
     try:

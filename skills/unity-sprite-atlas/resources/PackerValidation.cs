@@ -7,7 +7,7 @@
 // the wrong pixels. Nothing downstream re-checks the layout, so check it here.
 //
 // Used by MultiPagePacker.cs and SizeOptimizedPacker.cs; drop it beside any packer of
-// your own. Read ScriptablePackerExample.cs for the shape of the nested types these
+// your own. Read GridAtlasPacker.cs for the shape of the nested types these
 // methods take — PackerData, SpriteData and SpritePack are all ScriptablePacker.<Name>.
 using System.Text;
 using UnityEngine;

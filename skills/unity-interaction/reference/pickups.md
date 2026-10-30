@@ -1,8 +1,8 @@
 # Pickups — taken once, counted once, handed back to the pool
 
 > Part of the `unity-interaction` skill. `resources/Pickup.cs`: a pickup collected by touch or by
-> the interact press, a magnet that is a distance check, `PickupBag` as the smallest inventory,
-> and what "already taken" means across a save. Worked settings: parcels along the **side run**
+> the interact press, a magnet that is a distance check; `resources/PickupBag.cs`: `PickupBag` as
+> the smallest inventory; and what "already taken" means across a save. Worked settings: parcels along the **side run**
 > and the **depot** aisles; a key in the **gate room**.
 
 ## 1. Two kinds, one component

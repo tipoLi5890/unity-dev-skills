@@ -4,7 +4,7 @@
 // a fixed number of sprites. A per-sprite cap is the version that looks right and packs
 // badly — 64 small sprites fill a fraction of a 2048 page, 64 large ones never fitted.
 //
-// Read ScriptablePackerExample.cs first: the shape of the type (Pack public, Fit protected,
+// Read GridAtlasPacker.cs first: the shape of the type (Pack public, Fit protected,
 // the nested data types, the NativeArray write-back) is stated there and assumed here.
 // Attach an instance the same way, with SpriteAtlasAsset.SetScriptablePacker.
 //

@@ -348,7 +348,7 @@ Same binding name, different component and a different sizing model.
 - The animated object needs an `Animator`, and `path` is relative to it. On a UI hierarchy that is
   usually a parent panel with the `Image` some levels down, so `path` is a real path, not `""`.
 
-`resources/SheetToAnimationClip.cs` implements all of the above end to end — a folder of frame PNGs
+`resources/Editor/SheetToAnimationClip.cs` implements all of the above end to end — a folder of frame PNGs
 or one sliced texture, an output clip, fps, loop flag, target type, optional controller and optional
 end event. It reads one thing from `frames.json` (`fps_hint`) and takes the sprites as the importer
 publishes them, so a canvas that is not 512 and a sidecar with the newer fields change nothing in

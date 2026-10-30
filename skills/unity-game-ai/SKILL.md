@@ -1,16 +1,8 @@
 ---
 name: unity-game-ai
 description: >-
-  Enemy behaviour in 2D and 3D that perceives on a budget, decides on a tick
-  and leaves movement to whoever owns the transform: a code state machine, a
-  small behaviour tree, a vision cone as distance, angle and one cast,
-  hearing, memory, patrol and chase, 2D pathfinding, wave spawners,
-  turn-based move scoring, and a journey proving the sentry chases only after
-  it sees. Load for: "the enemy sees me through walls", "the guard never
-  gives up", "it flickers between two states", "every enemy raycasts every
-  frame", "enemies spawn on top of me", "the AI picks a dumb move".
-  Baking and agents are unity-navigation; grid A* is unity-2d-grid; damage is
-  unity-combat; doors are unity-interaction.
+  Enemy AI in 2D and 3D: sight, hearing, patrol and chase, state machines,
+  behaviour trees, waves.
 ---
 
 # unity-game-ai — perception on a budget, decisions on a tick, movement by whoever owns the transform
@@ -21,6 +13,19 @@ description: >-
 > `transform.position` is a second writer beside the agent, the motor or the cell map that
 > already owns it. Neither is fixed by a cleverer brain. Both are fixed by three layers on three
 > clocks.
+
+## Symptom → where to look
+
+| The report | Go to |
+|---|---|
+| "the enemy sees me through walls", sees behind itself | `reference/perception.md` |
+| "the guard never gives up", the leash, losing the target | `reference/patrol-and-chase.md` |
+| "it flickers between two states" | `reference/state-machine.md` (hysteresis) |
+| "every enemy raycasts every frame" | `reference/perception.md` (the cast budget), *Discipline* |
+| "enemies spawn on top of me", waves | `reference/spawners-and-waves.md` |
+| "the AI picks a dumb move" on a board | `reference/tactics-ai.md` |
+| A first enemy from nothing | §0, then §1 |
+| Anything else | *Load what the situation needs* |
 
 ```
 perceive ───────────► decide ─────────────► act ──────────────────► IMover
@@ -41,8 +46,6 @@ The seam is the blackboard on one side and `IMover` on the other. That is what l
 prove the sentry's decisions with no NavMesh in the scene, and lets the same brain walk a 3D
 gate room, a 2D depot and a board of cells.
 
----
-
 ## 0. Pick who moves the enemy
 
 One owner per enemy, chosen by the world it walks on, before any state is written.
@@ -57,44 +60,23 @@ One owner per enemy, chosen by the world it walks on, before any state is writte
 
 ## 1. Start here — the gate room sentry
 
-1. **Decide the numbers** before the room exists. They are fairness, not tuning:
-
-| Number | Start | Decides |
-|---|---|---|
-| Sight range · cone | 6 units · 70° | Whether the player sees the cone before it sees them; keep it inside the camera's view |
-| Keep range · cone | 7.5 units · 100° | Hysteresis: a runner on the cone's edge is not seen and lost every tick |
-| Decision interval | 0.1 s | Worst-case delay before anything is noticed; the cost of every sentry |
-| Reaction time | 0.4 s | How long the player has to break sight after the sentry turns |
-| Memory | 3 s | How long hiding takes to work |
-| Patrol · chase speed | 2 · 4 (the runner is 5) | Whether a seen runner can still get away |
-| Stopping distance · attack range | 1 · 1.5 | Where the chase ends and combat begins |
-| Leash | 15 units from home | How far a sentry can be dragged off its post |
-
-2. **Build the sentry.** `SentryBrain` + one mover (`NavMeshAgentMover` beside a
-   `NavMeshAgent`) + a target. Cover goes on its own layer and into `blockers`; the sentry and the
-   runner never sit on a cover layer. In 2D set `plane` to XY, both heights to 0, and add
+1. **Decide the numbers before the room exists** — they are fairness, not tuning: sight 6 units ·
+   70°, keep 7.5 · 100° (hysteresis), decision every 0.1 s, reaction 0.4 s, memory 3 s, patrol ·
+   chase speed 2 · 4 against a runner at 5, stop 1 · attack 1.5, leash 15 from home.
+2. **Build the sentry**: `SentryBrain` + one mover (`NavMeshAgentMover` beside a `NavMeshAgent`)
+   + a target; cover on its own layer in `blockers`. In 2D: `plane` XY, heights 0,
    `resources/Perception2D.cs`.
-3. **Register with the probe**, where the game wires its harness:
+3. **Register with the probe**: `GameProbe.Register("sentry", () => sentry.StateName)` and
+   `"sentryAlert"` (0..1).
+4. **Prove it** with `templates/SentryJourneyTest.cs` (primitives, no NavMesh): no reaction
+   outside the cone or behind a wall; notice within one tick, chase after the reaction time; back
+   to patrol after the memory time.
+5. **Show the gate can fail**: `SENTRY_JOURNEY_BREAK=los`, `=cone`, `=memory` each turn tests red.
+6. **Then add the world**: the surface and agent (`unity-navigation`), the attack
+   (`unity-combat`), the gate it cannot pass (`unity-interaction`).
 
-```csharp
-GameProbe.Register("sentry", () => sentry.StateName);     // Patrol · Suspicious · Chase · Return
-GameProbe.Register("sentryAlert", () => sentry.Alert);    // 0..1
-```
-
-4. **Prove it** with `templates/SentryJourneyTest.cs`, which builds a post, a wall and a runner
-   from primitives and needs no NavMesh:
-
-| Test | Asserts |
-|---|---|
-| `Sentry_DoesNotReact_OutsideTheConeOrBehindAWall` | With the runner in range behind the sentry, then behind cover, the state never leaves Patrol and alert stays 0 |
-| `Sentry_NoticesWithinOneDecisionTick_AndChasesAfterItsReactionTime` | Never before the room says the runner is visible; out of Patrol within 0.1 s of it; Chase 0.4 s after, give or take a tick; closes to the stopping distance and no nearer |
-| `Sentry_ReturnsToPatrol_AfterLosingTheRunnerForTheMemoryTime` | The chase is held for 3 s after the runner vanishes, not less and not more; then Return, then Patrol at the post |
-
-5. **Show the gate can fail.** `SENTRY_JOURNEY_BREAK=los` (the cast is skipped) turns the first
-   two tests red, `=cone` (360°) the first, `=memory` (30 s) the third. A journey nobody has
-   seen fail proves nothing.
-6. **Then add the world**: the surface and the agent (`unity-navigation`), the attack
-   (`unity-combat`), the gate the sentry cannot pass (`unity-interaction`).
+The numbers table, every test's assertion and which break turns which test red:
+`reference/gate-room-sentry.md`.
 
 ## Load what the situation needs
 

@@ -471,8 +471,16 @@ def gates_of(result: dict, poses, args) -> list:
     ]
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser():
-    p = argparse.ArgumentParser(prog="deform_gate.py", description=__doc__.split("\n")[0],
+    p = UsageParser(prog="deform_gate.py", description=__doc__.split("\n")[0],
                                 epilog="Exit codes: 0 pass, 2 a gate failed, 1 refused input.")
     p.add_argument("--armature")
     p.add_argument("--mesh")
@@ -847,6 +855,8 @@ def selftest() -> tuple[int, dict]:
 
 def main() -> None:
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
+    if argv[:1] == ["selftest"]:                        # `selftest` and `--selftest` are one command
+        argv = ["--selftest", *argv[1:]]
     args = parser().parse_args(argv)
     try:
         import bpy  # noqa: F401

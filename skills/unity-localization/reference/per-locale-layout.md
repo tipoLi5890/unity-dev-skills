@@ -81,3 +81,24 @@ the language afterwards so the next test does not inherit it.
 
 Worth capturing per locale, at minimum: any screen with a fixed-width button or chip, any list row
 built from content names, and the language screen itself.
+
+## The uGUI recipe, and the two rules, in one place
+
+German and Finnish run long; CJK runs short but tall. For uGUI text that must absorb both:
+`VerticalLayoutGroup` (Child Control Height on, Child Force Expand Height off), one
+`ContentSizeFitter` per label (Vertical Fit = Preferred Size), TMP word wrapping on and
+Overflow = Overflow. After setting text programmatically,
+`LayoutRebuilder.ForceRebuildLayoutImmediate(parent)` — otherwise the box is sized for the
+previous string.
+
+Two rules that only appear once a second script ships:
+
+- **Size fixed-width controls from measured text, never from the source language.**
+  `label.GetPreferredValues(text).x` gives the width at the component's current font and size
+  without a layout rebuild. Where a fixed width is unavoidable, size it against the **longest**
+  locale and put the reason in a comment (260 px pills fit Chinese and split on Japanese
+  `キャンセル`; 320 px fixed it), and add `NoWrap` + `TextOverflowModes.Ellipsis` so the next
+  surprise degrades instead of reflowing the screen.
+- **If the per-locale font is bound when a label is constructed, changing locale does nothing
+  until the UI is rebuilt.** Expose one public "rebuild and re-enter the current screen" entry
+  point rather than a locale-changed event nothing can usefully handle.

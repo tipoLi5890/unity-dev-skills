@@ -1,15 +1,7 @@
 ---
 name: unity-urp-migration
 description: >-
-  Move a Built-in Render Pipeline project to URP in five gated phases, and
-  diagnose one that was half-moved. Load for: "migrate / upgrade / convert this
-  project to URP", "everything went pink or magenta after switching to URP",
-  "the Render Pipeline Converter ran but it still looks Built-in", "convert PPv2
-  or PostProcessVolume to a URP Volume", "my Standard materials became
-  2D/Mesh2D-Lit-Default", "lightmaps look blown out after URP", "GrabPass /
-  OnRenderImage / surface shader no longer works in URP", "which quality
-  settings moved into the URP asset". Post-processing that will not appear on a
-  project already on URP, Render Graph review and HDRP stay out.
+  Migrate a Built-in project to URP, or fix a half-moved one: pink materials, PPv2, old shaders.
 ---
 
 # unity-urp-migration — five phases, each one read back before the next
@@ -25,29 +17,29 @@ description: >-
 | Symptom | Go to |
 |---|---|
 | "Migrate / upgrade this project to URP" | §1, starting at Phase 0 |
-| Everything is magenta | `reference/material-conversion.md` — incomplete material conversion |
+| "Everything went pink or magenta after switching to URP" | `reference/material-conversion.md` — incomplete material conversion |
 | Not magenta, but white or untextured | `reference/material-conversion.md` — the snapshot and restore steps |
-| A 3D material landed on `Universal Render Pipeline/2D/Mesh2D-Lit-Default` | `reference/material-conversion.md` §trap |
-| "It says it migrated" and it still looks Built-in | §3 trap 1 — check Graphics settings **and every quality tier**; resolver in `unity-render-urp` → `reference/resolve-active-pipeline.md` |
-| Post-processing vanished, or the project used the old stack | `reference/ppv2-to-volumes.md` |
+| "My Standard materials became 2D/Mesh2D-Lit-Default" | `reference/material-conversion.md` §trap |
+| "The Render Pipeline Converter ran but it still looks Built-in" | §3 trap 1 — check Graphics settings **and every quality tier**; resolver in `unity-render-urp` → `reference/resolve-active-pipeline.md` |
+| Convert PPv2 / `PostProcessVolume` to a URP Volume; post-processing vanished | `reference/ppv2-to-volumes.md` |
 | Scene is blown out or far too dark | `reference/ppv2-to-volumes.md` (two stacks running) before `reference/lighting-and-probes.md` |
-| Lightmaps or probes look wrong | `reference/lighting-and-probes.md` |
-| `GrabPass`, `OnRenderImage`, `#pragma surface`, `SetReplacementShader` | `reference/shader-migration.md` |
-| "Where did shadow distance / MSAA / HDR go?" | `reference/migration-phases.md` §quality map |
+| Lightmaps look blown out after URP; probes look wrong | `reference/lighting-and-probes.md` |
+| `GrabPass`, `OnRenderImage`, a surface shader (`#pragma surface`), `SetReplacementShader` no longer work | `reference/shader-migration.md` |
+| "Which quality settings moved into the URP asset?" — shadow distance, MSAA, HDR | `reference/migration-phases.md` §quality map |
 | The pass stopped right after the package installed | §1 — that is a phase boundary; resume, do not restart |
 | A 2D project | §2, path B — a different renderer and a different upgrader set |
-| `unity status` shows no row and no error | §4, the floor trap |
-| Before-and-after pictures wanted | `resources/SceneCapture.cs` |
+| `unity status` shows no row and no error | [`reference/execution-and-report.md`](reference/execution-and-report.md) §4, the floor trap |
+| Before-and-after pictures wanted | `resources/Editor/SceneCapture.cs` |
 
 ## 1. The five phases
 
 | Phase | Work | Gate | Scripts |
 |---|---|---|---|
-| **0 · Inspect** | Pipeline at Graphics settings and at every tier; packages; risk grep; old post-processing found by component type; materials bucketed; lighting state | A report **and** a confirmed rollback point | `resources/MigrationAudit.cs` |
-| **1 · Pipeline + materials** | Install or reuse URP; asset and renderer; assign at Graphics and every tier; snapshot → convert → restore → verify | `GetRenderPipelineAssetAt(i)` right on every tier; every converted material's `shader.name` matches its mapped target; every material that had `_MainTex` has a non-null `_BaseMap` | `resources/PipelineAssignment.cs` · `resources/MaterialConverter.cs` |
-| **2 · Post-processing** | Persisted `VolumeProfile`; scene `Volume.sharedProfile`; camera post-processing on; legacy components disabled | After a reload, components are non-null; the **saved** scene references the profile; legacy components re-query as disabled with the scene saved clean | `resources/VolumeMigration.cs` |
-| **3 · Lighting + probes** | Identify a stale bake; scene references a URP `.lighting`; rebake or declare partial; probe settings on the asset | Saved scene points at the `.lighting`; bake evidence or an explicit `partial`; `m_ReflectionProbeBlending: 1` in the asset text | `resources/LightingMigration.cs` |
-| **4 · Validate + report** | Save, reload, re-query; capture; console; wording | Every gate above passes | `resources/MigrationGate.cs` · `resources/SceneCapture.cs` |
+| **0 · Inspect** | Pipeline at Graphics settings and at every tier; packages; risk grep; old post-processing found by component type; materials bucketed; lighting state | A report **and** a confirmed rollback point | `resources/Editor/MigrationAudit.cs` |
+| **1 · Pipeline + materials** | Install or reuse URP; asset and renderer; assign at Graphics and every tier; snapshot → convert → restore → verify | `GetRenderPipelineAssetAt(i)` right on every tier; every converted material's `shader.name` matches its mapped target; every material that had `_MainTex` has a non-null `_BaseMap` | `resources/Editor/PipelineAssignment.cs` · `resources/Editor/MaterialConverter.cs` |
+| **2 · Post-processing** | Persisted `VolumeProfile`; scene `Volume.sharedProfile`; camera post-processing on; legacy components disabled | After a reload, components are non-null; the **saved** scene references the profile; legacy components re-query as disabled with the scene saved clean | `resources/Editor/VolumeMigration.cs` |
+| **3 · Lighting + probes** | Identify a stale bake; scene references a URP `.lighting`; rebake or declare partial; probe settings on the asset | Saved scene points at the `.lighting`; bake evidence or an explicit `partial`; `m_ReflectionProbeBlending: 1` in the asset text | `resources/Editor/LightingMigration.cs` |
+| **4 · Validate + report** | Save, reload, re-query; capture; console; wording | Every gate above passes | `resources/Editor/MigrationGate.cs` · `resources/Editor/SceneCapture.cs` |
 
 Package installs, domain reloads and bakes are **phase boundaries**. When one interrupts the
 pass, resume from the first gate that did not pass — never from the beginning, because
@@ -107,45 +99,10 @@ data, not history; they keep lighting the scene until something clears them.
 `Lightmapping.Clear()` is not evidence until the scene is saved and re-read. "Probes refreshed"
 needs a bake result, not an intention.
 
-## 4. Execution path
+## 4–5. Execution path, report wording → `reference/execution-and-report.md`
 
-Getting to a connected Editor, the command catalog, and telling an absent Editor from one in
-Safe Mode is `unity-cli`. Every script here goes under `Assets/Editor/`, compiles, and is then
-called with one line:
-
-```bash
-unity command eval --code 'return UnityDev.UrpMigration.MigrationAudit.Run();'
-```
-
-`unity command` defaults to a 30-second timeout. A package install or a bake outrunning it is a
-**phase boundary**, not a reason to raise the timeout. Each script returns a single `[URP-MIG]`
-line assembled from re-read saved state, and logs the same line so it also lands in the console.
-
-> **Floor trap.** The `com.unity.pipeline` package's manifest allows an Editor line older than
-> the one it compiles on: it uses build-callback types that the earlier line never shipped, so
-> the resolve succeeds and the compilation right after it does not. The symptom is misleading — `unity status`
-> shows no row **and no error**, so it reads as a CLI problem. The check is the Editor log:
->
-> ```bash
-> grep -c 'error CS0246' <Editor.log>
-> ```
->
-> with hits naming `IPreprocessBuildWithContext` or `BuildCallbackContext`. That is an Editor
-> too old for the package, not a broken CLI. Confirm the floor on your version by reading the
-> package changelog. **This bites here more than anywhere else**: a project still on the
-> built-in pipeline is often on an older Editor by the same history.
-
-## 5. Report wording
-
-- **`Complete`** only when every Phase 4 gate is true. Not one of them, not most of them.
-- **`Partial migration`** when the pipeline and materials landed but post-processing
-  persistence, legacy disablement, the bake, the probes or a saved-state check is still open.
-- **`Manual follow-up`** names the items precisely: the old stack's screen-space reflections, a
-  specific custom shader, a `GrabPass`, a replacement shader, a package-owned shader.
-
-> **A report whose next steps include "rebake lighting" or "refresh probes" is partial by
-> definition.** Those are the phase, not a suggestion after it. Do not pair them with
-> "complete", and do not open the answer with "successfully migrated" while any gate is false.
+§4 driving the passes through the CLI and a live Editor, and the floor trap where `unity status`
+shows no row and no error; §5 matching the report's wording to the gate that passed.
 
 ## Load what the situation needs
 
@@ -156,12 +113,12 @@ line assembled from re-read saved state, and logs the same line so it also lands
 | The old post-processing stack, empty profiles, double post-processing | `reference/ppv2-to-volumes.md` |
 | Lightmaps, a stale bake, reflection probes, exposure balance | `reference/lighting-and-probes.md` |
 | Custom shaders, `GrabPass`, `OnRenderImage`, replacement shaders | `reference/shader-migration.md` |
-| Volume API, parameter ranges, `overrideState`, the five-switch pre-flight | `unity-render-urp` |
+| Volume API, parameter defaults, types and ranges, `overrideState`, grade presets, the five-switch pre-flight | `unity-render-urp` |
 | Which pipeline is actually in force, including per-tier and per-platform | `unity-render-urp` → `reference/resolve-active-pipeline.md` |
-| Porting a full-screen effect onto a project already on Render Graph | `unity-render-urp` → `reference/render-graph-review.md` |
+| Porting a full-screen effect onto a project already on Render Graph; reviewing a renderer feature | `unity-render-urp` → `reference/render-graph-review.md` |
 | `sharedProfile` versus `profile`, and undo from `eval` | `unity-render-urp` → `reference/volume-templates.md` |
-| Reaching the Editor at all; installing; the command catalog | `unity-cli` |
-| Reading the command envelope; a confirm gate; screenshots | `unity-debug` → `reference/editor-control.md` |
+| Reaching the Editor at all; installing CLI, editors, licences; the command catalog | `unity-cli` |
+| Reading the command envelope; a confirm gate; screenshots and logs | `unity-debug` → `reference/editor-control.md` |
 | "It got slower after the migration" — numbers across the change | `unity-profiling` |
 | A 2D project's camera, upscaling and pipeline detection | `unity-2d-pixel-perfect` |
 
@@ -192,12 +149,7 @@ line assembled from re-read saved state, and logs the same line so it also lands
 | Not here | Go to |
 |---|---|
 | Post-processing that will not appear on a project already on URP | `unity-render-urp` |
-| Volume parameter defaults, types and ranges; grade presets | `unity-render-urp` |
-| Reviewing a Render Graph renderer feature | `unity-render-urp` |
-| Installing the CLI, editors, licences; connecting to an Editor | `unity-cli` |
-| Verifying a change on screen; reading logs; driving the Editor | `unity-debug` |
-| What the migration cost in frame time | `unity-profiling` |
-| 2D camera setup and upscaling after the move | `unity-2d-pixel-perfect` |
+| Volume parameters and grades, Render Graph review, the CLI, on-screen verification, frame-time cost, 2D upscaling | the handoff rows of the table above |
 | Sprite import, atlases and tilemaps in their own right | `unity-2d-sprites` · `unity-sprite-atlas` · `unity-tilemap` |
 
 **Shading maths stays out.** This skill decides *how a shader should be ported* and what

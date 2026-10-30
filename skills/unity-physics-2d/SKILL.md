@@ -1,16 +1,7 @@
 ---
 name: unity-physics-2d
 description: >-
-  Diagnose 2D physics in Unity when Box2D disagrees with what the scene looks
-  like: a symptom-routed triage ladder in Box2D's own vocabulary, a two-sided
-  debug probe and a read-only scene audit. Load for: "OnCollisionEnter2D never
-  fires", "OnTriggerEnter2D never fires", "the bullet goes through the tilemap
-  wall", "the ground check hits the player itself", "the character snags on
-  tile edges", "the one-way platform blocks from below", "OnTriggerStay2D
-  stops after a moment", a Rigidbody2D that jitters, or a tilemap that falls
-  when a composite collider is added. The player's own movement code is
-  unity-2d-controller; a tile's collider type is unity-tilemap; PhysX is
-  unity-physics-3d.
+  2D physics bugs: OnCollisionEnter2D never fires, tunnelling, self-hit casts, one-way platforms.
 ---
 
 # unity-physics-2d — Box2D answers in its own vocabulary
@@ -33,13 +24,13 @@ First match wins. **Stop at the first cause you confirm** and write the diagnosi
 | A ground check reports the caster itself, or a cast misses what is in its path | §3 |
 | A click through the camera finds no 2D collider | §3 — a 3D ray against 2D shapes |
 | `OnTriggerStay2D` / `OnCollisionStay2D` ran, then went quiet | §4 — the body fell asleep |
-| The runner stutters while the camera follows | §4 |
-| The tilemap falls out of the scene on Play | §5 — the composite's body |
-| The runner snags on flat ground or on tile seams | §5 |
-| A body ends up inside a wall and stays there | §5 — outlines are hollow |
-| The one-way platform blocks from below, or grips at the sides | §6 |
-| Works in the editor, not in the build | §7 |
-| Collisions changed after a respawn or a return to the pool | §7 — per-instance ignore pairs |
+| A `Rigidbody2D` jitters; the runner stutters while the camera follows | §4 |
+| The tilemap falls out of the scene on Play, or when a composite collider is added | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §5 — the composite's body |
+| The runner snags on flat ground, tile edges or seams | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §5 |
+| A body ends up inside a wall and stays there | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §5 — outlines are hollow |
+| The one-way platform blocks from below, or grips at the sides | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §6 |
+| Works in the editor, not in the build | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §7 |
+| Collisions changed after a respawn or a return to the pool | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §7 — per-instance ignore pairs |
 
 ## 0. Before diagnosing
 
@@ -158,60 +149,10 @@ Every query, the list overloads, the filter fields and the start-inside table:
 Each of these in full, with `Rigidbody2D.Slide`:
 [`reference/bodies-and-simulation.md`](reference/bodies-and-simulation.md).
 
-## 5. Shapes that are not what they look like
+## 5–7. Shapes, one-way platforms, editor versus build → `reference/shapes-platforms-build.md`
 
-- **Adding a `CompositeCollider2D` adds a `Rigidbody2D`, and it is Dynamic.** The level falls on
-  Play. Set the body to `Static`.
-- **A child joins the composite only with `compositeOperation` set** — `Merge` for level
-  geometry; `usedByComposite` is the deprecated spelling. At `None` the seams stay.
-- **`GeometryType.Outlines` is edges: no interior.** A body teleported inside is not pushed out,
-  `OverlapPoint` inside finds nothing, and two outline composites never collide with each other.
-  `Polygons` is solid and costs more shapes. Static level: `Outlines`. Anything that moves, or
-  must answer "is this point inside": `Polygons`.
-- **A `TilemapCollider2D` alone is one shape per tile.** A box sliding over the row catches the
-  shared corner of two neighbours and stops dead on flat ground — the ghost-vertex snag. Merge
-  into a composite; an `EdgeCollider2D` has `useAdjacentStartPoint` / `useAdjacentEndPoint` for
-  the same reason.
-- **`Collider2D.errorState` names a collider with no shapes**: `NoShapes` or `RemovedShapes`
-  when the geometry is too small or its vertices too close. The inspector shows nothing. A body
-  rotated about X or Y flattens its shapes the same way.
-- **A `PolygonCollider2D` copies the sprite's physics outline once, when it is added** —
-  `unity-2d-sprites` → `reference/sprite-geometry.md`.
-
-Tile collider types, composite set-up, runtime `SetTile` and one-way tiles:
-[`reference/tilemap-colliders.md`](reference/tilemap-colliders.md).
-
-## 6. Effectors and one-way platforms
-
-1. **The collider must set `usedByEffector`**, or the `PlatformEffector2D` beside it does
-   nothing. Under a composite the flag belongs on the `CompositeCollider2D`.
-2. **`useOneWay` is on and `surfaceArc` is narrower than 180**: about `170`. At 180 the side
-   faces count as top and the runner hangs on the platform's edge.
-3. **The pass direction is the effector's local up** plus `rotationalOffset`: a platform rotated
-   180° passes the wrong way.
-4. **`useColliderMask` replaces the layer matrix for this collider**: a layer missing from the
-   effector's `colliderMask` falls through.
-5. **A runner made of two colliders is held half way** until `useOneWayGrouping` is on.
-6. **Dropping through is a per-pair ignore**: `Physics2D.IgnoreCollision(runner, platform)` for
-   0.25 s, then restore. Disabling the platform drops every sentry standing on it.
-
-Area, point and buoyancy effectors want a trigger collider; a surface effector a solid one.
-Effectors and the five joints worth knowing:
-[`reference/effectors-and-joints.md`](reference/effectors-and-joints.md).
-
-## 7. Editor yes, build no
-
-- **`SimulationMode2D.Update` ties the step to the frame rate**, and so do forces written in
-  `Update`: the Editor at 300 fps and a phone at 60 integrate different jumps. Keep `FixedUpdate`
-  and set `Fixed Timestep` on purpose.
-- **A layer name resolving to `-1` is a layer that is not defined**, in the Editor too:
-  `LayerMask.GetMask` returns 0 for it and that filter finds nothing. Assert at startup.
-- **IL2CPP stripped a MonoBehaviour that is only added from code** — `[Preserve]` or `link.xml`,
-  `unity-android-release` → `reference/size-and-stripping.md`.
-- **`Physics2D.IgnoreCollision` binds two collider instances.** A pooled bullet still ignores the
-  shooter that first fired it; set it on use and clear it on return.
-  `Physics2D.IgnoreLayerCollision` is global until changed back; that rule belongs in the matrix:
-  [`reference/layers-and-matrix.md`](reference/layers-and-matrix.md).
+§5 composites, hollow outlines and snagging seams; §6 effectors and one-way platforms; §7 what
+differs in a build, and per-instance ignore pairs after pooling. Same numbering there.
 
 ## The probe
 
@@ -221,7 +162,7 @@ collider into the other's `other` field, read the console, remove it when done.
 | Console | Diagnosis |
 |---|---|
 | Neither object logs `[Setup]` | The script is not on the objects you think it is |
-| `[Setup]` reports `collider none`, `enabled False`, `simulated False` or `shapes 0` | §1 step 2, §5 |
+| `[Setup]` reports `collider none`, `enabled False`, `simulated False` or `shapes 0` | §1 step 2, `reference/shapes-platforms-build.md` §5 |
 | `[Pair]` reports `canContact False` or `ignored True` | §1 step 5 |
 | `[Setup]` from both, `[Pair]` clean, no `[Collision]` / `[Trigger]` | §1 steps 1, 3, 4 |
 | `[3D Collision]` appears | 3D components in a 2D scene |

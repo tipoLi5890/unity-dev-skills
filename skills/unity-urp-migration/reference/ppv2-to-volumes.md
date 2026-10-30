@@ -112,7 +112,7 @@ tuning something that is not on screen.
 The gate scene's legacy profile carries Bloom, Color Grading on an ACES tonemapper, a Vignette
 and a shallow Depth Of Field that keeps the runner sharp against the far gate.
 
-After `resources/VolumeMigration.cs`:
+After `resources/Editor/VolumeMigration.cs`:
 
 ```
 [URP-MIG] postfx status=complete profile=Assets/Settings/Migrated-PostProcess.asset

@@ -1,16 +1,7 @@
 ---
 name: unity-vivox
 description: >-
-  Wire Unity Vivox voice and text chat into a game: SDK init and sign-in,
-  group, echo and positional channels, channel and directed text messages, the
-  participant roster, local mute and push-to-talk, microphone permission.
-  Load for "add voice chat", a mute button or speaking
-  indicator, proximity or team voice, in-game text chat or whispers, an init
-  that throws the second time a scene loads, a join whose await returns cleanly
-  while nobody can hear anyone, a directed message that never arrives, handlers
-  firing on destroyed objects after a scene reload, or old Client /
-  ILoginSession / AccountId code that no longer compiles. Topology and who owns
-  the microphone are unity-multiplayer.
+  Vivox voice and text chat: channels, positional voice, mute and push-to-talk, mic permission.
 ---
 
 # unity-vivox — the await is the request, the event is the answer
@@ -21,43 +12,29 @@ description: >-
 > `Task` as the result compiles, runs, logs nothing, and ships a game in which no one can hear
 > anyone. Subscribe first, call second, react in the handler.
 
-`VivoxService.Instance` is the whole v16 surface: init, login, join, leave, send, mute. The v4
-model — `Client.Instance`, `ILoginSession`, `IChannelSession`, `AccountId`, `ChannelId` — is
-gone, not deprecated. Code carrying those names is a port, not a fix.
-
-## Before you start: which source decides
-
-- **Is the package there?** Without it the types do not exist:
-  `System.Type.GetType("Unity.Services.Vivox.VivoxService, Unity.Services.Vivox")` is **null**.
-- **Two platform facts need no credentials.** `UnityEngine.Android.Permission.Microphone` reads
-  `android.permission.RECORD_AUDIO`. The iOS plist entry is a Player Setting, not a hand-edited
-  file: `PlayerSettings.iOS.microphoneUsageDescription` is a static `String` property, so CI can
-  assert on it.
-- **Everything else needs a UGS project with Vivox credentials, a microphone and a second device
-  to run.** Error codes, ceilings, event ordering and history retention come from the SDK's
-  documentation. On a mismatch, the installed package decides a **signature** (the compiler reads
-  it); the Vivox documentation decides **what the service does** and **what an error code
-  means**. A curated index of them is at `https://docs.unity.com/en-us/vivox-unity/llms.txt` —
-  fetch it to find which page covers a topic, then read the page. Cite the page, not the
-  index: the index finds sources, it is not one.
-
 ## Symptom → where to look
 
 | Symptom | Go to |
 |---|---|
-| "Add voice chat to this game" | §1, then §2 |
+| "Add voice chat to this game" | [`reference/which-source-decides.md`](reference/which-source-decides.md) first — package present, which source decides — then §1, §2 |
 | The types do not resolve at all | §1 — the package is absent |
 | Second scene load throws `5041` | §1 — the re-init guard |
 | `LoginAsync` returned, `LoggedIn` never ran | §4 — you subscribed after the call |
 | Join awaited fine and nobody can hear anyone | §2 — the await is not the join |
-| An eleventh channel, or a 201st player, fails with `20502` | §2 — the two ceilings |
-| `SendDirectedTextMessageAsync` does not compile | §3 — the pair is spelled asymmetrically |
-| A whisper never arrives | §3, then [`reference/troubleshooting.md`](reference/troubleshooting.md) |
+| Proximity (positional) or team voice; an eleventh channel or a 201st player fails with `20502` | §2 — three joins, two ceilings |
+| `SendDirectedTextMessageAsync` does not compile | [`reference/text-tokens-permission.md`](reference/text-tokens-permission.md) §3 — the pair is spelled asymmetrically |
+| In-game text chat or whispers; a directed message never arrives | [`reference/text-tokens-permission.md`](reference/text-tokens-permission.md) §3, then [`reference/troubleshooting.md`](reference/troubleshooting.md) |
 | Handlers fire on destroyed objects after a scene reload | §4 — the unsubscribe rule |
-| A mute button mutes more, or less, than expected | §5 — three different things are called mute |
-| Where the access token comes from | §6 |
-| Works in the Editor, silent on a phone | §7 — permission is code |
+| A mute button or push-to-talk mutes more, or less, than expected | §5 — three different things are called mute |
+| Where the access token comes from | [`reference/text-tokens-permission.md`](reference/text-tokens-permission.md) §6 |
+| Works in the Editor, silent on a phone | [`reference/text-tokens-permission.md`](reference/text-tokens-permission.md) §7 — permission is code |
 | A one-shot reward fired twice | §4 — reconnect re-fires `LoggedIn` |
+| A speaking indicator; the participant roster | §4, [`reference/events-and-participants.md`](reference/events-and-participants.md) |
+| Old `Client` / `ILoginSession` / `AccountId` code no longer compiles | below the table — v4 is gone; port it |
+
+`VivoxService.Instance` is the whole v16 surface: init, login, join, leave, send, mute. The v4
+model — `Client.Instance`, `ILoginSession`, `IChannelSession`, `AccountId`, `ChannelId` — is
+gone, not deprecated. Code carrying those names is a port, not a fix.
 
 ## 1. Four calls, one order
 
@@ -120,22 +97,6 @@ each exit fires `ChannelLeft`.
 `Channel3DProperties`, the falloff models and the per-frame position update are in
 [`reference/voice-channels.md`](reference/voice-channels.md).
 
-## 3. Text: two pairs, one of them spelled asymmetrically
-
-| | Send | Receive |
-|---|---|---|
-| Channel broadcast | `SendChannelTextMessageAsync(channelName, message)` | `ChannelMessageReceived` (`Action<VivoxMessage>`) |
-| Directed, no channel needed | `SendDirectTextMessageAsync(playerId, message)` | `DirectedMessageReceived` (`Action<VivoxMessage>`) |
-
-> **The send is `SendDirect…`, the event is `Directed…`.** Guessing consistency either way gives
-> a compile error on the method or a handler that never runs. The recipient argument is the
-> other player's `PlayerId`, never a display name.
-
-`VivoxMessage` carries `ChannelName` (**null** on a directed message), `SenderDisplayName`,
-`SenderPlayerId`, `MessageText`, `ReceivedTime`, `Language`, `FromSelf` and `MessageId`. Only
-`MessageId` lets you edit or delete afterwards. Editing, deletion, history queries and the
-retention window are in [`reference/text-chat.md`](reference/text-chat.md).
-
 ## 4. Events, and the unsubscribe that is not optional
 
 | Call | Completion event | Counterpart |
@@ -168,45 +129,11 @@ idempotent — a first-login reward granted in one fires again. Those three name
 The first pair is also push-to-talk: hold to unmute rather than joining and
 leaving a channel per key press.
 
-## 6. Access tokens
+## 3, 6–7. Text, access tokens, microphone permission → `reference/text-tokens-permission.md`
 
-With UGS Authentication in the chain, Vivox mints its own access tokens once sign-in completes.
-There is no token code to write for the standard flow; a tutorial signing tokens in a client is
-describing the other path.
-
-That other path — server-minted Vivox Access Tokens — is for a non-UGS identity system, or for
-privileged actions: kick, mute-all, transcription, join-muted, and channel-scoped entry rights.
-
-> **The signing key never ships in the build.** Any player can read a client-side HMAC key out
-> of the binary, and it grants exactly the moderation powers it was added for. Mint on a server
-> you control and hand the client the finished token.
-
-## 7. Permission is code, not a manifest line
-
-**Android.** The manifest entry alone changes nothing at runtime on a modern API level. Request
-before the first audio-capable join and wait for the answer:
-
-```csharp
-if (!UnityEngine.Android.Permission.HasUserAuthorizedPermission(
-        UnityEngine.Android.Permission.Microphone))
-    UnityEngine.Android.Permission.RequestUserPermission(
-        UnityEngine.Android.Permission.Microphone);
-```
-
-`Permission.Microphone` reads back as `android.permission.RECORD_AUDIO`, the string the merged
-manifest needs — one name, not two. `HasUserAuthorizedPermission`, `RequestUserPermission` and
-`RequestUserPermissions` sit beside it on the same class. The request is fire-and-callback, not
-awaitable: joining on the next line is a race that passes only where permission was granted.
-
-**iOS.** `NSMicrophoneUsageDescription` comes from `PlayerSettings.iOS.microphoneUsageDescription`,
-a plain `String` property, so CI can assert it is non-empty. Missing or empty, the OS kills the
-app at the first audio-capable join — a crash on joining, not a denied prompt — and App Review
-rejects it. The OS recording indicator stays lit while Vivox captures; that cannot be suppressed.
-
-**Web and console.** Browsers grant capture only inside a user gesture, so the first
-audio-capable join belongs on a button, not in `Start`. Console builds need NDA-gated packages
-the public registry does not carry. Platform notes:
-[`reference/troubleshooting.md`](reference/troubleshooting.md).
+§3 channel and directed text — `SendDirectTextMessageAsync` out, `DirectedMessageReceived` in, to a
+`PlayerId`; §6 where tokens are minted and why no signing key sits in the client; §7 permission is code, not a
+manifest line — the runtime `RECORD_AUDIO` request and the iOS usage description.
 
 ## Verification
 
@@ -230,14 +157,14 @@ it is "read" all the way down, and saying so separates verified from merely comp
 
 ## Scope — what this skill does NOT do
 
-**Microphone ownership, permission policy and mute authority are `unity-multiplayer`.** When
+**Microphone ownership, permission policy and mute authority are `unity-live-services`.** When
 another feature captures audio (a sensing SDK that holds the microphone open, recording, speech
 input), adding voice breaks one of them; who owns the device and how the other is suspended is
 decided there, as are the store's microphone declaration, its review cost, and whether a mute may
 be a client decision. §5 only names the API.
 
 **Sessions, lobbies, matchmaking and relay are `unity-multiplayer-services`**; the topology
-choice behind them is `unity-multiplayer`. Deriving a channel name from a session id belongs there.
+choice behind them is `unity-live-services`. Deriving a channel name from a session id belongs there.
 
 **Project, environment and sign-in setup is `unity-ugs`**; credential handling and the offline
 path are `unity-live-services`. §1 assumes anonymous sign-in already works.
@@ -254,6 +181,7 @@ chat UI — roster list, message log, CJK text — is `unity-game-ui`.
 
 ## Reference
 
+- [`reference/text-tokens-permission.md`](reference/text-tokens-permission.md) — §3, §6, §7 · [`reference/which-source-decides.md`](reference/which-source-decides.md)
 - [`reference/init-and-login.md`](reference/init-and-login.md) — bootstrap, `LoginOptions`, logout, re-init guard, server tokens
 - [`reference/voice-channels.md`](reference/voice-channels.md) — joins, `Channel3DProperties`, positional updates, mute
 - [`reference/text-chat.md`](reference/text-chat.md) — message fields, history, edit and delete, rate limiting

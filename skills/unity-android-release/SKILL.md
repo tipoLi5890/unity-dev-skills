@@ -1,16 +1,8 @@
 ---
 name: unity-android-release
 description: >-
-  Take a Unity game from "it works in play mode" to a signed, installed,
-  verified Android artifact, and diagnose it when the device disagrees with
-  the editor. Load for "build an APK", "make an AAB for Play", "set up the
-  build script", "keystore", "versionCode", "which permissions does my app
-  actually declare", "which minSdk/targetSdk can I set", "16 KB page size",
-  "adaptive launcher icon", or "it works in the editor but the phone shows
-  garbage / crashes on launch / renders wrong". Ships a BuildScript and a
-  shell driver that refuse rather than warn, and reads the artifact back with
-  aapt/apksigner. Web builds are unity-web-release; the CLI's own surface is
-  unity-cli.
+  Build a signed Android APK or AAB for Play: keystore, versionCode, SDK
+  levels, permissions, icons.
 ---
 
 # unity-android-release — build it, then prove it
@@ -23,6 +15,18 @@ Two claims are worth nothing on their own, and this skill exists to replace both
 > **"I changed that setting."** Says a file on disk differs. Not that the file is the one the
 > project actually loads — a dormant asset takes every change silently
 > (`reference/device-triage.md`).
+
+## Request → where to look
+
+| The request | Go to |
+|---|---|
+| "build an APK", "make an AAB for Play" | *Ready-made templates*, `reference/store-submission.md` |
+| "set up the build script" | `reference/build-automation.md` |
+| "keystore", "versionCode", package name | `reference/signing-and-versioning.md` |
+| "which permissions does my app actually declare", ABIs, is it signed | `reference/artifact-verification.md` |
+| "which minSdk/targetSdk can I set", "16 KB page size", "adaptive launcher icon" | `reference/player-settings-android.md` |
+| "works in the editor but the phone shows garbage / crashes on launch / renders wrong" | `reference/device-triage.md` |
+| A native plugin's permissions or libraries | *Native plugins* below |
 
 ---
 
@@ -100,7 +104,7 @@ Two things the flags do not change:
 | An artifact exists — is it signed, what does it declare, what ABIs? | `reference/artifact-verification.md` |
 | Keystore, credentials, versionCode, build history, package name | `reference/signing-and-versioning.md` |
 | **Works in the editor, wrong on the device** | `reference/device-triage.md` |
-| Runs fine in the editor and badly on the device — take the frame-time window in the player build first | skill `unity-profiling` |
+| Runs fine in the editor and badly on the device | skill `unity-device-testing`; the frame-time window in the player build is `unity-profiling` |
 | APK vs AAB, symbols, Data Safety, the new-app testing gate | `reference/store-submission.md` |
 | The artifact is too large; "works in the editor, missing on device" after stripping | `reference/size-and-stripping.md` |
 | Shipping to the web instead of Android | skill `unity-web-release` |
@@ -147,11 +151,7 @@ over hand-editing the export — exports are regenerated, templates persist.
 | The `unity` CLI's own surface, licences, CI wiring | `unity-cli` |
 | Why the game misbehaves in the editor too | `unity-debug` |
 | Store listing copy, pricing, screenshots | Not a build problem |
-| IAP and ad SDKs, and what they add to the manifest | `unity-monetization` |
+| IAP and ad SDKs, and what they add to the manifest | `unity-live-services` → `reference/monetization.md` |
 | Driving the installed build on the phone: asserting on its log, tapping system dialogs, physical steps with a human | `unity-device-testing` |
 | The same project on an iPhone or iPad | `unity-ios-build` |
-
-## Related skills
-
-`unity-new-project` for day-one decisions · `unity-debug` for runtime verification and screenshots
-· `unity-game-ui` for the UI that survives the device's real viewing conditions.
+| Day-one decisions · the UI that survives the device's real viewing conditions | `unity-new-project` · `unity-game-ui` |

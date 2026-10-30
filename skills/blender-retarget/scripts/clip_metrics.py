@@ -41,9 +41,9 @@ Definitions (the plant detector, slide, summaries and pop test are motion_metric
   Gated: count <= --pops-max (0).
 
 Prints one JSON report (also to --out): per-metric p50, p95, max, n; plants; gates; ok.
-Exit codes (not motion_metrics.py's: there 2 is a failed gate and 1 a refusal):
-0 every gate passed; 1 a gate failed; 2 refused input (unreadable file, wrong schema,
-a required role missing, frame counts that differ, a non-finite value). Requires numpy.
+Exit codes (motion_metrics.py's): 0 every gate passed (or selftest passed); 2 a gate failed;
+1 refused input (unreadable file, wrong schema, a required role missing, frame counts that
+differ, a non-finite value), a usage error or a failed selftest. Requires numpy.
 """
 from __future__ import annotations
 
@@ -181,8 +181,16 @@ def measure(doc: dict, a) -> dict:
     return out
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="clip_metrics.py", description=__doc__.split("\n")[0])
+    p = UsageParser(prog="clip_metrics.py", description=__doc__.split("\n")[0])
     p.add_argument("samples")
     p.add_argument("--out")
     p.add_argument("--slide-p95", type=float, default=0.015)
@@ -202,9 +210,9 @@ def run(argv) -> tuple:
         rep = measure(doc, a)
     except (OSError, ValueError, Refused) as e:
         rep = {"ok": False, "refused": str(e)}
-        code = 2
+        code = 1
     else:
-        code = 0 if rep["ok"] else 1
+        code = 0 if rep["ok"] else 2
     text = json.dumps(rep, indent=1)
     if a.out:
         Path(a.out).write_text(text + "\n", encoding="utf-8")
@@ -258,7 +266,7 @@ def selftest() -> int:
         doc["reference"] = _walk(80, 0.01)
         p.write_text(json.dumps(doc))
         code, rep, _ = run([str(p)])
-        check("added slide fails: exit 1", code == 1)
+        check("added slide fails: exit 2", code == 2)
         mx = rep["foot_slide_added_m"]["max"]
         check("added slide max = 9/10 of the 5 cm extra drift", abs(mx - 0.045) < 1e-6)
         # 3. a forearm rotated by 10 degrees reads 10 degrees, and fails a 2-degree gate
@@ -266,7 +274,7 @@ def selftest() -> int:
         p.write_text(json.dumps(doc))
         code, rep, _ = run([str(p)])
         check("limb error = 10 deg", abs(rep["limb_direction_error_deg"]["max"] - 10.0) < 1e-6)
-        check("limb gate fails: exit 1", code == 1)
+        check("limb gate fails: exit 2", code == 2)
         check("arm pose error > 0", rep["arm_pose_error_pct"]["max"] > 1.0)
         # 3b. one frame where the character's hand jumps: one pop the reference does not have
         doc["character"] = _walk(80, 0.01)
@@ -276,7 +284,7 @@ def selftest() -> int:
         doc["character"]["hand_r"] = hand.tolist()
         p.write_text(json.dumps(doc))
         code, rep, _ = run([str(p)])
-        check("pop added by the route: exit 1", code == 1 and rep["pops"]["count"] == 1)
+        check("pop added by the route: exit 2", code == 2 and rep["pops"]["count"] == 1)
         # ... the same jump in the reference too is the clip's own motion, not a pop
         doc["reference"] = json.loads(json.dumps(doc["character"]))
         p.write_text(json.dumps(doc))
@@ -285,13 +293,13 @@ def selftest() -> int:
         # 4. refused inputs
         bad = dict(doc, character={k: v[:-1] for k, v in doc["character"].items()})
         p.write_text(json.dumps(bad))
-        check("frame mismatch: exit 2", run([str(p)])[0] == 2)
+        check("frame mismatch: exit 1", run([str(p)])[0] == 1)
         bad = dict(doc, character={k: v for k, v in doc["character"].items() if k != "toe_l"})
         p.write_text(json.dumps(bad))
-        check("missing toe_l: exit 2", run([str(p)])[0] == 2)
+        check("missing toe_l: exit 1", run([str(p)])[0] == 1)
         p.write_text(json.dumps(dict(doc, schema="other")))
-        check("wrong schema: exit 2", run([str(p)])[0] == 2)
-        check("unreadable file: exit 2", run([str(Path(d) / "none.json")])[0] == 2)
+        check("wrong schema: exit 1", run([str(p)])[0] == 1)
+        check("unreadable file: exit 1", run([str(Path(d) / "none.json")])[0] == 1)
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks,
                       "failed": failed}))
     return 0 if not failed else 1

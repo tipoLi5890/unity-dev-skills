@@ -30,8 +30,8 @@ tolerance tighter than that is the Editor's to judge.
                                                    compiled and run with PROJECT's Editor and NUnit)
 
 Exit: 0 all green · 2 a test failed or was inconclusive · 3 harness failure: no Editor or
-package cache, a pure asmdef that references an engine one, a compile error, or zero tests ran.
-A compile error is never worked around by excluding the file.
+package cache, a pure asmdef that references an engine one, a compile error, or zero tests ran
+· 1 a usage error (a bad flag or a missing argument). A compile error is never worked around by excluding the file.
 Stdlib only.
 """
 import argparse
@@ -482,8 +482,16 @@ def selftest(e2e_project=None):
     return 0 if ok else 1
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = UsageParser(description=__doc__.split('\n')[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
     for name in ('run', 'plan'):
         p = sub.add_parser(name)
@@ -499,7 +507,7 @@ def main(argv):
                            help='set an environment variable for the test process (repeatable)')
     s = sub.add_parser('selftest')
     s.add_argument('--e2e', metavar='PROJECT', help='also compile and run a synthetic suite with this project\'s tools')
-    a = ap.parse_args(argv)
+    a = ap.parse_args(['selftest', *argv[1:]] if argv[:1] == ['--selftest'] else argv)
     if a.cmd == 'selftest':
         try:
             return selftest(a.e2e)

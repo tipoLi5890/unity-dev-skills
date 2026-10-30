@@ -2,6 +2,123 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.34.0
+
+Sixty skills. This release is about routing and verification. Claude Code lists every installed
+skill's name and description within about 1% of the context window (about 8,000 characters at
+200K; Codex allows 2%). When the listing overflows it drops descriptions, starting with the
+skills used least. A fresh install has no usage yet, so even the start-here routers could lose
+theirs. The plugin's descriptions added up to several times that budget. They are now rewritten
+to fit it, and a gate keeps them there. Two skills are folded into `unity-live-services`, which
+becomes the fourth start-here router. The routers are slimmed so a `SKILL.md` only routes. The
+selftests run in CI, a usage error no longer reads as a failed gate, and the C# templates gain
+static rules and fixes.
+
+**Removed skills:** `unity-multiplayer` and `unity-monetization` are gone. A request that used to
+load either now loads `unity-live-services`, the START HERE router for any backend, online or
+monetisation request. Nothing was dropped:
+- `unity-multiplayer` → `unity-live-services/reference/multiplayer.md`: topology and its two
+  questions, state ownership and reconnection, the microphone handover, permissions, mute,
+  positional voice and the channel caps, and testing. It also says plainly that netcode APIs are
+  out of scope for the plugin.
+- `unity-monetization` → `unity-live-services/reference/monetization.md`: sandbox modes,
+  subscribe first then connect, the consumable that disappears once confirmed, what an SDK does to
+  the build, store declarations, and where receipts are validated.
+
+Every cross-reference, the four READMEs and the manifests point at the new places.
+`unity-live-services` keeps its section numbers, so existing `§N` pointers still land.
+
+**Behaviour change:** `blender-retarget/scripts/clip_metrics.py` now uses `motion_metrics.py`'s
+codes: 0 pass, 2 a gate failed, 1 refused. The old 1 is now 2 and the old 2 is now 1. A stage
+runner that branched on the old codes must swap them. `bakeoff_report.py` reads reports, not exit
+codes; its own exit codes are unchanged.
+
+**Behaviour change:** in the scripts where 2 means a gate failed, a usage error (a bad flag, a
+missing argument) now exits 1 instead of argparse's 2, so a typo can no longer pass for a failed
+check. This covers `motion_metrics`, `clip_metrics`, `arp_markers`, `deform_gate`, `mesh_check`,
+`contract_map`, the `humanoid-motion` two-camera scripts (`detect`, `exam`, `film`, `layout`,
+`make_prompt`, `skeleton`, `solve`, `train`, `blender/prepare_rig`), `compare_windows`,
+`breathe`, `key_unmix`, `sheet_to_frames`, `audit_pixel`, `pick_key`, `layout_map` and
+`pure_tests`. Scripts with an older convention keep it; `.github/CONTRIBUTING.md` lists them.
+
+**Behaviour change:** `unity-android-release/templates/build-android.sh` no longer puts
+`-keystorePass` or `-keyaliasPass` on the Unity command line. It exports `UNITY_KEYSTORE_PASS` and
+`UNITY_KEY_ALIAS_PASS`, which `BuildScript.cs` already reads, so the secrets stay out of `argv` as
+the skill says they must.
+
+**Behaviour change:** the `unity-game-feel` tween helpers `Tween` and `Ease` now sit in the
+`UnityDev.GameFeel` namespace, so they no longer clash with DOTween's types. Code that uses them
+adds `using UnityDev.GameFeel;`.
+
+**Descriptions and the listing**
+
+- **Every description rewritten.** The routers run to about 200 characters and every other skill
+  to about 100. The first sentence names the main situation. Method detail and "X is handed to Y"
+  clauses are out of the descriptions; handoffs live in each skill's Scope section.
+- **Triggers moved, not deleted.** Each `SKILL.md` now opens with a request or symptom table that
+  covers what its old description listed. It loads only once the skill is invoked.
+- **`tools/lint-skills.py`.** A description is capped at 250 characters. A new gate estimates the
+  whole listing as one `- unity-dev:<name>: <description>` line per skill and fails above 8,000
+  characters. A `SKILL.md` is capped at 12 KB. Syntax is checked with `compile()`, so linting no
+  longer writes `__pycache__` under `skills/`.
+- **The plugin description.** `plugin.json` and the marketplace entry shrink from a catalogue of
+  every skill to under 300 characters: what the plugin is, and the four start-here routers.
+
+**Routers**
+
+- **Four start-here routers**: `unity-gameplay`, `unity-game-ui`, `game-character-pipeline` and
+  `unity-live-services`. `game-character-pipeline`'s description now says START HERE, as the
+  manifest did. `unity-gameplay` gains routing rows for `unity-render-urp`, `unity-audio`,
+  `unity-sprite-atlas` and `unity-debug`.
+- **Routers slimmed.** Every `SKILL.md` is at or under 12 KB. The depth went to `reference/`
+  (about forty new files) and each symptom row points at it. Where a numbered section moved, a
+  short stub keeps its number, so outside `§N` pointers still resolve. `unity-game-ui`'s routing
+  detail, IMGUI primitive, build order and design principles moved to `reference/routing.md` and
+  `reference/design-principles.md`.
+- **Rigging scope.** `character-autorig` gains a Scope section. `blender-character-rig` now names
+  `character-autorig` as the default route and itself as the hand-built fallback, and so does
+  `unity-rigged-character`.
+
+**Verification**
+
+- **`tools/run-selftests.py`.** One row per selftest, with its call and its dependencies (stdlib,
+  numpy/Pillow, ffmpeg, bpy, torch/cv2). A missing dependency prints SKIP; Blender rows run only
+  with `--blender PATH`. Any failure exits 1, and so does a script with a selftest that has no row.
+  Every selftest accepts both `selftest` and `--selftest`.
+- **New selftests** for five stdlib verdict scripts: `merge_results`, `journey_report`,
+  `compare_windows`, `level_validate` and `jump_report`. Each builds its input in a temporary
+  directory and checks the exit code for passing and failing input.
+- **The exit-code convention.** `.github/CONTRIBUTING.md` has the table for new scripts: 0 pass,
+  2 the check failed, 3 a harness or IO error, 1 refused input or a usage error. It also lists the
+  older conventions still in use.
+- **CI.** Runs on Python 3.10 and 3.12 and installs numpy, Pillow and ffmpeg. It runs the
+  selftests, probes each verdict script with `--no-such-flag` and requires exit 1 with no
+  traceback, and runs the C# static check.
+
+**C#**
+
+- **`tools/check-csharp.py`** (in CI). A MonoBehaviour's class is named after its file. A file that
+  uses `UnityEditor` sits under an `Editor/` folder or is wrapped in `#if UNITY_EDITOR`. No new type
+  goes in the global namespace; the existing ones are on an allow-list.
+- **Fixes.** `GateTarget`, `PickupBag`, `GameProbeReporter`, `SituationBoot` and `PooledPickup`
+  each get their own file, so they can be added in the Inspector as the docs say;
+  `ScriptablePackerExample.cs` is renamed `GridAtlasPacker.cs` after the class it holds. The editor
+  scripts of `unity-2d-sprites`, `unity-tilemap`, `unity-sprite-atlas` (`AtlasBuildGenerator`,
+  `AtlasContentBuild`), `unity-urp-migration` and `L10nBatchProcessor` move to `resources/Editor/`,
+  and `IosPostprocess` is guarded by `#if UNITY_EDITOR`, with the documented paths updated, so a
+  copied script no longer breaks a player build. `Tween` and `Ease` are namespaced, as above.
+- **`tools/unity-compile-check.sh`.** A local compile of every skill's C# in a throwaway Unity 6
+  project with the packages the code uses, one asmdef per skill, built with and without the
+  optional defines. It fails on any `error CS`, opens one Editor at a time and deletes the project
+  afterwards. CONTRIBUTING says to run it before a release; it is not in CI.
+
+**Routing evals**
+
+- **`evals/routing/`.** About thirty cases, each graded on which skill was loaded. They cover every
+  group of overlapping skills, with a request that should load each skill and one that should not,
+  the start-here request of each of the four routers, and a plain-Python request that should load
+  none.
+
 ## 0.33.1
 
 README only; no skill, script or manifest description changes.

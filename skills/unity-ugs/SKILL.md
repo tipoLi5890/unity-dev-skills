@@ -1,18 +1,25 @@
 ---
 name: unity-ugs
 description: >-
-  The Unity Gaming Services API layer: which package does what, the init and
-  sign-in order, Cloud Save access classes and who may write each, Cloud Code
-  C# modules, Remote Config and Game Overrides, Access Control, the Deployment
-  Window. Load for: "add cloud save", "add a battle pass / achievements /
-  player accounts", a service singleton that throws because nothing was
-  initialised, Cloud Save data that reads back empty although the write
-  succeeded, a Cloud Code module the Deployment Window refuses to publish, a
-  403 on a write that used to work, which UGS package a feature needs. The
-  operational discipline around it is unity-live-services.
+  Unity Gaming Services API: which package, init and sign-in order, Cloud Save, Cloud Code, Remote Config.
 ---
 
 # unity-ugs — initialise, sign in, and know who is allowed to write
+
+## Symptom → where to look
+
+| Symptom | Go to |
+|---|---|
+| `NullReferenceException` or "service not initialised" on a `*.Instance` | §2 |
+| Sign-in succeeds, then the next call is `Unauthorized` | §2, [`reference/authentication.md`](reference/authentication.md) |
+| "Add cloud save"; a write returned success but the read comes back empty | §3 — the read access class does not match the bucket |
+| `403` on a Cloud Save write that used to work | [`reference/config-access-deploy.md`](reference/config-access-deploy.md) §6 — an `.ac` policy is now deployed |
+| A player has XP, currency or an unlock they did not earn | §4 |
+| The Deployment Window will not publish a Cloud Code module | [`reference/cloud-code.md`](reference/cloud-code.md) — the module file set |
+| Remote Config values are right in the dashboard, wrong in the build | [`reference/config-access-deploy.md`](reference/config-access-deploy.md) §5 — a Game Override is targeting that player |
+| `PlayerAccountService` does not resolve | [`reference/player-account.md`](reference/player-account.md) — it is a second assembly |
+| Which UGS package does a feature need | §1 |
+| "Add a battle pass / achievements / player accounts" — wiring a whole feature | §10 |
 
 > **Two orderings decide most UGS bugs.** The first is `InitializeAsync()` → sign-in → any
 > service call; skip a step and the singleton you touch throws rather than explaining itself.
@@ -26,21 +33,6 @@ description: >-
 > **Report, then wait.** Deploying cloud resources changes a live environment that other people
 > and real player data sit behind. Say which environment is selected, list the files that would
 > be pushed, and wait for confirmation before pressing Deploy.
-
-## Symptom → where to look
-
-| Symptom | Go to |
-|---|---|
-| `NullReferenceException` or "service not initialised" on a `*.Instance` | §2 |
-| Sign-in succeeds, then the next call is `Unauthorized` | §2, [`reference/authentication.md`](reference/authentication.md) |
-| A write returned success but the read comes back empty | §3 — the read access class does not match the bucket |
-| `403` on a Cloud Save write that used to work | §6 — an `.ac` policy is now deployed |
-| A player has XP, currency or an unlock they did not earn | §4 |
-| The Deployment Window will not publish a Cloud Code module | [`reference/cloud-code.md`](reference/cloud-code.md) — the module file set |
-| Remote Config values are right in the dashboard, wrong in the build | §5 — a Game Override is targeting that player |
-| `PlayerAccountService` does not resolve | [`reference/player-account.md`](reference/player-account.md) — it is a second assembly |
-| Which package do I actually need | §1 |
-| Wiring a whole feature (achievements, battle pass, accounts) | §10 |
 
 ## 1. Packages, and what the floor should be
 
@@ -109,7 +101,7 @@ Sign-in methods, link/unlink, profiles, error codes: [`reference/authentication.
 > cause is a feature that moved to server writes without the read side moving with it.
 
 - **Custom data has no client write path at all.** `CloudSaveService.Instance.Data.Custom` is
-  read-only; a Cloud Code module or `IAdminClient.CloudSaveData` (§8) writes it.
+  read-only; a Cloud Code module or `IAdminClient.CloudSaveData` (`reference/config-access-deploy.md` §8) writes it.
 - **`SaveOptions`, `LoadOptions` and `DeleteOptions` exist twice**, at the root of
   `Unity.Services.CloudSave` and under `Models.Data.Player`; the access-class overloads are the
   second set. Importing both is an ambiguous reference — every sample here declares `using` aliases.
@@ -137,57 +129,11 @@ var result = await CloudCodeService.Instance.CallModuleEndpointAsync<GrantResult
 
 The file set, templates and the `.gitignore` override: [`reference/cloud-code.md`](reference/cloud-code.md).
 
-## 5. Remote Config holds the definitions; Game Overrides do the A/B
+## 5–9. Config, access, deployment, clients, samples → `reference/config-access-deploy.md`
 
-Remote Config stores what exists in the game — the achievement list, battle pass tiers, the shop
-catalogue, feature flags — as typed entries fetched in one call and deployed as `.rc` files.
-**Remote Config on its own has no A/B testing.** Game Overrides (`.ugo`, from
-`com.unity.services.tooling`) replace values for a named audience, and `FetchConfigsAsync`
-returns the overridden value — which is why a value right in the dashboard arrives wrong in a build.
-
-Fetch and `.rc` format: [`reference/remote-config.md`](reference/remote-config.md). Overrides:
-[`reference/tooling.md`](reference/tooling.md).
-
-## 6. Access Control: deny wins
-
-An `.ac` policy permits or denies access to UGS resources by URN, per principal (`Player` or
-`ServiceAccount`), for `Read`, `Write` or both. **Deny takes precedence over Allow**, so the
-workable shape is a blanket deny for `Player` on `urn:ugs:*:/**` plus explicit allows for the
-endpoints a client legitimately calls. This is the enforcement half of §4: with a policy deployed
-a direct write returns `403`, which also breaks any build still writing directly.
-
-URNs and a full deny-then-allow policy: [`reference/tooling.md`](reference/tooling.md).
-
-## 7. What the Deployment Window pushes
-
-**Services > Deployment** discovers UGS resource files under `Assets/`, targets one environment
-and pushes them. A file type appears only if the package that registers it is installed: `.rc`
-`.ac` `.ugo` `.ccmr` `.js` `.lb` `.ecc` `.eci` `.ecv` `.ecr` `.ddef`, plus Game Server Hosting
-build config `.gsh` and Matchmaker queue config `.mmq` from `com.unity.services.multiplayer` —
-same window, same environment picker, authored by `unity-multiplayer-services`. The UGS CLI does
-the same job outside the Editor, and is unrelated to the `unity` CLI that `unity-cli` covers.
-
-Per-type packages, `.ddef` scoping, the programmatic API and the UGS CLI:
-[`reference/deployment.md`](reference/deployment.md).
-
-## 8. Services APIs — four clients, four trust levels
-
-`com.unity.services.apis` is the generated REST layer under the friendly SDKs, for what they have
-no path for — in practice, admin writes. `IGameClient` (player device, the signed-in player),
-`IServerClient` (dedicated server, server key), `ITrustedClient` (dedicated server needing any
-player's data, service account), `IAdminClient` (**Editor only**, service account key id + secret).
-`IAdminClient` is the only supported way to write Cloud Save Custom data or give an Editor tool or
-a custom deploy command elevated rights; its key is never in the project (`unity-live-services`
-§2). Service areas: [`reference/apis.md`](reference/apis.md).
-
-## 9. Building Blocks and samples — start from one
-
-Unity publishes free Building Block packages on the Asset Store — Achievements, Leaderboards,
-Player Account, Multiplayer Session, Matchmaker Session — each a working vertical slice with UI,
-runtime code, Cloud Code modules and cloud resource files. For "add achievements" or "add
-leaderboards", import one and read it first; §10's blueprints then annotate something that runs.
-`com.unity.starter-kits` returns 404 on the public registry: use the Asset Store links. Links,
-dependencies, samples: [`reference/building-blocks.md`](reference/building-blocks.md).
+§5 Remote Config holds the definitions, Game Overrides do the A/B; §6 Access Control, where deny
+wins; §7 what the Deployment Window pushes; §8 the four Services API clients and their trust
+levels; §9 start from a Building Block or sample. Same numbering there.
 
 ## 10. Three shapes, and everything is one of them
 
@@ -227,7 +173,7 @@ feature does when the backend is unreachable, and making a retried write idempot
 that is an API question, and this skill deliberately does not restate it.
 
 Real-time sessions, matchmaking, lobbies and dedicated server hosting are
-`unity-multiplayer-services`; the topology decision behind them is `unity-multiplayer`. Voice
+`unity-multiplayer-services`; the topology decision behind them is `unity-live-services`. Voice
 chat is `unity-vivox`. Store purchases — receipts, entitlement, the store SDKs — are `unity-iap`,
 and ad mediation is `unity-ads-levelplay`; UGS Economy's virtual purchases are a different thing
 and stay here. Adding the packages themselves is `unity-new-project`.
@@ -239,6 +185,7 @@ per-service detail this skill compresses.
 
 ## Reference
 
+- [`reference/config-access-deploy.md`](reference/config-access-deploy.md) — §5–§9: Remote Config, Access Control, deployment, clients, samples
 - [`reference/authentication.md`](reference/authentication.md) — sign-in, linking, profiles, error codes
 - [`reference/cloud-save.md`](reference/cloud-save.md) — methods, models, write locks, queries, files
 - [`reference/cloud-code.md`](reference/cloud-code.md) — the module file set, subscriptions, bindings

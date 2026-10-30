@@ -1,6 +1,7 @@
 // PickupObjectPool.cs — pickups that are reused instead of instantiated and destroyed, on
 // UnityEngine.Pool.ObjectPool<T>. Spawn hands out an instance, Despawn takes it back, and a
-// respawn after a checkpoint gets the very objects the runner collected a moment ago.
+// respawn after a checkpoint gets the very objects the runner collected a moment ago. Each
+// instance carries a PooledPickup (PooledPickup.cs, same assembly).
 //
 // Drop into a Runtime assembly and put the component in the Boot scene, so the pool and its
 // instances outlive the level: instances are parented under the pool, never under level
@@ -13,29 +14,6 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Pool;
-
-/// <summary>Marks an instance as the pool's, and carries what the pool needs to take it back.</summary>
-[DisallowMultipleComponent]
-public sealed class PooledPickup : MonoBehaviour
-{
-    /// <summary>The id the spawn data gave this use of the instance — what the save records.</summary>
-    public string Id { get; internal set; } = "";
-
-    /// <summary>True between Spawn and Despawn.</summary>
-    public bool InUse { get; internal set; }
-
-    /// <summary>How many times this instance has been handed out. 2 or more is the pool working.</summary>
-    public int Uses { get; internal set; }
-
-    internal PickupObjectPool owner;
-    internal Vector3 restScale = Vector3.one;
-
-    /// <summary>Return to the pool. Safe to call twice: the second call does nothing.</summary>
-    public void Release()
-    {
-        if (owner != null) owner.Despawn(this);
-    }
-}
 
 [AddComponentMenu("Courier/Pickup Pool")]
 public sealed class PickupObjectPool : MonoBehaviour

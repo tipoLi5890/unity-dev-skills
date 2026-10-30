@@ -1,16 +1,8 @@
 ---
 name: unity-animation
 description: >-
-  Keep an Animator a rendering of the game's state, for 3D Humanoid and 2D
-  frame-clip characters: one writer per parameter through a bridge, blend
-  trees and sprite state graphs built from script, events and attack windows
-  that survive interruption, override controllers, IK, Timeline, root motion;
-  a hand-built PlayableGraph following a simulation, with foot-lock and prop
-  IK jobs and motion metrics. Load for: "the animation is stuck", "the attack
-  plays by itself", "the feet slide", "the swing contact is late", "a knee
-  pops", "the sprite flickers between directions", "the hitbox stays on". Rigs
-  are unity-rigged-character; frames into clips is unity-2d-sprites; agent
-  coupling is unity-navigation.
+  Animator in 2D and 3D: stuck or self-playing states, sliding feet, blend
+  trees, IK, root motion.
 ---
 
 # unity-animation — the game's state is the truth, and the Animator renders it
@@ -19,6 +11,22 @@ description: >-
 > "attack played twice", "hitbox stayed on" report is the two disagreeing. They cannot disagree
 > when one of them is a copy: the game owns the state, one bridge writes it into parameters
 > once per frame, and nothing in gameplay waits on an animation unless a **named** event says so.
+
+## Symptom → where to look
+
+| The report | Go to |
+|---|---|
+| "the animation is stuck", stuck in the jump, a renamed parameter froze the character | *The contract*, `reference/parameter-contract.md` |
+| "the attack plays by itself" later | `reference/parameter-contract.md` (triggers) |
+| "the feet slide", feet floating on slopes | `reference/blend-trees.md`, `reference/ik-and-rigging.md`, `reference/sim-driven-animation.md` §4–6 |
+| "the swing contact is late", a simulation owns the character | `reference/sim-driven-animation.md` |
+| "a knee pops", the prop misses at contact | `reference/foot-lock-and-prop-ik.md`, measured by `reference/motion-metrics.md` |
+| "the sprite flickers between directions", a 2D jump shows late | `reference/sprite-state-graph.md` |
+| "the hitbox stays on", footsteps fire twice | `reference/events-and-windows.md` |
+| Moves twice or slides back each loop | `reference/root-motion.md` |
+| A cutscene never gives the character back | `reference/timeline.md` |
+| Starting values for fades, damping, windows, IK, gates | `reference/numbers.md` |
+| Anything else | *Load what the situation needs* |
 
 The same contract serves a 3D Humanoid and a 2D frame-clip character. What differs is how the
 picture is allowed to follow:
@@ -30,7 +38,6 @@ picture is allowed to follow:
 | Facing | The transform's rotation | `SpriteRenderer.flipX`, or one clip per direction |
 | Pose correction | IK after the clip | None — offsets go on a `Visual` child |
 | Who moves the transform | One owner, chosen once (`reference/root-motion.md`) | The game, always |
-
 ---
 
 ## The contract
@@ -64,29 +71,12 @@ game state. → `reference/parameter-contract.md`
 5. **Prove it.** `templates/AnimatorStateJourneyTest.cs` samples `animState` beside the game's
    `state` and fails when they disagree for more than 3 frames.
 
-Copy `resources/AttackWindowBehaviour.cs` and `resources/FootIK.cs` into a Runtime assembly, the
-four files under `resources/Editor/` into an Editor one, and the template into a PlayMode test
-assembly next to the harness files.
-
 **When a simulation owns the character** (it decides where the character is and when the swing
 connects), skip the Controller: one hand-built `PlayableGraph` per character, evaluated by hand
 from the render tick, clip times computed from the simulation's clock, and Animation Jobs after
 the mixer. → `reference/sim-driven-animation.md`, then `reference/foot-lock-and-prop-ik.md`,
-proven by `reference/motion-metrics.md`. The four job-side files below need only the built-in
-animation module.
-
-| File | Does | Writes assets |
-|---|---|---|
-| `resources/Editor/AnimatorParamAudit.cs` | Parameters × graph × script text scan, as JSON | No |
-| `resources/Editor/DirectionalBlendTreeBuilder.cs` | A 2D directional tree state from clips named by direction | Yes — `Report` first |
-| `resources/Editor/SpriteStateGraphBuilder.cs` | Idle / run / jump / fall / hurt controller from named clips, rebuilt in place | Yes — `Report` first |
-| `resources/Editor/ClipEventWriter.cs` | Adds or moves an event by normalised time; reads the clip back | Yes — report clip, function and time first |
-| `resources/AttackWindowBehaviour.cs` | Open / close callbacks by normalised time, closed on any exit | — |
-| `resources/FootIK.cs` | Humanoid foot planting from two raycasts | — |
-| `resources/AnimJobMath.cs` | Critically damped spring, soft reach (absolute and clip-relative), C1 bump, hinge-axis and hint two-bone solvers on `AnimationStream` | — |
-| `resources/FootLockJob.cs` | `IAnimationJob`: stride warp, grounding, plant lock, spring release, landing anticipation, procedural step, pelvis drop, hinge knees | — |
-| `resources/TwoBoneIKJob.cs` | `IAnimationJob`: one limb onto a goal, optionally a held tool point onto it, end bone solved last | — |
-| `resources/MotionMetricsSampler.cs` | Read-only test metrics: slide per plant, plant speed, root vs sim, root velocity jumps, pops, contact timing | — |
+proven by `reference/motion-metrics.md`. Every file under `resources/`, what it does and where
+to copy it: `reference/toolkit.md`.
 
 ---
 
@@ -119,27 +109,6 @@ animation module.
 
 ---
 
-## Numbers to start from
-
-| Quantity | 3D skeletal | 2D frame clips |
-|---|---|---|
-| Transition duration into a reaction (jump, hurt) | 0.05–0.10 s, no exit time | 0, no exit time |
-| Transition duration between gaits | 0.10–0.20 s | 0 |
-| `SetFloat` damp on a blend position | 0.08–0.15 s | 0 |
-| `SetFloat` damp on a condition or a playback rate | 0 | 0 |
-| `MoveSpeed` (playback rate) clamp | 0.5–1.6 | — |
-| Journey budget: `animState` agrees with `state` within | 3 frames once the fade is 0; else fade + 3 | 3 frames |
-| Attack window, as fractions of the state | open 0.25, close 0.55 — then tune per clip | same |
-| Foot IK smoothing · ray reach below the foot | 0.1 s · 0.45 units | — |
-| Hand IK weight ramp | 0.15–0.25 s | — |
-| Swing rate to land a contact frame on a sim tick | 0.8–1.25, start trimmed when clamped | — |
-| Sprint playback rate when the sim outruns the clip · stride warp | up to 1.8 · 0.3–1.8× | — |
-| Foot-lock release spring · landing anticipation · pelvis drop cap | omega 28 · 0.08 s · 10 cm | — |
-| Prop IK window around contact | −120 ms to +60 ms, release 0.15 s | — |
-| Motion gates: slide p95 / max per plant · plant speed · root jump | 1.5 / 3 cm · 3 cm/s · 0.5 m/s per frame | — |
-
----
-
 ## Discipline
 
 - **The bridge writes every parameter every frame.** A value set on change goes stale the first
@@ -167,37 +136,32 @@ animation module.
   moves nothing.
 - **IK weights and rig weights are parameters too.** The bridge writes them from game state; a
   foot that decides for itself from a raycast is a second opinion about `Grounded`.
-- **Report before an Editor tool writes.** The builders print what they would create or replace;
-  show it and wait for a yes. Then read the asset back — `Describe` — not the exit code.
+- **Report before an Editor tool writes**; wait for a yes, then read the asset back
+  (`Describe`), not the exit code.
 - **Check the package before the `using`.** Read `Packages/packages-lock.json` for
   `com.unity.animation.rigging`, `com.unity.timeline` or `com.unity.2d.animation` before writing
   code against them.
-- **IK targets and weights are continuous in velocity, not only in position.** A smoothstep
-  release, a hard clamp or a weight that snaps to 0 is a one-frame pop; use a critically damped
-  spring and soft limits (`reference/foot-lock-and-prop-ik.md` §1).
-- **Measure before fixing motion.** Write the metrics, record the baseline on the unchanged code,
-  attribute each pop to a layer; a blend fix cannot remove a pop the IK made.
+- **IK targets and weights are continuous in velocity, not only in position** — a weight that
+  snaps to 0 is a one-frame pop; use a damped spring (`reference/foot-lock-and-prop-ik.md` §1).
+- **Measure before fixing motion**: baseline first, each pop attributed to a layer
+  (`reference/motion-metrics.md`).
 - **Sample the shown state, do not eyeball it.** `animState` in the probe beside `state` turns
   "the jump looks late" into a count of frames.
 
 ## Scope — what this skill does NOT do
 
+Every row of *Load what the situation needs* that names another skill — import and Avatars,
+frames into clips, agents, input, camera, the movement model, journeys — is that skill's work.
+
 | Not here | Go to |
 |---|---|
-| Importing a model, Avatars, Humanoid versus Generic, Mixamo, the base locomotion controller | `unity-rigged-character` |
 | Rigging and skinning a character that has no skeleton yet | `blender-character-rig` |
 | Retargeting stock or purchased clips onto a rig in Blender, before they reach Unity | `blender-retarget` |
 | Clips made from video, feet locked offline, before they reach Unity | `humanoid-motion` |
-| Slicing sheets, frames into AnimationClips, pivots and the ground line | `unity-2d-sprites` |
 | Bones, skinning weights, PSB rigs, Sprite Library and 2D IK on a sprite | `unity-2d-animation` |
 | Generating the sprite frames or the sheet in the first place | `codex-visual` |
-| A NavMeshAgent sharing the transform with the Animator | `unity-navigation` |
-| Reading devices and actions into the struct the game consumes | `unity-input` |
-| Camera follow, Cinemachine, camera shake on a hit | `unity-camera` |
-| Choosing the movement model, perspective and genre constraints | `unity-gameplay` |
 | A hitbox trigger that never fires once the window is open | `unity-physics-3d` · `unity-physics-2d` |
 | Playing the footstep or the swing sound an event asks for | `unity-audio` |
-| The probe, situations, journeys and timelines themselves | `unity-play-harness` |
 | Running tests headless, screenshots, trusting a result file | `unity-debug` |
 | Animator cost on a crowd: culling modes measured, not guessed | `unity-profiling` |
 | The simulation's mover — its speed, acceleration and the predicted stop the swing waits for | `unity-3d-controller` |

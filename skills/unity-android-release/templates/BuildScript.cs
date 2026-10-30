@@ -23,9 +23,10 @@ using UnityEngine;
 ///         -executeMethod BuildScript.BuildAndroid -logFile build.log \
 ///         -output Builds/game.apk -versionCode 3
 ///
-/// Add -aab for a store bundle, and -keystore/-keystorePass/-keyalias/-keyaliasPass to sign.
-/// Pairs with build-android.sh from the same skill, which supplies all of those and then reads the
-/// finished artifact back.
+/// Add -aab for a store bundle, and -keystore/-keyalias to sign; the passwords come from
+/// UNITY_KEYSTORE_PASS / UNITY_KEY_ALIAS_PASS (-keystorePass/-keyaliasPass still work but put the
+/// secret in argv). Pairs with build-android.sh, which passes the keystore and alias, exports the
+/// passwords, then reads the finished artifact back.
 /// </summary>
 public static class BuildScript
 {

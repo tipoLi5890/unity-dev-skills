@@ -4,7 +4,7 @@
 
 <p><b>一組 Unity 6 skill，讓 Claude Code 和 Codex 像謹慎的 Unity 開發者一樣做事，而且每一步都拿得出證明。</b></p>
 
-<p><i>60+ 個 skill，從最初的構想一路到真機上的建置。</i></p>
+<p><i>60 個 skill，從最初的構想一路到真機上的建置。</i></p>
 
 <p>
 <a href="../.claude-plugin/plugin.json"><img alt="版本" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -116,7 +116,7 @@ flowchart LR
     E -->|通過| F["完成，附上證明"]
 ```
 
-- **從你的描述找到對的方法**。每個 skill 開頭都是一張用白話寫成的症狀表，另有三個「從這裡開始」的 skill 負責分派任何 gameplay、UI 或角色需求。
+- **從你的描述找到對的方法**。每個 skill 開頭都是一張用白話寫成的症狀表，另有四個「從這裡開始」的 skill 負責分派任何 gameplay、UI、角色或後端需求。
 - **執行的是程式碼，不是建議**。100+ 支 Python 腳本、170+ 個 C# 檔案和 50+ 份範本，直接複製進你的專案，不用照著筆記重打。
 - **拿得出證明**。每套方法都以一項你看得到的檢查收尾：probe 快照、journey test、重新匯入的 FBX、裝置 log。
 - **少佔上下文，自成一體**。`SKILL.md` 只負責分派；深入的內容等情境需要時才載入。不需要任何其他 plugin：skill 之間透過各自的 Scope 段落互相交接。
@@ -124,7 +124,7 @@ flowchart LR
 ## Skill 一覽
 
 > [!TIP]
-> 不知道從哪裡開始？任何 gameplay 需求用 `unity-gameplay`，任何 UI 需求用 `unity-game-ui`，要從圖片做出綁骨角色就用 `game-character-pipeline`。
+> 不知道從哪裡開始？任何 gameplay 需求用 `unity-gameplay`，任何 UI 需求用 `unity-game-ui`，要從圖片做出綁骨角色就用 `game-character-pipeline`，任何後端、連線或商業化需求用 `unity-live-services`。
 
 <details>
 <summary><b>每個階段——終端機與搜尋</b>：Unity CLI，以及在專案裡找出任何東西</summary>
@@ -235,7 +235,7 @@ flowchart LR
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | 透過 `codex` 影像模型出 2D 美術，靠一份美術聖經維持風格一致 |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音樂、音效、影片與 3D 模型，每項各一個 job |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 透過生成影片，把一張角色靜態圖變成透明的 sprite 循環動畫 |
-| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | 在 Blender 裡替圖片轉 3D 的角色綁骨，再重新匯入 FBX 來證明 |
+| [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` 不適用時在 Blender 裡手工綁骨，再重新匯入 FBX 來證明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把現成的 clip 套到你的 Blender 骨架上，以滑步、抖動與 pop 把關 |
 | [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地替人形角色綁骨，一個 headless 指令完成 |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 把一個動作做成 clip：從雙機位影片直接解算到骨架上 |
@@ -273,12 +273,10 @@ flowchart LR
 
 | Skill | 什麼時候用 |
 |---|---|
-| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | 安全地把遊戲接上後端，先把離線路徑設計好 |
+| [`unity-live-services`](../skills/unity-live-services/SKILL.md) | 後端、連線與商業化的起點：離線路徑、多人連線拓撲、SDK 與商店宣告的接縫 |
 | [`unity-ugs`](../skills/unity-ugs/SKILL.md) | 因為沒有初始化而丟出例外的服務：照正確順序初始化 Gaming Services |
 | [`unity-iap`](../skills/unity-iap/SKILL.md) | 內容給了兩次或一次都沒給：In-App Purchasing v5，逐個呼叫來看 |
 | [`unity-ads-levelplay`](../skills/unity-ads-levelplay/SKILL.md) | 廣告不出來，或建置被廣告依賴弄壞：LevelPlay，init 之前先取得同意 |
-| [`unity-monetization`](../skills/unity-monetization/SKILL.md) | 弄壞建置、manifest 或商店宣告的內購與廣告 SDK |
-| [`unity-multiplayer`](../skills/unity-multiplayer/SKILL.md) | 先選定拓撲，並且別讓語音聊天搶走其他功能的麥克風 |
 | [`unity-multiplayer-services`](../skills/unity-multiplayer-services/SKILL.md) | 玩家怎麼進到同一場遊戲，從 join code 到 host 遷移 |
 | [`unity-vivox`](../skills/unity-vivox/SKILL.md) | 加入語音成功卻沒人聽得到：Vivox 聊天，從登入到 push-to-talk |
 

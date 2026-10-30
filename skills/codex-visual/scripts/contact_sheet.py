@@ -384,7 +384,7 @@ def main() -> int:
     parser.add_argument("--require", nargs="+", action="extend", type=Path, default=[], metavar="VALIDATION.json",
                         help="A check file that must pass (ok / all_pass / pass true, or verdict / record.verdict green)")
     parser.add_argument("--selftest", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(["--selftest"] if sys.argv[1:] == ["selftest"] else None)
     if args.selftest:
         return selftest()
     if args.spec is None or args.out is None:

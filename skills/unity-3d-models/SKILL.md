@@ -1,16 +1,8 @@
 ---
 name: unity-3d-models
 description: >-
-  Bring a 3D model into a Unity game and prove it fits: route by source (an
-  image-to-3D `.glb` from Tripo, Meshy or ComfyUI, an FBX character, a
-  Blender-authored rig, a purchased pack), inspect, decimate to the class's
-  target, import (glTFast for GLB), wire into a prefab, audit the folder
-  against the class's budget row. A budget is picked per class from the same
-  asset generated at every preset up to a showcase baseline, seen in the game
-  scene; never a fixed cap. Load when the user has a 3D model to add, 3D assets
-  make the game lag, a model "shows in Scene, invisible in Game", distant
-  textures shimmer, or a class needs a triangle or texture budget. Humanoid
-  characters: unity-rigged-character.
+  Add a 3D model to a Unity game: GLB/FBX import, decimation, triangle/texture
+  budgets, audit.
 ---
 
 # unity-3d-models — from a generated mesh to an audited import
@@ -18,6 +10,31 @@ description: >-
 Whatever made the model, it ends the same way: a file in `Assets/Models/<Class>/<Name>/`, a
 prefab whose `Model` child holds it, an audit that read it against its class's row, and one
 record in the project's ledger. What differs is the route there.
+
+## Start here — the situation, and what to read
+
+| The situation | Read |
+|---|---|
+| "I have a 3D model to add": a model file to bring in (route by source below); it's huge; decimation; glTFast setup | `reference/import-and-decimate.md` |
+| Which class a model is; its pivot, collision, LODs and prefab name | `reference/asset-classes.md` |
+| What a class may cost; a triangle or texture budget; the preset ladder; a table in the 3D chapter | `reference/budgets.md` |
+| A character's game mesh: regenerate at the preset, or retopology and a rebake, before rigging | `blender-character-rig` → `reference/game-mesh.md` |
+| Checking a folder of imported models against its class | `reference/model-audit.md` |
+| Generate the mesh on a self-hosted ComfyUI at the class's preset, so no decimation pass is needed | skill `comfyui-asset-generation` |
+| Lighter levels will not decimate (spikes, a floor far above the target), a hidden inner body, a prop in shards, blotchy normals | `reference/import-and-decimate.md` (three faults) |
+| A level vanished on one quality tier; the importer made a LODGroup nobody asked for | `reference/asset-classes.md` (LOD names) |
+| "Shows in Scene, invisible in Game"; culling masks; layers | `reference/culling-and-layers.md` |
+| Distant surfaces shimmer or look blurry; aniso; MSAA | `reference/texture-filtering.md` |
+| "3D assets make the game lag"; the game lags/stutters with 3D assets; draw calls; the order to fix it in | `reference/performance-budget.md` |
+| Numbers for the lag before touching a mesh: triangle and draw-call counters, a before/after window | skill `unity-profiling` |
+| A class's frame time on the phone itself | skill `unity-device-testing` |
+| Textures and meshes are bloating memory or the build | skill `unity-android-release`, its size-and-stripping reference |
+| A **rigged, animated character** rather than a prop; Humanoid or Generic rig import | skill `unity-rigged-character`, or skill `blender-character-rig` for chibi proportions, extra parts or a custom action |
+| Clips retargeted onto a character already rigged in Blender | skill `blender-retarget` |
+| Recording a model, its source and licence; a purchased pack's vendor files | skill `art-asset-registry` |
+| The `## 3D` chapter of the art bible | skill `codex-visual` |
+| 2D sprite sheets, slicing, pivots, 9-slice borders | skill `unity-2d-sprites` |
+| Verifying any of it visually | skill `unity-debug` |
 
 Two hard truths this skill exists for:
 
@@ -92,31 +109,6 @@ a `record` the registry ingests unchanged (`art-asset-registry` → `reference/i
 | 6 · It's invisible in Game view | Almost always layer/culling, not the mesh | `reference/culling-and-layers.md` |
 | 7 · It looks cheap at distance | Filtering defaults, not model quality | `reference/texture-filtering.md` |
 | 8 · It runs badly | Measure it first (`unity-profiling`), then the order to attack it in | `reference/performance-budget.md` |
-
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| A model file to bring in; it's huge; decimation; glTFast setup | `reference/import-and-decimate.md` |
-| Which class a model is; its pivot, collision, LODs and prefab name | `reference/asset-classes.md` |
-| What a class may cost; a triangle or texture budget; the preset ladder; a table in the 3D chapter | `reference/budgets.md` |
-| A character's game mesh: regenerate at the preset, or retopology and a rebake, before rigging | `blender-character-rig` → `reference/game-mesh.md` |
-| Checking a folder of imported models against its class | `reference/model-audit.md` |
-| Generate the mesh on a self-hosted ComfyUI at the class's preset, so no decimation pass is needed | skill `comfyui-asset-generation` |
-| Lighter levels will not decimate (spikes, a floor far above the target), a hidden inner body, a prop in shards, blotchy normals | `reference/import-and-decimate.md` (three faults) |
-| A level vanished on one quality tier; the importer made a LODGroup nobody asked for | `reference/asset-classes.md` (LOD names) |
-| "Shows in Scene, invisible in Game"; culling masks; layers | `reference/culling-and-layers.md` |
-| Distant surfaces shimmer or look blurry; aniso; MSAA | `reference/texture-filtering.md` |
-| The game lags/stutters with 3D assets; draw calls; the order to fix it in | `reference/performance-budget.md` |
-| Numbers for the lag before touching a mesh: triangle and draw-call counters, a before/after window | skill `unity-profiling` |
-| A class's frame time on the phone itself | skill `unity-device-testing` |
-| Textures and meshes are bloating memory or the build | skill `unity-android-release`, its size-and-stripping reference |
-| A **rigged, animated character** rather than a prop; Humanoid or Generic rig import | skill `unity-rigged-character`, or skill `blender-character-rig` for chibi proportions, extra parts or a custom action |
-| Clips retargeted onto a character already rigged in Blender | skill `blender-retarget` |
-| Recording a model, its source and licence; a purchased pack's vendor files | skill `art-asset-registry` |
-| The `## 3D` chapter of the art bible | skill `codex-visual` |
-| 2D sprite sheets, slicing, pivots, 9-slice borders | skill `unity-2d-sprites` |
-| Verifying any of it visually | skill `unity-debug` |
 
 ## Scope — what this skill does NOT do
 

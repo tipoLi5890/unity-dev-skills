@@ -1,16 +1,8 @@
 ---
 name: unity-game-feel
 description: >-
-  Give each gameplay event one feedback row with a budget, in 2D and 3D: a
-  Feedback component plays motion, flash, particles, shake, sound, haptics and
-  time with priorities and reduce-motion settings; one owner of
-  Time.timeScale for hit stop; flashes that restore; squash and tweens with no
-  library; pooled SFX with a voice cap; rumble that stops. Load for: "the hit
-  has no impact", "the game stays frozen after a hit", "the enemy stays white
-  after it flashes", "thirty pickups play thirty sounds", "the trail streaks
-  across the screen after respawn", "the controller keeps vibrating". Impulse
-  shake is unity-camera; mixers are unity-audio; the damage is unity-combat;
-  pickups are unity-interaction.
+  Make hits feel good: hit stop, flash, squash, particles, trails, pooled
+  sound effects, rumble.
 ---
 
 # unity-game-feel — feedback is a stack per event with a budget, not effects added until it feels right
@@ -21,6 +13,19 @@ description: >-
 > hit, pickup, launch, land, fail — gets one row: what plays on each channel, for how many
 > milliseconds, how strongly, at what priority. The row is data a person tunes; gameplay only
 > names it.
+
+## Symptom → where to look
+
+| The report | Go to |
+|---|---|
+| "the hit has no impact", which channels an event gets | `reference/feedback-stack.md`, *Start here* |
+| "the game stays frozen after a hit", time stuck at a low scale | `reference/hit-stop-and-time.md` |
+| "the enemy stays white after it flashes", squash about the feet | `reference/flash-and-squash.md` |
+| "thirty pickups play thirty sounds", voice caps | `reference/sfx-events.md` |
+| "the trail streaks across the screen after respawn" | `reference/trails.md` |
+| "the controller keeps vibrating" | `reference/haptics.md` |
+| Particles: presets, pooling, sorting | `reference/particles.md` |
+| A small fast ball that is hard to read | `reference/sports-readability.md` |
 
 ```
 gameplay ──► Feedback.Play("hit", point, normal)
@@ -65,33 +70,13 @@ runFeedback.Play("hit", contactPoint, -contactNormal);
 6. **Subscribe the camera and the pad** — `reference/feedback-stack.md` §2 for shake through
    `unity-camera`, `reference/haptics.md` §2 for rumble. Route pause through
    `HitStop.SetBase` (`reference/hit-stop-and-time.md` §4).
-7. **Register on the probe**, beside the game's harness wiring:
-
-```csharp
-GameProbe.Count("feelMuted", () => runFeedback.Muted);
-GameProbe.Count("feelUnknown", () => runFeedback.Unknown);
-GameProbe.Count("sfxDropped", () => sfx.Dropped);
-GameProbe.Register("stopActive", () => HitStop.Active);
-```
-
-8. **Prove the contracts** with `templates/FeelJourneyTest.cs`. It builds its own room —
-   primitives, a silent clip, thirty pickup positions down the middle lane — and drives the
-   runner through `ScriptedRunInput`:
-
-| Test | Asserts |
-|---|---|
-| `Hit_DipsTime_Flashes_AndBothComeBack` | One press, one hit; time dips and is back at 1 within the stop plus 0.1 s; the flash wrote white and the property block is gone after |
-| `OverlappingStops_EndWithTheLast_AndRestoreOnce` | Two stops 0.05 s apart: never back at 1 before the second ends, back at 1 after |
-| `RequesterDestroyedMidStop_TimeStillComesBack` | The object that asked is destroyed mid-stop; time still comes back |
-| `Stop_InsideSlowMotion_ReturnsToTheSlowMotion` | A stop inside 0.5 returns to 0.5, not to 1 |
-| `OverlappingFlashes_ReturnTheOriginalLook` | Two flashes overlap; a tinted cube gets its tint back, a sprite its colour |
-| `ThirtyPickups_StartNoMoreSoundsThanTheVoiceCap` | Thirty pickup events inside 0.1 s start at most 8 sounds; every request is counted |
-
-9. **Show the gate can fail.** `FEEL_JOURNEY_BREAK=restore` (or `1`) swaps in the coroutine
-   everyone writes first and turns the overlap and destroyed-requester tests red; `=flash`
-   captures the colour on every call and turns the overlapping-flash test red; `=voices` raises
-   the cap to 64 and turns the pickup test red. Timelines go to `$JOURNEY_OUT`; every sample
-   carries `timeScale`.
+7. **Register on the probe**: `feelMuted`, `feelUnknown`, `sfxDropped`, `stopActive`.
+8. **Prove the contracts** with `templates/FeelJourneyTest.cs` — its own room, driven through
+   `ScriptedRunInput`: time dips and comes back (overlapping stops, a destroyed requester, a stop
+   inside slow motion), flashes restore the original look, thirty pickups start at most 8 sounds.
+9. **Show the gate can fail**: `FEEL_JOURNEY_BREAK=restore`, `=flash`, `=voices` each turn their
+   tests red. The registration code, every test and every break:
+   `reference/gate-room-feel.md`.
 10. **Hand the feel to a person.** The journey proves time comes back and the voice cap holds. It
     cannot prove the hit feels heavy — a person plays, and a complaint about a row becomes a
     threshold through `unity-play-harness` → `reference/complaint-to-test.md`.

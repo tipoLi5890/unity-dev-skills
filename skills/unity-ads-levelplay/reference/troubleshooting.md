@@ -34,7 +34,7 @@ dependencies were never resolved.**
 
 A Gradle failure that names a *class* rather than a dependency, in a project with a second SDK
 installed, is usually two SDKs pulling different versions of the same transitive library — that is
-`unity-monetization`, not this file.
+`unity-live-services` → `reference/monetization.md`, not this file.
 
 If the failure is specifically `com.ironsource.sdk` artifacts no longer resolving from
 `android-sdk.is.com`, the repository is gone: [`migration-sdk-9.md`](migration-sdk-9.md) §D.
@@ -74,4 +74,5 @@ expects and cannot find. [`ios-setup.md`](ios-setup.md).
 
 **Android** — Google Play Services missing, a manifest permission absent, Gradle dependencies
 unresolved. Start from [`dependency-resolution.md`](dependency-resolution.md); anything that turns
-out to be about the merged manifest or the store listing belongs to `unity-monetization`.
+out to be about the merged manifest or the store listing belongs to
+`unity-live-services` → `reference/monetization.md`.

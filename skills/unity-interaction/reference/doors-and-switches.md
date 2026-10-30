@@ -1,7 +1,7 @@
 # Doors and switches — a switch owns a bool, a gate owns a state machine
 
 > Part of the `unity-interaction` skill. `resources/GateSwitch.cs`: `GateSwitch`, which holds one
-> fact and tells its targets, and `GateTarget`, which turns that fact into motion, a collider
+> fact and tells its targets, and `resources/GateTarget.cs`: `GateTarget`, which turns that fact into motion, a collider
 > and events. Worked setting: the **gate room** — the runner walks to a switch, the switch
 > opens the gate, a sentry watches.
 

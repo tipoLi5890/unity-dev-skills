@@ -243,7 +243,8 @@ The SDK ships its own `PrivacyInfo.xcprivacy`, which typically declares device i
 usage data, tracking, and the required-reason APIs it uses (user defaults, file timestamp, system
 boot time, disk space). What matters is that **the app's own declarations do not contradict it** —
 check the Xcode project for a privacy manifest, confirm it covers the SDK's data types, and make the
-App Store Connect answers match. That App Store half is `unity-monetization`.
+App Store Connect answers match. That App Store half is
+`unity-live-services` → `reference/monetization.md`.
 
 ## Xcode
 

@@ -7,7 +7,10 @@
 //
 // Edit the two tables. Frameworks go on the UnityFramework target — plugin code is compiled
 // there, not into the app target.
-#if UNITY_IOS
+//
+// Guarded on UNITY_EDITOR as well as UNITY_IOS, so a copy left outside an Editor/ folder still
+// stays out of the iOS player build, where UnityEditor does not exist.
+#if UNITY_EDITOR && UNITY_IOS
 using System.IO;
 using UnityEditor;
 using UnityEditor.Callbacks;

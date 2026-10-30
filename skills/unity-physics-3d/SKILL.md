@@ -1,16 +1,7 @@
 ---
 name: unity-physics-3d
 description: >-
-  Diagnose 3D PhysX collisions and triggers in Unity when the physics
-  disagrees with what the scene looks like: a symptom-routed triage ladder
-  plus a two-sided debug probe, first match wins, and the answer is a
-  diagnosis. Load for: "OnCollisionEnter never fires", "OnTriggerEnter never
-  fires", objects passing through each other at speed, a raycast that misses
-  something in front of it, a ragdoll that explodes on activation, AddForce
-  doing nothing after the body has come to rest, colliders the wrong shape
-  after import, or "it collides in the editor and not in the build".
-  Pathfinding is unity-navigation; 2D is unity-physics-2d; DOTS Physics is
-  answered in its own vocabulary, never a PhysX rule.
+  3D PhysX bugs: OnTriggerEnter never fires, tunnelling, raycast misses, exploding ragdolls.
 ---
 
 # unity-physics-3d — a triage ladder, not a list of things to try
@@ -27,19 +18,19 @@ ladder is for when that check comes back clean.
 | Symptom | Go to |
 |---|---|
 | `OnCollisionEnter` / `OnTriggerEnter` never fires | §1 |
-| Fast object passes through a wall | §2 |
+| Objects pass through each other at speed; a fast object passes through a wall | §2 |
 | A hit is reported before the two objects visibly touch | §2 — speculative contacts |
 | `Physics.Raycast` misses something clearly in front of it | §3 |
 | A click finds no UI, or a world ray keeps hitting the HUD | §3 — two raycasters, two worlds |
-| `AddForce` seems to stop working once the object settles | §4 — and it is **not** the sleep state |
-| `OnTriggerStay` / `OnCollisionStay` ran for a while, then went quiet | §4 — the body fell asleep |
-| Everything frozen but raycasts still hit | §4 |
-| Ragdoll explodes on the first frame | §5 |
-| Collider is the wrong shape / imported geometry does not collide | §5 |
-| Objects come to rest with a visible gap between them | §5 — contact offset |
-| Things pass out through a concave mesh they should sit inside | §5 — inverted normals |
-| Works in the editor, not in the build | §6 |
-| Collisions stopped after a respawn or a return to the pool | §6 — per-instance ignore pairs |
+| `AddForce` seems to stop working once the object settles | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §4 — and it is **not** the sleep state |
+| `OnTriggerStay` / `OnCollisionStay` ran for a while, then went quiet | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §4 — the body fell asleep |
+| Everything frozen but raycasts still hit | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §4 |
+| Ragdoll explodes on the first frame | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §5 |
+| Collider is the wrong shape after import / imported geometry does not collide | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §5 |
+| Objects come to rest with a visible gap between them | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §5 — contact offset |
+| Things pass out through a concave mesh they should sit inside | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §5 — inverted normals |
+| It collides in the editor and not in the build | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §6 |
+| Collisions stopped after a respawn or a return to the pool | [`reference/sleep-shapes-build.md`](reference/sleep-shapes-build.md) §6 — per-instance ignore pairs |
 | A sports ball must curve, bounce with spin, replay and be predicted exactly | [`reference/own-ball-physics.md`](reference/own-ball-physics.md): no PhysX for the ball |
 
 ## 0. Before diagnosing
@@ -145,72 +136,11 @@ Each rule in full — the primitive-versus-mesh split, the three trigger results
 screen-point call and the `MovePosition` alternative:
 [`reference/queries.md`](reference/queries.md).
 
-## 4. It moved, then it stopped
+## 4–6. Sleep, shapes, editor versus build → `reference/sleep-shapes-build.md`
 
-- **The Rigidbody fell asleep.** Below `Physics.sleepThreshold` (**default `0.005`**)
-  the body deactivates and `OnCollisionStay` / `OnTriggerStay` stop firing.
-  `Rigidbody.sleepThreshold` also exists per body, and **`0` stops that body sleeping at all** —
-  affordable for one object under test, expensive as a habit. `Project Settings → Physics → Sleep
-  Threshold` does the same to every resting body in the game.
-
-> **`AddForce` is NOT ignored on a sleeping body — it wakes it.** In a PlayMode test, a body put
-> to sleep with `Sleep()` and then given a force of **0.001** reports `IsSleeping() == false` on
-> the very next line. There is no magnitude below which the force is swallowed. **`WakeUp()`
-> before `AddForce` is unnecessary.**
->
-> So when someone reports *"AddForce stops working once it settles"*, the sleep state is not the
-> explanation — do not assert a sleep mechanism, and do not chase one. Check instead, in order: the
-> force is simply too small to be visible (force `0.001` produces a velocity of `0.00002` — awake,
-> and going nowhere); it is being applied in `Update` rather than `FixedUpdate`, so most calls are
-> discarded; the body turned `isKinematic`; or `constraints` froze the axis.
-- **`Time.timeScale == 0`.** Diagnostic tell: raycasts still hit while nothing moves — that is
-  timeScale, not the physics setup ([`reference/queries.md`](reference/queries.md)).
-
-## 5. Shapes that are not what they look like
-
-- **Non-uniform parent scale breaks a `SphereCollider`, and not in the way you would guess.**
-  PhysX has no ellipsoid, so the sphere takes the **largest** axis. Under a `(1, 3, 1)` parent the
-  mesh renders `(1, 3, 1)` and the collider's bounds are **`(3, 3, 3)`** — a sphere three times
-  too wide in X and Z, colliding with things that are visibly nowhere near it. A `BoxCollider`
-  under the same parent reads `(1, 3, 1)`, matching the mesh: **boxes are fine.** Apply scale in
-  the DCC tool so the model imports at `(1,1,1)`.
-- **`Transform.SetParent(t)` preserves world scale**, silently rewriting the child's
-  `localScale` to compensate. Reparenting a collider under a scaled object therefore changes its
-  local numbers without changing how it looks — and `SetParent(t, false)` is the overload that
-  keeps local values.
-- **A child `Rigidbody` cuts the compound body.** A parent Rigidbody governs colliders beneath it
-  only until another Rigidbody appears.
-- **MeshCollider, four silent rules:** a non-convex MeshCollider on a dynamic Rigidbody is
-  ignored; two non-convex MeshColliders never collide with each other; a convex collider's
-  contacts are on the hull, so concave shapes are wrong by design; and **flipped normals invert
-  the contact direction**, so a ball that should rest inside a bowl or a pipe is pushed *out*
-  through the shell instead. That last one reads as leaking geometry, not as a normals problem.
-  Fix the winding in the DCC tool; enabling **Convex** also sidesteps it, because the hull is
-  rebuilt from the vertices and the original winding stops mattering.
-- **Ragdoll explosion = colliders overlapping in the start pose.** One frame of depenetration
-  becomes velocity. **Shrink the colliders.** Joint limits, projection, mass ratios and Enable
-  Collision are the standard misdiagnoses. Confirm with `Window > Analysis > Physics Debugger`.
-  **`detectCollisions = false` in `Start()`, back on a frame later, is a holding measure and is
-  reported as one**: the overlap returns with the collisions.
-- **A visible gap when objects rest is Contact Offset.** `Physics.defaultContactOffset` is
-  **`0.01`** by default. **Never set it to 0** — PhysX requires a positive value and 0 is unstable.
-  Inset the visual mesh instead.
-
-## 6. Editor yes, build no
-
-- IL2CPP stripped the `MonoBehaviour` — `[Preserve]` or `link.xml`
-  (`unity-android-release` → `reference/size-and-stripping.md`).
-- **A layer name resolving to `-1` is not a build problem** — it means the layer is not defined at
-  all, and `1 << -1` is not the mask you meant.
-- **The first frames of a player are not the first Editor frames**, and **Fixed Timestep is a
-  per-platform decision** a project that never set it inherits.
-- **`Physics.IgnoreCollision` binds to collider *instances*** and is lost on a respawn or a return
-  to the pool; **`Physics.IgnoreLayerCollision` is global and persists across scenes.**
-
-Each of those three in full — where layer names actually ship and the startup assertion, the
-one-frame delay and owning the step with `SimulationMode.Script`, and which of the two ignore
-calls to reach for:
-[`reference/editor-vs-build.md`](reference/editor-vs-build.md).
+§4 a body that moved then stopped (sleep, `AddForce` that wakes it, `timeScale`); §5 colliders
+that are not the shape they look — imported geometry, non-uniform scale, ragdoll overlap, contact
+offset, inverted normals, compound bodies; §6 what differs in a build. Same numbering there.
 
 ## The probe
 

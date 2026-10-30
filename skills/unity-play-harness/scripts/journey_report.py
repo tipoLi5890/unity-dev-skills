@@ -7,6 +7,8 @@ with the frame and the value that broke it, and a median/p95/max table for every
 With --before it adds a two-run comparison table.
 
 Exit codes: 0 clean · 1 at least one violation · 2 usage or parse error.
+`journey_report.py selftest` (or --selftest) writes synthetic timelines to a temp dir and checks a
+clean run (0), each rule failing (1) and a parse error (2); one JSON line, exit 0 or 1.
 A key that does not exist counts as a violation rather than crashing or being skipped — a
 report that silently checks nothing is worse than no report.
 
@@ -22,7 +24,10 @@ Examples:
 """
 import argparse
 import json
+import os
+import subprocess
 import sys
+import tempfile
 
 MISSING = object()
 
@@ -455,5 +460,72 @@ def main(argv=None):
     return 1 if violations else 0
 
 
+# ---------------------------------------------------------------- selftest
+
+
+def _timeline(path, samples, journey="courier-launch", end=True):
+    lines = [{"meta": True, "schema": 1, "journey": journey, "situation": "selftest"}] + samples
+    if end:
+        lines.append({"end": True, "frames": len(samples)})
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(json.dumps(x) for x in lines) + "\n")
+    return path
+
+
+def _run_samples(speed_spike=False, state_back=False, lane_split=False, cam_null=False):
+    states = ["Idle", "Launched", "Approach", "Approach", "AtGate"]
+    if state_back:
+        states[3] = "Launched"
+    out = []
+    for i, st in enumerate(states):
+        ready = {"laneMesh": True, "laneCollider": not (lane_split and i == 1)}
+        out.append({"n": i, "frame": 10 * i, "t": 0.1 * i, "state": st, "speed": 30.0 if speed_spike and i == 2 else 8.0,
+                    "pos": [0.0, 0.0, 2.0 * i], "milestone": "arrival" if i == 4 else None,
+                    "custom": {"gateDist": 8.0 - 2.0 * i, "cam": None if cam_null and i == 3 else "follow"},
+                    "ready": ready, "allReady": all(ready.values())})
+    return out
+
+
+def selftest():
+    checks, failed = 0, []
+
+    def run(*args):
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), *args], capture_output=True,
+                           text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        return r.returncode, r.stdout
+
+    def check(name, cond):
+        nonlocal checks
+        checks += 1
+        if not cond:
+            failed.append(name)
+
+    rules = ["--max", "speed:12", "--monotonic", "state:Idle,Launched,Approach,AtGate",
+             "--ready-before", "arrival", "--together", "laneMesh,laneCollider", "--no-null", "cam"]
+    with tempfile.TemporaryDirectory(prefix="journey-selftest-") as d:
+        j = lambda n: os.path.join(d, n)   # noqa: E731
+        good = _timeline(j("good.jsonl"), _run_samples())
+        code, out = run("--after", good, *rules)
+        check("a clean run: exit 0", code == 0 and "violations=0" in out)
+        check("--before comparison: exit 0", run("--after", good, "--before", good, "--max", "speed:12")[0] == 0)
+        for name, kw in (("speed over --max", {"speed_spike": True}), ("state goes back", {"state_back": True}),
+                         ("members disagree", {"lane_split": True}), ("a null key", {"cam_null": True})):
+            code, out = run("--after", _timeline(j("bad.jsonl"), _run_samples(**kw)), *rules)
+            check(name + ": exit 1", code == 1 and "violations=0" not in out)
+        code, _ = run("--after", good, "--max", "noSuchKey:1")
+        check("an absent key is a violation: exit 1", code == 1)
+        code, _ = run("--after", good, "--max", "speed:1@gateDist<-100")
+        check("a window no sample matches: exit 1", code == 1)
+        with open(j("broken.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write('{"meta": true}\nnot json\n')
+        check("an unreadable timeline: exit 2", run("--after", j("broken.jsonl"))[0] == 2)
+        other = _timeline(j("other.jsonl"), _run_samples(), journey="sentry-patrol")
+        check("--before of another journey: exit 2", run("--after", good, "--before", other)[0] == 2)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
+    return 0 if not failed else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["selftest"], ["--selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

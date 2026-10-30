@@ -161,7 +161,8 @@ players on one machine need **device pairing**, and that is what `PlayerInput` a
 - **`RunInputReader.ActiveScheme` becomes per player**, which is what split-screen prompts need.
 
 Players on different machines are a different problem — the input is sent, predicted and
-reconciled — and belong to `unity-multiplayer`.
+reconciled. Those netcode APIs are out of scope for this plugin; the topology and authority
+decisions behind them are `unity-live-services` → `reference/multiplayer.md`.
 
 ## Checks
 

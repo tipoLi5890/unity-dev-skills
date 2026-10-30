@@ -148,11 +148,19 @@ def selftest() -> tuple:
             "failed": [c["name"] for c in checks if not c["pass"]]}, 0 if ok else 1
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main():
     args = B.script_args()
-    if "--selftest" in args:
+    if "--selftest" in args or args[:1] == ["selftest"]:
         return selftest()
-    ap = argparse.ArgumentParser(prog="prepare_rig.py")
+    ap = UsageParser(prog="prepare_rig.py")
     ap.add_argument("blend"); ap.add_argument("out_dir")
     ap.add_argument("--rig"); ap.add_argument("--body"); ap.add_argument("--map"); ap.add_argument("--character")
     ap.add_argument("--height", type=float)

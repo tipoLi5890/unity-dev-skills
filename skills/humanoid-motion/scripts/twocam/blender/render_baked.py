@@ -120,7 +120,7 @@ def selftest() -> tuple:
 
 def main():
     args = B.script_args()
-    if "--selftest" in args:
+    if "--selftest" in args or args[:1] == ["selftest"]:
         return selftest()
     if len(args) < 2:
         raise ValueError("usage: Blender -b BAKED.blend -P render_baked.py -- RIG_INFO.json OUT_DIR [options]")

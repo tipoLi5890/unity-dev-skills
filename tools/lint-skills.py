@@ -7,14 +7,14 @@ only at release time.
 
 Checks: the frontmatter block exists, its YAML parses, `name` equals the skill
 directory name, `description` is non-empty and inside its character budget, and
-SKILL.md is inside its size budget. Then syntax-gates what ships alongside:
-`bash -n` for shell, `py_compile` for Python, `node --check` for JS when node is
-present.
+SKILL.md is inside its size budget; and that the skill listing as a whole (every
+name and description together) fits the listing budget. Then syntax-gates what
+ships alongside: `bash -n` for shell, the builtin `compile()` for Python (so no
+__pycache__ is written), `node --check` for JS when node is present.
 
   python3 tools/lint-skills.py
 """
 import pathlib
-import py_compile
 import re
 import shutil
 import subprocess
@@ -27,8 +27,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The two budgets a skill stays inside. `description` is trigger text that every
 # session loads, so it is charged on every conversation; SKILL.md is a router, and
 # depth belongs in the reference/ files it names rather than in the router itself.
-MAX_SKILL_BYTES = 15 * 1024
-MAX_DESCRIPTION_CHARS = 700
+MAX_SKILL_BYTES = 12 * 1024
+MAX_DESCRIPTION_CHARS = 250
+
+# Claude Code budgets the skill listing at about 1% of the context window — about
+# 8,000 characters at 200K — and drops descriptions once the listing overflows, so a
+# skill past the budget is listed by name alone and stops triggering. The estimate is
+# each line as the listing writes it: `- unity-dev:<name>: <description>`.
+PLUGIN_PREFIX = 'unity-dev'
+LISTING_BUDGET_CHARS = 8000
 
 
 def lint_executables() -> list:
@@ -41,9 +48,9 @@ def lint_executables() -> list:
            if '__pycache__' not in p.parts]
     for f in pys:
         try:
-            py_compile.compile(str(f), doraise=True)
-        except py_compile.PyCompileError as e:
-            errors.append(f'{f.relative_to(ROOT)}: py_compile failed: {str(e)[:120]}')
+            compile(f.read_bytes(), str(f), 'exec')
+        except (SyntaxError, ValueError) as e:
+            errors.append(f'{f.relative_to(ROOT)}: compile failed: {str(e)[:120]}')
     if shutil.which('node'):
         for f in ROOT.glob('skills/**/*.js'):
             r = subprocess.run(['node', '--check', str(f)], capture_output=True, text=True)
@@ -58,6 +65,7 @@ def main() -> int:
         print('no skills found under skills/ — wrong directory?')
         return 1
     fm_errors = []
+    listing_chars = 0
     for f in skills:
         rel = f.relative_to(ROOT)
         size = f.stat().st_size
@@ -78,21 +86,28 @@ def main() -> int:
         if fm.get('name') != f.parent.name:
             fm_errors.append(f"{rel}: name={fm.get('name')!r} != directory {f.parent.name!r}")
         description = str(fm.get('description') or '')
+        listing_chars += len(f'- {PLUGIN_PREFIX}:{f.parent.name}: {description}\n')
         if not description.strip():
             fm_errors.append(f'{rel}: empty description')
         elif len(description) > MAX_DESCRIPTION_CHARS:
             fm_errors.append(f'{rel}: description is {len(description)} characters, over the '
                              f'{MAX_DESCRIPTION_CHARS}-character limit')
 
+    listing_errors = []
+    if listing_chars > LISTING_BUDGET_CHARS:
+        listing_errors.append(f'skill listing: about {listing_chars} characters for {len(skills)} skills, '
+                              f'over the {LISTING_BUDGET_CHARS}-character listing budget')
+
     exe_errors = lint_executables()
-    errors = fm_errors + exe_errors
+    errors = fm_errors + listing_errors + exe_errors
     for e in errors:
         print('ERROR', e)
     # Count the OK skills from the SKILL.md failures alone. A broken script is keyed on
     # its own path, so counting those here would report fewer good skills than there are.
     ok = len(skills) - len({e.split(':')[0] for e in fm_errors})
     print(f'{len(skills)} SKILL.md scanned, {ok} OK, '
-          f'{len(errors)} errors; executables gate: {"FAILED" if exe_errors else "OK"}')
+          f'{len(errors)} errors; listing {listing_chars}/{LISTING_BUDGET_CHARS} characters; '
+          f'executables gate: {"FAILED" if exe_errors else "OK"}')
     return 1 if errors else 0
 
 

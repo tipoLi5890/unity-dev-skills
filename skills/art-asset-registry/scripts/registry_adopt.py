@@ -1086,7 +1086,7 @@ def _selftest_rows(R, work):
 
 
 def _main(argv):
-    if argv == ["selftest"]:
+    if argv in (["selftest"], ["--selftest"]):
         import registry_ingest
         with tempfile.TemporaryDirectory(prefix="registry-adopt-") as d:
             for name, case in (("adopt", selftest), ("ingest", registry_ingest.selftest)):

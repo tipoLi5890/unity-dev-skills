@@ -102,10 +102,18 @@ def selftest() -> int:
     return 0 if good else 1
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1 (refused), never 2: here 2 is a verdict."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv=None, quiet=False) -> int:
     argv = sys.argv[1:] if argv is None else argv
     emit = (lambda d: None) if quiet else (lambda d: print(json.dumps(d)))
-    if "--selftest" in argv:
+    if "--selftest" in argv or argv[:1] == ["selftest"]:
         return selftest()
     try:
         if argv and argv[0] == "--check":
@@ -117,7 +125,7 @@ def main(argv=None, quiet=False) -> int:
             emit({"tool": "make_prompt.py", "op": "check", "file": argv[1], "rebuilds": same, "action": detail,
                   "ok": same})
             return 0 if same else 2
-        ap = argparse.ArgumentParser(prog="make_prompt.py", description=__doc__.split("\n")[0])
+        ap = UsageParser(prog="make_prompt.py", description=__doc__.split("\n")[0])
         ap.add_argument("character"); ap.add_argument("rig_info"); ap.add_argument("action"); ap.add_argument("--out")
         a = ap.parse_args(argv)
         ch = json.loads(Path(a.character).read_text(encoding="utf-8"))

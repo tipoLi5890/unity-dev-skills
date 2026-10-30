@@ -1,16 +1,8 @@
 ---
 name: unity-localization
 description: >-
-  Ship a Unity game in more than one language, with the CJK font pipeline
-  where it actually goes wrong. Load for: adding languages, translating UI,
-  boxes/tofu instead of Chinese, Japanese or Korean glyphs, TMP fallback chain
-  versus per-locale font swap, String/Asset Tables and their Addressables
-  rules, font assets that lose their atlas on reimport, a font builder that
-  throws with no message, a key missing from one table or a raw key on
-  screen, a language switch that appears to do nothing, Traditional Chinese
-  in Simplified glyph shapes, font assets modified in git after every test
-  run, or layout that breaks on a longer translation. Type sizing and HUD
-  layout live in unity-game-ui.
+  Localize a Unity game: string tables, language switch, CJK fonts and tofu,
+  TMP fallbacks, long text.
 ---
 
 # unity-localization — the asset pipeline, and the CJK part that bites
@@ -28,6 +20,7 @@ description: >-
 
 | Symptom | Go to |
 |---|---|
+| Adding languages, translating UI, from nothing | §1, then `reference/string-tables.md` |
 | Boxes / tofu instead of Chinese, Japanese or Korean | §2, then `reference/font-pipeline.md` §4 |
 | Text renders fine, but one locale shows the wrong regional glyph shapes | §1 |
 | Deciding how CJK fonts should be wired at all | §1 |
@@ -75,30 +68,24 @@ fontAsset.atlasPopulationMode        = AtlasPopulationMode.Dynamic;
 fontAsset.isMultiAtlasTexturesEnabled = true;
 ```
 
-Both are properties of `TMPro.TMP_FontAsset`. `AtlasPopulationMode` carries **`Static`** and
-**`Dynamic`**, plus **`DynamicOS`** from TMP 3.2.0-pre.3 — so `Dynamic OS` is reachable from script
-where your TMP version has it. `GlyphRenderMode` includes `SDF8`, `SDF16` and `SDF32`, which is
-where the SDF16 recommendation in `unity-game-ui` → `reference/text-and-cjk.md` lands. A CJK
-character set will not fit a static atlas, and a single atlas texture overflows almost immediately.
-Both flags, every time.
+`AtlasPopulationMode` has `Static`, `Dynamic` and, from TMP 3.2.0-pre.3, `DynamicOS`;
+`GlyphRenderMode` has `SDF8`/`SDF16`/`SDF32` (SDF16: `unity-game-ui` → `reference/text-and-cjk.md`).
+A CJK set will not fit a static atlas, and one atlas texture overflows almost immediately. Both
+flags, every time.
 
-> **Never substitute a Western font when a CJK font is missing.** Arial and Liberation Sans have
-> no CJK glyphs — the result is a screen of tofu boxes that looks like a rendering bug rather than
-> a missing asset. If copying a system font fails, **stop and report it.** Silently falling back
-> converts a clear one-line failure into a visual mystery. The same applies to a **null** font
-> reference in a theme or table: TMP falls back to the built-in Liberation Sans, which is solid
-> tofu for CJK.
+> **Never substitute a Western font when a CJK font is missing** — Arial and Liberation Sans have
+> no CJK glyphs. If copying a system font fails, **stop and report it**; a silent fallback turns a
+> one-line failure into a visual mystery. A **null** font reference falls back to the built-in
+> Liberation Sans too: solid tofu for CJK.
 
 Before suspecting the atlas, check the two cheapest causes: **the source font file is a Git LFS
 pointer** (empty font assets, no error anywhere), and **one label built outside the factory that
 assigns the per-locale font** (one tofu box, everything else correct). Full ladder:
 `reference/font-pipeline.md` §4.
 
-Named system fonts are a *development* stopgap only: **shipping one is a licensing question, not a
-technical one** — macOS PingFang and Hiragino are not redistributable, nor are the Windows faces.
-Ship an open-licensed family and put it on the credits screen. Named fonts, file sizes, LFS and
-`Dynamic OS` on device: `reference/font-pipeline.md` §6. Sizing numbers (padding ratio, sampling
-point size per script), which apply to every font asset here: `unity-game-ui` →
+Named system fonts are a development stopgap: **shipping one is a licensing question** (PingFang,
+Hiragino and the Windows faces are not redistributable) — ship an open-licensed family and credit
+it (`reference/font-pipeline.md` §6). Sizing numbers per script: `unity-game-ui` →
 `reference/text-and-cjk.md`.
 
 ## 3. Three ways the pipeline loses work silently
@@ -106,59 +93,39 @@ point size per script), which apply to every font asset here: `unity-game-ui` �
 > **A generated font asset's atlas and material must be stored as sub-assets or they vanish on
 > reimport.**
 
-```csharp
-foreach (var tex in fontAsset.atlasTextures)                // the array, not atlasTexture
-    AssetDatabase.AddObjectToAsset(tex, fontAsset);
-AssetDatabase.AddObjectToAsset(fontAsset.material, fontAsset);
-fontAsset.material.mainTexture = fontAsset.atlasTexture;    // wire it explicitly
-```
-
-Loop the array: with multi-atlas on (§2), `atlasTexture` is only the first texture, and adding it
-alone loses the rest once the set outgrows the first 1024². Mark dirty and save, then confirm with
-`AssetDatabase.LoadAllAssetsAtPath` — in-memory references stay non-null whether or not anything
-was written. Otherwise the font works today and is blank next week: `reference/font-pipeline.md` §2.
+Add **every** texture in `fontAsset.atlasTextures` (not just `atlasTexture` — with multi-atlas on
+it is only the first) and the material with `AssetDatabase.AddObjectToAsset`, wire
+`material.mainTexture`, mark dirty, save, and confirm with `AssetDatabase.LoadAllAssetsAtPath` —
+in-memory references stay non-null whether or not anything was written. The code:
+`reference/font-pipeline.md` §2.
 
 > **Addressables: everything an Asset Table references must be marked Addressable, and must not
 > live in `Resources/`.**
 
-A `Resources/` asset raises `OperationException: Failed to load sub-asset` at runtime, not at
-build time — copy it into `Assets/Fonts/` first. A font asset deleted and rebuilt gets a new
-**GUID**: the Asset Table still points at the old one, so repoint it by hand and re-add it to
-Addressables. Any change here needs `AddressableAssetSettings.BuildPlayerContent()` before a build
-sees it. The GUID rule also sets the build **order**: whatever writes font references into a theme
-or settings asset runs *after* the fonts exist, or it writes nulls.
+A `Resources/` asset raises `OperationException: Failed to load sub-asset` at runtime — copy it
+into `Assets/Fonts/` first. A rebuilt font asset gets a new **GUID**: repoint the Asset Table and
+re-add it to Addressables, then `AddressableAssetSettings.BuildPlayerContent()`. So whatever writes
+font references into a theme runs *after* the fonts exist, or it writes nulls.
 
 > **A dynamic atlas rewrites its own `.asset` on every Editor run, and that lands in the
 > diffable half of the repo.**
 
-Every `-batchmode -executeMethod` call and PlayMode run that renders a new CJK glyph bakes it into
-the atlas, so `git status --short` shows the font asset modified — text YAML, not LFS, growing to
-megabytes. Revert the assets as a fixed pre-commit step, or bake a static atlas; `Clear Dynamic Data
-On Build` does **not** help, since it acts at build time on what ships and the churn comes from
-Editor and test runs. Both options: `reference/font-pipeline.md` §5.
+Every batch or PlayMode run that renders a new CJK glyph bakes it in — text YAML, not LFS, growing
+to megabytes. Revert the assets as a pre-commit step, or bake a static atlas; `Clear Dynamic Data
+On Build` does **not** help (it acts at build time). Both options: `reference/font-pipeline.md` §5.
 
 ## 4. Layout survives a longer translation, or it does not
 
-German and Finnish run long; CJK runs short but tall. For uGUI text that must absorb both:
-`VerticalLayoutGroup` (Child Control Height on, Child Force Expand Height off), one
-`ContentSizeFitter` per label (Vertical Fit = Preferred Size), TMP word wrapping on and
-Overflow = Overflow. After setting text programmatically,
-`LayoutRebuilder.ForceRebuildLayoutImmediate(parent)` — otherwise the box is sized for the
-previous string.
+German and Finnish run long; CJK runs short but tall. uGUI text that absorbs both: a
+`VerticalLayoutGroup` with one `ContentSizeFitter` per label (Preferred Size), wrapping on, and
+`LayoutRebuilder.ForceRebuildLayoutImmediate(parent)` after setting text in code.
 
-Two rules that only appear once a second script ships:
+- **Size fixed-width controls from measured text** (`label.GetPreferredValues(text).x`), never the
+  source language; a fixed width is sized for the **longest** locale, with `NoWrap` + `Ellipsis`.
+- **A per-locale font bound at construction ignores a locale change until the UI is rebuilt** —
+  expose one "rebuild and re-enter the current screen" entry point.
 
-- **Size fixed-width controls from measured text, never from the source language.**
-  `label.GetPreferredValues(text).x` gives the width at the component's current font and size
-  without a layout rebuild. Where a fixed width is unavoidable, size it against the **longest**
-  locale and put the reason in a comment (260 px pills fit Chinese and split on Japanese
-  `キャンセル`; 320 px fixed it), and add `NoWrap` + `TextOverflowModes.Ellipsis` so the next
-  surprise degrades instead of reflowing the screen.
-- **If the per-locale font is bound when a label is constructed, changing locale does nothing
-  until the UI is rebuilt.** Expose one public "rebuild and re-enter the current screen" entry
-  point rather than a locale-changed event nothing can usefully handle.
-
-Worked numbers, the two-line-row remedy, and the automated per-locale screenshot sweep:
+The settings in full, worked numbers, the two-line-row remedy and the per-locale screenshot sweep:
 `reference/per-locale-layout.md`.
 
 Use the public `LocalizeStringEvent`, never reflection into the Editor-side TMP convenience
@@ -186,24 +153,15 @@ the `GetLocalizedString` miss contract — a documented **non-null** "No transla
 system-language detection with its three Chinese values, and the wording table:
 `reference/string-tables.md`.
 
-**Once `com.unity.localization` is resolved**, the Editor-side half is `reference/string-tables.md`
-§6: presence checks, `FindAssets` scoped to `Assets`, populating by `Locale.Identifier.Code`, a
-write that survives the session, preview versus runtime locale, `LocalizeStringEvent` and the
-listener `AddPersistentListener` leaves asleep at `RuntimeOnly`, and a completeness check whose
-third state is `INCONCLUSIVE`.
+**Once `com.unity.localization` is resolved**, the Editor-side half — presence checks, populating
+by `Locale.Identifier.Code`, preview versus runtime locale, the listener `AddPersistentListener`
+leaves asleep at `RuntimeOnly`, a completeness check with an `INCONCLUSIVE` state — is
+`reference/string-tables.md` §6.
 
-Two runnable pieces go with it:
-
-- [`resources/L10nBatchProcessor.cs`](resources/L10nBatchProcessor.cs) — wires both `Text` and
-  `TMP_Text` across every scene under `Assets/` and **returns the labels it could not match**, as
-  `scene :: object :: text`; print that list. It matches the mapping **longest key first**, so a
-  substring key cannot win inside a longer sentence.
-- [`resources/LocalizedFontAsset.cs`](resources/LocalizedFontAsset.cs) — the per-locale font swap
-  from §1, driven by an Asset Table.
-
-> **Report the scene list, then wait.** The batch processor opens every scene under `Assets/` and
-> saves the ones it changed, and nothing undoes that automatically. Say how many scenes and which
-> mapping, and get confirmation before running it.
+Two runnable pieces: `resources/Editor/L10nBatchProcessor.cs` wires `Text` and `TMP_Text` across every
+scene and returns the labels it could not match (longest key first); `resources/LocalizedFontAsset.cs`
+is §1's per-locale swap. **The batch processor saves every scene it changed — report the scene list
+and the mapping, then wait for a yes.** Details: `reference/batch-tools.md`.
 
 Report gaps rather than closing them with the source language; some are decisions —
 `reference/string-tables.md` §6.8.
@@ -221,8 +179,7 @@ Not "localisation added". Per release:
 6. Before committing: check `git status --short` for dynamic font assets the run modified (§3).
 
 Automate 1, 4 and 5 as a screenshot sweep — set locale, rebuild, capture, restore — and **read
-the images**; capture mechanics are `unity-debug`. Assertions do not see tofu, and they do not see
-a two-line button either.
+the images** (capture: `unity-debug`); assertions see neither tofu nor a two-line button.
 
 ## Scope — what this skill does NOT do
 

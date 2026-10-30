@@ -24,9 +24,9 @@ this configuration is deliberate.
 | Content build | `IPostprocessBuildWithReport` | Build the Addressables content so the entries have bundles behind them |
 | Runtime supplier | `MonoBehaviour`, first scene | Answer `SpriteAtlasManager.atlasRequested` by loading the atlas and invoking the callback |
 
-Ready-made versions: `resources/AtlasBuildGenerator.cs`, `resources/AtlasContentBuild.cs` and
-`resources/AtlasSupplier.cs`. Drop the first two under an `Editor` folder and the third on an object
-in the first scene.
+Ready-made versions: `resources/Editor/AtlasBuildGenerator.cs`,
+`resources/Editor/AtlasContentBuild.cs` and `resources/AtlasSupplier.cs`. Drop the first two under
+an `Editor` folder and the third on an object in the first scene.
 
 ## The Editor API
 

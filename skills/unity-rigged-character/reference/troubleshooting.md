@@ -74,8 +74,8 @@
 | Part of the character vanishes at the edge of the screen mid-swing | the pose leaves the import-time culling box | widen `localBounds`, or Update When Offscreen (`gameplay-rig.md`) |
 | Bounds read in a test do not match the pose | read straight after an Animator evaluate | read after a rendered frame (`gameplay-rig.md`) |
 | Character collides with its own accessories | colliders left on the model child | strip them; the root's collider is the hit box (`gameplay-rig.md`) |
-| Character's hit box is a different shape than the collider gizmo suggests | a parent has non-uniform scale | apply scale in the DCC tool so the FBX imports at `(1,1,1)` (`unity-physics-3d` §5) |
-| Held prop or hit volume stops moving with the body | a `Rigidbody` on a child cut the compound body | remove it, or make the split deliberate (`unity-physics-3d` §5) |
-| Ragdoll launches itself on activation | colliders overlap in the start pose | shrink colliders; confirm with `Window > Analysis > Physics Debugger` (`unity-physics-3d` §5) |
+| Character's hit box is a different shape than the collider gizmo suggests | a parent has non-uniform scale | apply scale in the DCC tool so the FBX imports at `(1,1,1)` (`unity-physics-3d` → `reference/sleep-shapes-build.md` §5) |
+| Held prop or hit volume stops moving with the body | a `Rigidbody` on a child cut the compound body | remove it, or make the split deliberate (`unity-physics-3d` → `reference/sleep-shapes-build.md` §5) |
+| Ragdoll launches itself on activation | colliders overlap in the start pose | shrink colliders; confirm with `Window > Analysis > Physics Debugger` (`unity-physics-3d` → `reference/sleep-shapes-build.md` §5) |
 | `OnCollisionEnter` never fires on the player | it is a `CharacterController` | use `OnControllerColliderHit`; do not add a `Rigidbody` (`unity-physics-3d` §1) |
 | `Animator is not playing an AnimatorController`, character stands still | a second, empty Animator on the root | no `RequireComponent(Animator)` on the root (`gameplay-rig.md`) |

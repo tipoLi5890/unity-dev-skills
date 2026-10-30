@@ -77,7 +77,7 @@ recipe of controller, camera and movement skills is `unity-gameplay`.
 | Long-form, with inventories, quests and areas | All of the above plus Addressables and Timeline — this is the list that grows fastest |
 | Vehicles and contact | Render pipeline, Input System, Cinemachine. Physics is in the engine; there is no package |
 | Tapping, waiting, numbers going up | The 2D bundle or a render pipeline, Input System, uGUI/TextMeshPro — and stop there. Lean is the feature |
-| Players in the same match | `com.unity.netcode.gameobjects` for the simulation and `com.unity.services.multiplayer` for getting them together; the topology decision comes first — `unity-multiplayer` |
+| Players in the same match | `com.unity.netcode.gameobjects` for the simulation and `com.unity.services.multiplayer` for getting them together; the topology decision comes first — `unity-live-services` → `reference/multiplayer.md` |
 
 ## Target platform
 
@@ -104,7 +104,8 @@ Install the package now so the manifest is complete; do the wiring in the skill 
 | Accounts, saves, currency, remote values, leaderboards | The UGS set — `com.unity.services.core` and `com.unity.services.authentication` first | `unity-ugs`, with the discipline in `unity-live-services` |
 
 Which of the UGS ids a given feature actually needs, and the order they initialise in, is
-`unity-ugs`; picking whether to monetise at all is `unity-monetization`.
+`unity-ugs`; what monetising does to the build and the store
+submission is `unity-live-services` → `reference/monetization.md`; whether to monetise at all is a design call no skill here makes.
 
 ## A worked subtraction
 

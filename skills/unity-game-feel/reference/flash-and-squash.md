@@ -86,7 +86,8 @@ feet-pivoted scale, not a tween.
 
 `resources/Tween.cs`: tweens are structs in a fixed array of `capacity` 64, so nothing allocates
 after start-up. A tween over capacity is refused and counted in `Tween.Dropped`, never
-allocated.
+allocated. `Tween` and `Ease` live in namespace `UnityDev.GameFeel`, so a calling file adds
+`using UnityDev.GameFeel;` and the names never clash with DOTween's.
 
 ```csharp
 Tween.Scale(visual, Vector3.one, 0.12f, Ease.OutBack);

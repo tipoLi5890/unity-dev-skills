@@ -1,15 +1,8 @@
 ---
 name: art-asset-registry
 description: >-
-  One append-only ledger per project, ArtDirection/assets.jsonl, for every 2D
-  and 3D asset: files with sha256 (each .blend version too), lineage (parent,
-  links to the art direction, a job or an evidence image), gates, verdict and
-  status. Record after each generation, check that the disk still matches
-  (exit 0/2/3), set a status as a person's act, list what a newer upstream made
-  stale, print rows for manifest.md, adopt an existing manifest.md read-only.
-  Load for: "track generated assets", "which asset came from which prompt",
-  "stale after a style bump", "which version is current", "a manifest.md with
-  PENDING rows". Generating: codex-visual, comfyui-asset-generation.
+  Track generated 2D/3D assets in one ledger: which prompt made each file,
+  approvals, what's stale.
 ---
 
 # art-asset-registry — what exists, where it came from, who approved it
@@ -21,6 +14,19 @@ long after the spec locked, and nothing that notices an approved image being ove
 ledger keeps the facts a script can know (paths, hashes, lineage, links, gates, status) and leaves
 the prose to people. It treats 2D and 3D alike: a sprite sheet, a mesh with its raw original, a
 rig with the `.blend` it came from, a clip, a QA sheet a decision rests on.
+
+## Start here — the request, and where it is answered
+
+| The request or symptom | Read |
+|---|---|
+| "Track generated assets": starting a ledger, recording after each generation (sha256 per file, each `.blend` version too), `check` and its fixes, moving a file, several writers at once | `reference/workflow.md`; [Commands](#commands) |
+| "Which asset came from which prompt": lineage (parent, links to the art direction, a job or an evidence image), what a field means, the vocabularies, how an id is made, every check rule, the exit codes (0/2/3), the JSON output | `reference/ledger-schema.md` |
+| "Which version is current", or setting a status as a person's act | [Working contract](#working-contract); `history ID`, `status ID approved` in `reference/workflow.md` |
+| "Stale after a style bump": what a newer upstream made stale, a change record and which evidence wins | `stale` in `reference/workflow.md` |
+| "A manifest.md with PENDING rows": a hand-written manifest and no ledger, read once into records (dry run first, the manifest never edited); rows to paste back | `reference/adopt.md`; `render` |
+| A producer's JSON output (a codex call, a frames sidecar, a Blender report) turned into records | `reference/ingest.md` |
+| A model with a territory limit, the `Sales territory:` line, the known licence sources and their territories | `reference/licences.md` |
+| The flags of one command | `scripts/registry.py <command> --help` and the module docstrings |
 
 > **The ledger is the truth; `manifest.md` is the story.** Record what was made, check that the
 > disk still matches, and let a person decide what is approved.
@@ -49,17 +55,6 @@ rig with the `.blend` it came from, a clip, a QA sheet a decision rests on.
   part of it, and only warns while the territory is undecided.
 - **The method lives here; the records live in the project.** This skill holds the schema and the
   scripts. Ledgers, assets and purchased packs stay in each project.
-
-## Load what the situation needs
-
-| The situation | Read |
-|---|---|
-| What a field means, the vocabularies (kinds, statuses, link rels), how an id is made, every check rule with its level, the exit codes, the JSON output | `reference/ledger-schema.md` |
-| Starting a ledger, recording after a generation, `check` and its fixes, setting a status, stale after an upstream change, a change record and which evidence wins, moving a file, rows for the manifest, several writers at once | `reference/workflow.md` |
-| A project with a hand-written manifest and no ledger: reading it once into records, dry run first, the manifest never edited | `reference/adopt.md` |
-| A producer's JSON output (a codex call, a frames sidecar, a Blender report) turned into records | `reference/ingest.md` |
-| A model with a territory limit, the `Sales territory:` line, the known licence sources and their territories | `reference/licences.md` |
-| The flags of one command | `scripts/registry.py <command> --help` and the module docstrings |
 
 ## Commands
 
@@ -131,15 +126,8 @@ The courier run: `Runner` has a locked anchor, a run sheet, a hammer prop `Malle
 |---|---|
 | Generating 2D art, sheets, turnarounds and QA sheets; the art bible itself | `codex-visual` |
 | Generating meshes and textures through ComfyUI | `comfyui-asset-generation` |
-| Rigging, skinning and the game mesh in Blender | `blender-character-rig` |
+| Rigging a humanoid; skinning and the game mesh in Blender | `character-autorig` (default) · `blender-character-rig` (hand-built fallback, game mesh) |
 | Retargeting clips onto a rig in Blender | `blender-retarget` |
 | Which stage of a character comes next, and its gate | `game-character-pipeline` |
 | Triangle and texture budgets, the import audit in Unity | `unity-3d-models` |
 | Which packs may be bought, and the reading of a licence's terms | The project's own policy; the ledger records `source`, `license` and `licence`, keeps vendor files out of git, and holds what `reference/licences.md` lists against the declared territory |
-
-## Related skills
-
-`codex-visual` for the art bible, the anchor and every 2D asset · `comfyui-asset-generation` for
-meshes and textures from images · `blender-character-rig` for a rig built from landmarks ·
-`blender-retarget` for clips on that rig · `game-character-pipeline` for the order of the stages
-· `unity-3d-models` for budgets and the import audit.

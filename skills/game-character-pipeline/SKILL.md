@@ -1,16 +1,9 @@
 ---
 name: game-character-pipeline
 description: >-
-  The stage order for a rigged game character made from an image, a turnaround
-  sheet or a generated model, up to an approved character in Unity. Load before
-  starting a character, or when unsure what comes next: the quality target set
-  first, the route (rig locally onto the humanoid contract, or fit the mesh to
-  one clip pack's skeleton), the preview, ship or upgrade track (a cloud mesh
-  after the demo, chosen by a person), then stages S0–S13 with the skill that
-  owns each and its gates. Routes only: methods live in codex-visual,
-  comfyui-asset-generation, character-autorig, humanoid-motion,
-  blender-character-rig, blender-retarget, unity-3d-models,
-  unity-rigged-character, art-asset-registry.
+  START HERE for a rigged game character made from an image or turnaround: the
+  stage order from views to an approved character in Unity, each stage's owner
+  and its gate.
 ---
 
 # game-character-pipeline — one character, image to Unity, in order
@@ -18,6 +11,18 @@ description: >-
 A rigged character crosses nine skills. Each owns its stages and their method; this skill owns
 only the order, the gate between two stages, and what each stage leaves on disk for the next.
 It ships no scripts and copies no method: every row points at the file that does the work.
+
+## Start here — the request, and where it is answered
+
+| The request | Go to |
+|---|---|
+| Starting a character from an image, a turnaround sheet or a generated model; unsure what comes next | [G0](#g0--the-start-gate-once-per-character), then [the stages](#the-stages) in order |
+| The quality target (camera distance, the shots, the parts that must hold up) | G0 step 1; `reference/start-gate.md` |
+| Which route: rig locally onto the humanoid contract, or fit the mesh to one clip pack's skeleton | G0 step 2; `reference/routes.md` |
+| Preview, ship or upgrade track (a cloud mesh after the demo, chosen by a person) | G0 step 3 |
+| Which skill owns a stage, what it enters with and leaves on disk, its gate | [the stages](#the-stages), S0–S13 |
+| Something upstream changed; a worked example (the Runner with a Mallet) | `reference/upstream-changes.md` |
+| A 2D character, a prop, moving the character in the game | [Scope](#scope--what-this-skill-does-not-do) |
 
 > **The preview-track rig is not the shipping rig.** The preview track rigs the dense generated
 > mesh as it is and never ships. The ship track picks the budget, builds the game mesh at it, and
@@ -81,53 +86,13 @@ the named image and said yes. Every artefact is recorded in the ledger as it is 
 | S12 | Unity import | `unity-rigged-character` | the round trip green | in a throwaway project: Generic; Humanoid only for a mask or IK, built from an explicit map with Chest and fingers; `avatar.isValid`, File Scale 1, three bones matching Blender to the mm, the socket kept, PBR maps rebuilt; a screenshot under the game camera and a frame window; a **person** approves | `unity-rigged-character` → `reference/unity-import.md`; `unity-rigged-character` → `reference/humanoid-contract.md`; `unity-rigged-character` → `reference/textures.md`; `unity-profiling` → `reference/frame-windows.md` |
 | S13 | The ledger, at every gate | `art-asset-registry` | any artefact | each artefact with its hash and `licence` (source, territory), `links` to its job and the art-direction version; a person's gate as `status ID approved`; `check` refuses an excluded territory; `stale` after any upstream change | `art-asset-registry` → `reference/workflow.md`; `art-asset-registry` → `reference/ledger-schema.md`; `art-asset-registry` → `reference/licences.md` |
 
-## When something upstream changes
-
-The ledger's `stale` names the downstream records; this table names the stage to go back to.
-
-| What changed | Back to |
-|---|---|
-| The class's `instances`, `frame_ms`, the game camera or the target device | S0, then S5 and S6 if the picked rung moves |
-| The budget row, after the rig exists | S5, then **S6 again**: nothing taken on the old vertices carries over |
-| The views or the design | S1, and every stage after it |
-| The generation graph or a preset | S3; a drift from the official template is put back before any tuning |
-| One clip's source, map or rest frame | S8 for that clip, then S9's checks, then S11 |
-| A weight repair or a prop grip | S9, then S11 and S12 |
-| The upgrade track: a cloud mesh | S4, `mesh_check`, S5 on the ship track, S6; clips carry over, S9's prop and drift checks again |
-| Fit route: a new character, or its mesh | that character's `prep` onward; the clip library is untouched |
-| Fit route: a clip from another skeleton | its one offline conversion to the pack's skeleton, then the unity-gate |
-
-## Worked example — the Runner with a Mallet, ship track
-
-1. **G0.** Target: the runner behind the shoulder at the lane camera's distance, the swing at the
-   gate as the one close shot. Adult proportions: `character-autorig` onto the contract; the jog
-   and the leap over the gate from two-camera takes. The Mallet is its own `hero-prop` asset,
-   attached at S9.
-2. **S1 → S5.** Views approved; the `character` ladder under the game camera, a person picks a
-   rung; a green local GLB, `Runner_game.blend` at the preset.
-3. **S6 → S12.** `mesh_check` exit 0; `RunnerRig` from markers a person accepted, the contract
-   gate and the six poses passing; the jog and the leap solved onto the rig, baked and gated; the
-   first four files read back, then a throwaway Unity project; a person approves. S13 records every file with its licence.
-4. **Later, upgrade.** After the demo, a person sends the runner's views to a paid mesh service;
-   the new mesh re-enters at S4, is rigged locally the same way, and plays the jog and the leap
-   unchanged.
-
 ## Scope — what this skill does NOT do
 
 | Not here | Go to |
 |---|---|
-| How to perform any stage | the skill and file in that stage's row |
+| How to perform any stage | the skill and file in that stage's row (S0–S13 name the owner of each) |
 | Props and anything with no skeleton | `unity-3d-models` |
 | A 2D character: sprite sheets, frames, Unity sprite animation | `codex-visual` · `sprite-from-video` · `unity-2d-sprites` |
 | Moving the character in the game: controller, Animator bridge | `unity-3d-controller` |
 | States, events, root motion and IK on the clips in Unity | `unity-animation` |
 | The game's visual direction and its locked decisions | `unity-game-brief` |
-
-## Related skills
-
-`codex-visual` for the views (S1) · `comfyui-asset-generation` for removal and the mesh (S2–S3) ·
-`unity-3d-models` for the budget (S0) · `blender-character-rig` for the normalised file, the game
-mesh, a custom rig and the FBX (S4–S6, S9, S11) · `character-autorig` for the local rig on the
-contract (S6) · `humanoid-motion` for clips from video (S7–S8) · `blender-retarget` for packs, the
-library, triage and the hand-off (S7–S11) · `unity-rigged-character` for the import (S12) ·
-`unity-profiling` for the frame windows (S0, S12) · `art-asset-registry` for the ledger (S13).

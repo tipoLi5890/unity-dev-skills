@@ -1,16 +1,8 @@
 ---
 name: unity-debug
 description: >-
-  Verify and diagnose a Unity game the agent cannot see: read Editor.log,
-  drive Unity from the CLI or a live Editor, and take screenshots it reads
-  itself. Use whenever a change needs verifying in the running game or
-  something misbehaves at runtime: "the player won't move", "nothing happens
-  when I press Play", "verify the fix works", "the UI is shaking /
-  flickering", "why does this only break on device", "exit 0 but no results
-  file", "which test failed", "the tests are green but nothing was verified".
-  Above all, prove the harness is telling the truth before believing a number
-  it prints. Installing editors, licences and the CLI's own surface are
-  unity-cli.
+  Verify a change in the running game: Editor.log, screenshots, tests; exit 0
+  but nothing ran.
 ---
 
 # unity-debug — verify it yourself, and check the instrument first
@@ -27,7 +19,18 @@ There is one rule above all the technique, and it is the one that costs the most
 A stale results XML reads "6/6 passed" while Unity fails to start on every run. Start at
 `reference/harness-trust.md`; the guard is one line of `rm`.
 
----
+## Symptom → where to look
+
+| The report | Go to |
+|---|---|
+| "exit 0 but no results file", a run that did nothing, "the tests are green but nothing was verified" | `reference/harness-trust.md` |
+| "which test failed", `failed=0` that checked nothing | `reference/test-verdicts.md` |
+| "verify the fix works" in the running game | *The four loops* |
+| "the player won't move", "nothing happens when I press Play" | `reference/log-triage.md`, then `reference/editor-control.md` |
+| "the UI is shaking / flickering", anything temporal | `reference/motion-and-timing.md`, `reference/visual-checks.md` |
+| Green in the Editor, broken in a build | `reference/player-tests.md` |
+| Only breaks on the phone | skill `unity-device-testing` |
+| Anything else | *Load what the situation needs* |
 
 ## The four loops
 
@@ -50,7 +53,6 @@ A live Editor can too, via `unity command screenshot` — which is loop 0's answ
 
 Loops 2 and 3 need not queue on one Editor: the lock is per project folder, so clone *lanes* run
 several Editors on one machine at once. → `reference/parallel-runs.md`
-
 ---
 
 ## Load what the situation needs
@@ -76,7 +78,7 @@ several Editors on one machine at once. → `reference/parallel-runs.md`
 | "It is slow", hitches, draw calls or GC — numbers you can compare across a change | skill `unity-profiling` |
 | A collision or trigger that never fires, tunnelling, a raycast that misses | skill `unity-physics-3d` · `unity-physics-2d` |
 | Post-processing set but not visible; reviewing a renderer feature | skill `unity-render-urp` |
-| A Scene-view or camera PNG for a before/after comparison, outside a test run | skill `unity-urp-migration` → `resources/SceneCapture.cs` |
+| A Scene-view or camera PNG for a before/after comparison, outside a test run | skill `unity-urp-migration` → `resources/Editor/SceneCapture.cs` |
 | "Find / where is / what references X" — one query over project assets or the loaded scenes, rather than a script | skill `unity-search` |
 | Installing editors, licences, templates, MCP wiring, CI invocation | skill `unity-cli` |
 | An agent that will not move or path around something | skill `unity-navigation` |

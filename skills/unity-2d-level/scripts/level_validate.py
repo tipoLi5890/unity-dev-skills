@@ -12,7 +12,9 @@ and for each pickup, and a list of violations. Lengths on the command line are w
 
 Exit codes: 0 the level holds every invariant · 1 at least one violation (an unreachable pickup
 or gate, a spawn with no floor, a malformed layer) · 2 usage error, unreadable file, or a file
-that is not a level in this format.
+that is not a level in this format. `level_validate.py selftest` (or --selftest) builds synthetic
+side-view and top-down levels in a temp dir and checks a pass (0), a fail (1) and a refused file
+(2); one JSON line, exit 0 or 1.
 
 Examples:
   level_validate.py templates/sample-level.json --jump-height 2.85 --jump-distance 5.17 \\
@@ -24,7 +26,10 @@ Examples:
 import argparse
 import json
 import math
+import os
+import subprocess
 import sys
+import tempfile
 
 FORMAT = "courier-level"
 VERSION = 1
@@ -457,5 +462,68 @@ def main(argv=None):
     return 1 if result["verdict"] == "fail" else 0
 
 
+# ------------------------------------------------------------------ selftest
+
+
+def _level(view="side", wall_x=None, wall_h=0, pickup=(5, 1), gate=(10, 1), w=12, h=6):
+    """Ground along row 0 (all of it, top-down); a Walls column at wall_x, wall_h cells tall."""
+    ground = [1 if (view == "topdown" or y == 0) else 0 for y in range(h) for x in range(w)]
+    walls = [1 if (x == wall_x and y < wall_h) else 0 for y in range(h) for x in range(w)]
+    spawn = {"x": 1, "y": 1 if view == "side" else 2}
+    return {"format": FORMAT, "version": VERSION, "id": "courier-selftest", "view": view,
+            "width": w, "height": h, "cellSize": 1.0, "tiles": [{"id": 1, "name": "block"}],
+            "layers": [{"name": "Ground", "cells": ground}, {"name": "Walls", "cells": walls}],
+            "spawn": spawn, "gate": {"x": gate[0], "y": gate[1]},
+            "pickups": [{"id": "parcel-1", "type": "pickup", "x": pickup[0], "y": pickup[1]}]}
+
+
+def selftest():
+    checks, failed = 0, []
+
+    def check(name, cond):
+        nonlocal checks
+        checks += 1
+        if not cond:
+            failed.append(name)
+
+    with tempfile.TemporaryDirectory(prefix="level-selftest-") as d:
+        def run(doc, *args):
+            path = os.path.join(d, "level.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(doc if isinstance(doc, str) else json.dumps(doc))
+            r = subprocess.run([sys.executable, os.path.abspath(__file__), path, *args], capture_output=True,
+                               text=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            try:
+                return r.returncode, json.loads(r.stdout)
+            except ValueError:
+                return r.returncode, {}
+
+        jump = ["--jump-height", "2.85", "--jump-distance", "5.17", "--fall-multiplier", "1.5"]
+        code, rep = run(_level(), *jump)
+        check("flat run: exit 0, verdict ok", code == 0 and rep.get("verdict") == "ok")
+        code, rep = run(_level(wall_x=6, wall_h=2), *jump)
+        check("a 2-cell wall under a 2.85 jump: exit 0", code == 0 and rep["gate"]["reachable"])
+        code, rep = run(_level(wall_x=6, wall_h=6), *jump)
+        check("a wall to the ceiling: exit 1, gate unreachable",
+              code == 1 and not rep["gate"]["reachable"]
+              and any(v["rule"] == "gate-unreachable" for v in rep["violations"]))
+        code, rep = run(_level(pickup=(5, 5)), *jump)
+        check("a pickup above the apex: exit 1", code == 1 and not rep["pickups"][0]["reachable"])
+        code, rep = run(_level(view="topdown"))
+        check("top-down open floor: exit 0", code == 0 and rep.get("verdict") == "ok")
+        code, rep = run(_level(view="topdown", wall_x=6, wall_h=6, gate=(10, 2)))
+        check("top-down wall across the floor: exit 1", code == 1 and not rep["gate"]["reachable"])
+        bad = _level()
+        bad["layers"][0]["cells"] = bad["layers"][0]["cells"][:-1]
+        check("a layer of the wrong size: exit 1", run(bad, *jump)[0] == 1)
+        check("a side-view level without jump numbers: exit 2", run(_level())[0] == 2)
+        check("not a level file: exit 2", run(dict(_level(), format="other"), *jump)[0] == 2)
+        check("unreadable JSON: exit 2", run("{not json", *jump)[0] == 2)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
+    return 0 if not failed else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["selftest"], ["--selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

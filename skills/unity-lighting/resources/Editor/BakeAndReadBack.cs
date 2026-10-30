@@ -24,7 +24,7 @@
 // The before-evidence is written to Library/UnityDev/Lighting/bake-before.txt, so Status() can
 // still report after a domain reload or from a later call, and the watcher that logs the report
 // (and exits a batch run) re-attaches itself after a reload. The method is the one in
-// unity-urp-migration's resources/LightingMigration.cs: evidence on disk, never in a field.
+// unity-urp-migration's resources/Editor/LightingMigration.cs: evidence on disk, never in a field.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
