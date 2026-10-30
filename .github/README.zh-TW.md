@@ -16,7 +16,7 @@
 
 **繁體中文** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [English](../README.md)
 
-<img src="media/hero.jpg" alt="同一個角色走過四個 skill：一張概念圖、由它生成的 3D 網格、骨架的關節標記點，以及擺出極端姿勢的綁骨角色" width="100%">
+<img src="media/hero.jpg" alt="兩列，每列都是同一個角色走過四個 skill。上列是 2D：一張角色靜態圖、去背成透明的同一個角色、一段跑步循環的連續格，以及在 Unity 場景裡奔跑的 sprite。下列是 3D：一張概念圖、由它生成的 3D 網格、骨架的關節標記點，以及擺出極端姿勢的綁骨角色" width="100%">
 
 </div>
 
@@ -29,6 +29,7 @@
 | 「第三個拾取物生出來的時候會卡一下。」 | `unity-profiling` 以 90 幀為一個視窗取樣那一刻（中位數、p95、最差值），讀出工作量與 GC 計數器，再比對改動前後 |
 | 「把這張跑者的圖做成能在 Unity 裡跑起來的角色。」 | `game-character-pipeline` 先定好品質目標與路線，再把 S0–S13 各階段——多視角圖、3D、綁骨、動作、匯入——交給各自負責的 skill，每一段都有閘門把關 |
 | 「寫程式之前，先讓我看看這趟送件玩起來是什麼樣子。」 | `unity-game-brief` 依遊戲自己的規則常數做出一段計時的模擬遊玩預覽，每個音效都記錄下來 |
+| 「用這張跑者的靜態圖幫我做一段走路循環。」 | `sprite-from-video` 讓影片模型帶著這張靜態圖原地走路，每一格都依模型實際畫出的那種底色去背，靠量測找出循環點，輸出畫布尺寸一致的逐格圖和 `frames.json` |
 | 「幫我裝到 iPhone 上，不要開 Xcode。」 | `unity-ios-build` 跑 headless 建置、過編譯閘門、用你這台 Mac 上現有的簽章資料簽章、以 `devicectl` 安裝，並讀取 App 的 console |
 
 ## 安裝
@@ -53,6 +54,41 @@ claude plugin install unity-dev@unity-dev
 
 ## 實際效果
 
+### 寫程式之前先看到遊戲
+
+<div align="center">
+<img src="media/preview.gif" alt="俯視角的送件遊戲：跑者沿著三線道路往上跑，撿起包裹、經過一名哨兵，趁一道閘門開著時穿過去，又在下一道閘門關上後撞了上去" width="400">
+<p><sub>這趟送件的模擬遊玩預覽，用的是遊戲自己的美術。</sub></p>
+</div>
+
+[`unity-game-brief`](../skills/unity-game-brief/SKILL.md) →
+[`codex-visual`](../skills/codex-visual/SKILL.md)
+
+每個拾取物和閘門的時機都依遊戲自己的規則常數計算，並記錄成事件，一行程式碼都還沒寫。
+
+### 從一張靜態圖到在 Unity 裡奔跑的 sprite
+
+<div align="center">
+<img src="media/sprites.gif" alt="左：跑者在綠幕上的靜態圖。右：同一個跑者的四段透明動畫在棋盤格背景上並排播放：待機、走路、跑步和跳躍" width="800">
+<p><sub>一張綠幕上的靜態圖：只用這張圖做出會呼吸的待機動畫，走路、跑步和跳躍則從生成的影片裁切出來。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/keying.jpg" alt="跑者頭髮與臉部的同一個特寫，用兩種方式去背：一般的綠幕去背留下一圈亮綠色的邊；sprite-from-video 留下乾淨的邊緣" width="640">
+<p><sub>一般的綠幕去背會留下一圈綠邊；<code>sprite-from-video</code> 對照模型實際畫出的那種綠色去背，並把溢色清掉。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/unity.gif" alt="一個 Unity 6 的 2D 場景：跑者 sprite 沿著街道奔跑，跳過三個三角錐、收集包裹，最後跑過一道閘門停下" width="720">
+<p><sub>同一批 sprite 放進 Unity 6：跑者跳過每一個三角錐、收集每一個包裹，然後跑過閘門。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`sprite-from-video`](../skills/sprite-from-video/SKILL.md) →
+[`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) →
+[`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md)
+
 ### 從一張圖到會動的綁骨角色
 
 <div align="center">
@@ -66,7 +102,7 @@ claude plugin install unity-dev@unity-dev
 [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) →
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
 
-3D 模型、骨架和動作都在你自己的機器上製作；只有 2D 美術會經過 `codex` CLI。雙機位解算移植自 [anymove](https://github.com/patch-gg/anymove)（Apache-2.0；見 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)）。影片由 MiniMax H3 機器生成，依 MiniMax H3 Community License Agreement，在本地以其開放權重執行。
+3D 模型、骨架和動作都在你自己的機器上製作；只有 2D 美術會經過 `codex` CLI。雙機位解算移植自 [anymove](https://github.com/patch-gg/anymove)（Apache-2.0；見 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)）。sprite 片段與動作影片皆由 MiniMax H3 機器生成，依 MiniMax H3 Community License Agreement，在本地以其開放權重執行。
 
 ## 運作方式
 

@@ -2,6 +2,25 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.33.1
+
+README only; no skill, script or manifest description changes.
+
+**The README**
+
+- **`README.md`.** The banner has two rows: the 2D route on top (a character still, the keyed
+  sprite, its run loop, the sprite running in Unity) above the 3D row from 0.33.0. "See it work"
+  now follows the order of development in three parts. First, the game before code: a
+  simulated-gameplay preview of the courier run from `unity-game-brief`, timed from the game's
+  own rule constants and drawn with art from `codex-visual`. Second, from one still to a sprite
+  that runs in Unity: idle, walk, run and jump on transparency from one still, a close-up of a
+  plain green key beside the `sprite-from-video` key, and a Unity 6 capture of the runner sprite
+  jumping cones and collecting parcels, with the skill chain from `codex-visual` to
+  `unity-2d-controller`. Third, the rigged 3D character, unchanged. One line now credits MiniMax H3
+  for both the sprite clips and the motion video. "Try asking" gains a seventh request, a walk
+  loop from a still, answered by `sprite-from-video`. The three translations in `.github/` follow the
+  same structure. The new images live in `.github/media/`.
+
 ## 0.33.0
 
 Sixty-two skills. Humanoid rigging and motion now run locally first, onto one skeleton: the

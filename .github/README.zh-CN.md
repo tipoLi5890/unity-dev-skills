@@ -16,7 +16,7 @@
 
 [繁體中文](README.zh-TW.md) · **简体中文** · [日本語](README.ja.md) · [English](../README.md)
 
-<img src="media/hero.jpg" alt="同一个角色依次经过四个 skill：一张概念图、由它生成的 3D 网格、骨架的关节标记点，以及摆出极限姿势的绑骨角色" width="100%">
+<img src="media/hero.jpg" alt="上下两行，每行都是同一个角色依次经过四个 skill。上行是 2D：一张角色静态图、抠成透明背景的同一个角色、一条跑步循环的帧序列，以及在 Unity 场景里奔跑的 sprite。下行是 3D：一张概念图、由它生成的 3D 网格、骨架的关节标记点，以及摆出极限姿势的绑骨角色" width="100%">
 
 </div>
 
@@ -29,6 +29,7 @@
 | “第三个拾取物刷出来的时候会卡一下。” | `unity-profiling` 以 90 帧为一个窗口对那一刻采样（中位数、p95、最差值），读取工作量和 GC 计数器，并对比改动前后 |
 | “把这张跑者的画稿做成能在 Unity 里跑起来的角色。” | `game-character-pipeline` 先定下质量目标和路线，再把 S0–S13 各阶段——多视图、3D、绑骨、动作、导入——交给各自负责的 skill，每一步都有闸门 |
 | “写代码之前，先让我看看这趟送快递玩起来是什么样。” | `unity-game-brief` 用游戏自己的规则常量生成一段定时的模拟游玩预览，每个音效都记入日志 |
+| “拿这张跑者的静态图给我做个走路循环。” | `sprite-from-video` 让视频模型把这张静态图原地走起来，每一帧都按模型实际画出的那种绿幕颜色来抠像，靠测量找出循环，再输出画布大小一致的逐帧图和 `frames.json` |
 | “帮我装到 iPhone 上，不用打开 Xcode。” | `unity-ios-build` 执行无头构建、一道编译闸门、用你的 Mac 上现有的凭据签名、通过 `devicectl` 安装，并读取 App 的控制台输出 |
 
 ## 安装
@@ -56,6 +57,41 @@ claude plugin install unity-dev@unity-dev
 
 ## 看看效果
 
+### 写代码之前先看到游戏
+
+<div align="center">
+<img src="media/preview.gif" alt="俯视角的送快递游戏：跑者沿着三车道的路往上跑，捡起包裹，从哨兵旁边经过，趁一道闸门开着时穿过去，又在下一道闸门关上后撞了上去" width="400">
+<p><sub>这趟送快递的模拟游玩预览，用的是游戏自己的美术。</sub></p>
+</div>
+
+[`unity-game-brief`](../skills/unity-game-brief/SKILL.md) →
+[`codex-visual`](../skills/codex-visual/SKILL.md)
+
+每一次拾取、每一道闸门的时间都取自游戏自己的规则常量，并作为事件记入日志，这时一行代码都还没写。
+
+### 从一张静态图到在 Unity 里奔跑的 sprite
+
+<div align="center">
+<img src="media/sprites.gif" alt="左：绿幕上的跑者静态图。右：同一个跑者的四段透明动画在棋盘格背景上并排播放：待机、走路、跑步和跳跃" width="800">
+<p><sub>一张绿幕静态图：只靠这张图做出带呼吸感的待机动画，走路、跑步和跳跃则从生成的视频中截取。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/keying.jpg" alt="同一张跑者头发和脸部的特写，用两种方式抠像：普通的绿幕抠像留下一圈亮绿色的边；sprite-from-video 留下干净的边缘" width="640">
+<p><sub>普通的绿幕抠像会留下一圈绿边；<code>sprite-from-video</code> 按模型实际画出的那种绿色来抠像，并去掉溢色。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/unity.gif" alt="Unity 6 的 2D 场景：跑者 sprite 沿街奔跑，跳过三个锥桶，收集包裹，然后穿过一道闸门停下" width="720">
+<p><sub>同一套 sprite 放进 Unity 6：跑者跳过每一个锥桶，收集每一个包裹，并穿过闸门。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`sprite-from-video`](../skills/sprite-from-video/SKILL.md) →
+[`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) →
+[`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md)
+
 ### 从一张画稿到一个会动、绑好骨架的角色
 
 <div align="center">
@@ -70,7 +106,7 @@ claude plugin install unity-dev@unity-dev
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
 
 3D 模型、骨架和动作都在你自己的机器上完成；只有 2D 美术会经过 `codex` CLI。双机位解算移植自
-[anymove](https://github.com/patch-gg/anymove)（Apache-2.0；见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)）。视频由 MiniMax H3 机器生成，基于其开放权重在本地运行，遵循 MiniMax H3 Community License Agreement。
+[anymove](https://github.com/patch-gg/anymove)（Apache-2.0；见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)）。sprite 片段和动作视频都由 MiniMax H3 机器生成，基于其开放权重在本地运行，遵循 MiniMax H3 Community License Agreement。
 
 ## 工作原理
 

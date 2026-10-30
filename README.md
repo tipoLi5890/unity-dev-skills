@@ -16,7 +16,7 @@
 
 <p><b>English</b> · <a href=".github/README.zh-TW.md">繁體中文</a> · <a href=".github/README.zh-CN.md">简体中文</a> · <a href=".github/README.ja.md">日本語</a></p>
 
-<img src=".github/media/hero.jpg" alt="One character through four skills: a concept drawing, its generated 3D mesh, the rig's joint markers, and the rigged character in an extreme pose" width="100%">
+<img src=".github/media/hero.jpg" alt="Two rows, each one character through four skills. Top, 2D: a character still, the same character keyed onto transparency, a strip of its run loop, and the sprite running in a Unity scene. Bottom, 3D: a concept drawing, its generated 3D mesh, the rig's joint markers, and the rigged character in an extreme pose" width="100%">
 
 </div>
 
@@ -29,6 +29,7 @@
 | "It hitches when the third pickup spawns." | `unity-profiling` samples that moment in 90-frame windows (median, p95, worst), reads the work and GC counters, and compares before and after |
 | "Turn this drawing of the runner into a character that runs in Unity." | `game-character-pipeline` sets the quality target and route first, then hands stages S0–S13 — views, 3D, rig, motion, import — to the skill that owns each, gated |
 | "Show me the courier run before we write code." | `unity-game-brief` builds a timed simulated-gameplay preview from the game's own rule constants, with every sound logged |
+| "Make a walk loop from this still of the runner." | `sprite-from-video` has a video model walk the still in place, keys every frame against the key the model actually painted, finds the loop by measurement, and writes equal-canvas frames plus `frames.json` |
 | "Put it on my iPhone — without opening Xcode." | `unity-ios-build` runs a headless build, a compile gate, signing with what your Mac holds, a `devicectl` install, and reads the app's console |
 
 ## Install
@@ -59,6 +60,42 @@ that platform already asks for.
 
 ## See it work
 
+### See the game before code
+
+<div align="center">
+<img src=".github/media/preview.gif" alt="A top-down courier run: the runner runs up a three-lane road, picks up parcels, passes a sentry, goes through one gate while it is open and hits the next once it has closed" width="400">
+<p><sub>A simulated-gameplay preview of the courier run, drawn with the game's own art.</sub></p>
+</div>
+
+[`unity-game-brief`](skills/unity-game-brief/SKILL.md) →
+[`codex-visual`](skills/codex-visual/SKILL.md)
+
+Every pickup and gate is timed from the game's own rule constants and logged as an event, before
+any code is written.
+
+### From one still to a sprite that runs in Unity
+
+<div align="center">
+<img src=".github/media/sprites.gif" alt="Left: the runner's still on a green key. Right: four transparent animations of the same runner playing side by side on a checkerboard: idle, walk, run and jump" width="800">
+<p><sub>One still on a green key: a breathing idle made from the still alone, then walk, run and jump cut from generated video.</sub></p>
+</div>
+
+<div align="center">
+<img src=".github/media/keying.jpg" alt="The same close-up of the runner's hair and face keyed two ways: a plain green key leaves a bright green rim; sprite-from-video leaves a clean edge" width="640">
+<p><sub>A plain green key leaves a green rim; <code>sprite-from-video</code> keys against the green the model actually painted and removes the spill.</sub></p>
+</div>
+
+<div align="center">
+<img src=".github/media/unity.gif" alt="A Unity 6 2D scene: the runner sprite runs along a street, jumps three traffic cones, collects parcels, then runs through a gate and stops" width="720">
+<p><sub>The same sprites in Unity 6: the runner jumps every cone, collects every parcel and runs through the gate.</sub></p>
+</div>
+
+[`codex-visual`](skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`sprite-from-video`](skills/sprite-from-video/SKILL.md) →
+[`unity-2d-sprites`](skills/unity-2d-sprites/SKILL.md) →
+[`unity-2d-controller`](skills/unity-2d-controller/SKILL.md)
+
 ### From one drawing to a moving, rigged character
 
 <div align="center">
@@ -75,8 +112,8 @@ that platform already asks for.
 The 3D model, the rig and the motion are made on your own machines; only the 2D art goes through
 the `codex` CLI. The two-camera solve is ported from [anymove](https://github.com/patch-gg/anymove) (Apache-2.0;
 see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
-The video is machine-generated with MiniMax H3, run locally on its open weights under the MiniMax H3
-Community License Agreement.
+The sprite clips and the motion video are machine-generated with MiniMax H3, run locally on its open
+weights under the MiniMax H3 Community License Agreement.
 
 ## How it works
 

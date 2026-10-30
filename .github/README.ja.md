@@ -16,7 +16,7 @@
 
 [繁體中文](README.zh-TW.md) · [简体中文](README.zh-CN.md) · **日本語** · [English](../README.md)
 
-<img src="media/hero.jpg" alt="一体のキャラクターが四つの skill を通っていく様子：コンセプト画、生成された 3D メッシュ、リグの関節マーカー、極端なポーズを取るリグ付きキャラクター" width="100%">
+<img src="media/hero.jpg" alt="二段構成で、どちらの段も一体のキャラクターが四つの skill を通っていく様子。上段は 2D：キャラクターの静止画、同じキャラクターを透過に抜いたもの、走りループのコマを並べた帯、Unity のシーンで走るスプライト。下段は 3D：コンセプト画、生成された 3D メッシュ、リグの関節マーカー、極端なポーズを取るリグ付きキャラクター" width="100%">
 
 </div>
 
@@ -29,6 +29,7 @@
 | 「3 個目のピックアップが出るときにカクつく」 | `unity-profiling` がその瞬間を 90 フレームの窓（中央値、p95、最悪値）でサンプリングし、処理量と GC のカウンターを読んで前後を比べます |
 | 「このランナーの絵を、Unity で走るキャラクターにして」 | `game-character-pipeline` がまず品質目標とルートを決め、S0–S13 の各工程（ビュー、3D、リグ、モーション、インポート）を、それぞれを担当する skill へゲート付きで渡します |
 | 「コードを書く前に、クーリエランを見せて」 | `unity-game-brief` がゲーム自身のルール定数から時間軸どおりに進む模擬ゲームプレイのプレビューを作り、鳴った音をすべて記録します |
+| 「このランナーの静止画から、歩きのループを作って」 | `sprite-from-video` が動画モデルで静止画をその場で歩かせ、モデルが実際に塗ったキー色に合わせて全フレームを抜き、ループを計測で見つけて、同じキャンバスサイズのフレームと `frames.json` を書き出します |
 | 「Xcode は開かずに、iPhone に入れて」 | `unity-ios-build` がヘッドレスビルドとコンパイルゲートを実行し、Mac にあるもので署名して `devicectl` でインストールし、アプリのコンソールを読みます |
 
 ## インストール
@@ -53,6 +54,41 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 
 ## 実際の動き
 
+### コードを書く前にゲームを見る
+
+<div align="center">
+<img src="media/preview.gif" alt="真上から見たクーリエラン：ランナーが三車線の道を駆け上がり、荷物を拾い、見張りの横を抜け、開いているうちにゲートを一つくぐり、次のゲートには閉じたあとでぶつかる" width="400">
+<p><sub>クーリエランの模擬ゲームプレイのプレビュー。ゲーム自身のアートで描いています。</sub></p>
+</div>
+
+[`unity-game-brief`](../skills/unity-game-brief/SKILL.md) →
+[`codex-visual`](../skills/codex-visual/SKILL.md)
+
+コードを書く前の段階で、ピックアップとゲートはすべてゲーム自身のルール定数からタイミングが決まり、イベントとして記録されます。
+
+### 一枚の静止画から、Unity で走るスプライトへ
+
+<div align="center">
+<img src="media/sprites.gif" alt="左：グリーンバックの上のランナーの静止画。右：同じランナーの透過アニメーション四つ（アイドル、歩き、走り、ジャンプ）がチェッカーボードの上で並んで再生される" width="800">
+<p><sub>グリーンバックの静止画一枚から。呼吸するアイドルは静止画だけで作り、歩き・走り・ジャンプは生成した動画から切り出しています。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/keying.jpg" alt="ランナーの髪と顔の同じクローズアップを二通りに抜いたもの：単純なグリーンキーでは明るい緑の縁が残り、sprite-from-video ではきれいなエッジになる" width="640">
+<p><sub>単純なグリーンキーでは緑の縁が残ります。<code>sprite-from-video</code> はモデルが実際に塗った緑に合わせて抜き、色かぶりを取り除きます。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/unity.gif" alt="Unity 6 の 2D シーン：ランナーのスプライトが通りを走り、三つのカラーコーンを跳び越え、荷物を集め、ゲートを走り抜けて止まる" width="720">
+<p><sub>同じスプライトを Unity 6 で。ランナーはコーンをすべて跳び越え、荷物をすべて集め、ゲートを走り抜けます。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`sprite-from-video`](../skills/sprite-from-video/SKILL.md) →
+[`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) →
+[`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md)
+
 ### 一枚の絵から、動くリグ付きキャラクターへ
 
 <div align="center">
@@ -66,7 +102,7 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) →
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
 
-3D モデル、リグ、モーションは自分のマシンで作ります。`codex` CLI を通るのは 2D アートだけです。二台カメラからのモーション推定は [anymove](https://github.com/patch-gg/anymove)（Apache-2.0、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を参照）から移植したものです。動画は MiniMax H3 で機械生成したもので、オープンウェイトを MiniMax H3 Community License Agreement のもとローカルで実行しています。
+3D モデル、リグ、モーションは自分のマシンで作ります。`codex` CLI を通るのは 2D アートだけです。二台カメラからのモーション推定は [anymove](https://github.com/patch-gg/anymove)（Apache-2.0、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を参照）から移植したものです。スプライトのクリップとモーションの動画は MiniMax H3 で機械生成したもので、オープンウェイトを MiniMax H3 Community License Agreement のもとローカルで実行しています。
 
 ## 仕組み
 
