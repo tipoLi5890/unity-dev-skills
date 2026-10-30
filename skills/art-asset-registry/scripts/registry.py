@@ -444,7 +444,7 @@ def check_approval(ctx, rep, rec, line=None):
     elif rec.get("verdict") == "harness":
         rep.warn(at, "verdict-harness", "verdict is harness: its gates did not run", ident, rev)
     gates = rec.get("gates") if isinstance(rec.get("gates"), list) else []
-    failing = [str(g.get("name")) for g in gates if isinstance(g, dict) and g.get("pass") is False]
+    failing = [str(g.get("name")) for g in gates if isinstance(g, dict) and g.get("pass") is not True]
     if failing:
         rep.error(at, "failing-gate", "failing gate(s): " + ", ".join(failing), ident, rev)
 

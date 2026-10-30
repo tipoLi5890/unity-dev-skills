@@ -190,9 +190,12 @@ named moments and captured them:
 - **Each run lives inside a harness object** that subscribes to `Application.logMessageReceived`
   for errors and exceptions, and on `Dispose` ends the match and destroys every persistent
   singleton the boot created, so the next id starts from nothing.
-- **The built player takes the same ids**: `-situation <id> [-screenshotDir DIR] [-quit]`, plus
-  `-autoplay` (below) and a switch that skips the physical input device. A build can
-  then be checked with the same shot list as the Editor.
+- **The built player takes the same ids**: `resources/SituationBoot.cs` reads
+  `-situation <id> [-screenshotDir DIR] [-quit]`. `-screenshotDir` writes one
+  `<id>-ready.png` once the ready set holds; `-quit` exits 0 ready, 2 timed out, 1 unknown id,
+  3 shot not written. Run the player windowed: a `-batchmode` player renders nothing. Named
+  moments past "ready", an autoplay switch (below) and a switch that skips the physical input
+  device are the game's own flags; add them beside `-situation` in the game's boot code.
 
 ## Matches play themselves: the autoplayer
 
@@ -212,5 +215,6 @@ exercises the real path from input to judgement. Give it:
 - a press *and* a release a few frames later, because a device that ignores a held input needs
   the release before the next press counts.
 
-It is test equipment that ships, like the probe: the command-line `-autoplay` uses it in a player.
+It is test equipment that ships, like the probe: give the game a command-line switch (an
+`-autoplay` of its own; `resources/` ships none) that turns it on in a player.
 The smoke test that rides on it is in `journeys.md`.

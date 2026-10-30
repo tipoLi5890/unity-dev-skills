@@ -17,6 +17,11 @@ The measure, per axis:
   flip      = a moving delta whose sign differs from the previous moving delta's
   flip rate = flips / (moving - 1)               0 when moving < --min-moving
 
+--key resolves like journey_report.py (the same pasted resolve(): pos/vel component, exact
+dotted path, then custom, counts, ready, top level), so --key vel.x reads one component. A meta
+line stamped "timeline/1" that lacks what the schema requires exits 2; "schema": 1 or no stamp is
+read with a WARN on stderr.
+
 The timeline stores three decimals, so a delta of 0.001 is rounding; the default epsilon of
 0.002 sits above it. The worst axis decides the exit code.
 
@@ -31,17 +36,29 @@ Exit codes: 0 fine · 1 flip rate over the limit, key missing, or no samples · 
 """
 import argparse
 import json
+import os
+import subprocess
 import sys
+import tempfile
 
 AXES = ("x", "y", "z")
 MISSING = object()
 
 
+# >>> shared:timeline_resolve  (tools/shared-blocks/timeline_resolve.py; edit there, paste here)
 def resolve(sample, key):
-    """Value of a dotted or bare key, or MISSING. Same order as journey_report.py:
-    exact dotted path, then custom.<name>, counts.<name>, ready.<name>, then a top-level field."""
+    """Value of `key` in one timeline/1 sample, or MISSING. One order, pasted unchanged into
+    journey_report.py, jump_report.py and camera_jitter.py: pos.x|y|z and vel.x|y|z (or .0 to .2),
+    then an exact dotted path (custom.gateDist, ready.laneMesh), then custom.<key>, counts.<key>,
+    ready.<key>, then a top-level field."""
     if "." in key:
         head, rest = key.split(".", 1)
+        if head in ("pos", "vel"):
+            vec = sample.get(head)
+            idx = {"x": 0, "y": 1, "z": 2, "0": 0, "1": 1, "2": 2}.get(rest)
+            if isinstance(vec, list) and idx is not None and idx < len(vec):
+                return vec[idx]
+            return MISSING
         container = sample.get(head)
         if isinstance(container, dict) and rest in container:
             return container[rest]
@@ -50,12 +67,46 @@ def resolve(sample, key):
         container = sample.get(bucket)
         if isinstance(container, dict) and key in container:
             return container[key]
-    return sample[key] if key in sample else MISSING
+    if key in sample:
+        return sample[key]
+    return MISSING
+
+
+def stamp_problems(path, meta, samples, end):
+    """(warnings, errors) for the timeline/1 stamp. A meta line stamped "timeline/1" must carry
+    what the schema requires (journey; n, frame and t on every sample unless it is
+    {"n": k, "playing": false}; samples and milestones on the end line, samples counted right):
+    a miss is a writer bug and an error. The 0.34 stamp `"schema": 1` is read as timeline/1 with
+    one warning, for one release; no stamp, or another one, is read the same way with a warning."""
+    stamp = meta.get("schema") if isinstance(meta, dict) else None
+    if stamp == "timeline/1":
+        errors = []
+        if not meta.get("journey"):
+            errors.append("%s: the meta line has no journey" % path)
+        for s in samples:
+            need = ("n",) if s.get("playing") is False else ("n", "frame", "t")
+            lost = [k for k in need if k not in s]
+            if lost:
+                errors.append("%s: sample n=%s has no %s" % (path, s.get("n"), ", ".join(lost)))
+                break
+        if end is not None:
+            if "samples" not in end or "milestones" not in end:
+                errors.append("%s: the end line needs samples and milestones" % path)
+            elif end["samples"] != len(samples):
+                errors.append("%s: the end line counts %s samples, the file has %d"
+                              % (path, end["samples"], len(samples)))
+        return [], errors
+    if stamp == 1 and not isinstance(stamp, bool):
+        return ["WARN %s: old stamp \"schema\": 1, read as timeline/1" % path], []
+    return ["WARN %s: no timeline/1 stamp on the meta line (schema=%r), read as timeline/1"
+            % (path, stamp)], []
+# <<< shared:timeline_resolve
 
 
 def read_timeline(path):
-    """(meta, samples, ended). Raises OSError or ValueError on an unreadable file."""
-    meta, samples, ended = {}, [], False
+    """(meta, samples, end line or None). Raises OSError or ValueError on an unreadable file, and
+    ValueError on a timeline/1 file that breaks its schema; prints a WARN for an old or no stamp."""
+    meta, samples, end = {}, [], None
     with open(path, "r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
             line = line.strip()
@@ -70,10 +121,15 @@ def read_timeline(path):
             if row.get("meta"):
                 meta = row
             elif row.get("end"):
-                ended = True
+                end = row
             elif "n" in row:
                 samples.append(row)
-    return meta, samples, ended
+    warnings, errors = stamp_problems(path, meta, samples, end)
+    for w in warnings:
+        print(w, file=sys.stderr)
+    if errors:
+        raise ValueError("; ".join(errors))
+    return meta, samples, end
 
 
 def components(value):
@@ -157,7 +213,8 @@ def main(argv=None):
         return 2
 
     try:
-        meta, samples, ended = read_timeline(args.timeline)
+        meta, samples, end = read_timeline(args.timeline)
+        ended = end is not None
     except (OSError, ValueError) as e:
         print("ERROR could not read %s: %s" % (args.timeline, e), file=sys.stderr)
         return 2
@@ -207,5 +264,86 @@ def main(argv=None):
     return 1 if violations else 0
 
 
+# ---------------------------------------------------------------- selftest
+
+SCRIPT = "camera_jitter"
+
+
+def contract_out(path, case):
+    """Copy a timeline a selftest wrote to where tools/check-contracts.py validates it against
+    schemas/timeline-1.json: $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints
+    `selftest-output: PATH`. The selftest's own checks stay the gate; this is the hand-off."""
+    import shutil
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    dest = os.path.join(out, "%s__%s.timeline.jsonl" % (SCRIPT, case))
+    shutil.copyfile(path, dest)
+    print("selftest-output: %s" % dest)
+
+
+def _offsets(kind, count=120):
+    """Offsets of a camera behind a runner speeding up and slowing down: `ease` lags and catches up
+    smoothly; `beat` adds a push forward on every other frame, the two-clock pattern."""
+    out = []
+    for i in range(count):
+        lag = 0.4 * (1 - abs(i - count / 2) / (count / 2))
+        if kind == "beat":
+            lag += 0.02 if i % 2 else -0.02
+        out.append([round(lag, 3), 0.0, round(-2 * lag, 3)])
+    return out
+
+
+def _write(path, offsets, schema="timeline/1", key="camOffset"):
+    lines = [{"meta": True, "schema": schema, "journey": "camera-side-run", "situation": "selftest"}]
+    for n, off in enumerate(offsets):
+        lines.append({"n": n, "frame": n, "t": round(n / 60, 4), "dt": 0.0167, "vel": [off[0], 0.0, 0.0],
+                      "custom": {key: off}})
+    lines.append({"end": True, "samples": len(offsets), "milestones": []})
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("".join(json.dumps(x) + "\n" for x in lines))
+    return path
+
+
+def selftest():
+    """Synthetic timelines in a temp dir: an easing camera passes, a beating one fails, a missing
+    key fails, the old stamp warns, a broken timeline/1 file and bad flags are usage errors."""
+    checks, failed = 0, []
+
+    def check(name, cond):
+        nonlocal checks
+        checks += 1
+        if not cond:
+            failed.append(name)
+
+    def run(*args):
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), *args], capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        run.stderr = r.stderr
+        return r.returncode
+
+    with tempfile.TemporaryDirectory(prefix="jitter-selftest-") as d:
+        ease = _write(os.path.join(d, "ease.jsonl"), _offsets("ease"))
+        check("an easing camera: exit 0", run(ease) == 0 and "WARN" not in run.stderr)
+        contract_out(ease, "ease")
+        check("a beating camera: exit 1", run(_write(os.path.join(d, "beat.jsonl"), _offsets("beat"))) == 1)
+        check("a missing key: exit 1", run(ease, "--key", "noSuchKey") == 1)
+        check("vel.x resolves a component", run(ease, "--key", "vel.x") == 0)
+        old = _write(os.path.join(d, "old.jsonl"), _offsets("ease"), schema=1)
+        check("the 0.34 stamp schema 1: exit 0, one WARN", run(old) == 0 and run.stderr.count("WARN") == 1)
+        with open(ease, encoding="utf-8") as fh:
+            bad = fh.read().replace('"samples": 120', '"samples": 7')
+        with open(os.path.join(d, "count.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(bad)
+        check("timeline/1 end line miscounts: exit 2", run(os.path.join(d, "count.jsonl")) == 2)
+        with open(os.path.join(d, "broken.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write('{"meta": true}\nnot json\n')
+        check("a line that is not JSON: exit 2", run(os.path.join(d, "broken.jsonl")) == 2)
+        check("a negative --epsilon: exit 2", run(ease, "--epsilon", "-1") == 2)
+    print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
+    return 0 if not failed else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["selftest"], ["--selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

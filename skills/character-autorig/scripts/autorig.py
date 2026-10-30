@@ -170,9 +170,42 @@ def step(name, cmd, report_file, log, kind="file") -> dict:
     return {"name": name, "cmd": [str(x) for x in cmd], "report": str(report_file), "log": str(log), "kind": kind}
 
 
+_WARNED: set = set()
+
+
+def _warn_once(key: str, text: str) -> None:
+    if key not in _WARNED:
+        _WARNED.add(key)
+        print(f"WARN {text}", file=sys.stderr)
+
+
 def gate_failed(g: dict) -> bool:
-    """A gate reads 'ok' (this skill's scripts) or 'pass' (contract_map, the brt and bcr ops)."""
-    return not g.get("pass", g.get("ok", True))
+    """A gate/1 gate passes only on `pass: true`; one without a boolean `pass` has failed. The 0.34 dialect's
+    `ok` is read in its place for one release, only when `pass` is absent."""
+    if not isinstance(g, dict):
+        return True
+    if "pass" in g:
+        return g["pass"] is not True
+    if "ok" in g:
+        _warn_once("gate-ok", "a gate carries the old key `ok`, read as `pass` (gate/1 names it `pass`)")
+        return g["ok"] is not True
+    return True
+
+
+def report_passed(rep: dict | None) -> bool | None:
+    """A report's verdict: its boolean `pass`, else (an unstamped 0.34 report) its `ok`, else None for a
+    report that states none. A report stamped gate/1 without a boolean `pass` has failed."""
+    if not isinstance(rep, dict):
+        return None
+    if isinstance(rep.get("pass"), bool):
+        return rep["pass"]
+    if rep.get("schema") == "gate/1":
+        return False
+    if isinstance(rep.get("ok"), bool):
+        if rep.get("gates"):
+            _warn_once("report-ok", f"{rep.get('tool', 'a report')} carries no `pass`; its old key `ok` is read")
+        return rep["ok"]
+    return None
 
 
 def read_json(path):
@@ -377,7 +410,7 @@ def run_step(st: dict, env: dict) -> tuple[int, dict | None, float]:
                 break
     if rep is None:
         code = code or 1          # the script never reported: Blender failed to open the file or to run it
-    elif code == 0 and (rep.get("exit_code") not in (None, 0) or rep.get("ok") is False):
+    elif code == 0 and (rep.get("exit_code") not in (None, 0) or report_passed(rep) is False):
         code = int(rep.get("exit_code") or 2)   # a Blender that drops the script's exit code
     if code not in (0, 1, 2):
         code = 1                  # a crash or a signal is an error
@@ -559,7 +592,7 @@ def _in_prep(a):
                              "location": [0, 0, 0], "weld_distance": None, "normal_strength": 0.5,
                              "backface_culling": True})
     bpy.ops.wm.save_as_mainfile(filepath=a.save)
-    return r, 0 if r.get("ok") else 2
+    return r, 0 if report_passed(r) else 2
 
 
 def _in_arp(a):
@@ -568,11 +601,11 @@ def _in_arp(a):
     import brt_arp
     Path(a.fbx).parent.mkdir(parents=True, exist_ok=True)   # the add-on's exporter does not make the folder
     r = brt_arp.run({"op": "pipeline", "mesh": a.mesh, "markers": a.markers, "fbx": a.fbx, "report_path": a.report})
-    if r.get("ok"):
+    if report_passed(r):
         Path(a.save).parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=a.save)
     refused = any(g.get("name") == "arp.precondition" and gate_failed(g) for g in r.get("gates", []))
-    return r, 0 if r.get("ok") else 1 if refused else 2
+    return r, 0 if report_passed(r) else 1 if refused else 2
 
 
 def _in_repair(a):
@@ -590,7 +623,8 @@ def _in_repair(a):
     deform = {b.name for b in rig.data.bones if b.use_deform}
     Path(a.backup_dir).mkdir(parents=True, exist_ok=True)
     log = {"mesh": mesh.name, "armature": rig.name, "amount": a.amount, "hinges": {}}
-    short = lambda r: {k: r.get(k) for k in ("ok", "reason", "message", "changed_vertices") if k in r}
+    short = lambda r: {**{k: r.get(k) for k in ("reason", "message", "changed_vertices") if k in r},
+                       "ok": bool(report_passed(r))}
     for hinge in a.hinges.split(","):
         reg = repair_regions(markers, hinge)
         base = {"mesh": mesh.name, "armature": rig.name, "acknowledge_destructive": True,
@@ -615,10 +649,11 @@ def _in_repair(a):
                     return {"ok": False, "error": f"{hinge}.{side} {key}: transfer failed", **log}, 1
     Path(a.fbx).parent.mkdir(parents=True, exist_ok=True)
     x = brt_arp.run({"op": "export", "armature": rig.name, "fbx": a.fbx})
-    log["export"] = {k: x.get(k) for k in ("ok", "reason", "message")}
+    passed = bool(report_passed(x))
+    log["export"] = {"ok": passed, **{k: x.get(k) for k in ("reason", "message")}}
     log["export_failed_gates"] = [g.get("name") for g in x.get("gates", []) if gate_failed(g)]
     bpy.ops.wm.save_as_mainfile(filepath=a.save, copy=True)
-    return {"ok": bool(x.get("ok")), **log}, 0 if x.get("ok") else 1
+    return {"ok": passed, **log}, 0 if passed else 1
 
 
 # --- selftest -----------------------------------------------------------------------------------------------------
@@ -640,7 +675,7 @@ with open(os.environ["FAKE_TRACE"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"script": script, "argv": argv}) + "\n")
 print("progress \u00e9\u4e2d", file=sys.stderr)
 code = codes.get(script, 0)
-rep = {"ok": code == 0, "gates": [{"name": "fake.gate", "ok": code == 0}]}
+rep = {"schema": "gate/1", "pass": code == 0, "ok": code == 0, "gates": [{"name": "fake.gate", "pass": code == 0}]}
 if script == "inside_prep":
     touch(opt("--save"))
 elif script == "arp_markers.py":
@@ -657,11 +692,12 @@ elif script == "deform_gate.py":
     att = os.path.basename(os.path.dirname(fbx)) if "repair" in fbx else "a0"
     plan = json.loads(os.environ.get("FAKE_DEFORM", "{}"))
     joint, v, si = plan.get(att, ["LowerArm.R", 0.53, 0.04])
-    vol = {"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "ok": v <= 0.35}
-    sig = {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "ok": si <= 0.08}
-    rep = {"poses": {"p": {"samples": [{"volume_loss": {joint: v}}]}}, "volume_loss_max": {"value": v, "joint": joint},
-           "self_intersection": {"p95": si}, "gates": [vol, sig], "ok": vol["ok"] and sig["ok"]}
-    code = 0 if rep["ok"] else 2
+    vol = {"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "pass": v <= 0.35}
+    sig = {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "pass": si <= 0.08}
+    rep = {"schema": "gate/1", "poses": {"p": {"samples": [{"volume_loss": {joint: v}}]}},
+           "volume_loss_max": {"value": v, "joint": joint}, "self_intersection": {"p95": si}, "gates": [vol, sig],
+           "pass": vol["pass"] and sig["pass"], "ok": vol["pass"] and sig["pass"]}
+    code = 0 if rep["pass"] else 2
 if script in ("mesh_check.py", "contract_map.py", "arp_markers.py", "deform_gate.py"):
     if not os.environ.get("FAKE_NO_OUT") == script:
         touch(opt("--out"), json.dumps(rep, indent=1))
@@ -770,9 +806,9 @@ def selftest() -> int:
             vol = max(joints.values()) if joints else 0.1
             return {"poses": {"elbow_120": {"samples": [{"volume_loss": joints}]}},
                     "volume_loss_max": {"value": vol, "joint": max(joints, key=joints.get) if joints else None},
-                    "gates": [{"name": "deform.volume_loss_max", "value": vol, "limit": lim, "ok": vol <= lim},
-                              {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "ok": si <= 0.08},
-                              {"name": "deform.joints_measured", "value": [], "ok": True}]}
+                    "gates": [{"name": "deform.volume_loss_max", "value": vol, "limit": lim, "pass": vol <= lim},
+                              {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "pass": si <= 0.08},
+                              {"name": "deform.joints_measured", "value": [], "pass": True}]}
         elbow = rep({"LowerArm.L": 0.517, "LowerArm.R": 0.5289, "UpperArm.R": 0.73})
         check("elbows over the limit (a shoulder's loss is not gated): repair the elbow at amount 1.0",
               next_rung(elbow, []) == {"hinges": ["elbow"], "amount": 1.0,
@@ -781,8 +817,19 @@ def selftest() -> int:
         check("elbow and self-intersection both failing: no repair", next_rung(rep({"LowerArm.L": 0.5}, si=0.1), []) is None)
         check("a spine joint over the limit: no repair", next_rung(rep({"LowerArm.L": 0.5, "Spine": 0.4}), []) is None)
         check("every gate passing: no repair", next_rung(rep({"LowerArm.L": 0.2}), []) is None)
-        bad = {"gates": [{"name": "deform.joints_measured", "ok": False}, {"name": "deform.volume_loss_max", "ok": True}]}
+        bad = {"gates": [{"name": "deform.joints_measured", "pass": False}, {"name": "deform.volume_loss_max", "pass": True}]}
         check("an unmeasured joint: no repair", next_rung(bad, []) is None and not classify(bad)["repairable"])
+        with contextlib.redirect_stderr(io.StringIO()):
+            check("a gate without `pass` has failed; the old `ok` is read only when `pass` is absent",
+                  gate_failed({}) and gate_failed({"name": "x"}) and gate_failed({"pass": None})
+                  and gate_failed({"pass": False, "ok": True}) and not gate_failed({"pass": True})
+                  and gate_failed({"ok": False}) and not gate_failed({"ok": True}))
+            check("a report: pass, else the old ok, else no verdict; stamped gate/1 without pass fails",
+                  report_passed({"pass": True}) is True and report_passed({"pass": False, "ok": True}) is False
+                  and report_passed({"ok": True, "gates": []}) is True and report_passed({"steps": []}) is None
+                  and report_passed({"schema": "gate/1", "ok": True}) is False)
+            missing = {"gates": [{"name": "deform.volume_loss_max", "value": 0.1, "limit": 0.35}]}
+            check("a deform report whose gate lacks `pass` is not passed", not classify(missing)["passed"])
         a1 = {"hinges": ["elbow"], "amount": 1.0}
         check("attempt passed: stop", next_rung(elbow, [{**a1, "report": rep({"LowerArm.R": 0.3492}, si=0.05)}]) is None)
         check("attempt still loses volume at the same hinge: exhausted (the manual rungs)",

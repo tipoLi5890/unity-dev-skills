@@ -24,7 +24,7 @@ Declared public instance members, in the order reflection returns them:
 | `cropFrame` | `CropFrame` | get/set | Aspect-ratio policy — table below |
 | `gridSnapping` | `GridSnapping` | get/set | Snapping mode — table below |
 | `orthographicSize` | `float` | **get only** | The component's computed size. Not `Camera.orthographicSize`, which you set yourself |
-| `assetsPPU` | `int` | get/set | Has to equal the `spritePixelsPerUnit` every sprite in the scene imported with |
+| `assetsPPU` | `int` | get/set | Has to equal the `spritePixelsPerUnit` every sprite in the scene imported with (÷ F for frames shipped upscaled by F, `frames.json` `pixel.block_px`) |
 | `refResolutionX` | `int` | get/set | Reference width |
 | `refResolutionY` | `int` | get/set | Reference height |
 | `pixelRatio` | `int` | **get only** | The whole-number scale actually applied — 6 at 1080p from a 320×180 reference |

@@ -69,7 +69,9 @@ Gates (each failing one makes exit 2):
 Report: {tool, armature, mesh, height, triangles, outward_triangles, inward_triangles, poses: {name: {samples: [{t, new_intersections, moved,
 ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the pose turns), skipped?}}, volume_loss_max {value, pose,
 joint}, ball_joint_loss_max,
-self_intersection {p95, max, pose}, renders?, gates [{name, value, limit, ok}], ok}.
+self_intersection {p95, max, pose}, renders?, gates [{name, value, limit, pass}], schema, pass, ok}: a gate/1
+report (schemas/gate-1.json); `ok`, pass's old name, equals it for one release. A refused input
+reports pass false, no gates, `refused` and `error`.
 
 Prints one JSON object. Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed;
 1 refused input (no such object, a body bone the map cannot find, an unreadable map or FBX) or a
@@ -463,11 +465,11 @@ def gates_of(result: dict, poses, args) -> list:
     unmeasured = sorted(hinges - measured)
     return [
         {"name": "deform.volume_loss_max", "value": round(worst[0], 4), "limit": args.volume_max,
-         "ok": worst[0] <= args.volume_max},
+         "pass": bool(worst[0] <= args.volume_max)},
         {"name": "deform.self_intersection_p95", "value": round(p95, 4), "limit": args.intersect_p95,
-         "ok": p95 <= args.intersect_p95},
-        {"name": "deform.poses", "value": skipped, "limit": [], "ok": not skipped},
-        {"name": "deform.joints_measured", "value": unmeasured, "limit": [], "ok": not unmeasured},
+         "pass": bool(p95 <= args.intersect_p95)},
+        {"name": "deform.poses", "value": skipped, "limit": [], "pass": not skipped},
+        {"name": "deform.joints_measured", "value": unmeasured, "limit": [], "pass": not unmeasured},
     ]
 
 
@@ -497,6 +499,15 @@ def parser():
 
 
 def run(args) -> tuple[int, dict]:
+    """The gate/1 report and its exit code; a refused input (exit 1) reports pass false with no gates."""
+    code, report = _run(args)
+    if code == 1 and "gates" not in report:
+        report = {"schema": "gate/1", "tool": "deform_gate", "pass": False, "ok": False, "gates": [],
+                  "refused": str(report.get("error")), **report}
+    return code, report
+
+
+def _run(args) -> tuple[int, dict]:
     import bpy
     try:
         mapping = read_map(args.map)
@@ -551,9 +562,21 @@ def run(args) -> tuple[int, dict]:
         if action is not None:
             rig_obj.animation_data.action = action
     gates = gates_of(result, poses, args)
-    report = {"tool": "deform_gate", "armature": rig_obj.name, "mesh": mesh.name, **result,
-              "gates": gates, "ok": all(g["ok"] for g in gates)}
-    return (0 if report["ok"] else 2), report
+    ok = all(g["pass"] is True for g in gates)
+    report = {"schema": "gate/1", "tool": "deform_gate", "pass": ok, "ok": ok, "armature": rig_obj.name,
+              "mesh": mesh.name, **result, "gates": gates}
+    return (0 if report["pass"] is True else 2), report
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 # ------------------------------------------------------------------------------ selftest
@@ -731,14 +754,19 @@ def selftest() -> tuple[int, dict]:
     code, rep = results["good"]
     gate = {g["name"]: g for g in rep.get("gates", [])}
     ok("good skin: exit 0", code == 0)
+    ok("good skin: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True
+       and rep.get("ok") is True and all("pass" in g and "ok" not in g for g in rep.get("gates", [])))
+    contract_sample("deform_gate", "good", rep)
     ok("good skin: six poses measured", len(rep.get("poses", {})) == 6 and
        all(d["samples"] for d in rep.get("poses", {}).values()))
     code, rep = results["hard"]
     gate = {g["name"]: g for g in rep.get("gates", [])}
-    ok("hard skin: exit 2, self-intersection fails", code == 2 and not gate["deform.self_intersection_p95"]["ok"])
+    ok("hard skin: exit 2, self-intersection fails", code == 2 and not gate["deform.self_intersection_p95"]["pass"])
+    ok("hard skin: a failed gate/1 report", rep.get("pass") is False and rep.get("ok") is False)
+    contract_sample("deform_gate", "hard", rep)
     code, rep = results["blend"]
     gate = {g["name"]: g for g in rep.get("gates", [])}
-    ok("half-and-half arm: exit 2, volume fails at the elbow", code == 2 and not gate["deform.volume_loss_max"]["ok"]
+    ok("half-and-half arm: exit 2, volume fails at the elbow", code == 2 and not gate["deform.volume_loss_max"]["pass"]
        and rep["volume_loss_max"]["joint"] in ("LowerArm.L", "LowerArm.R"))
     ok("pose put back", all(tuple(pb.rotation_quaternion) == (1, 0, 0, 0) for pb in rig_obj.pose.bones))
     ok("single skin: every triangle faces outward", rep["inward_triangles"] <= 0.01 * rep["triangles"])
@@ -767,7 +795,7 @@ def selftest() -> tuple[int, dict]:
     hinges = {"LowerArm.L", "LowerArm.R", "LowerLeg.L", "LowerLeg.R"}
     measured = {j for d in rep.get("poses", {}).values() for smp in d["samples"] for j in smp["volume_loss"]}
     ok("inner shell: exit 0, hinges measured", code == 0 and hinges <= measured and
-       gate["deform.joints_measured"]["ok"])
+       gate["deform.joints_measured"]["pass"])
     ok("inner shell: the inner half left out", abs(rep["outward_triangles"] - len(lf)) <= 0.02 * len(lf))
     ok("inner shell: p95 and elbow loss as on one skin",
        rep["self_intersection"]["p95"] <= good_p95 + 0.005 and abs(rep["volume_loss_max"]["value"] - good_loss) < 0.02)
@@ -776,7 +804,7 @@ def selftest() -> tuple[int, dict]:
     gate = {g["name"]: g for g in rep.get("gates", [])}
     notes["inner_shell_all_triangles"] = {g["name"]: g["value"] for g in rep.get("gates", [])}
     ok("inner shell counted whole: joints_measured fails, exit 2", code == 2 and
-       not gate["deform.joints_measured"]["ok"])
+       not gate["deform.joints_measured"]["pass"])
     bpy.data.objects.remove(twin)
     # the same body split along a seam (every left-half triangle on its own copies of its
     # vertices, as a glTF or FBX writes UV seams): touching across the seam is not crossing
@@ -817,7 +845,7 @@ def selftest() -> tuple[int, dict]:
        gate["deform.joints_measured"]["value"] == ["LowerArm.L"])
     code, rep = run(parser().parse_args(["--armature", rig_obj.name, "--mesh", holed.name, "--poses", "arms_up"]))
     ok("no hinge bent: joints_measured passes", next(g for g in rep["gates"]
-                                                     if g["name"] == "deform.joints_measured")["ok"])
+                                                     if g["name"] == "deform.joints_measured")["pass"])
     bpy.data.objects.remove(holed)
     # refused inputs
     with tempfile.TemporaryDirectory() as d:
@@ -844,11 +872,11 @@ def selftest() -> tuple[int, dict]:
         fist = parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name, "--map", bad, "--poses", "fist"])
         code, rep = run(fist)
         ok("fist named on a rig without index fingers: deform.poses fails, exit 2", code == 2 and
-           not next(g for g in rep["gates"] if g["name"] == "deform.poses")["ok"])
+           not next(g for g in rep["gates"] if g["name"] == "deform.poses")["pass"])
         code, rep = run(parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name, "--map", bad,
                                              "--poses", "all", "--steps", "1"]))
         ok("fist skipped under --poses all: deform.poses passes", next(g for g in rep["gates"]
-                                                                       if g["name"] == "deform.poses")["ok"])
+                                                                       if g["name"] == "deform.poses")["pass"])
     return (0 if not failed else 1), {"selftest": "pass" if not failed else "fail", "checks": checks,
                                       "failed": failed, "gate_values": notes}
 

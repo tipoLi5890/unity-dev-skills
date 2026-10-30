@@ -176,4 +176,4 @@ gate nobody has seen fail proves nothing. Journeys and the probe: `unity-play-ha
 | The attack button, aim direction | `unity-input` |
 | Cell-based attacks, range and turn order on a board | `unity-2d-grid` |
 | Recorders, the probe contract | `unity-play-harness` |
-| Damage over a network; who is authoritative | `unity-live-services` → `reference/multiplayer.md` §1 (netcode APIs are out of scope) |
+| Damage over a network; who is authoritative | `unity-live-services` → `reference/multiplayer.md` §2 (netcode APIs are out of scope) |

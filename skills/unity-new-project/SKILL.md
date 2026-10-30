@@ -115,7 +115,7 @@ Build/release mechanics: `unity-android-release`.
 > back, so the build ships **minSdk 25** whatever the plugin's documented floor says. Treat a
 > plugin's number as a lower bound, not the answer: set it in the setup method below, read
 > `PlayerSettings.Android.minSdkVersion` back, and ship *that* value — it is the one for the
-> release notes. Check the floor on your own editor version rather than assuming 25.
+> release notes. Check the floor on your own editor version (26 from 6000.5).
 
 Put these in a re-runnable `[MenuItem]` + `-executeMethod` method rather than clicking them,
 and set `EditorSettings.serializationMode = ForceText` and

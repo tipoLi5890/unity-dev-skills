@@ -23,7 +23,7 @@ using UnityEngine;
 /// </summary>
 public sealed class JourneyRecorder : IDisposable
 {
-    public const int Schema = 1;
+    public const string Schema = "timeline/1";
 
     public string JourneyId { get; private set; }
     public string OutputDirectory { get; private set; }
@@ -138,7 +138,7 @@ public sealed class JourneyRecorder : IDisposable
     string MetaLine()
     {
         var sb = new StringBuilder(256);
-        sb.Append("{\"meta\":true,\"schema\":").Append(Schema)
+        sb.Append("{\"meta\":true,\"schema\":").Append(Json(Schema))
           .Append(",\"journey\":").Append(Json(JourneyId))
           .Append(",\"situation\":").Append(Json(Situations.Current))
           .Append(",\"params\":{");

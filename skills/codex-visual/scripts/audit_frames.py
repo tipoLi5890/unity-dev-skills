@@ -26,8 +26,15 @@ frame per cell — can show:
   cut     frames with a solid pixel on the canvas border — cut off, not posed.
   resid   per frame, pixels at alpha > 16 within 150 RGB of the key — anywhere in
           the frame, not only on the rim: a key-coloured speck, a hole the key
-          did not clear, a fill the key ate into. The key is --key-color, else
-          the sidecar's `set_metrics.key_color`; with neither it reads n/a.
+          did not clear, a fill the key ate into.
+
+The key behind fringe, tint and resid is --key-color, else the sidecar's
+`key_color` (frames/1, the repo's schemas/frames-1.json: the key the frames were
+keyed against). A `key_color` of null (never chroma-keyed), a bare directory, or
+no key at all reads n/a with a WARN: not measured is not a pass. A sidecar
+stamped frames/1 that lacks a required key fails its sequence (a producer bug).
+An unstamped 0.34 sidecar is read for one release with one WARN, its
+`set_metrics.key_color` standing for `key_color`.
   opaque  per frame, pixels at alpha > 0. The sparse floor is the canvas's
           equivalent side, ceil(sqrt(W x H)) — half that for an effect
           (`centroid` mode) — so it scales with the frame, not its area: a
@@ -152,13 +159,50 @@ def residual_count(rgba, key):
     return int(((rgba[..., 3] > RESIDUAL_ALPHA) & (d <= RESIDUAL_DIST)).sum())
 
 
-def sidecar_key(doc):
-    """The key colour a sidecar recorded (sheet_to_frames.py writes it under set_metrics), or None."""
-    k = ((doc or {}).get("set_metrics") or {}).get("key_color")
+FRAMES_REQUIRED = ("schema", "tool", "canvas", "pivot_norm", "key_color", "fps_hint", "loop", "register",
+                   "verdict", "frames")
+REGISTER_REQUIRED = ("mode", "ref", "reference_core_height_px", "foot_margin_px")
+
+
+def sidecar_key(doc, where="frames.json"):
+    """(key rgb or None, why it is None, contract faults) for one sidecar — frames/1 (schemas/frames-1.json).
+
+    frames/1: the top-level `key_color` is the key the frames were keyed against; null means never
+    chroma-keyed, so fringe, tint and residue are not measured (and say so, never a pass). A stamped
+    file missing a required key is a producer bug: a fault, not a warning. A 0.34 sidecar (no
+    `schema`) is read for one release with one WARN line: its `set_metrics.key_color` stands for
+    `key_color`, `register.margin_px` for `foot_margin_px`."""
+    if doc is None:
+        return None, "no frames.json", []
+    stamp = doc.get("schema")
+    if stamp is None:
+        old = [k for k, present in (("set_metrics.key_color", isinstance((doc.get("set_metrics") or {}).get("key_color"), str)),
+                                    ("register.margin_px", "margin_px" in (doc.get("register") or {})))
+               if present]
+        print(f"WARN: {where}: no schema (a 0.34 frames.json), read as the old dialect"
+              + (": " + ", ".join(f"{k} for {'key_color' if 'key' in k else 'foot_margin_px'}" for k in old)
+                 if old else "") + " — re-write it with this release's producer", file=sys.stderr)
+        k = (doc.get("set_metrics") or {}).get("key_color")
+        if not isinstance(k, str):
+            return None, "an old frames.json with no key", []
+        try:
+            return so.parse_hex(k), "", []
+        except ValueError:
+            return None, f"set_metrics.key_color {k!r} is not a colour", []
+    if stamp != "frames/1":
+        return None, "", [f"{where} carries schema {stamp!r}; this reader knows frames/1"]
+    reg = doc.get("register") if isinstance(doc.get("register"), dict) else {}
+    missing = [k for k in FRAMES_REQUIRED if k not in doc] + [f"register.{k}" for k in REGISTER_REQUIRED if k not in reg]
+    faults = ([f"frames/1 sidecar is missing {', '.join(missing)} (a producer bug: re-write it)"] if missing else [])
+    if "margin_px" in reg:
+        faults.append("frames/1 sidecar carries register.margin_px (the name is foot_margin_px)")
+    k = doc.get("key_color")
+    if k is None:
+        return None, ("frames/1 key_color null: never chroma-keyed" if "key_color" in doc else "no key_color"), faults
     try:
-        return so.parse_hex(k) if isinstance(k, str) else None
-    except ValueError:
-        return None
+        return so.parse_hex(k), "", faults
+    except (ValueError, TypeError, AttributeError):
+        return None, "", faults + [f"key_color {k!r} is not a #rrggbb colour"]
 
 
 def onion_tile(files, label, failed):
@@ -282,8 +326,9 @@ def main():
     ap = argparse.ArgumentParser(description="Gate delivered animation frames: feet line, slip from the "
                                              "reference, key fringe and tint, frames cut by the canvas.")
     ap.add_argument("sequences", nargs="+", help="directories holding frames.json (or PNG frames), or frames.json paths")
-    ap.add_argument("--key-color", help="the key colour the sheet was generated on, e.g. '#ff00ff' — enables "
-                                        "fringe and tint; without it neither is measured or gated")
+    ap.add_argument("--key-color", help="the key colour the sheet was generated on, e.g. '#ff00ff' — overrules "
+                                        "the sidecar's key_color for every sequence; with neither, fringe, tint "
+                                        "and residue are not measured (and the run says so)")
     ap.add_argument("--mode", choices=MODES,
                     help="overrule the sidecar for every sequence: ground = feet on one line, in register; "
                          "free = in register, feet may leave the floor; keep = motion authored in the cell "
@@ -317,7 +362,7 @@ def main():
 
     print(f"{'sequence':24s} {'n':>3s} {'canvas':>9s} {'mode':8s} {'feet':>4s} {'slip':>4s} {'head_x':>6s} "
           f"{'iou min/mean':>12s} {'fringe':>7s} {'tint':>7s} {'cut':>3s} {'resid':>5s} {'opaque/floor':>12s}  result")
-    out_rows, failed, read, tiles = [], 0, 0, []
+    out_rows, failed, read, tiles, unkeyed = [], 0, 0, [], 0
     for arg in a.sequences:
         seq = find_sequence(arg)
         if not seq or not seq[1]:
@@ -326,10 +371,18 @@ def main():
         name, files, doc = seq
         read += 1
         mode = a.mode or sidecar_mode(doc)
-        resid_key = key if key is not None else sidecar_key(doc)
-        rows, g = measure(files, key, a.ref if a.ref is not None else sidecar_ref(doc), mode, resid_key)
-        flags, notes = [], []
-        if key is not None and (g["fringe_pct"] > a.fringe_max or g["tint_pct"] > a.tint_max):
+        side_key, why_none, contract = sidecar_key(doc, os.path.join(arg.rstrip("/"), "frames.json")
+                                                   if os.path.isdir(arg) else arg)
+        seq_key = key if key is not None else side_key
+        rows, g = measure(files, seq_key, a.ref if a.ref is not None else sidecar_ref(doc), mode, seq_key)
+        flags, notes = list(contract), []
+        if seq_key is None:
+            unkeyed += 1
+            if doc is not None:
+                print(f"WARN: {name}: fringe, tint and residue not measured ({why_none or 'no key'}) — "
+                      f"this is not a pass; --key-color HEX measures them", file=sys.stderr)
+            notes.append("fringe not measured: no key")
+        if seq_key is not None and (g["fringe_pct"] > a.fringe_max or g["tint_pct"] > a.tint_max):
             flags.append("key left on the rim: re-key with key_unmix.py")
         if g["cut"]:
             flags.append(f"{len(g['cut'])} frame(s) cut by the canvas: re-slice on a canvas that holds them")
@@ -365,8 +418,8 @@ def main():
                          "BOIL: play ONE frame + engine motion, do not cycle")
         ch, cw = g["canvas"][0] if g["canvas"] else (0, 0)
         body = mode in ("ground", "free", "keep")
-        fr = f"{g['fringe_pct']:.2f}%" if key is not None else "n/a"
-        ti = f"{g['tint_pct']:.2f}%" if key is not None else "n/a"
+        fr = f"{g['fringe_pct']:.2f}%" if seq_key is not None else "n/a"
+        ti = f"{g['tint_pct']:.2f}%" if seq_key is not None else "n/a"
         rs = "n/a" if g["residual_max"] is None else str(g["residual_max"])
         sp = f"{g['opaque_min']}/{floor}" if floor > 0 else f"{g['opaque_min']}/off"
         res = ("FAIL: " + "; ".join(flags)) if flags else "ok"
@@ -409,7 +462,8 @@ def main():
         print("verdict NOTHING READ — no sequence held a frame; this is not a pass", file=sys.stderr)
         return 2
     print(f"verdict {'FAIL' if failed else 'OK'} sequences {read} failed {failed}"
-          + ("" if key is not None else " (fringe and tint not measured: no --key-color)"))
+          + (f" (fringe and tint not measured on {unkeyed}: no key_color in frames.json and no --key-color)"
+             if unkeyed else ""))
     return 1 if failed and not a.no_gate else 0
 
 
@@ -446,15 +500,25 @@ def selftest():
             extra(a)
         return a
 
-    def write(d, frames, mode="ground", key=None):
+    def write(d, frames, mode="ground", key=None, legacy=False, drop=()):
+        """A frames/1 sidecar (key None -> key_color null), or with legacy=True a 0.34 one that keeps
+        its key under set_metrics. `drop` removes top-level keys (a broken producer)."""
         os.makedirs(d, exist_ok=True)
         recs = []
         for i, f in enumerate(frames):
             name = f"run_{i:03d}.png"
             Image.fromarray(f, "RGBA").save(os.path.join(d, name))
             recs.append(dict(file=name, empty=False))
-        doc = dict(tool="selftest", canvas=[96, 128], pivot="bottom-center", register=dict(mode=mode, ref=0),
-                   frames=recs, set_metrics=(dict(key_color=key) if key else {}))
+        if legacy:
+            doc = dict(tool="selftest", canvas=[96, 128], pivot="bottom-center", register=dict(mode=mode, ref=0),
+                       frames=recs, set_metrics=(dict(key_color=key) if key else {}))
+        else:
+            doc = dict(schema="frames/1", tool="selftest", canvas=[96, 128], pivot="bottom-center",
+                       pivot_norm=[0.5, 8 / 128], key_color=key, fps_hint=10.0, loop=True,
+                       register=dict(mode=mode, ref=0, reference_core_height_px=112, foot_margin_px=8),
+                       verdict=dict(ok=True, faults=[]), frames=recs)
+            for k in drop:
+                doc.pop(k, None)
         with open(os.path.join(d, "frames.json"), "w", encoding="utf-8") as fh:
             json.dump(doc, fh)
 
@@ -483,13 +547,40 @@ def selftest():
         nokey = os.path.join(tmp, "nokey")
         write(nokey, [runner_frame(22), runner_frame(22, speck(130)), runner_frame(22), runner_frame(22)])
         code, out = audit(nokey)
-        check("no key anywhere: residual reads n/a and does not gate", code == 0 and " n/a " in out.splitlines()[1])
+        row = next(ln for ln in out.splitlines() if ln.startswith("nokey"))
+        check("key_color null: residual reads n/a, does not gate, and says it was not measured",
+              code == 0 and " n/a " in row and "not measured" in row and "WARN" in out and "verdict OK" in out)
         code, out = audit(nokey, "--key-color", "#ff00ff")
         check("--key-color supplies the residual key", code == 1 and "run_001.png:130" in out)
         under = os.path.join(tmp, "under")
         write(under, [runner_frame(22), runner_frame(22, speck(110)), runner_frame(22), runner_frame(22)],
               key="#ff00ff")
         check("110 key px passes at the default 120", audit(under)[0] == 0)
+
+        # ---- the sidecar's key_color drives the rim too: a magenta outline fails fringe without --key-color
+        def rim(a):
+            body = a[..., 3] > 0
+            edge = body & ~(np.roll(body, 1, 0) & np.roll(body, -1, 0) & np.roll(body, 1, 1) & np.roll(body, -1, 1))
+            a[edge] = (250, 10, 245, 255)
+        rimmed = os.path.join(tmp, "rimmed")
+        write(rimmed, [runner_frame(22, rim) for _ in range(3)], key="#ff00ff")
+        code, out = audit(rimmed, "--residual-max", "-1")
+        check("frames/1 key_color gates the rim (1)", code == 1 and "key left on the rim" in out)
+        green = os.path.join(tmp, "green")
+        write(green, [runner_frame(22, rim) for _ in range(3)], key="#00ff00")
+        code, out = audit(green, "--residual-max", "-1")
+        check("the declared key is the one measured, not magenta", code == 0)
+
+        # ---- a stamped sidecar missing a required key is a producer bug; an old one is read with a WARN
+        broken = os.path.join(tmp, "broken")
+        write(broken, [runner_frame(22) for _ in range(3)], key="#ff00ff", drop=("key_color",))
+        code, out = audit(broken)
+        check("frames/1 without key_color fails (1)", code == 1 and "producer bug" in out and "key_color" in out)
+        old = os.path.join(tmp, "old")
+        write(old, [runner_frame(22), runner_frame(22, speck(130)), runner_frame(22)], key="#ff00ff", legacy=True)
+        code, out = audit(old)
+        check("0.34 sidecar: one WARN naming set_metrics.key_color, its key still read",
+              code == 1 and out.count("WARN") == 1 and "set_metrics.key_color" in out and "run_001.png:130" in out)
 
         def tiny(a):
             a[:] = 0

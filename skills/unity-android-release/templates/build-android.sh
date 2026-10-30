@@ -290,18 +290,19 @@ if [[ "$MODE" == "doctor" ]]; then say "Done"; exit 0; fi
 say "Gates"
 [[ "$ABI_BAD" == "0" ]] && ok "native ABIs match $TARGET_ABI" || { FAILED=1; }
 # 16 KB pages: a 4 KB-aligned library will not load under targetSdk 35+ on such a device. That is a
-# refusal for anything published (Play is reported to require 16 KB compatibility for new apps) and
+# refusal for anything published (Play requires 16 KB support from targetSdk 35, and a store build
+# must target Play's current level, so pinning 34 is no way out) and
 # a loud warning for a sideloaded test APK, which still runs on every 4 KB-page device.
 if [[ "$ALIGN_BAD" == "1" ]]; then
   case "${TARGET_SDK:-0}" in
     ""|0|3[5-9]|[4-9][0-9])
       if [[ "$MODE" == "release" || "$MODE" == "preflight" ]]; then
-        gate 1 "a native library is 4 KB aligned but targetSdk is ${TARGET_SDK:-Auto} — pin targetSdk 34, or have the library rebuilt with -Wl,-z,max-page-size=16384"
+        gate 1 "a native library is 4 KB aligned but targetSdk is ${TARGET_SDK:-Auto} — have the library rebuilt with -Wl,-z,max-page-size=16384 or replace it (a targetSdk 34 pin is for sideloaded builds only)"
       else
         warn "4 KB-aligned native library with targetSdk ${TARGET_SDK:-Auto} — this APK dies on launch on 16 KB-page devices"
       fi ;;
     *)
-      warn "a native library is 4 KB aligned; targetSdk $TARGET_SDK still loads it — do not raise targetSdk until it ships 0x4000" ;;
+      warn "a native library is 4 KB aligned; targetSdk $TARGET_SDK still loads it, but only outside Play (Play will not take this targetSdk) — the library must ship 0x4000" ;;
   esac
 elif [[ -z "$READELF" ]]; then
   info "no llvm-readelf in the bundled NDK — native page alignment (16 KB rule) NOT checked"

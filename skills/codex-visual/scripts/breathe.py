@@ -62,13 +62,16 @@ is ever clipped quietly.
 usage:
     breathe.py idle.png --out-dir DIR [--frames 12] [--breaths 1] [--depth auto]
                [--lag 0.10] [--rigid-from auto|0.xx] [--rigid-fallback 0.30]
-               [--fps 8] [--name sentry_idle]
+               [--fps 8] [--name sentry_idle] [--key-color HEX|none]
     breathe.py --selftest            (or: breathe.py selftest)
 
 Writes DIR/<name>_000.png … (name defaults to the input's stem) on the input's
-canvas, and DIR/frames.json: `register.mode` `keep` (each frame stays where it is
-drawn; the feet line is the content's bottom), `pivot_norm` at the foot centre
-measured from the bottom-left, `fps_hint`, `loop` true, `verdict {ok, faults}`,
+canvas, and DIR/frames.json (`schema` "frames/1"): `register.mode` `keep` (each
+frame stays where it is drawn; the feet line is the content's bottom) with
+`reference_core_height_px` (frame 0's core height) and `foot_margin_px` (rows
+under the feet line), `pivot_norm` at the foot centre measured from the
+bottom-left, `key_color` (--key-color, else the key_color of a frames.json beside
+the still; `none` writes null), `fps_hint`, `loop` true, `verdict {ok, faults}`,
 `producer {skill: codex-visual, script: breathe.py}`, the `breathe` parameters
 and anatomy, and per frame its `phase` and `head_dy_px`. Fewer than 6 frames per
 breath is allowed and reported as a warning: the breath reads as a twitch.
@@ -76,7 +79,8 @@ Prints one JSON object.
 
 Exit codes
   0  frames and frames.json written (or selftest passed)
-  1  usage error, unreadable input, no opaque content, or a selftest check failed
+  1  usage error, no key declared, unreadable input, no opaque content, or a
+     selftest check failed
   2  refused: per-row strain over 0.25, or an opaque pixel pushed off the canvas
 
 Requires Pillow and numpy (codex's imagegen venv has both: ~/.codex/imagegen-venv/bin/python).
@@ -435,6 +439,60 @@ def foot_pivot(rgba, anat):
     return [round(foot_x / w, 6), round((h - y1) / h, 6)]
 
 
+def parse_key(text):
+    """'#RRGGBB' / 'rrggbb' / '#rgb' -> lowercase '#rrggbb'; ValueError otherwise."""
+    h = str(text).strip().lstrip("#").lower()
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6 or any(c not in "0123456789abcdef" for c in h):
+        raise ValueError(f"not a hex colour: {text!r}")
+    return "#" + h
+
+
+def resolve_key(src, key_color):
+    """(key_color for frames.json, where it came from). `key_color` is the --key-color value:
+    a hex colour, 'none' (never chroma-keyed: null) or None, which reads the frames.json beside
+    the still — its top-level key_color, else a 0.34 sidecar's set_metrics.key_color. Raises
+    ValueError when no key is declared anywhere."""
+    if key_color is not None:
+        return (None, "given") if str(key_color).strip().lower() == "none" else (parse_key(key_color), "given")
+    side = Path(src).parent / "frames.json"
+    if side.is_file():
+        try:
+            doc = json.loads(side.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            doc = None
+        if isinstance(doc, dict) and "key_color" in doc:
+            k = doc["key_color"]
+            return (None if k is None else parse_key(k)), str(side)
+        legacy = (doc or {}).get("set_metrics", {}).get("key_color") if isinstance(doc, dict) else None
+        if isinstance(legacy, str):
+            print(f"WARN: {side}: no top-level key_color (an older frames.json); reading set_metrics.key_color",
+                  file=sys.stderr)
+            return parse_key(legacy), str(side)
+    raise ValueError("no key declared: pass --key-color HEX (the key the still was generated on and keyed "
+                     "against) or --key-color none (native alpha, never keyed); a frames.json beside the still "
+                     "that records key_color is read when neither is given")
+
+
+def core_height(rgba):
+    """(core height, core bottom row) of one frame: sprite_ops.core when it sits beside this script
+    (the silhouette audit_frames.py measures), else the alpha >= ALPHA_SOLID rows."""
+    alpha = rgba[..., 3]
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import sprite_ops
+        mask = sprite_ops.core(alpha)
+    except ImportError:
+        mask = alpha >= ALPHA_SOLID
+    rows = np.flatnonzero(mask.any(axis=1))
+    if not rows.size:
+        rows = np.flatnonzero((alpha != 0).any(axis=1))
+    return (int(rows[-1] - rows[0] + 1), int(rows[-1])) if rows.size else (1, None)
+
+
 def auto_depth(anat):
     """The depth whose head lift is about max(HEAD_LIFT_PX, HEAD_LIFT_FRACTION x content height)
     px, capped at MAX_DEPTH_AUTO: upstream's 0.06 on a small sprite, a few pixels on a large one."""
@@ -476,8 +534,8 @@ def bake(rgba, frames, breaths, depth, lag, rigid_from="auto", fallback=DEFAULT_
 
 
 def run(src, out_dir, frames=12, breaths=1, depth=DEFAULT_DEPTH, lag=DEFAULT_LAG, rigid_from="auto",
-        fallback=DEFAULT_FALLBACK, fps=8.0, name=None):
-    """Returns (exit code, result dict)."""
+        fallback=DEFAULT_FALLBACK, fps=8.0, name=None, key_color=None):
+    """Returns (exit code, result dict). `key_color`: see resolve_key."""
     try:
         img = Image.open(src)
         img.load()
@@ -500,6 +558,10 @@ def run(src, out_dir, frames=12, breaths=1, depth=DEFAULT_DEPTH, lag=DEFAULT_LAG
         if not 0.0 < f < 1.0:
             return 1, {"ok": False, "error": f"--rigid-from {f:g} is not inside (0, 1)"}
     try:
+        key, key_source = resolve_key(src, key_color)
+    except ValueError as exc:
+        return 1, {"ok": False, "error": f"--key-color: {exc}"}
+    try:
         outs, ph, anat, strain, head_dy, depth = bake(rgba, frames, breaths, depth, lag, rigid_from, fallback)
     except ValueError as exc:
         return 1, {"ok": False, "error": f"{src}: {exc}"}
@@ -516,7 +578,9 @@ def run(src, out_dir, frames=12, breaths=1, depth=DEFAULT_DEPTH, lag=DEFAULT_LAG
             for i, (t, dy) in enumerate(zip(ph, head_dy))]
     H, W = rgba.shape[:2]
     x0, y0, x1, y1 = anat["box"]
+    core_h, _ = core_height(outs[0])
     doc = {
+        "schema": "frames/1",
         "tool": "breathe.py",
         "producer": {"skill": "codex-visual", "script": "breathe.py"},
         "source": os.path.abspath(str(src)),
@@ -524,9 +588,14 @@ def run(src, out_dir, frames=12, breaths=1, depth=DEFAULT_DEPTH, lag=DEFAULT_LAG
         "canvas": [W, H],
         "pivot": "foot-center",
         "pivot_norm": foot_pivot(rgba, anat),
+        "key_color": key,
+        "key_color_source": key_source,
         "fps_hint": float(fps),
         "loop": True,
-        "register": {"mode": "keep", "ref": 0},
+        "hold_last": False,
+        # the feet line is the content's bottom row, pinned in every frame; the core height is
+        # frame 0's as written (import PPU = this / the character's height in world units)
+        "register": {"mode": "keep", "ref": 0, "reference_core_height_px": core_h, "foot_margin_px": int(H - y1)},
         "verdict": {"ok": True, "faults": []},
         "breathe": {"frames": frames, "breaths": breaths, "depth": depth,
                     "depth_source": "auto" if depth_arg == "auto" else "given", "lag": lag,
@@ -582,8 +651,24 @@ def _colours(arr):
     return {tuple(p) for p in flat[flat[:, 3] != 0]}
 
 
+def contract_out(path, case):
+    """Copy a frames.json the selftest wrote to where tools/check-contracts.py validates it against
+    schemas/frames-1.json: $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints
+    `selftest-output: PATH`."""
+    import shutil
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    dest = os.path.join(out, f"breathe__{case}.frames.json")
+    shutil.copyfile(path, dest)
+    print(f"selftest-output: {dest}")
+
+
 def selftest():
     checks = []
+
+    def brun(*args, **kw):          # every run declares its key, as a caller must
+        kw.setdefault("key_color", "#FF00FF")
+        return run(*args, **kw)
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         fig, feet = _figure()
@@ -592,7 +677,7 @@ def selftest():
         checks.append(("auto finds the neck", anat["rigid_source"] == "neck"
                        and 19 <= anat["rigid_row"] <= 25))
 
-        code, res = run(t / "sentry_idle.png", t / "out", frames=8, breaths=2, depth=0.06, lag=0.10, fps=8)
+        code, res = brun(t / "sentry_idle.png", t / "out", frames=8, breaths=2, depth=0.06, lag=0.10, fps=8)
         checks.append(("written", code == 0 and res["written"] == 8))
         doc = json.loads((t / "out" / "frames.json").read_text())
         frames = [np.asarray(Image.open(t / "out" / r["file"]).convert("RGBA")) for r in doc["frames"]]
@@ -620,13 +705,38 @@ def selftest():
                        and np.array_equal(nth, frames[0])))
         ident, _ = warp(fig, anat, 0.06, 0.0, 0.0)
         checks.append(("zero phase without lag is the input", np.array_equal(ident, fig)))
-        checks.append(("frames.json shape", doc["register"] == {"mode": "keep", "ref": 0}
+        checks.append(("frames.json shape", doc["schema"] == "frames/1" and doc["key_color"] == "#ff00ff"
+                       and doc["loop"] is True and doc["hold_last"] is False
+                       and doc["register"] == {"mode": "keep", "ref": 0, "foot_margin_px": 96 - feet,
+                                               "reference_core_height_px": core_height(frames[0])[0]}
+                       and 1 <= doc["register"]["reference_core_height_px"] <= y1 - y0
                        and list(doc["verdict"]) == ["ok", "faults"] and doc["verdict"]["ok"] is True
                        and doc["producer"] == {"skill": "codex-visual", "script": "breathe.py"}
                        and doc["fps_hint"] == 8.0 and list(doc)[-1] == "frames"
                        and doc["pivot_norm"] == [0.5, round((96 - feet) / 96, 6)]))
 
-        code, res = run(t / "sentry_idle.png", t / "manual", frames=6, rigid_from="0.3")
+        contract_out(t / "out" / "frames.json", "sentry_idle")
+
+        # the key: none declared refuses; a frames.json beside the still supplies it; none is null
+        code, res = run(t / "sentry_idle.png", t / "nokey", frames=4)
+        checks.append(("no key anywhere exits 1, nothing written", code == 1 and "--key-color" in res["error"]
+                       and not (t / "nokey").exists()))
+        (t / "keyed").mkdir()
+        Image.fromarray(fig, "RGBA").save(t / "keyed" / "sentry.png")
+        (t / "keyed" / "frames.json").write_text(json.dumps({"schema": "frames/1", "key_color": "#00ff00"}))
+        code, _ = run(t / "keyed" / "sentry.png", t / "from_side", frames=4)
+        side = json.loads((t / "from_side" / "frames.json").read_text()) if code == 0 else {}
+        checks.append(("key read from the frames.json beside the still", side.get("key_color") == "#00ff00"))
+        (t / "keyed" / "frames.json").write_text(json.dumps({"set_metrics": {"key_color": "#FF00FF"}}))
+        code, _ = run(t / "keyed" / "sentry.png", t / "from_legacy", frames=4)
+        side = json.loads((t / "from_legacy" / "frames.json").read_text()) if code == 0 else {}
+        checks.append(("legacy set_metrics.key_color read", side.get("key_color") == "#ff00ff"))
+        code, _ = brun(t / "sentry_idle.png", t / "native", frames=4, key_color="none")
+        side = json.loads((t / "native" / "frames.json").read_text()) if code == 0 else {}
+        checks.append(("--key-color none writes null", code == 0 and "key_color" in side and side["key_color"] is None))
+        checks.append(("a bad --key-color exits 1", brun(t / "sentry_idle.png", t / "bad", key_color="#nothex")[0] == 1))
+
+        code, res = brun(t / "sentry_idle.png", t / "manual", frames=6, rigid_from="0.3")
         checks.append(("explicit fraction", code == 0 and res["rigid_source"] == "manual"
                        and res["rigid_row"] == int(math.floor(0.3 * anat["height"] + 0.5))))
 
@@ -638,37 +748,38 @@ def selftest():
         chibi, _ = _figure(W=96, H=96, top=4, head_r=22, legs=10)
         ca = analyze(chibi)
         checks.append(("chibi neck found", ca["rigid_source"] == "neck" and 0.45 <= ca["rigid_row"] / ca["height"] <= 0.60))
-        checks.append(("unwritable out exits 1", run(t / "sentry_idle.png", t / "sentry_idle.png" / "x")[0] == 1))
+        checks.append(("unwritable out exits 1", brun(t / "sentry_idle.png", t / "sentry_idle.png" / "x")[0] == 1))
 
         arm, _ = _figure(wide_arm=True)
         a2 = analyze(arm)
         checks.append(("appendage protected", a2["has_appendage"] and float(protect(a2)(a2["torso_half"] + 12 + a2["axis_x"])) == 1.0))
 
-        code, res = run(t / "sentry_idle.png", t / "strain", frames=8, depth=0.9)
+        code, res = brun(t / "sentry_idle.png", t / "strain", frames=8, depth=0.9)
         checks.append(("strain refusal exits 2", code == 2 and "strain" in res["refused"]
                        and not (t / "strain").exists()))
         tight, _ = _figure(top=0)
         Image.fromarray(tight, "RGBA").save(t / "tight.png")
-        code, res = run(t / "tight.png", t / "clip", frames=8, depth=0.2, lag=0.0)
+        code, res = brun(t / "tight.png", t / "clip", frames=8, depth=0.2, lag=0.0)
         checks.append(("off-canvas refusal exits 2", code == 2 and "off the canvas" in res["refused"]
                        and not (t / "clip").exists()))
         proc = subprocess.run([sys.executable, __file__, str(t / "sentry_idle.png"), "--out-dir", str(t / "cli"),
-                               "--frames", "8", "--depth", "0.9"], capture_output=True, text=True)
+                               "--frames", "8", "--depth", "0.9", "--key-color", "#ff00ff"],
+                              capture_output=True, text=True)
         checks.append(("CLI refusal exit code 2", proc.returncode == 2 and json.loads(proc.stdout)["ok"] is False))
         Image.new("RGBA", (16, 16)).save(t / "empty.png")
-        checks.append(("empty input exits 1", run(t / "empty.png", t / "e")[0] == 1))
-        checks.append(("bad fraction exits 1", run(t / "sentry_idle.png", t / "b", rigid_from="1.5")[0] == 1))
+        checks.append(("empty input exits 1", brun(t / "empty.png", t / "e")[0] == 1))
+        checks.append(("bad fraction exits 1", brun(t / "sentry_idle.png", t / "b", rigid_from="1.5")[0] == 1))
         big = np.asarray(Image.fromarray(fig, "RGBA").resize((fig.shape[1] * 4, fig.shape[0] * 4), Image.NEAREST))
         Image.fromarray(big, "RGBA").save(t / "big.png")
-        code, res = run(t / "big.png", t / "big", frames=8)
+        code, res = brun(t / "big.png", t / "big", frames=8)
         lift = max(abs(v) for v in res.get("head_dy_px", [99]))
         cap = max(HEAD_LIFT_PX, HEAD_LIFT_FRACTION * analyze(big)["height"]) + 1
         checks.append((f"auto depth keeps a large figure's head lift small ({lift} px <= {cap:.0f})",
                        code == 0 and res["depth"] < MAX_DEPTH_AUTO and lift <= cap))
-        code, res = run(t / "big.png", t / "big06", frames=8, depth="0.06")
+        code, res = brun(t / "big.png", t / "big06", frames=8, depth="0.06")
         checks.append(("a given --depth is used as is", code == 0 and res["depth"] == 0.06
                        and max(abs(v) for v in res["head_dy_px"]) > cap))
-        checks.append(("bad --depth exits 1", run(t / "sentry_idle.png", t / "d", depth="deep")[0] == 1))
+        checks.append(("bad --depth exits 1", brun(t / "sentry_idle.png", t / "d", depth="deep")[0] == 1))
     failed = [name for name, ok in checks if not ok]
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
     return 0 if not failed else 1
@@ -702,6 +813,10 @@ def main():
                    help=f"the fraction auto uses when no neck is found (default {DEFAULT_FALLBACK})")
     p.add_argument("--fps", type=float, default=8.0, help="fps_hint written to frames.json (default 8)")
     p.add_argument("--name", help="frame file stem (default: the input's stem)")
+    p.add_argument("--key-color", metavar="HEX",
+                   help="the key the still was keyed against, written to frames.json as key_color; 'none' = "
+                        "never chroma-keyed (native alpha, key_color null). Default: the key_color of a "
+                        "frames.json beside the still; with neither, nothing is written (exit 1)")
     p.add_argument("--selftest", action="store_true")
 
     def usage_error(msg):                     # exit 2 means a refusal here, so a usage error is 1
@@ -721,7 +836,7 @@ def main():
         print("breathe.py: error: --rigid-fallback must be inside (0, 1)", file=sys.stderr)
         return 1
     code, res = run(a.image, a.out_dir, a.frames, a.breaths, a.depth, a.lag, a.rigid_from, a.rigid_fallback,
-                    a.fps, a.name)
+                    a.fps, a.name, a.key_color)
     print(json.dumps(res, ensure_ascii=False, indent=2))
     return code
 

@@ -13,8 +13,8 @@
 4. **Generate, key, then measure before you write anything:** the `generated_images` original,
    `key_unmix.py`, then `sheet_to_frames.py <keyed> … --report`. Empty cells, near-duplicates or
    a subject cut by the sheet edge → re-generate → `reference/animation-faults.md` §2.
-5. **Write the frames — `--register` is required** (`ground` · `free` · `centroid` · `keep`; exit
-   3 = a failed gate), then `audit_frames.py` and `frames_to_anim.py --onion --bg`: **one frame
+5. **Write the frames — `--register` and the key are required** (`ground` · `free` · `centroid` ·
+   `keep`; `--key-color HEX`, written to `frames.json` as `key_color`; exit 3 = a failed gate), then `audit_frames.py` and `frames_to_anim.py --onion --bg`: **one frame
    per cell on a contact sheet is not evidence about an animation** →
    `reference/animation-scripts.md` §1, §2.
 6. **One cell wrong** → a new sheet or a local splice; **jitter, cut feet, a fringe, a boiling

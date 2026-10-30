@@ -63,6 +63,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -633,14 +634,14 @@ def gates_for(agreement, reproj, H, a, unread=None) -> list:
     out = []
     if agreement is not None:
         out.append({"name": "two_view_agreement", "value": round(agreement, 4), "limit": f">= {a.agreement_min}",
-                    "ok": agreement >= a.agreement_min})
+                    "pass": bool(agreement >= a.agreement_min)})
     elif unread:
         out.append({"name": "two_view_agreement", "value": None, "limit": f">= {a.agreement_min}",
-                    "ok": a.agreement_min <= -1, "unread": unread})
+                    "pass": bool(a.agreement_min <= -1), "unread": unread})
     p95 = float(np.percentile(reproj, 95))
     lim = a.reproj_p95_px * H / REPROJ_REF_HEIGHT
     out.append({"name": "two_view_reprojection_p95_px", "value": round(p95, 3), "limit": f"<= {round(lim, 3)}",
-                "ok": p95 <= lim})
+                "pass": bool(p95 <= lim)})
     return out
 
 
@@ -742,13 +743,13 @@ def solve(det: dict, info: dict, a, compat=None) -> dict:
         motion["local_quat"] = mat_to_quat(lr).round(7).tolist()
     motion["two_view"] = two_view
     motion["gates"] = gates
-    ok = all(g["ok"] for g in gates)
-    report = {"tool": "solve.py", "frames": len(reproj), "fps": fps, "joints": len(names), "bones": len(res["bones"]),
+    ok = all(g["pass"] is True for g in gates)
+    report = {"schema": "gate/1", "tool": "solve.py", "frames": len(reproj), "fps": fps, "joints": len(names), "bones": len(res["bones"]),
               "paw_agreement": paws, "sync_before": sync["before"],
               "sync_after": {k: v for k, v in sync.items() if k in ("mean_height_gap_px", "worst_frame_gap_px")},
               "align": align, "swaps": swapped, "reproj_px": {k: round(v, 3) for k, v in res["reproj_px"].items()},
               "reproj_frame_p95_px": round(float(np.percentile(reproj, 95)), 3), "despiked": despiked,
-              "gates": gates, "ok": ok, "warnings": warnings}
+              "gates": gates, "pass": ok, "ok": ok, "warnings": warnings}
     return {"motion": motion, "report": report, "readings": readings}
 
 
@@ -792,12 +793,15 @@ def run(argv) -> int:
     try:
         need_torch()
     except ImportError:
-        print(json.dumps({"tool": "solve.py", "ok": False, "error": "refused: torch is not installed (see "
+        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "ok": False, "gates": [],
+                          "refused": "torch is not installed", "error": "refused: torch is not installed (see "
                           "reference/two-camera.md for the venv)"})); return 1
     if a.device == "auto":
         a.device = "cuda" if torch.cuda.is_available() else "cpu"
     if a.device == "cuda" and not torch.cuda.is_available():
-        print(json.dumps({"tool": "solve.py", "ok": False, "error": "refused: --device cuda but CUDA is not available"}))
+        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "ok": False, "gates": [],
+                          "refused": "--device cuda but CUDA is not available",
+                          "error": "refused: --device cuda but CUDA is not available"}))
         return 1
     try:
         with np.load(a.det) as raw:
@@ -809,7 +813,8 @@ def run(argv) -> int:
             compat = {"feet": compat.get("feet", LEGACY_FEET)}
         out = solve(det, info, a, compat)
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
-        print(json.dumps({"tool": "solve.py", "ok": False, "error": f"refused: {type(exc).__name__}: {exc}"}))
+        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "ok": False, "gates": [],
+                          "refused": f"{type(exc).__name__}: {exc}", "error": f"refused: {type(exc).__name__}: {exc}"}))
         return 1
     motion, report = out["motion"], out["report"]
     inputs = [{"path": str(Path(a.det).resolve()), "sha256": sha256(a.det)},
@@ -832,11 +837,22 @@ def run(argv) -> int:
                                    (ACC_UPSTREAM if a.compat_anymove else ACC_HUMANOID),
                                    "compat_anymove": bool(a.compat_anymove), "despike": a.despike},
                         "inputs": inputs, "files": files,
-                        "gates": [{"name": g["name"], "value": g["value"], "limit": g["limit"], "pass": g["ok"]}
+                        "gates": [{"name": g["name"], "value": g["value"], "limit": g["limit"], "pass": g["pass"]}
                                   for g in report["gates"]],
-                        "verdict": "green" if report["ok"] else "failed"}
+                        "verdict": "green" if report["pass"] else "failed"}
     print(json.dumps(report))
-    return 0 if report["ok"] else 2
+    return 0 if report["pass"] is True else 2
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 # --- selftest -------------------------------------------------------------------------------------------------
@@ -899,6 +915,11 @@ def selftest() -> int:
                   and np.linalg.norm(rj - tj, axis=-1).mean() < 0.01, shape=list(rj.shape))
             rep0 = json.loads(buf_last[0]) if buf_last else {}
             check("clean readings: nothing despiked", rep0.get("despiked") == [], despiked=rep0.get("despiked"))
+            check("clean readings: a passing gate/1 report, its record's gates the same",
+                  rep0.get("schema") == "gate/1" and rep0.get("pass") is True and rep0.get("ok") is True
+                  and rep0.get("record", {}).get("gates") == [{k: g.get(k) for k in ("name", "value", "limit", "pass")}
+                                                             for g in rep0.get("gates", [])])
+            contract_sample("solve", "clean", rep0)
         # a pop the fit adds (the elbow thrown 0.5 rad for one frame) that the readings do not have
         real_fit = globals()["fit"]
         bone = "LowerArm.L"
@@ -940,7 +961,7 @@ def selftest() -> int:
               mrep.get("pops", {}).get("count") == 0, pops=mrep.get("pops"))
         check("--no-despike keeps the pop: nothing listed, motion_metrics gates it",
               n_rp.get("despiked") == [] and n_mrep["pops"]["count"] >= 1
-              and any(g["name"] == "pops" and not g["ok"] for g in n_mrep["gates"]),
+              and any(g["name"] == "pops" and not g["pass"] for g in n_mrep["gates"]),
               pops=n_mrep.get("pops", {}).get("count"))
         # a desynced pair of views: the side view plays a different motion -> agreement fails
         other = exam.fk_joints(info, exam.make_motion(info, seed=11, T=48, fps=24))
@@ -950,7 +971,7 @@ def selftest() -> int:
         rep = json.loads((td / "m2.json").read_text())
         g = {x["name"]: x for x in rep["gates"]}
         check("views that disagree fail two_view_agreement, exit 2",
-              code == 2 and not g.get("two_view_agreement", {"ok": True})["ok"], code=code,
+              code == 2 and not g.get("two_view_agreement", {"pass": True})["pass"], code=code,
               agreement=g.get("two_view_agreement", {}).get("value"))
         # a left foot hidden in the side view for 20 frames: read at confidence 0.04, on the hand. Masked by
         # confidence the agreement passes; the same points read confidently are a real mismatch and fail
@@ -969,7 +990,7 @@ def selftest() -> int:
         g = {x["name"]: x for x in json.loads((td / "m6.json").read_text())["gates"]}
         check("a foot hidden at low confidence: masked out (frames_used 28), agreement passes",
               unmasked < AGREEMENT_MIN <= masked["score"] and masked["frames_used"]["Toes.L"] == 28
-              and g["two_view_agreement"]["ok"], unmasked=round(unmasked, 3), masked=round(masked["score"], 3),
+              and g["two_view_agreement"]["pass"], unmasked=round(unmasked, 3), masked=round(masked["score"], 3),
               code=code)
         for jn in ("Foot.L", "Toes.L"):
             occ["side_conf"][hid, kn.index(jn)] = 0.9
@@ -977,7 +998,7 @@ def selftest() -> int:
         code = quiet([str(td / "occ2.npz"), str(ri), str(td / "m7.json"), "--iters", "300", "--no-align"])
         g = {x["name"]: x for x in json.loads((td / "m7.json").read_text())["gates"]}
         check("the same wrong points read confidently fail two_view_agreement, exit 2",
-              code == 2 and not g["two_view_agreement"]["ok"], agreement=g["two_view_agreement"]["value"])
+              code == 2 and not g["two_view_agreement"]["pass"], agreement=g["two_view_agreement"]["value"])
         low = {k: np.array(v).copy() for k, v in det.items()}
         for jn in feet:
             low["side_conf"][:, kn.index(jn)] = 0.1
@@ -985,23 +1006,23 @@ def selftest() -> int:
         np.savez(td / "low.npz", **low)
         code = quiet([str(td / "low.npz"), str(ri), str(td / "m8.json"), "--iters", "300", "--no-align"])
         g = {x["name"]: x for x in json.loads((td / "m8.json").read_text())["gates"]}
-        ga = g.get("two_view_agreement", {"ok": True})
+        ga = g.get("two_view_agreement", {"pass": True})
         check("no foot read confidently: no score, two_view_agreement fails (not left out), exit 2",
               pl["score"] is None and all(n == 0 for n in pl["frames_used"].values()) and code == 2
-              and not ga["ok"] and ga.get("value") is None and sorted(ga.get("unread", [])) == sorted(feet),
+              and not ga["pass"] and ga.get("value") is None and sorted(ga.get("unread", [])) == sorted(feet),
               code=code, gate=ga)
         code = quiet([str(td / "low.npz"), str(ri), str(td / "m9.json"), "--iters", "300", "--no-align",
                       "--agreement-min", "-1"])
         g = {x["name"]: x for x in json.loads((td / "m9.json").read_text())["gates"]}
         check("no foot read confidently with --agreement-min -1: the gate is off, exit 0",
-              code == 0 and g["two_view_agreement"]["ok"], code=code)
+              code == 0 and g["two_view_agreement"]["pass"], code=code)
         # readings 20 px off at random: reprojection fails
         noisy = exam.perfect_det(info, tj, fps=24, noise_px=20.0, seed=4)
         np.savez(td / "noisy.npz", **noisy)
         code = quiet([str(td / "noisy.npz"), str(ri), str(td / "m3.json"), "--iters", "300", "--agreement-min", "-1"])
         rep = json.loads((td / "m3.json").read_text())
         g = {x["name"]: x for x in rep["gates"]}
-        check("20 px noise fails reprojection, exit 2", code == 2 and not g["two_view_reprojection_p95_px"]["ok"],
+        check("20 px noise fails reprojection, exit 2", code == 2 and not g["two_view_reprojection_p95_px"]["pass"],
               code=code)
         # refused inputs
         np.savez(td / "wrong.npz", **{**det, "front_uv": det["front_uv"][:, :5]})

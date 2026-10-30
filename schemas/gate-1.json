@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/gate-1.json",
+  "title": "gate/1 — a gated script's report",
+  "description": "The JSON a gate script prints or writes: one verdict, `pass`, over named gates. A gate with no boolean `pass` is a failed gate, and a report with no boolean `pass` is a failed report. Both levels stay open to the extras producers carry (tool, clip, blender, per-gate detail); the required keys are what catch a misspelt or old-dialect verdict.",
+  "type": "object",
+  "required": ["schema", "pass", "gates"],
+  "properties": {
+    "schema": {"const": "gate/1"},
+    "tool": {"type": "string"},
+    "pass": {"type": "boolean", "description": "true only when every gate ran and passed"},
+    "ok": {"type": "boolean", "deprecated": true, "description": "the old name of `pass`, still written beside it for one release; must equal `pass`"},
+    "gates": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gate"}
+    },
+    "verdict": {"enum": ["green", "failed", "harness"], "description": "the ledger word: green = pass, failed = a gate failed, harness = nothing was verified"},
+    "refused": {"type": "string", "description": "why the input was refused; the report then fails"},
+    "error": {"type": "string", "description": "why the harness could not measure; the report then fails"},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"pass": {"const": true}}},
+     "then": {
+       "properties": {
+         "gates": {"minItems": 1, "items": {"properties": {"pass": {"const": true}}}},
+         "verdict": {"const": "green"},
+         "ok": {"const": true}
+       },
+       "not": {"anyOf": [{"required": ["refused"]}, {"required": ["error"]}]}
+     },
+     "else": {
+       "properties": {
+         "verdict": {"enum": ["failed", "harness"]},
+         "ok": {"const": false}
+       }
+     }}
+  ],
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "required": ["name", "pass"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "description": "dotted, stable across runs: deform.volume_loss_max, foot_slide_p95_m"},
+        "value": {"description": "what was measured; any JSON value, null when not measurable"},
+        "limit": {"description": "what it was held to: a number, a string such as \"<= 0.03\", a list, or null"},
+        "pass": {"type": "boolean"},
+        "ok": false
+      }
+    }
+  }
+}

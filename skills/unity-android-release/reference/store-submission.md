@@ -30,14 +30,16 @@ each before you open the form, and be able to point at the feature that needs it
 
 ## 16 KB page size is a store requirement, and your plugins decide whether you meet it
 
-Play requires 16 KB page-size compatibility for new apps, and from Android 15 an app with
+Play requires new apps and updates to target a recent API level, above 35, and requires 16 KB
+page support from every app that targets 35 or higher. From Android 15 an app with
 `targetSdk >= 35` cannot load a 4 KB-aligned native library on a 16 KB-page device. A project that
-ships someone else's `.so` therefore has a `targetSdk` ceiling set by that library, not by its own
-readiness — check it before you promise a submission date, because the fix is upstream and the
-symptom appears only on some hardware. The check and the pin are in
+ships someone else's `.so` therefore cannot submit until that library is 16 KB aligned: lowering
+`targetSdk` is not an option on Play. Check it before you promise a submission date, because the
+fix is upstream and the symptom appears only on some hardware. The check is in
 `player-settings-android.md`.
 
-Confirm the exact date and policy wording in Play Console Help before you plan around a deadline.
+The current target level and deadlines are in the repo's `VERSIONS.md`; confirm them in Play
+Console Help before you plan around a date.
 
 ## The new-app gate — check whether it applies to you
 

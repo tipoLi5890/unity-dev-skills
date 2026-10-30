@@ -119,7 +119,7 @@ flowchart LR
 - **從你的描述找到對的方法**。每個 skill 開頭都是一張用白話寫成的症狀表，另有四個「從這裡開始」的 skill 負責分派任何 gameplay、UI、角色或後端需求。
 - **執行的是程式碼，不是建議**。100+ 支 Python 腳本、170+ 個 C# 檔案和 50+ 份範本，直接複製進你的專案，不用照著筆記重打。
 - **拿得出證明**。每套方法都以一項你看得到的檢查收尾：probe 快照、journey test、重新匯入的 FBX、裝置 log。
-- **少佔上下文，自成一體**。`SKILL.md` 只負責分派；深入的內容等情境需要時才載入。不需要任何其他 plugin：skill 之間透過各自的 Scope 段落互相交接。
+- **少佔上下文，自成一體**。`SKILL.md` 只負責分派；深入的內容等情境需要時才載入。不需要任何其他 plugin：skill 之間透過各自的 Scope 段落互相交接。少數綁骨與動作腳本會呼叫相鄰 skill 的腳本，清單見 [`tools/cross-skill-deps.txt`](../tools/cross-skill-deps.txt)，這些 skill 要一起安裝。
 
 ## Skill 一覽
 

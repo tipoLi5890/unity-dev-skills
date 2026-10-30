@@ -20,6 +20,10 @@
 //   * headless: -executeMethod SheetToAnimationClip.RunFromCommandLine with the flags
 //     documented on that method.
 //
+// This file owns the clip: frame rate, loop, held last pose, binding. The pivot and PPU are
+// import metadata, set from the same frames.json by FramesJsonImporter.cs, never here
+// (reference/sprite-animation.md §1).
+//
 // UnityEngine.UI is resolved by name rather than referenced, so this file compiles in a
 // project without uGUI. If the Image target is asked for and the type does not resolve,
 // that is a missing package and the exception says so.
@@ -47,7 +51,7 @@ public static class SheetToAnimationClip
         /// <summary>Output clip, e.g. "Assets/Animation/hero_idle.anim".</summary>
         public string clipPath;
 
-        /// <summary>Frames per second. Take it from frames.json's fps_hint — see ReadFpsHint.</summary>
+        /// <summary>Frames per second. Take it from frames.json's fps_hint — see ReadClipFacts.</summary>
         public float fps = 10f;
 
         /// <summary>loopTime on the clip's AnimationClipSettings. false for a one-shot.</summary>
@@ -153,10 +157,46 @@ public static class SheetToAnimationClip
         return clip;
     }
 
+    /// <summary>What the clip takes from frames.json: fps_hint, loop and hold_last (frames/1).</summary>
+    public sealed class ClipFacts
+    {
+        public float fps;
+        public bool? loop;          // null when the file does not say
+        public bool holdLast;       // true: a one-shot that ends on its last pose (implies loop false)
+        public bool stamped;        // "schema": "frames/1"
+    }
+
     /// <summary>
-    /// Read fps_hint out of the frames.json that came with the frames. Regex rather than
-    /// JsonUtility on purpose: the sidecar's nested arrays are not a shape JsonUtility maps,
-    /// and this needs exactly one number out of it.
+    /// Read the clip's facts out of frames.json. Regex rather than JsonUtility: this needs three
+    /// values, and no other object in frames/1 carries a bool "loop" or "hold_last", so the
+    /// match does not depend on key order. A frames/1 file without loop is a producer bug and is refused (ArgumentException,
+    /// exit 1); an unstamped file without it keeps the caller's loop.
+    /// </summary>
+    public static ClipFacts ReadClipFacts(string framesJsonPath, float fallbackFps = 10f)
+    {
+        if (!File.Exists(framesJsonPath))
+            throw new FileNotFoundException($"{framesJsonPath} does not exist", framesJsonPath);
+        string text = File.ReadAllText(framesJsonPath);
+        var f = new ClipFacts
+        {
+            fps = ReadFpsHint(framesJsonPath, fallbackFps),
+            stamped = Regex.IsMatch(text, "\"schema\"\\s*:\\s*\"frames/1\""),
+        };
+        var lm = Regex.Match(text, "\"loop\"\\s*:\\s*(true|false)");
+        if (lm.Success) f.loop = lm.Groups[1].Value == "true";
+        var hm = Regex.Match(text, "\"hold_last\"\\s*:\\s*(true|false)");
+        f.holdLast = hm.Success && hm.Groups[1].Value == "true";
+        if (f.stamped && f.loop == null)
+            throw new System.ArgumentException($"{framesJsonPath} is frames/1 and has no loop — the producer must write it");
+        if (f.holdLast && f.loop == true)
+            throw new System.ArgumentException($"{framesJsonPath}: hold_last true with loop true — a held one-shot does not loop");
+        if (!f.stamped)
+            Debug.LogWarning($"WARN {framesJsonPath}: no \"schema\" — read as the 0.34 dialect for one release");
+        return f;
+    }
+
+    /// <summary>
+    /// Read fps_hint out of the frames.json that came with the frames.
     /// </summary>
     public static float ReadFpsHint(string framesJsonPath, float fallback = 10f)
     {
@@ -293,30 +333,30 @@ public static class SheetToAnimationClip
     {
         var bindings = AnimationUtility.GetObjectReferenceCurveBindings(clip);
         if (bindings.Length != 1)
-            throw new System.Exception($"expected 1 object-reference curve, clip holds {bindings.Length}");
+            throw new CheckFailed($"expected 1 object-reference curve, clip holds {bindings.Length}");
 
         // Never compare bindings with ==. The stored binding's curve-kind flags match neither a
         // hand-built EditorCurveBinding nor PPtrCurve's, so equality is false on a curve that
         // is perfectly correct. Compare the identity.
         var got = bindings[0];
         if (got.path != wrote.path || got.type != wrote.type || got.propertyName != wrote.propertyName)
-            throw new System.Exception(
+            throw new CheckFailed(
                 $"binding drifted: wrote \"{wrote.path}\" {wrote.type.Name}.{wrote.propertyName}, " +
                 $"clip holds \"{got.path}\" {got.type.Name}.{got.propertyName}");
 
         var keys = AnimationUtility.GetObjectReferenceCurve(clip, got);
         if (keys == null || keys.Length != expected)
-            throw new System.Exception($"expected {expected} keyframes, read back {(keys == null ? 0 : keys.Length)}");
+            throw new CheckFailed($"expected {expected} keyframes, read back {(keys == null ? 0 : keys.Length)}");
         foreach (var k in keys)
             if (k.value == null)
-                throw new System.Exception(
+                throw new CheckFailed(
                     $"keyframe at t={k.time} holds a null sprite — the reference was captured before " +
                     "the rects existed (reference/sprite-animation.md §8)");
 
         if (!Mathf.Approximately(clip.frameRate, o.fps))
-            throw new System.Exception($"frameRate read back as {clip.frameRate}, asked for {o.fps}");
+            throw new CheckFailed($"frameRate read back as {clip.frameRate}, asked for {o.fps}");
         if (AnimationUtility.GetAnimationClipSettings(clip).loopTime != o.loop)
-            throw new System.Exception($"loopTime did not persist — asked for {o.loop}");
+            throw new CheckFailed($"loopTime did not persist — asked for {o.loop}");
 
         // The reads above all pass on a clip bound to the wrong path. Scrubbing the clip in the
         // Animation window is the check that catches that one; nothing here can.
@@ -353,20 +393,25 @@ public static class SheetToAnimationClip
     ///   [-fps 10 | -framesJson &lt;path/frames.json&gt;] [-loop true|false]
     ///   [-target spriterenderer|image] [-path Body/Sprite] [-controller Assets/x.controller]
     ///   [-endEvent OnAnimationFinished] [-holdLast 4] [-namePrefix idle]
+    /// -framesJson sets fps from fps_hint, and loop from loop / hold_last unless -loop is given.
+    /// -holdLast N is extra keyframes of the last sprite; frames.json's hold_last is a bool that
+    /// only turns the loop off.
     /// -target takes spriterenderer/sprite/renderer or image/uiimage/ui, and throws on anything
     /// else: a typo must not quietly bind a UI object to SpriteRenderer.
-    /// Exits non-zero on any failure, because a headless run that exits 0 having wired nothing
-    /// is this pipeline's characteristic failure.
+    /// Exits 0 on a verified clip; 2 when the clip read back differs from what was asked;
+    /// 3 when nothing was built (no sprites, a missing folder, an exception); 1 on a bad flag or a
+    /// refused frames.json. Never 0 having wired nothing.
     /// </summary>
     public static void RunFromCommandLine()
     {
-        // Argument parsing lives inside the try as well: a bad -fps or -target has to exit 1 like
-        // any other failure, not escape RunFromCommandLine and leave the exit code to Unity.
+        // Argument parsing lives inside the try as well: a bad -fps or -target has to exit 1,
+        // not escape RunFromCommandLine and leave the exit code to Unity.
         try
         {
             var args = System.Environment.GetCommandLineArgs();
             var o = new Options();
             string framesJson = null;
+            bool loopGiven = false;
             for (int i = 0; i < args.Length - 1; i++)
             {
                 var v = args[i + 1];
@@ -377,7 +422,7 @@ public static class SheetToAnimationClip
                     // InvariantCulture on both parses, for the reason in ReadFpsHint.
                     case "-fps": o.fps = float.Parse(v, CultureInfo.InvariantCulture); break;
                     case "-framesJson": framesJson = v; break;
-                    case "-loop": o.loop = ParseLoop(v); break;
+                    case "-loop": o.loop = ParseLoop(v); loopGiven = true; break;
                     case "-target": o.target = ParseTarget(v); break;
                     case "-path": o.bindingPath = v; break;
                     case "-controller": o.controllerPath = v; break;
@@ -386,16 +431,45 @@ public static class SheetToAnimationClip
                     case "-namePrefix": o.namePrefix = v; break;
                 }
             }
-            if (framesJson != null) o.fps = ReadFpsHint(framesJson, o.fps);
+            if (framesJson != null)
+            {
+                ClipFacts f = ReadClipFacts(framesJson, o.fps);
+                o.fps = f.fps;
+                bool fromFile = f.holdLast ? false : f.loop ?? o.loop;
+                if (loopGiven && o.loop != fromFile)
+                    Debug.LogWarning($"-loop {o.loop} overrides frames.json (loop {f.loop}, hold_last {f.holdLast})");
+                if (!loopGiven) o.loop = fromFile;
+            }
 
             Run(o);
             EditorApplication.Exit(0);
         }
-        catch (System.Exception e)
+        catch (System.ArgumentException e)
         {
             Debug.LogError(e);
             EditorApplication.Exit(1);
         }
+        catch (System.FormatException e)
+        {
+            Debug.LogError(e);
+            EditorApplication.Exit(1);
+        }
+        catch (CheckFailed e)
+        {
+            Debug.LogError(e);
+            EditorApplication.Exit(2);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError(e);
+            EditorApplication.Exit(3);
+        }
+    }
+
+    /// <summary>The clip was written and reads back different from what was asked: exit 2.</summary>
+    public sealed class CheckFailed : System.Exception
+    {
+        public CheckFailed(string message) : base(message) { }
     }
 
     /// <summary>

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/frames-1.json",
+  "title": "frames/1 — a frame set's frames.json sidecar",
+  "description": "Written next to equal-canvas PNG frames by sheet_to_frames.py, breathe.py and video_loop.py; read by audit_frames.py, audit_pixel.py, frames_to_anim.py, registry_ingest.py and the Unity importer and audit. Producers add their own keys freely at the top level; the keys below are the contract.",
+  "type": "object",
+  "required": ["schema", "tool", "canvas", "pivot_norm", "key_color", "fps_hint", "loop", "register", "verdict", "frames"],
+  "properties": {
+    "schema": {"const": "frames/1"},
+    "tool": {"type": "string", "minLength": 1, "description": "the script that wrote this file, e.g. sheet_to_frames.py"},
+    "producer": {
+      "type": "object",
+      "required": ["skill", "script"],
+      "properties": {"skill": {"type": "string"}, "script": {"type": "string"}}
+    },
+    "source": {
+      "description": "what the frames came from: a path (breathe.py) or {file, sha256, fps} (video_loop.py). sheet_to_frames.py writes `sheet` instead.",
+      "oneOf": [
+        {"type": "string"},
+        {"type": "object", "properties": {
+          "file": {"type": ["string", "null"]},
+          "sha256": {"type": ["string", "null"]},
+          "fps": {"type": ["number", "null"]}}}
+      ]
+    },
+    "canvas": {
+      "description": "[W, H] in px; every frame file is exactly this size",
+      "type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 2, "maxItems": 2
+    },
+    "pivot": {
+      "description": "the coarse statement of the pivot, kept for older readers; pivot_norm is authoritative",
+      "enum": ["bottom-center", "center", "foot-center"]
+    },
+    "pivot_norm": {
+      "description": "[x, y], a fraction of the canvas from its bottom-left: where the sprite's pivot goes. Unity's spritePivot uses the same convention, so it is written as is with SpriteAlignment.Custom.",
+      "type": "array", "items": {"type": "number", "minimum": 0, "maximum": 1}, "minItems": 2, "maxItems": 2
+    },
+    "key_color": {
+      "description": "the declared chroma key the frames were keyed against, lowercase #rrggbb (sheet_to_frames --key-color/--bg-color, video_frames' key.declared). null only when the producer was told explicitly that the art was never chroma-keyed (native alpha); a reader then skips the fringe measurement and says so.",
+      "oneOf": [{"type": "string", "pattern": "^#[0-9a-f]{6}$"}, {"type": "null"}]
+    },
+    "key_painted": {
+      "description": "optional: the key colour actually found on the generated image's border, lowercase #rrggbb",
+      "type": "string", "pattern": "^#[0-9a-f]{6}$"
+    },
+    "fps_hint": {"type": "number", "exclusiveMinimum": 0, "description": "the clip's frame rate"},
+    "loop": {"type": "boolean", "description": "true: the clip loops (loopTime). Always written: a typed reader cannot tell an absent bool from false."},
+    "hold_last": {"type": "boolean", "default": false, "description": "true: a one-shot that ends on, and holds, its last pose (not a frame count)"},
+    "register": {
+      "description": "how the frames were seated on the canvas. Flat: no object-valued member, so a pattern-based reader that takes the register body as {...} cannot lose fields.",
+      "type": "object",
+      "required": ["mode", "ref", "reference_core_height_px", "foot_margin_px"],
+      "properties": {
+        "mode": {"enum": ["ground", "free", "centroid", "keep"]},
+        "ref": {"type": "integer", "minimum": 0, "description": "index of the reference frame"},
+        "reference_core_height_px": {
+          "type": "integer", "minimum": 1,
+          "description": "the drawn character height the set is normalised to: the reference frame's core height, in px of the written frame files (after any pixel upscale). Every set of one character carries the same number; import PPU = this / the character's height in world units."
+        },
+        "foot_margin_px": {
+          "type": "integer", "minimum": 0,
+          "description": "transparent px between the reference frame's feet line and the canvas bottom (0 for a centroid set)"
+        },
+        "margin_px": false
+      },
+      "additionalProperties": {"not": {"type": "object"}}
+    },
+    "verdict": {
+      "description": "the producer's own gate over the set. Not a gate/1 report: it keeps {ok, faults}.",
+      "type": "object",
+      "required": ["ok", "faults"],
+      "properties": {
+        "ok": {"type": "boolean"},
+        "faults": {"type": "array", "items": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}}}
+      }
+    },
+    "pixel": {
+      "description": "present only for a pixel-art set (sheet_to_frames --pixelate / --pixel-snap)",
+      "type": "object",
+      "required": ["block_px"],
+      "properties": {
+        "block_px": {"type": "integer", "minimum": 1, "description": "F: written file px per art pixel (the --upscale factor)"},
+        "method": {"enum": ["snap", "nearest"]},
+        "cells": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 2, "maxItems": 2},
+        "alpha": {"enum": ["binary", "soft"]}
+      }
+    },
+    "frames": {
+      "description": "in play order",
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["file"],
+        "properties": {
+          "file": {"type": "string", "pattern": "^[^/\\\\]+\\.png$", "description": "file name in this directory"},
+          "index": {"type": "integer", "minimum": 0},
+          "name": {"type": "string"},
+          "empty": {"type": "boolean"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"verdict": {"properties": {"ok": {"const": true}}}}},
+     "then": {"properties": {"verdict": {"properties": {"faults": {"maxItems": 0}}}}}},
+    {"if": {"required": ["hold_last"], "properties": {"hold_last": {"const": true}}},
+     "then": {"properties": {"loop": {"const": false}}}}
+  ]
+}

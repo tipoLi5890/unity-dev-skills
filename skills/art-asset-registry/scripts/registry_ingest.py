@@ -9,15 +9,23 @@ The shapes it reads, tried in this order:
                object is the partial record. A top-level `file` ({path, saved, dirty}) is carried
                in, and what the JSON's own shape below would add fills the keys the record leaves
                out
-  frames       sheet_to_frames.py's frames.json, or any frames.json naming its `producer`
-               ({skill, script}: breathe.py, video_loop.py): the sidecar and every frame
-               (relative to it), the sheet or `source` as input, one `frames.faults` gate
-  blender      a Blender skill's report (`gates` and `blender`): its gates and verdict; the file
+  frames       a frames.json stamped "frames/1" (schemas/frames-1.json), sheet_to_frames.py's
+               frames.json, or any frames.json naming its `producer` ({skill, script}:
+               breathe.py, video_loop.py): the sidecar and every frame (relative to it), the sheet
+               or `source` as input, one `frames.faults` gate (its verdict.ok), and as params what
+               a Unity import needs again: pivot_norm, key_color, canvas, fps_hint, loop,
+               hold_last, block_px, reference_core_height_px and foot_margin_px
+  gate         a gate/1 report (schemas/gate-1.json, `"schema": "gate/1"`), or an unstamped
+               Blender skill's report (`gates` and `blender`): its gates and verdict; the file
                it wrote comes from --file, else its top-level `path`, else the saved .blend
                (role source, mutable; hashed like any file, so each version has its sha256)
   codex        codex_generate.py's output (`out` and `size`): the image, a `codex.size` gate when
                --expect-size was given; more than one image is refused (none was chosen)
 Anything else exits 3. Text output (an audit's lines) is never parsed: ask the producer for JSON.
+A gate passes only on `"pass": true`: a gate without a boolean `pass` has failed. A file stamped
+gate/1 or frames/1 that lacks a key its schema requires exits 3 (a producer bug). For one release
+an unstamped file in the 0.34 dialect is still read, with one WARN line on stderr per file: a
+gate's or a report's `ok` is read as `pass`, register.margin_px as foot_margin_px.
 
 Without --write it prints only the partial record, so it can be read first or piped on:
 `registry.py ingest --json frames.json | registry.py record --kind frames`. With --write it is
@@ -66,7 +74,21 @@ def _strings(value):
 # ---------------------------------------------------------------------------------- shapes
 
 
-def _frames(doc, src):
+FRAMES_REQUIRED = ("schema", "tool", "canvas", "pivot_norm", "key_color", "fps_hint", "loop", "register",
+                   "verdict", "frames")
+
+
+def _frames(doc, src, notes):
+    if doc.get("schema") == "frames/1":
+        lacking = [k for k in FRAMES_REQUIRED if k not in doc]
+        reg = doc.get("register") if isinstance(doc.get("register"), dict) else {}
+        core = reg.get("reference_core_height_px")
+        if not (isinstance(core, int) and not isinstance(core, bool) and core >= 1):
+            lacking.append("register.reference_core_height_px")
+        if not isinstance(reg.get("foot_margin_px"), int) or isinstance(reg.get("foot_margin_px"), bool):
+            lacking.append("register.foot_margin_px")
+        if lacking:
+            raise Bad("stamped frames/1 but lacks " + ", ".join(lacking) + " (a producer bug)")
     base = os.path.dirname(src) if src else os.getcwd()
     files = [{"path": src, "role": "derived"}] if src else []
     for frame in doc.get("frames") or []:
@@ -96,15 +118,64 @@ def _frames(doc, src):
         kinds = sorted({str(f.get("kind")) for f in faults})
         if kinds:
             part["note"] = "faults: " + ", ".join(kinds)
-    params = {k: doc[k] for k in ("rows", "cols", "fps_hint", "align") if k in doc}
+    params = {k: doc[k] for k in ("rows", "cols", "fps_hint", "align", "canvas", "pivot_norm",
+                                   "key_color", "loop", "hold_last") if k in doc}
+    reg = doc.get("register") if isinstance(doc.get("register"), dict) else {}
+    if "reference_core_height_px" in reg:
+        params["reference_core_height_px"] = reg["reference_core_height_px"]
+    if "foot_margin_px" in reg:
+        params["foot_margin_px"] = reg["foot_margin_px"]
+    elif "margin_px" in reg and doc.get("schema") is None:
+        notes.append("register.margin_px read as register.foot_margin_px (frames/1 names it foot_margin_px)")
+        params["foot_margin_px"] = reg["margin_px"]
+    if isinstance(doc.get("pixel"), dict) and "block_px" in doc["pixel"]:
+        params["block_px"] = doc["pixel"]["block_px"]
     if params:
         part["params"] = params
     return part
 
 
-def _blender(doc, src):
-    gates = [g for g in doc.get("gates") or [] if isinstance(g, dict)]
-    ok = doc["ok"] if isinstance(doc.get("ok"), bool) else all(g.get("pass") is True for g in gates)
+def _gate_list(doc, notes, stamped):
+    """The report's gates, each with a boolean `pass`: a gate without one has failed. An unstamped
+    report's gate `ok` is read as `pass` (one WARN); a stamped gate/1 gate without `pass` is a
+    producer bug (Bad)."""
+    gates, legacy = [], False
+    for g in doc.get("gates") or []:
+        if not isinstance(g, dict):
+            continue
+        g = dict(g)
+        if not isinstance(g.get("pass"), bool):
+            if stamped:
+                raise Bad(f"stamped gate/1 but gate {g.get('name')!r} has no boolean `pass` (a producer bug)")
+            if isinstance(g.get("ok"), bool) and "pass" not in g:
+                legacy = True
+                g["pass"] = g["ok"]
+            else:
+                g["pass"] = False                    # no verdict is a failed gate
+        g.pop("ok", None)
+        gates.append(g)
+    if legacy:
+        notes.append("a gate's `ok` read as `pass` (gate/1 names it `pass`)")
+    return gates
+
+
+def _gate(doc, src, notes):
+    """A gate report: gate/1, or the unstamped 0.34 Blender report read for one release."""
+    stamped = doc.get("schema") == "gate/1"
+    if stamped and not isinstance(doc.get("pass"), bool):
+        raise Bad("stamped gate/1 but `pass` is not true or false (a producer bug)")
+    gates = _gate_list(doc, notes, stamped)
+    if not gates and (doc.get("refused") or doc.get("error")):
+        raise Bad("the producer reported an error and wrote nothing to record: "
+                  + str(doc.get("refused") or doc.get("error")))
+    if isinstance(doc.get("pass"), bool):
+        ok = doc["pass"]
+    elif isinstance(doc.get("ok"), bool):
+        notes.append("the report's `ok` read as `pass` (gate/1 names it `pass`)")
+        ok = doc["ok"]
+    else:
+        ok = bool(gates)
+    ok = ok and all(g["pass"] is True for g in gates)
     part = {"source": "authored", "gates": gates, "verdict": "green" if ok else "failed"}
     if _strings(doc.get("warnings")):
         part["warnings"] = _strings(doc["warnings"])
@@ -144,18 +215,22 @@ def _codex(doc, src):
     return part
 
 
-SHAPES = {"frames": _frames, "blender": _blender, "codex": _codex}
+SHAPES = {"frames": _frames, "gate": _gate, "codex": lambda doc, src, notes: _codex(doc, src)}
 
 
 def legacy_shape(doc):
     """Which shape a producer's output has, setting its `record` key aside; None for none."""
+    if doc.get("schema") == "frames/1":
+        return "frames"
+    if doc.get("schema") == "gate/1":
+        return "gate"
     if doc.get("tool") == "sheet_to_frames.py" or (
             isinstance(doc.get("frames"), list) and "cell" in doc and "verdict" in doc):
         return "frames"
     if isinstance(doc.get("producer"), dict) and isinstance(doc.get("frames"), list):
         return "frames"
     if "gates" in doc and "blender" in doc:
-        return "blender"
+        return "gate"
     if "out" in doc and "size" in doc:
         return "codex"
     return None
@@ -171,9 +246,10 @@ def _norm(ctx, p):
         raise Refused(f"{p}: {e}") from None
 
 
-def convert(doc, src, ctx, args):
+def convert(doc, src, ctx, args, notes=None):
     """The partial record a producer's JSON stands for: paths relative to --root, the flags
-    applied. Raises Bad or Refused."""
+    applied. Raises Bad or Refused. Each old-dialect key read is appended to `notes`."""
+    notes = [] if notes is None else notes
     shape = legacy_shape(doc)
     if "record" in doc:
         if not isinstance(doc["record"], dict):
@@ -182,19 +258,23 @@ def convert(doc, src, ctx, args):
         base = {}
         if shape:
             try:
-                base = SHAPES[shape](doc, src)
+                base = SHAPES[shape](doc, src, notes)
             except Bad:
+                if doc.get("schema") in ("gate/1", "frames/1"):
+                    raise
                 base = {}
         for k, v in base.items():
             part.setdefault(k, v)
+        if isinstance(part.get("gates"), list):
+            part["gates"] = _gate_list(part, notes, doc.get("schema") == "gate/1")
     elif shape:
-        part = SHAPES[shape](doc, src)
+        part = SHAPES[shape](doc, src, notes)
     elif "error" in doc:
         raise Bad("the producer reported an error and wrote nothing to record")
     else:
-        raise Bad("not a shape ingest reads: a JSON with a `record` object, frames.json from "
-                  "sheet_to_frames.py or with a `producer`, a Blender report (gates, blender), or codex_generate "
-                  "output (out, size)")
+        raise Bad("not a shape ingest reads: a JSON with a `record` object, a frames/1 frames.json (or "
+                  "one from sheet_to_frames.py or with a `producer`), a gate/1 report (or a Blender report: "
+                  "gates, blender), or codex_generate output (out, size)")
     for k in ("schema", "rev", "ts"):
         part.pop(k, None)
 
@@ -264,8 +344,9 @@ def cmd_ingest(ctx, args, rep):
         rep.summary("ERROR", label, "nothing ingested")
         return R.HARNESS
     src = None if label == "stdin" else os.path.abspath(label)
+    notes = []
     try:
-        part = convert(doc, src, ctx, args)
+        part = convert(doc, src, ctx, args, notes)
     except Bad as e:
         rep.error(label, "shape", str(e))
         rep.summary("ERROR", label, "nothing ingested")
@@ -274,6 +355,9 @@ def cmd_ingest(ctx, args, rep):
         rep.error(label, "refused", str(e))
         rep.summary("ERROR", label, "nothing ingested")
         return R.FAILED
+    if notes:      # stderr, so the printed partial stays one JSON object for a pipe into `record`
+        print(f"WARN {label}: old dialect (unstamped, read for one release): " + "; ".join(notes),
+              file=sys.stderr)
     if not args.write:
         # the printed partial carries --link and --art-version too, so a pipe into `record`
         # needs no flag twice (with --write, record applies them)
@@ -420,8 +504,63 @@ def selftest(d):
         json.dump(dict(named, producer={"skill": "sprite-from-video", "script": 3}), fh)
     code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side)
     assert code == 3 and "`producer`" in out, (code, out)
+    # frames/1: the import keys survive as params; a stamped file lacking one is a producer bug
+    f1 = {"schema": "frames/1", "tool": "video_loop.py", "source": {"file": sheet}, "canvas": [64, 96],
+          "pivot_norm": [0.5, 0.0625], "pivot": "foot-center", "key_color": "#00ff00", "fps_hint": 12.0,
+          "loop": False, "hold_last": True, "pixel": {"block_px": 2},
+          "register": {"mode": "feet", "ref": 0, "reference_core_height_px": 80, "foot_margin_px": 6},
+          "producer": {"skill": "sprite-from-video", "script": "video_loop.py"},
+          "verdict": {"ok": True, "faults": []},
+          "frames": [{"index": k, "file": f"run_{k:02d}.png"} for k in range(2)]}
+    with open(side, "w", encoding="utf-8") as fh:
+        json.dump(f1, fh)
+    code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side)
+    part = json.loads(out)
+    assert code == 0 and part["kind"] == "frames" and part["verdict"] == "green", out
+    assert part["params"] == {"canvas": [64, 96], "pivot_norm": [0.5, 0.0625], "key_color": "#00ff00",
+                              "fps_hint": 12.0, "loop": False, "hold_last": True, "block_px": 2,
+                              "reference_core_height_px": 80, "foot_margin_px": 6}, part["params"]
+    for drop in ("key_color", "register"):
+        with open(side, "w", encoding="utf-8") as fh:
+            json.dump({k: v for k, v in f1.items() if k != drop}, fh)
+        code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side)
+        assert code == 3 and "producer bug" in out, (drop, code, out)
+    old = dict(named, register={"mode": "feet", "ref": 0, "margin_px": 4})
+    notes = []
+    assert _frames(old, side, notes)["params"]["foot_margin_px"] == 4 and "margin_px" in notes[0], notes
     with open(side, "w", encoding="utf-8") as fh:
         json.dump(doc, fh)
+
+    # gate/1 reports (no `blender` key): their gates, pass or fail; refused or broken ones exit 3
+    bake = {"schema": "gate/1", "tool": "contact_bake", "pass": True, "ok": True, "clip": "walk.bvh",
+            "gates": [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "pass": True},
+                      {"name": "plants_found", "value": 6, "limit": 1, "pass": True}],
+            "record": {"kind": "clip"}}
+    code, part = ingest(bake, "--file", "ArtDirection/clips/runner_gatelatchswing.fbx")
+    assert code == 0 and part["kind"] == "clip" and part["verdict"] == "green", part
+    assert [g["pass"] for g in part["gates"]] == [True, True], part["gates"]
+    code, part = ingest(dict(bake, **{"pass": False, "ok": False}), "--file", clip)
+    assert code == 0 and part["verdict"] == "failed", part
+    broken = dict(bake, gates=[{"name": "plants_found", "value": 6}])
+    code, out = ingest(broken, "--file", clip)
+    assert code == 3 and "producer bug" in out, (code, out)
+    code, out = ingest({k: v for k, v in bake.items() if k != "pass"}, "--file", clip)
+    assert code == 3 and "producer bug" in out, (code, out)
+    code, out = ingest({"schema": "gate/1", "pass": False, "ok": False, "gates": [], "refused": "no clip"},
+                       "--file", clip)
+    assert code == 3 and "no clip" in out, (code, out)
+    # the 0.34 dialect, unstamped, one release: a gate's `ok` is its `pass`, with a WARN; a gate
+    # with neither has failed
+    legacy = {"tool": "contact_bake", "ok": True, "blender": [5, 2, 1], "record": {"kind": "clip"},
+              "gates": [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "ok": True}]}
+    code, part = ingest(legacy, "--file", clip)
+    assert code == 0 and part["gates"] == [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015,
+                                            "pass": True}] and part["verdict"] == "green", part
+    notes = []
+    assert _gate(legacy, None, notes)["verdict"] == "green" and len(notes) == 2, notes
+    silent = dict(legacy, gates=[{"name": "foot_slide_p95_m", "value": 0.001}])
+    code, part = ingest(silent, "--file", clip)
+    assert code == 0 and part["gates"][0]["pass"] is False and part["verdict"] == "failed", part
 
     # a Blender report: no file named -> 3; --file; a newer report with record and file
     report = {"ok": True, "gates": [{"name": "rig.bones", "value": 24, "limit": 15, "pass": True}],
@@ -468,12 +607,14 @@ def selftest(d):
     assert not os.path.exists(ledger)
     code, out = ingest(codex, "--write")
     assert code == 0 and "recorded artdirection/anchors/runner rev 1 (candidate)" in out, out
+    code, out = ingest(legacy, "--file", clip, "--write")       # an old contact_bake report records
+    assert code == 0 and "recorded" in out, out
     code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side, "--write")
     assert code == 0, out
     recs = L.load(ledger)
-    assert len(recs) == 2 and all(L.validate(r) == [] for r in recs), recs
+    assert len(recs) == 3 and all(L.validate(r) == [] for r in recs), recs
     assert recs[0]["files"][0]["sha256"] == L.sha256_file(anchor)
-    assert recs[1]["inputs"][0]["sha256"] == L.sha256_file(sheet)
+    assert recs[2]["inputs"][0]["sha256"] == L.sha256_file(sheet)
     code, text = R._run("check", "--root", root, "--ledger", ledger, "--json")
     assert code == 0, text
 

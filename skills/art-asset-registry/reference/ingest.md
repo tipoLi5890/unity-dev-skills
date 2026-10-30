@@ -33,9 +33,12 @@ Tried in this order; the first that fits is used.
 | Shape | Recognised by | Becomes |
 |---|---|---|
 | a record | a `record` object, from any producer that writes one (every Blender skill report carries one; the ComfyUI and codex clients where they add one) | that object; keys it leaves out are filled from the shape below it, and a top-level `file` (`{path, saved, dirty}`) is carried in and hashed. A ComfyUI job is read only through its `record` |
-| frames | `sheet_to_frames.py`'s `frames.json` (`tool`, or `frames` with `cell` and `verdict`), or any `frames.json` with `frames` and a `producer` (`breathe.py`, `video_loop.py`) | the sidecar first, then every frame (read next to it), the sheet (else `source`, a path or `{file}`) as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note`; `tool` is the `producer`'s `{skill, script}` when it names one (both strings, else exit 3), else `codex-visual`/`sheet_to_frames.py` |
-| Blender | `gates` and `blender` | its gates and verdict (`ok`), `source: authored`; the file comes from `--file`, else the report's top-level `path` (an FBX export), else the saved `.blend` from `file.path` as `role: source, mutable: true`, hashed like any file |
+| frames | `"schema": "frames/1"` (`schemas/frames-1.json` in the plugin repo); also, for one release, `sheet_to_frames.py`'s unstamped `frames.json` (`tool`, or `frames` with `cell` and `verdict`), or any `frames.json` with `frames` and a `producer` (`breathe.py`, `video_loop.py`) | the sidecar first, then every frame (read next to it), the sheet (else `source`, a path or `{file}`) as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note`; `params` keep what a re-import needs: `pivot_norm`, `key_color`, `canvas`, `fps_hint`, `loop`, `hold_last`, `block_px` (from `pixel`), `reference_core_height_px` and `foot_margin_px` (from `register`); `tool` is the `producer`'s `{skill, script}` when it names one (both strings, else exit 3), else `codex-visual`/`sheet_to_frames.py`. A stamped file missing a required key exits 3 |
+| gate | `"schema": "gate/1"` (`schemas/gate-1.json` in the plugin repo); also, for one release, an unstamped Blender report (`gates` and `blender`) | its gates and verdict (`pass`), `source: authored`; the file comes from `--file`, else the report's top-level `path` (an FBX export), else the saved `.blend` from `file.path` as `role: source, mutable: true`, hashed like any file. A gate without a boolean `pass` has failed; a stamped report whose `pass` or a gate's `pass` is missing exits 3, and so does a refused report with no gates |
 | codex | `out` and `size` | the image, `source: generated`; with `--expect-size`, a `codex.size` gate; an alpha render adds a warning |
+
+The 0.34 dialect (no `schema`) is read for one release, with one `WARN` line on stderr per file:
+a gate's or a report's `ok` is read as `pass`, and `register.margin_px` as `foot_margin_px`.
 
 Anything else exits 3, and so does a producer's error output (an `error` with nothing written)
 and JSON holding NaN or Infinity.
@@ -66,7 +69,7 @@ A run sheet cut into frames:
 
 ```bash
 python3 codex-visual/scripts/sheet_to_frames.py ArtDirection/sheets/runner_run.png \
-    --rows 1 --cols 8 --outdir ArtDirection/frames/runner_run
+    --rows 1 --cols 8 --key-color "#ff00ff" --outdir ArtDirection/frames/runner_run
 python3 registry.py ingest --json ArtDirection/frames/runner_run/frames.json --art-version 2 --write
 # OK ArtDirection/frames/runner_run/frames.json: recorded artdirection/frames/runner-run/frames rev 1 (candidate)
 ```

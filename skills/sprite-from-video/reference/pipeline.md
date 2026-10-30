@@ -180,18 +180,29 @@ The frame folder `out/runner_walk/` holds `runner_walk_000.png …` and `frames.
 and report sit beside it, so the folder can be copied under `Assets/` as it is.
 
 - **Unity** — `unity-2d-sprites` → `reference/sprite-animation.md`: copy the folder under
-  `Assets/`, then build the clip from it with `resources/Editor/SheetToAnimationClip.cs`, one pivot for
-  every frame from `pivot_norm`:
+  `Assets/`. `resources/Editor/FramesJsonImporter.cs` imports the frames from `frames.json`
+  (frames/1): one pivot for every frame from `pivot_norm`, and PPU =
+  `register.reference_core_height_px` / the character's height in world units, one PPU for every
+  set of the character. Then `resources/Editor/SheetToAnimationClip.cs` builds the clip, taking
+  `fps_hint`, `loop` and `hold_last` from the same file:
 
 ```bash
 # UNITY = the project's Editor binary
+"$UNITY" -batchmode -projectPath . -logFile - \
+  -executeMethod UnityDev.Sprites.FramesJsonImporter.RunFromCommandLine \
+  -framesDir Assets/Art/runner_walk -worldHeight 1.8
 "$UNITY" -batchmode -quit -projectPath . -logFile - -executeMethod SheetToAnimationClip.RunFromCommandLine \
   -source Assets/Art/runner_walk -clip Assets/Art/runner_walk.anim \
-  -framesJson Assets/Art/runner_walk/frames.json -loop true
+  -framesJson Assets/Art/runner_walk/frames.json
 ```
 
-  A `once` cut takes `-loop false`, a held last frame (`-holdLast N`) and an end event
-  (`-endEvent OnAnimationFinished`) for gameplay.
+  A `once` cut is written `loop: false, hold_last: true`; add extra held frames (`-holdLast N`)
+  and an end event (`-endEvent OnAnimationFinished`) for gameplay.
+- **`key_color`** is the declared key from `frames.report.json` (`key.declared`), `key_painted`
+  the colour the model painted; both audits measure the rim against `key_color`. A bare PNG
+  folder has no report: pass `--key-color HEX` (or `none` for art never keyed), else exit 1.
+- **`register.foot_margin_px`** is the rows under frame 0's feet line (`pivot_norm`'s y in px);
+  `canvas_margin_px` is `--margin`, the room kept round the union box.
 - **`fps_hint` is the clip's `frameRate`, never 24.** It is output frames over the cycle's
   seconds: the 21-frame walk lasts 0.875 s and keeps 10 frames, so `fps_hint` is 11.43. The cycle
   plays at the speed it was filmed at.

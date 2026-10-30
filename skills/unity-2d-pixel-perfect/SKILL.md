@@ -80,7 +80,9 @@ the **active** quality level, MSAA 1 on the URP asset, and `allowHDR`/`allowMSAA
 `allowDynamicResolution` off on the camera. A centre pivot on an odd-sized sprite lands on half a
 pixel ("only this one sprite is blurry"). Editor grid snapping: `1 / assetsPPU`. The table, the
 why and the snapping steps: `reference/sharpness.md` §2. Code:
-`resources/SpriteImportFix.cs`.
+`resources/SpriteImportFix.cs`. Frames shipped upscaled by F (`frames.json` `pixel.block_px`)
+import at F × the art-pixel PPU; `assetsPPU` is their PPU ÷ F (`codex-visual` →
+`reference/pixel-grid.md`).
 
 ## 3. Reference resolution, chosen once
 

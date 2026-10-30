@@ -62,6 +62,7 @@ Debug.Log(ClipEventWriter.Describe(runClip));
 public sealed class RunAnimEvents : MonoBehaviour
 {
     public RunController run;                       // replace with your game's state owner
+    public SfxPlayer sfx;                           // unity-game-feel: named sounds, voice cap, cooldown
 
     void OnAnimEvent(AnimationEvent e)
     {
@@ -70,6 +71,8 @@ public sealed class RunAnimEvents : MonoBehaviour
         switch (e.stringParameter)
         {
             case "hurt-end": run.OnHurtClipEnded(); break;       // a hint; the game's timer decides
+            case "left": case "right":                           // a footstep: the clip names the foot
+                sfx.Play("footstep", transform.position); break; // the sound table picks clip and variance
             default: Debug.LogWarning("[ANIM] unhandled event '" + e.stringParameter + "'", this); break;
         }
     }

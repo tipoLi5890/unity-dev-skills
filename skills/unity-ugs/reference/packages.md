@@ -18,6 +18,16 @@ the table is wrong about the API. Read what resolved off `Packages/packages-lock
 | `com.unity.services.economy` | — | Currencies, inventory, virtual purchases |
 | `com.unity.services.analytics` | — | Events and consent |
 
+These are the floors for UGS alone.
+**With Unity IAP 5.4 in the project the floors rise:** core 1.18.0, which `com.unity.purchasing`
+depends on, and authentication 3.8.1 for direct-to-consumer payments (`unity-iap` →
+`reference/path-implement-iap-d2c.md`). Take the higher of the two. The repo's `VERSIONS.md`
+records both and the date they were checked.
+
+**Cloud Code's newest major can need a newer Editor than yours.** Read the `unity` field of the
+version you pin: Cloud Code 3.x needs 6000.7 (`VERSIONS.md`), so an older Editor stays on 2.x
+from the floor above.
+
 Two things that table is worth reading for:
 
 - **A `latest` dist-tag can be a pre-release — pin deliberately.** Adding

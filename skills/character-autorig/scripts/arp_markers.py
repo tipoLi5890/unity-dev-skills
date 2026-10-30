@@ -55,7 +55,8 @@ arp_refs {ref bone: {head, tail}} for the .x and .l bones of Auto-Rig Pro's huma
 blender-retarget brt_arp `pipeline` op mirrors .l to .r), arp_spine_count (spine bones + 1, the
 add-on counts its root), contract_bones (a blender-character-rig bcr_armature spec with contract
 names, .L only, mirror true, radius per bone; with --mitten the finger bones are there but do
-not deform), previews {front, side}, gates [{name, value, limit, ok}], ok.
+not deform), previews {front, side}, gates [{name, value, limit, pass}] and pass, as in a gate/1
+report (schemas/gate-1.json), with `ok`, pass's old name, equal to it for one release.
 Bend hints: Auto-Rig Pro reads the knee and elbow direction from the reference chain, so a leg
 that is straight in the mesh gets its knee 1 % of the leg length forward (-Y) and an arm its elbow
 2 % back (+Y) in arp_refs and contract_bones; landmarks stay as measured.
@@ -581,7 +582,7 @@ def contract_bones(m, spine_bones, samples, mitten=False):
 
 
 def gate(name, value, limit, ok):
-    return {"name": name, "value": value, "limit": limit, "ok": bool(ok)}
+    return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
 
 
 def build_report(V, F, opts) -> dict:
@@ -632,7 +633,8 @@ def build_report(V, F, opts) -> dict:
         "arp_spine_count": opts["spine_bones"] + 1,
         "arp_refs": {k: {"head": r(v["head"]), "tail": r(v["tail"])} for k, v in refs.items()},
         "contract_bones": {"mirror": True, "bones": spec},
-        "notes": m["notes"], "gates": gates, "ok": all(g["ok"] for g in gates),
+        "notes": m["notes"], "gates": gates, "pass": all(g["pass"] is True for g in gates),
+        "ok": all(g["pass"] is True for g in gates),
     }
 
 
@@ -729,8 +731,8 @@ def run_blender(args) -> tuple[int, dict]:
         ok = all(os.path.getsize(p) > 0 for p in files.values() if os.path.exists(p)) and \
             all(os.path.exists(p) for p in files.values())
         report["gates"].append(gate("markers.previews", sorted(files), ["front", "side"], ok and len(files) == 2))
-        report["ok"] = all(g["ok"] for g in report["gates"])
-    return (0 if report["ok"] else 2), report
+        report["pass"] = report["ok"] = all(g["pass"] is True for g in report["gates"])
+    return (0 if report["pass"] is True else 2), report
 
 
 def run_host(args) -> tuple[int, dict]:
@@ -742,7 +744,7 @@ def run_host(args) -> tuple[int, dict]:
     except (OSError, ValueError, KeyError, M.Refused, Refused) as exc:
         return 1, {"tool": "arp_markers", "error": str(exc)}
     report["mesh"] = str(args.file)
-    return (0 if report["ok"] else 2), report
+    return (0 if report["pass"] is True else 2), report
 
 
 def in_blender() -> bool:
@@ -782,7 +784,7 @@ def selftest_host() -> tuple[int, list, int]:
     v, f = M.body()
     rep = build_report(v, f, opts)
     lm, H = rep["landmarks"], rep["height"]
-    ok("tube body: ok", rep["ok"])
+    ok("tube body: ok", rep["pass"])
     s45 = math.sqrt(0.5)
     sh_true = np.array([0.17, 0, 1.38])
     tip_true = sh_true + (0.62 + 0.045) * np.array([s45, 0, -s45])
@@ -820,23 +822,23 @@ def selftest_host() -> tuple[int, list, int]:
     except Refused:
         ok("T-pose refused", True)
     rep4 = build_report(v, f, dict(opts, arm_angle=(50.0, 60.0)))
-    ok("arm angle outside 50-60 fails", not rep4["ok"] and not next(g for g in rep4["gates"]
-                                                                     if g["name"] == "markers.arm_angle")["ok"])
+    ok("arm angle outside 50-60 fails", not rep4["pass"] and not next(g for g in rep4["gates"]
+                                                                     if g["name"] == "markers.arm_angle")["pass"])
     adj = {"shoulder.L": [0.16, 0.0, 1.0]}
     rep5 = build_report(v, f, dict(opts, adjust=adj))
     ok("adjust: moved, mirrored, method adjusted", rep5["landmarks"]["shoulder.R"][0] == -0.16 and
        rep5["methods"]["shoulder.L"] == "adjusted")
     ok("adjust: a low shoulder fails the window gate", not next(g for g in rep5["gates"]
-                                                                 if g["name"] == "markers.windows")["ok"])
+                                                                 if g["name"] == "markers.windows")["pass"])
     ok("no window gate: reported only", next(g for g in build_report(v, f, dict(opts, adjust=adj, no_window_gate=True))["gates"]
-                                             if g["name"] == "markers.windows")["ok"])
+                                             if g["name"] == "markers.windows")["pass"])
     # an asymmetric body fails the symmetry gate: move the left leg out
     vs, fs = M.body()
     sel = (vs[:, 0] > 0.04) & (vs[:, 2] < 0.85)
     vs = vs.copy()
     vs[sel, 0] += 0.06
     rep6 = build_report(vs, fs, opts)
-    ok("asymmetric legs fail symmetry", not next(g for g in rep6["gates"] if g["name"] == "markers.symmetry")["ok"])
+    ok("asymmetric legs fail symmetry", not next(g for g in rep6["gates"] if g["name"] == "markers.symmetry")["pass"])
     # a person adjusts the markers that differ: they leave the gate and are reported as accepted
     limit = 0.02 * rep6["height"]
     off = [k for k, val in rep6["asymmetry_m"].items() if val > limit]
@@ -844,11 +846,11 @@ def selftest_host() -> tuple[int, list, int]:
     rep7 = build_report(vs, fs, dict(opts, adjust=adj6))
     sym7 = next(g for g in rep7["gates"] if g["name"] == "markers.symmetry")
     ok("adjusted markers: symmetry passes, asymmetry_accepted lists them",
-       bool(off) and sym7["ok"] and set(rep7["asymmetry_accepted"]) == set(off))
+       bool(off) and sym7["pass"] and set(rep7["asymmetry_accepted"]) == set(off))
     one = {off[0] + ".L": rep6["landmarks"][off[0] + ".L"]} if len(off) > 1 else {}
     rep8 = build_report(vs, fs, dict(opts, adjust=one)) if one else rep6
     ok("adjusting one of several: the others still fail symmetry",
-       not next(g for g in rep8["gates"] if g["name"] == "markers.symmetry")["ok"])
+       not next(g for g in rep8["gates"] if g["name"] == "markers.symmetry")["pass"])
     # finger detection
     frame = (np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0]), 0.18)
     found, reason = detect_fingers(_hand_points(True), np.zeros(3), frame)

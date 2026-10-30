@@ -116,7 +116,9 @@ A warning in a build log is read once, by nobody. Make the script stop where sto
 - **a `versionCode` already in the build history** — Play rejects a re-used one;
 - **a native `.aar` with no `arm64-v8a`** — builds fine, crashes on launch;
 - **a prebuilt `.so` aligned to 4 KB while `targetSdk` is 35+ or left on Auto** — builds fine, and
-  crashes on launch only on 16 KB-page devices (`player-settings-android.md`).
+  crashes on launch only on 16 KB-page devices (`player-settings-android.md`);
+- **a store build with `targetSdk` below Play's required level** — Play rejects it, and a 4 KB
+  library is not a reason to lower it (`VERSIONS.md`).
 
 ## Ready-made
 
@@ -220,8 +222,7 @@ FOUND=0
 Always report the zero case explicitly. A silent pass and a real pass look identical otherwise.
 
 While each `.aar` is open, check the page alignment of its `.so` files as well as their ABI — it is
-the same unzip, and it decides the highest `targetSdk` the project may set
-(`player-settings-android.md`).
+the same unzip, and a 4 KB-aligned one blocks any store build (`player-settings-android.md`).
 
 ## Exit codes should say whether retrying is honest
 

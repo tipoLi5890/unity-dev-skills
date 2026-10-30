@@ -33,7 +33,10 @@ namespace Game.Sim
 
     /// <summary>
     /// Every number the run is tuned by. Each one traces back to a line of the brief;
-    /// change them here, never inside the presenter.
+    /// change them here, never inside the presenter, and in courier_rules.json beside this
+    /// file, which the preview reads: RunSimulationTests.RulesMatchCourierRulesJson fails
+    /// until the two agree. (This assembly has no engine references, so it cannot load the
+    /// JSON itself.)
     /// </summary>
     public sealed class RunConfig
     {

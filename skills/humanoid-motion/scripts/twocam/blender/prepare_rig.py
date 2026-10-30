@@ -110,6 +110,9 @@ def selftest() -> tuple:
         rig, body = B.demo_scene()
         r, code = prepare({"out_dir": td})
         checks.append({"name": "demo contract character passes, exit 0", "pass": code == 0 and r["ok"]})
+        checks.append({"name": "a passing gate/1 report", "pass": r.get("schema") == "gate/1" and r.get("pass") is True
+                       and all("ok" not in g for g in r.get("gates", []))})
+        B.contract_sample("prepare_rig", "demo", r)
         info = B.load_info(os.path.join(td, "rig_info.json")) if code == 0 else {"bones": []}
         bone_ok = True
         for bi in info["bones"]:   # the roll Blender stored is the one written

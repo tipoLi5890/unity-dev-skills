@@ -65,9 +65,9 @@ no copy (`reference/licences.md`). Turning a producer's own JSON output into thi
 
 **A headless character pipeline** (`blender-character-rig` → `reference/headless-pipeline.md`)
 records one row per shipped output: the character FBX (with its LOD levels inside), the prop FBX,
-the textures, each with the stage's `.blend` as `role: source`. The stage's gates JSON already
-carries `{name, value, limit, ok}` and the input and output hashes: copy its gates with `ok`
-renamed `pass`, and `--link made-by=job:<character>-<stage>`. A purchased clip pack is one
+the textures, each with the stage's `.blend` as `role: source`. The stage's gates JSON is a gate/1
+report (`{name, value, limit, pass}` per gate) with the input and output hashes: copy its gates
+as they are, and `--link made-by=job:<character>-<stage>`. A purchased clip pack is one
 record, `--source purchased`, `vendor: true`; the clips played unchanged from it need no row per
 clip, while a clip converted from another skeleton is its own record with `depends-on` both
 packs. A change to the fit (a new canonical scale) is a new revision of the character, and

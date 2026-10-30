@@ -18,6 +18,7 @@ which UI system you are in; then make it survive real viewing conditions.
 |---|---|
 | Any UI work, no UI system named | §0 below |
 | "design the HUD", "where should the timer go", HUD covering gameplay | `reference/hud-placement.md` |
+| A turn-based board's turn-order strip or range legend | `reference/board-hud.md` |
 | "the UI looks wrong / cheap / misaligned", "the buttons shimmer" | `reference/layout-math.md`, `reference/design-principles.md` |
 | "the text is too small", text overflowing a button | `reference/type-scale.md` |
 | "the panels are the wrong colour", "the highlighted item does not stand out", "the glow is a grey smudge" | `reference/colour-and-contrast.md` |

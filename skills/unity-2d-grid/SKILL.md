@@ -149,7 +149,7 @@ test that catches a mismatch.
 |---|---|
 | Colliders, triggers and physics queries on a Tilemap | `unity-physics-2d` |
 | Pathfinding on a NavMesh, agents, obstacles | `unity-navigation` |
-| Move and action menus, the turn-order strip, range legend | `unity-game-ui` |
+| Move and action menus, the turn-order strip, range legend | `unity-game-ui` → `reference/board-hud.md` |
 | Step and push as animation states | `unity-animation` |
 | Skeletal 2D characters on the board | `unity-2d-animation` |
 | Sending turns over the network | Out of scope — netcode APIs are out of scope for this plugin; topology and authority: `unity-live-services` → `reference/multiplayer.md` |

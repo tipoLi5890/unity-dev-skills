@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import pathlib
 import sys
 import tempfile
@@ -221,6 +222,27 @@ def score(a: dict, b: dict) -> dict:
     return out
 
 
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
+
+
+def _captured(fn, *args) -> tuple:
+    """fn's exit code and the one JSON object it printed (a selftest helper)."""
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = fn(*args)
+    return code, json.loads(buf.getvalue())
+
+
 def selftest() -> int:
     from skeleton import build_rig_info, demo_skeleton, read_skeleton
     checks = []
@@ -253,7 +275,10 @@ def selftest() -> int:
         td = pathlib.Path(td)
         (td / "t.json").write_text(json.dumps({"names": names, "joints": J.tolist()}))
         (td / "s.json").write_text(json.dumps({"joints": (J + [0.02, 0, 0]).tolist()}))
-        check("score gate fails on a 2 cm error, exit 2", main(["score", str(td / "t.json"), str(td / "s.json")], True) == 2)
+        code, rep = _captured(main, ["score", str(td / "t.json"), str(td / "s.json")])
+        check("score gate fails on a 2 cm error, exit 2, a failed gate/1 report", code == 2
+              and rep.get("schema") == "gate/1" and rep.get("pass") is False and rep.get("ok") is False)
+        contract_sample("exam", "score_fails", rep)
         check("score gate passes under its limit, exit 0",
               main(["score", str(td / "t.json"), str(td / "s.json"), "--max-mean-cm", "2.5"], True) == 0)
         (td / "s.json").write_text(json.dumps({"joints": J[:, :5].tolist()}))
@@ -296,7 +321,8 @@ def main(argv=None, quiet=False) -> int:
             r = score(json.loads(pathlib.Path(a.truth).read_text()), json.loads(pathlib.Path(a.solved).read_text()))
             ok = r["mean_cm"] <= a.max_mean_cm
             r.update({"tool": "exam.py", "op": "score", "gates": [{"name": "exam.mean_cm", "value": round(r["mean_cm"], 3),
-                                                                     "limit": a.max_mean_cm, "pass": ok}], "ok": ok})
+                                                                     "limit": a.max_mean_cm, "pass": bool(ok)}],
+                      "schema": "gate/1", "pass": bool(ok), "ok": bool(ok)})
             emit(r)
             return 0 if ok else 2
         info = json.loads(pathlib.Path(a.rig_info).read_text())

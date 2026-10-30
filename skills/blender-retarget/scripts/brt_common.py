@@ -13,11 +13,12 @@ MCP server's code tool:
 
 What every `run` returns:
 
-    {"ok": bool,                      # every gate passed
+    {"schema": "gate/1",              # gate/1 (schemas/gate-1.json); absent with no gates
+     "pass": bool,                    # every gate passed; absent with no gates
+     "ok": bool,                      # pass's old name, equal to it, for one release
      "gates": [{"name", "value", "limit", "pass"}, ...],
      "created": {"objects": [...], ...},   # datablocks this call added
      "blender": [major, minor, patch], ...,
-     "schema": 1,
      "file": {"path", "saved", "dirty"},   # the loaded .blend; path "" before the first save
      "warnings": [...],               # notes that do not fail the call
      "record": {"tool": {"skill", "script"}, "params", "gates", "verdict"}}
@@ -190,18 +191,25 @@ def _script_name(module_globals: dict) -> str:
 def report(params: dict, gates: list[dict], **extra) -> dict:
     """The dict every op returns. A `warnings` list in `extra` becomes the result's warnings.
 
-    schema, file and record are set after the extras, so an extra with one of
-    those names cannot replace them. `record` is this call's partial ledger row:
-    the tool, the params without any key naming a path (`backup_path` is kept),
-    the gates and the verdict.
+    With gates it is a gate/1 report: `schema` "gate/1" and `pass`, true only when
+    every gate's `pass` is true (`ok`, its old name, equals it for one release).
+    With no gates it is an op's result, not a verdict: no `schema` or `pass`, and
+    `ok` is true. schema, pass, ok, file and record are set after the extras, so an
+    extra with one of those names cannot replace them. `record` is this call's
+    partial ledger row: the tool, the params without any key naming a path
+    (`backup_path` is kept), the gates and the verdict.
     """
-    ok = all(g["pass"] for g in gates)
+    ok = all(g.get("pass") is True for g in gates)
     warnings = [str(w) for w in extra.pop("warnings", None) or []]
-    out = {"ok": ok, "gates": gates, "blender": list(bpy.app.version)}
+    out = {"gates": gates, "blender": list(bpy.app.version)}
     out.update(safe(extra))
+    for k in ("schema", "pass"):
+        out.pop(k, None)
     kept = {k: v for k, v in safe(params).items() if "path" not in k or k == "backup_path"}
+    if gates:
+        out.update({"schema": "gate/1", "pass": ok})
     out.update({
-        "schema": 1,
+        "ok": ok,
         "file": file_state(),
         "warnings": warnings,
         "record": {"tool": {"skill": SKILL, "script": _script_name(sys._getframe(1).f_globals)},

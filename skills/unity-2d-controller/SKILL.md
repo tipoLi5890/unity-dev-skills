@@ -155,7 +155,7 @@ The depot is the same loop with `TopDownMotor2D` and `templates/TopDownJourneyTe
 | Frames into clips, pivots | `unity-2d-sprites` |
 | Pressing use on a switch, a gate or a pickup | `unity-interaction` |
 | Health, hurt, invincibility frames and when a hit asks for knock-back | `unity-combat` |
-| NavMesh agents and click-to-move | `unity-navigation` |
+| Click-to-move: on a tile board `unity-2d-grid` (`GridPathfinder`); free 2D movement `unity-navigation` → `reference/recipes.md` §9 |
 | 3D characters and PhysX | `unity-physics-3d` |
 
 Enemy behaviour, combat and interaction are not controllers: a sentry that patrols a ledge uses

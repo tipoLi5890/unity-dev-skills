@@ -18,7 +18,7 @@ public static void ConfigureAndroid() {
     PlayerSettings.SetApplicationIdentifier(android, "com.<org>.<app>");
     PlayerSettings.SetScriptingBackend(android, ScriptingImplementation.IL2CPP);
     PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-    // Unity 6000.4 clamps to 25 — read yours back after setting it (SKILL.md §4)
+    // Unity 6000.4 clamps to 25, 6000.5+ to 26 — read yours back after setting it (SKILL.md §4)
     PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel25;
     PlayerSettings.stripEngineCode = true;
     PlayerSettings.colorSpace = ColorSpace.Linear;

@@ -78,6 +78,10 @@ string json = PrefabOverrideAudit.Audit();
 //                 "properties":["Transform.m_LocalScale.x", …],"added":[],"removed":[]}]}
 ```
 
+Headless: `-executeMethod UnityDev.Cli.BatchAudit.Run -audit PrefabOverrideAudit -scene
+Assets/Scenes/GateRoom.unity -out Logs/overrides.json` exits 0 on `"ok": true`, 2 on false
+(`unity-cli` → `reference/batch-audit.md`).
+
 Each row gets one of three outcomes — never "leave it":
 
 | Outcome | When | How |
@@ -185,4 +189,4 @@ For a one-off question — "what uses this prefab" — a search query is quicker
 | Lightmaps, probes and prefab rooms | `unity-lighting` → `reference/probes.md` |
 | Static flags, batching and what breaks it | `unity-scene-optimisation` → `reference/batching.md` |
 | Baking a NavMesh for a room placed at runtime | `unity-navigation` → `reference/recipes.md` |
-| Driving these audits from the command line | `unity-cli` |
+| Driving these audits from the command line | `unity-cli` → `reference/batch-audit.md` |

@@ -113,6 +113,12 @@ cleanup() {
   if [ -n "$UNITY_PID" ] && kill -0 "$UNITY_PID" 2>/dev/null; then
     say "stopping the Editor this script started (pid $UNITY_PID)"
     kill "$UNITY_PID" 2>/dev/null; sleep 3; kill -9 "$UNITY_PID" 2>/dev/null
+    wait "$UNITY_PID" 2>/dev/null
+  fi
+  # The Editor leaves its Roslyn compiler server (dotnet VBCSCompiler.dll) running after it
+  # quits. Stop the ones from this Editor install, unless another Editor is up and using one.
+  if [ -n "${APP:-}" ] && ! pgrep -f "$EDITOR_PATTERN" >/dev/null 2>&1; then
+    pkill -f "$APP/Contents/.*DotNetSdkRoslyn/VBCSCompiler.dll" 2>/dev/null || true
   fi
   if [ -n "$REGISTERED" ] && command -v unity >/dev/null 2>&1; then
     unity projects remove "$REGISTERED" --non-interactive >/dev/null 2>&1 || true

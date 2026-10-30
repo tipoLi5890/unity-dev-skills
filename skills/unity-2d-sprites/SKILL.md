@@ -173,8 +173,9 @@ plays while nothing moves); a new clip's **`frameRate = 60`**, so set it;
 between frames is fixed in the frames** (`codex-visual`), not in sixteen pivots; every
 rect takes ONE pivot, the sidecar's `pivot_norm`. **An idle that boils** plays one frame,
 moved in code. **Slice, `Apply()`, `SaveAndReimport()`, then build the clip** (§5), or the curve is
-full of nulls. The whole path is `reference/sprite-animation.md`; `resources/Editor/SheetToAnimationClip.cs`
-runs it; `resources/Tests/SpriteFramesAudit.cs` re-measures the frames.
+full of nulls. The whole path is `reference/sprite-animation.md`; `resources/Editor/FramesJsonImporter.cs`
+applies `frames.json` (pivot, PPU, filter) on import, `resources/Editor/SheetToAnimationClip.cs`
+builds the clip (fps, loop, hold), and `resources/Tests/SpriteFramesAudit.cs` re-measures the frames.
 
 ## Scope — what this skill does NOT do
 

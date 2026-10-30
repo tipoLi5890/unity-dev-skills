@@ -11,18 +11,18 @@
 //     two sizes by two sheets; an importer pivot that is not the one the frames were seated on.
 //
 // Drop it into an EditMode test assembly (it needs nunit and, for the pivot test, UnityEditor),
-// set the four constants under CONFIGURE, and run the suite. Every definition here is the one
-// `codex-visual`'s scripts/sprite_ops.py states and audit_frames.py gates on. The two
-// engine-independent classes below were run outside Unity: FrameMeasure against that script on
-// 210 frames of 29 sequences — four of them out of register and binary-keyed — giving the same
-// feet row, cut flag, fringe, tint and rim pixel counts and the same slip on every frame; and
-// FrameSidecar on six real sidecars (seated, effect, kept, an older slicer's, another tool's, one
-// with an empty cell). The NUnit half was compiled against the 6000.3 and 6000.4 reference
-// assemblies, with and without UNITY_EDITOR, and has NOT been run in an Editor: run it once on
-// your own art, and read the numbers it prints, before trusting a green.
+// set the constants under CONFIGURE, and run the suite. Every definition here is the one
+// `codex-visual`'s scripts/sprite_ops.py states and audit_frames.py gates on; the two
+// engine-independent classes below (FrameMeasure, FrameSidecar) match that script number for
+// number. Run the NUnit half once on your own art, and read the numbers it prints, before
+// trusting a green.
 //
-// A sequence is a folder holding frames.json. Folders sliced by an older tool carry no
-// `register` block; they fail Every_sequence_was_seated_on_purpose, which is the point.
+// A sequence is a folder holding frames.json (frames/1: schemas/frames-1.json in this plugin).
+// The rim is measured against that file's own key_color, the key the frames were keyed against;
+// there is no default key. A frames/1 file without key_color, or without its core height, fails.
+// key_color null (art never keyed) skips the fringe measurement for that sequence and says so.
+// Folders sliced by an older tool carry no `register` block; they fail
+// Every_sequence_was_seated_on_purpose, which is the point.
 using System;
 using System.Collections.Generic;
 
@@ -298,6 +298,10 @@ public sealed class FrameSidecar
     public string Mode;                    // ground | free | centroid | keep, or null when the slicer did not say
     public int Ref;
     public float ReferenceCoreHeight;      // 0 when not recorded
+    public bool Stamped;                   // "schema": "frames/1"
+    public bool HasKey, KeyNull;           // a #rrggbb key was found / key_color is JSON null
+    public byte KeyR, KeyG, KeyB;
+    public string KeySource;               // "key_color", "set_metrics.key_color (0.34 dialect)", or null
     public bool HasVerdict, VerdictOk = true;
     public float[] PivotNorm;              // [x, y] from the bottom-left, or null
     public List<string> Files = new List<string>();    // frames with content, in play order
@@ -311,6 +315,22 @@ public sealed class FrameSidecar
         var arr = System.Text.RegularExpressions.Regex.Match(json, "\"frames\"\\s*:\\s*\\[");
         string head = arr.Success ? json.Substring(0, arr.Index) : json;
         string tail = arr.Success ? json.Substring(arr.Index) : "";
+
+        s.Stamped = System.Text.RegularExpressions.Regex.IsMatch(json, "\"schema\"\\s*:\\s*\"frames/1\"");
+        // set_metrics carries a key_color echo of its own: cut that block out before reading the
+        // top-level one, and fall back to it only for an unstamped (0.34) file. The whole text is
+        // searched, so the result does not depend on whether the key comes before "frames".
+        string rest = json;
+        string metrics = CutObject(ref rest, "set_metrics");
+        var key = System.Text.RegularExpressions.Regex.Match(
+            rest, "\"key_color\"\\s*:\\s*(null|\"#?([0-9a-fA-F]{6})\")");
+        if (key.Success && key.Groups[1].Value == "null") { s.KeyNull = true; s.KeySource = "key_color"; }
+        else if (key.Success) { s.SetKey(key.Groups[2].Value); s.KeySource = "key_color"; }
+        else if (!s.Stamped && metrics != null)
+        {
+            key = System.Text.RegularExpressions.Regex.Match(metrics, "\"key_color\"\\s*:\\s*\"#?([0-9a-fA-F]{6})\"");
+            if (key.Success) { s.SetKey(key.Groups[1].Value); s.KeySource = "set_metrics.key_color (0.34 dialect)"; }
+        }
 
         var reg = System.Text.RegularExpressions.Regex.Match(head, "\"register\"\\s*:\\s*\\{([^{}]*)\\}");
         if (reg.Success)
@@ -342,6 +362,35 @@ public sealed class FrameSidecar
         }
         return s;
     }
+
+    void SetKey(string hex)
+    {
+        HasKey = true;
+        KeyR = byte.Parse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber, Inv);
+        KeyG = byte.Parse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber, Inv);
+        KeyB = byte.Parse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber, Inv);
+    }
+
+    /// <summary>Remove `"name": {...}` (braces balanced, strings skipped) from text; return its body or null.</summary>
+    static string CutObject(ref string text, string name)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(text, "\"" + name + "\"\\s*:\\s*\\{");
+        if (!m.Success) return null;
+        int depth = 0, i = m.Index + m.Length - 1;
+        bool str = false;
+        for (; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (str) { if (c == '\\') i++; else if (c == '"') str = false; continue; }
+            if (c == '"') str = true;
+            else if (c == '{') depth++;
+            else if (c == '}' && --depth == 0) break;
+        }
+        if (i >= text.Length) return null;
+        string body = text.Substring(m.Index + m.Length, i - (m.Index + m.Length));
+        text = text.Substring(0, m.Index) + text.Substring(i + 1);
+        return body;
+    }
 }
 
 #if !SPRITE_FRAMES_KERNEL_ONLY
@@ -359,8 +408,6 @@ namespace SpriteFrames.Tests
         const string ArtRoot = "Assets/Art";
         /// <summary>The scan must find at least this many: a gate that read nothing is not a pass.</summary>
         const int MinSequences = 1;
-        /// <summary>The key colour ART_DIRECTION.md records — the one the sheets were generated on.</summary>
-        static readonly Color32 Key = new Color32(255, 0, 255, 255);
         /// <summary>Which sequences are ONE character: by default the folder name up to its first '_'.</summary>
         static string CharacterOf(string sequence) =>
             sequence.Contains("_") ? sequence.Substring(0, sequence.IndexOf('_')) : sequence;
@@ -415,8 +462,11 @@ namespace SpriteFrames.Tests
                     UnityEngine.Object.DestroyImmediate(t);
 
                     if (FrameMeasure.CutByCanvas(rgba, w, h)) s.cut.Add(file);
-                    FrameMeasure.Rim(rgba, w, h, Key.r, Key.g, Key.b, out int fr, out int ti, out int rim);
-                    s.fringe += fr; s.tint += ti; s.rim += rim;
+                    if (s.doc.HasKey)
+                    {
+                        FrameMeasure.Rim(rgba, w, h, s.doc.KeyR, s.doc.KeyG, s.doc.KeyB, out int fr, out int ti, out int rim);
+                        s.fringe += fr; s.tint += ti; s.rim += rim;
+                    }
                     if (!body) continue;
                     bool[] core = FrameMeasure.Core(rgba, w, h);
                     s.feet.Add(FrameMeasure.Bottom(core, w, h));
@@ -495,14 +545,30 @@ namespace SpriteFrames.Tests
         public void No_frame_keeps_the_key_on_its_rim()
         {
             var bad = new List<string>();
+            int measured = 0;
             foreach (Seq s in Sequences())
             {
+                if (!s.doc.HasKey)
+                {
+                    if (s.doc.Stamped && !s.doc.KeyNull)
+                        bad.Add($"{s.name}: frames/1 with no key_color — the producer must state the key it keyed against");
+                    else
+                        TestContext.WriteLine($"WARN {s.name}: fringe not measured — " +
+                            (s.doc.KeyNull ? "key_color is null (never keyed)" : "no key_color (0.34 dialect)") +
+                            "; not counted as a pass");
+                    continue;
+                }
+                measured++;
+                if (s.doc.KeySource != "key_color")
+                    TestContext.WriteLine($"WARN {s.name}: key read from {s.doc.KeySource}");
                 double fr = 100.0 * s.fringe / Math.Max(s.rim, 1), ti = 100.0 * s.tint / Math.Max(s.rim, 1);
-                TestContext.WriteLine($"{s.name} rim {s.rim} fringe {fr:F2}% tint {ti:F2}%");
+                TestContext.WriteLine($"{s.name} key #{s.doc.KeyR:x2}{s.doc.KeyG:x2}{s.doc.KeyB:x2} rim {s.rim} fringe {fr:F2}% tint {ti:F2}%");
                 if (fr > FringeMaxPct || ti > TintMaxPct)
                     bad.Add($"{s.name}: fringe {fr:F2}% tint {ti:F2}% of {s.rim} rim px (max {FringeMaxPct} / {TintMaxPct}) — re-key the sheet (key_unmix.py)");
             }
             Assert.IsEmpty(bad, string.Join("\n", bad));
+            if (measured == 0 && Sequences().Count > 0)
+                Assert.Inconclusive("no sequence states a key colour: the rim was not measured anywhere");
         }
 
         [Test]
@@ -537,6 +603,11 @@ namespace SpriteFrames.Tests
         public void A_character_is_one_size_across_its_sequences()
         {
             var byChar = new Dictionary<string, List<string>>();
+            var missing = Sequences().Where(q => q.doc.Stamped && q.doc.ReferenceCoreHeight < 1)
+                                     .Select(q => $"{q.name}: frames/1 with no register.reference_core_height_px").ToList();
+            Assert.IsEmpty(missing, string.Join("\n", missing));
+            foreach (Seq s in Sequences().Where(q => q.doc.ReferenceCoreHeight <= 0 && !q.doc.Stamped))
+                TestContext.WriteLine($"WARN {s.name}: no reference_core_height_px (0.34 dialect) — left out of the size check");
             foreach (Seq s in Sequences().Where(q => (q.mode == "ground" || q.mode == "free") && q.doc.ReferenceCoreHeight > 0))
             {
                 string who = CharacterOf(s.name);

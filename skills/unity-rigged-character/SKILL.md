@@ -44,9 +44,11 @@ upstream route has its own skill. An asset with no skeleton belongs to `unity-3d
 > **Unity never retargets across skeletons here.** Every clip arrives already on the character's
 > skeleton — retargeted in Blender, by Mixamo on that route, or played as bought on a character
 > fitted to the clip pack's own skeleton (`reference/shared-skeleton-generic.md`) — so the rig
-> type follows from what the game needs. Generic (the config default) reproduces the Blender pose; on a test rig,
-> Humanoid moved bones by up to 20° and a hand socket by 13–15 cm on the same clip. Choose Humanoid only for a
-> body-part mask, IK or other avatars, measure it first (`reference/unity-import.md` §1), and build the Avatar from
+> type follows from what the game needs. Generic (the config default) reproduces the Blender pose; Humanoid
+> re-solves it through muscle space, so bone rotations and socket positions can drift from the source on the same
+> clip. Choose Humanoid only for a body-part mask, IK or other avatars; measure it first — play one clip under both
+> rig types, sample the same frames, and compare each bone's rotation and each socket's world position against the
+> Blender pose and against the limits the game tolerates (`reference/unity-import.md` §1) — and build the Avatar from
 > the explicit contract map, Chest and fingers included (`reference/humanoid-contract.md`).
 >
 > **A GLB has no Rig tab** (glTFast uses its own importer). It takes Humanoid clips through an

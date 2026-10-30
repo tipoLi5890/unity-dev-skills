@@ -140,6 +140,10 @@ string json = KitAudit.Audit("Assets/Kit/Depot");                  // grid 2, wa
 string json4 = KitAudit.Audit("Assets/Kit/Depot", 4f, 0.2f, 1f);   // a 4 m kit
 ```
 
+Headless, with `"ok"` as the exit code (0 pass, 2 flagged): `-executeMethod UnityDev.Cli.BatchAudit.Run
+-audit KitAudit -folder Assets/Kit/Depot -grid 2 -out Logs/kit.json` (`unity-cli` →
+`reference/batch-audit.md`).
+
 | `check` | Rule | Fix |
 |---|---|---|
 | `off-grid-size` | Footprint X and Z are each a multiple of the grid, or exactly the wall thickness | Re-model to size; never scale the prefab |

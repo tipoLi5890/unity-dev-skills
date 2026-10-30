@@ -185,13 +185,19 @@ used in its report rather than leaving it implied.
 - `resources/SpriteToPng.cs` — one sprite's own pixels as PNG bytes. `GetPixels` on
   `sprite.texture` returns the whole page, so the sprite's triangles are drawn into a temporary
   `RenderTexture` the size of its `textureRect` first.
+- `resources/Editor/FramesJsonImporter.cs` — an `AssetPostprocessor`: a frame PNG listed in the
+  `frames.json` beside it gets Sprite / Single, the `pivot_norm` pivot, the PPU from the core
+  height, and Point + Uncompressed on a pixel set; `-executeMethod
+  UnityDev.Sprites.FramesJsonImporter.RunFromCommandLine -framesDir …` re-applies and reads back
+  (`reference/sprite-animation.md` §2).
 - `resources/Editor/SheetToAnimationClip.cs` — a folder of frame PNGs or one sliced sheet into a clip,
-  plus an optional one-state controller (`reference/sprite-animation.md`).
+  plus an optional one-state controller; fps, loop and hold from `frames.json`
+  (`reference/sprite-animation.md`).
 - `resources/Tests/SpriteFramesAudit.cs` — not an edit: an EditMode fixture that re-measures
   shipped animation frames from their own bytes (feet line, slip from the reference, key fringe
   and tint on the rim, frames cut by the canvas, one size per character, the importer pivot
-  against `pivot_norm`). It belongs in a test assembly that references `nunit` and the Editor;
-  set its four constants first (`reference/sprite-animation.md` §7).
+  against `pivot_norm`), the rim against each set's own `key_color`. It belongs in a test assembly
+  that references `nunit` and the Editor; set its constants first (`reference/sprite-animation.md` §7).
 
 `IsometricSliceSheet.cs` and `AutomaticSliceSheet.cs` compile against the Editor assemblies plus
 `Unity.2D.Sprite.Editor`, and

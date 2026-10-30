@@ -11,12 +11,12 @@ native bridge or a third-party billing SDK has to be resolved first — [`pre-ch
 
 | Requirement | Detail |
 |---|---|
-| Unity Editor | 2022.3 or later |
+| Unity Editor | Unity 6 (the vendor's floor is 2022.3) |
 | `com.unity.purchasing` | 5.4+ |
-| `com.unity.services.authentication` | 3.7.1+ — initialisation fails below this |
-| `com.unity.services.core` | 1.18.0+ |
+| `com.unity.services.authentication` | 3.8.1+ — the vendor's stated floor for D2C |
+| `com.unity.services.core` | 1.18.0+ — what `com.unity.purchasing` 5.4.4 depends on |
 | Live services initialised | `UnityServices.InitializeAsync()` and sign-in both complete **before** the payment-provider controller is created |
-| Deployment package | Needed to push catalogues to the Remote Catalog — **Window > Package Manager > Unity Registry > Deployment** |
+| Deployment package | Needed to push catalogues to the Remote Catalog. IAP 5.4.4+ installs it as a dependency; below that, **Window > Package Manager > Unity Registry > Deployment** |
 | Unity Cloud project linked | To an organisation |
 | Provider account | Stripe or Coda connected in the Unity Cloud IAP dashboard |
 | Catalogue deployed | Products created and deployed to the Remote Catalog, or the client fetches nothing |

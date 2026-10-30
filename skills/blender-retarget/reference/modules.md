@@ -20,8 +20,9 @@ the parameters of each are in its docstring (`scripts/brt_*.py`). A worked call 
 **Calling a module.** Through the Blender MCP server's code tool, put this skill's `scripts`
 directory on `sys.path`, import `brt_common` and the module, reload both (Blender keeps
 `sys.modules` for the whole session), and assign `result = brt_<module>.run(params)`: the code tool
-hands that dict back, and `reference/worked-example.md` has the stub. Every `run` returns `ok`, `gates`
-(each with `name`, `value`, `limit`, `pass`), `created` (the datablocks it added) and `blender`,
+hands that dict back, and `reference/worked-example.md` has the stub. Every `run` returns `gates`
+(each with `name`, `value`, `limit`, `pass`), with gates also `schema: "gate/1"` and `pass` (`ok`, its
+old name, beside it for one release; with no gates only `ok`), `created` (the datablocks it added) and `blender`,
 plus the keys its docstring lists; `report_path` also writes it as JSON. A call that raises removes
 what it created; edits to datablocks that already existed are not undone, and each docstring says
 which it makes. When Blender cannot read the skill directory, send the sources in one call the way

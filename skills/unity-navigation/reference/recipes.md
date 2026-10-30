@@ -595,6 +595,44 @@ It costs a fraction of a full path request, so it is the cheap pre-check before 
 and it answers about the *mesh*, so a collider added after the bake is invisible to it, exactly as
 it is to pathing (SKILL.md §4). Colliders are `unity-physics-3d`.
 
+## 9. Click to move in a 2D (XY) world
+
+NavMesh bakes on a horizontal plane from 3D sources: render meshes or 3D physics colliders.
+Sprites, Tilemaps and `Collider2D` shapes are never collected, so a 2D top-down game has no
+NavMesh until you choose one of two routes.
+
+| The world | Route |
+|---|---|
+| Movement is cell to cell, or the level is a Tilemap and a cell path is good enough | A* on the grid: `unity-2d-grid` → `reference/pathfinding.md` (`GridPathfinder`). Then smooth the cell path for free movement below |
+| Free movement around arbitrary shapes, many agents that should avoid each other | A NavMesh baked in a rotated frame, below |
+
+**Smoothing a cell path for free movement.** Walk the cell centres from the start and drop every
+waypoint the body can reach in a straight line from the last kept one: one
+`Physics2D.CircleCast` with the body's radius against the wall layer per candidate. Steer the
+`Rigidbody2D` to the next kept waypoint and advance when within a small radius. Re-plan when the
+target cell changes or the body has been blocked for a few steps.
+
+**A NavMesh in the XY plane.** The method community packages such as NavMeshPlus implement:
+
+1. **Rotate the surface, not the world.** A `NavMeshSurface` builds in its own transform's frame,
+   so a surface rotated -90° about X treats world -Z as up and bakes on the XY plane.
+2. **Supply the sources yourself.** Build a `List<NavMeshBuildSource>` in code: one flat box over
+   the walkable area, and one box per obstacle (each wall tile or `Collider2D` bounds) tall enough
+   along the surface's up axis that an agent cannot step onto it. Bake with
+   `NavMeshBuilder.BuildNavMeshData` using the surface's position and rotation, and add the data
+   with `NavMesh.AddNavMeshData`. §6 covers the runtime bake and its cost.
+3. **Keep the agent in the plane.** Set `agent.updateRotation = false` and
+   `agent.updateUpAxis = false`, so the agent neither turns the sprite nor tilts it toward the
+   surface's up axis; face the sprite from `agent.velocity` yourself.
+4. **Click to a point on the mesh.** `Camera.ScreenToWorldPoint` with the camera's distance as `z`,
+   then `NavMesh.SamplePosition` within a small radius before `SetDestination` (SKILL.md §2): a
+   click on a wall snaps to the nearest walkable point or is refused.
+
+The agent then moves its own transform. A `Rigidbody2D` on the same object is Kinematic and follows
+it, or `agent.updatePosition = false` and the body is moved to `agent.nextPosition` in
+`FixedUpdate` (§5 and SKILL.md §3 say who owns the transform). Colliders and casts are
+`unity-physics-2d`.
+
 ## Related
 
 - SKILL.md §2 — path status, `SamplePosition`, and why the `CalculatePath` bool lies

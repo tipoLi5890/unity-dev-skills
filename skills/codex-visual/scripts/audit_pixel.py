@@ -39,7 +39,8 @@ lattice to read (blank, or one flat colour) prints `-` and fits any.
 
 A set is a directory holding `frames.json`, a `frames.json` path (its frames,
 relative to it), a directory of PNGs, or the PNG files named on the command
-line together. Expectations come from the sidecar's `pixel` block —
+line together. The sidecar is frames/1 (the repo's schemas/frames-1.json); an
+unstamped 0.34 one is read with a WARN. Expectations come from its `pixel` block —
 `block_px`, `alpha`, the palette's colours and their count — and a flag
 overrules it for every set given. A set with no `pixel` block and none of
 --block / --max-colours / --palette-file has nothing to be checked against and
@@ -101,6 +102,12 @@ def find_set(arg):
             doc = json.load(fh)
         if not isinstance(doc, dict):
             raise ValueError("not a frames.json sidecar")
+        stamp = doc.get("schema")
+        if stamp is None:      # a 0.34 sidecar: read for one release, said once
+            print(f"WARN: {side}: no schema (a 0.34 frames.json), read as the old dialect — re-write it with "
+                  f"this release's producer", file=sys.stderr)
+        elif stamp != "frames/1":
+            raise ValueError(f"schema {stamp!r}; this reader knows frames/1")
         files = [os.path.join(os.path.dirname(side), f["file"]) for f in doc.get("frames", [])
                  if isinstance(f, dict) and f.get("file") and not f.get("empty")]
         return name, files, doc, side

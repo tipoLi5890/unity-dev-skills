@@ -32,17 +32,17 @@ stage's outputs, so any stage reruns alone.
 | export | lod | the character FBX, the prop FBX, `manifest.json` | the FBX read directly: every joint rotation equals the pack's < 0.5°, no animation, each level's face count read back |
 | unity-gate | export, every clip | the lab's raw dumps, `gates.json` | `unity-rigged-character` → `reference/shared-skeleton-generic.md` |
 
-Blender stages took 1 to 43 s each; the Unity gate 45 to 90 s, of which Unity itself 24 to 53 s.
-
 ## The gates JSON and the exit code
 
 ```json
-{"schema": "pipeline-gates/1", "stage": "fit", "character": "player_a", "ok": true,
- "gates": [{"name": "rest_rotation_max_deg", "value": 2e-05, "limit": "< 0.5", "ok": true}],
+{"schema": "gate/1", "stage": "fit", "character": "player_a", "pass": true,
+ "gates": [{"name": "rest_rotation_max_deg", "value": 2e-05, "limit": "< 0.5", "pass": true}],
  "metrics": {}, "inputs": {"<path>": "<sha256>"}, "outputs": {"<path>": "<sha256>"},
- "params": {}, "tool": {"blender": "x.y.z"}}
+ "params": {}, "tool": "fit.py", "blender": "x.y.z"}
 ```
 
+- The report is a gate/1 report (`schemas/gate-1.json` in the plugin repo): a gate without a
+  boolean `pass` has failed, and so has a report without one.
 - **Exit 0** every gate passed; **1** a gate failed (the runner stops at that stage); **2** the
   input was refused (a missing file, a hash that does not match). The same contract as
   `blender-retarget`'s `brt_audit`.

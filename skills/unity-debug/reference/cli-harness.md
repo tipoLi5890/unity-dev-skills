@@ -71,19 +71,20 @@ asmdef too.** Three files:
 ```
 Assets/Scripts/<Game>.Runtime.asmdef        references: external packages only
 Assets/Scripts/Editor/<Game>.Editor.asmdef  references: Runtime;  includePlatforms: ["Editor"]
-Assets/Tests/<Game>.Tests.asmdef            references: Runtime, UnityEngine.TestRunner
+Assets/Tests/<Game>.Tests.asmdef            references: Runtime, UnityEngine.TestRunner, UnityEditor.TestRunner
 ```
 
 > **An asmdef governs its folder and everything below it.** Scripts loose in `Assets/` root stay in
 > `Assembly-CSharp` and stay invisible to tests — move them under the Runtime folder first. Move
 > the `.cs` together with its `.meta` so the GUID survives and scene/prefab references hold.
 
-**PlayMode test assembly settings that actually work:**
+**PlayMode test assembly settings that actually work** — the one every journey, soak and
+`*JourneyTest.cs` template in these skills is written against:
 
 ```json
 {
     "name": "<Game>.Tests",
-    "references": ["<Game>.Runtime", "UnityEngine.TestRunner"],
+    "references": ["<Game>.Runtime", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
     "includePlatforms": [],
     "overrideReferences": true,
     "precompiledReferences": ["nunit.framework.dll"],
@@ -92,9 +93,14 @@ Assets/Tests/<Game>.Tests.asmdef            references: Runtime, UnityEngine.Tes
 }
 ```
 
-Two traps: `includePlatforms` must be **empty**, not `["Editor"]` — restricting it makes the runner
-report `total="0"` and find nothing. And do **not** reference `UnityEditor.TestRunner`; that is for
-EditMode tests and cannot resolve on the non-Editor platforms the empty list now includes.
+`includePlatforms` must be **empty**, not `["Editor"]`: restricting it makes the PlayMode runner
+report `total="0"` and find nothing. `UnityEditor.TestRunner` is referenced because a journey
+loads its scene with `EditorSceneManager.LoadSceneAsyncInPlayMode`, inside `#if UNITY_EDITOR`.
+
+> **Journey tests run only in the Editor**, with `-runTests -testPlatform PlayMode`. They are not
+> player tests: on a player platform the `#if UNITY_EDITOR` scene load compiles out and the
+> journey has no scene. A suite that must run inside a built player is a separate assembly with no
+> `UnityEditor` reference and no Editor API at all — `reference/player-tests.md`.
 
 The EditMode counterpart is the mirror image, and it may reference the project's **Editor** assembly
 — which is what lets an EditMode test assert against the editor-side definition tables that generate

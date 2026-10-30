@@ -25,8 +25,12 @@ multiple of 32, renders that do not match the layout), 1 refused input or a fail
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
+import os
 import sys
+import tempfile
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -152,6 +156,17 @@ def _read_rgba(path: str):
     return img[..., [2, 1, 0, 3]]
 
 
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
+
+
 def selftest() -> int:
     checks = []
 
@@ -187,12 +202,18 @@ def selftest() -> int:
     check("compose divider", tuple(img[10, L.W_FRONT]) == DIVIDER)
     a, b = L.split(img)
     check("split widths", a.shape[1] == L.W_FRONT and b.shape[1] == L.W_SIDE)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        shown = main(["show"])
+    rep = json.loads(buf.getvalue())
+    check("show: a passing gate/1 report, exit 0", shown == 0 and rep.get("schema") == "gate/1"
+          and rep.get("pass") is True and rep.get("ok") is True and all("ok" not in g for g in rep["gates"]))
+    contract_sample("layout", "show", rep)
     try:
         import cv2
     except ImportError:
         cv2 = None
     if cv2 is not None:   # compose's render_sizes gate, through the CLI
-        import contextlib, io, tempfile
         with tempfile.TemporaryDirectory() as td:
             cv2.imwrite(f"{td}/f.png", np.zeros((L.H, L.W_FRONT, 4), np.uint8))
             cv2.imwrite(f"{td}/s.png", np.zeros((L.H, L.W_SIDE, 4), np.uint8))
@@ -231,15 +252,15 @@ def main(argv=None) -> int:
     try:
         L = load_layout(a.rig_info, a.character, a.height)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(json.dumps({"tool": "layout.py", "ok": False, "error": f"refused: {exc}"})); return 1
+        print(json.dumps({"schema": "gate/1", "tool": "layout.py", "pass": False, "ok": False, "gates": [], "error": f"refused: {exc}"})); return 1
     gates = L.checks()
-    out = {"tool": "layout.py", "op": a.cmd, "layout": L.as_dict(), "gates": gates}
+    out = {"schema": "gate/1", "tool": "layout.py", "op": a.cmd, "layout": L.as_dict(), "gates": gates}
     if a.cmd == "compose":
         try:
             import cv2
             f, s = _read_rgba(a.front), _read_rgba(a.side)
         except (ImportError, ValueError) as exc:
-            print(json.dumps({**out, "ok": False, "error": f"refused: {exc}"})); return 1
+            print(json.dumps({**out, "pass": False, "ok": False, "error": f"refused: {exc}"})); return 1
         size_ok = f.shape[:2] == (L.H, L.W_FRONT) and s.shape[:2] == (L.H, L.W_SIDE)
         gates.append({"name": "layout.render_sizes", "value": [list(f.shape[:2]), list(s.shape[:2])],
                       "limit": [[L.H, L.W_FRONT], [L.H, L.W_SIDE]], "pass": size_ok})
@@ -247,9 +268,9 @@ def main(argv=None) -> int:
             Path(a.out).parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(a.out, L.compose(f, s)[..., ::-1])
             out["out"] = a.out
-    out["ok"] = all(g["pass"] for g in gates)
+    out["pass"] = out["ok"] = all(g["pass"] is True for g in gates)
     print(json.dumps(out))
-    return 0 if out["ok"] else 2
+    return 0 if out["pass"] else 2
 
 
 if __name__ == "__main__":

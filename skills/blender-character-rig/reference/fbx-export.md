@@ -110,7 +110,7 @@ python3 scripts/rig_gate.py /abs/path/before.json /abs/path/after.json \
     --allow-leaf-bones --position-tolerance 0.002
 ```
 
-Stdlib only; prints one JSON object with `ok`, `gates` and `vertices`. It accepts a snapshot
+Stdlib only; prints one gate/1 report with `pass`, `gates` and `vertices`. It accepts a snapshot
 file or a whole `bcr_fbx` report.
 
 | Gate | Passes when |

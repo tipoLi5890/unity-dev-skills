@@ -134,7 +134,8 @@ flowchart LR
 - **Proves it.** Methods end in a check you can read: a probe snapshot, a journey test, a re-imported FBX,
   a device log.
 - **Light on context, self-contained.** A `SKILL.md` only routes; depth loads when the situation
-  needs it. No other plugin is required: skills hand off to each other through their Scope sections.
+  needs it. No other plugin is required: skills hand off to each other through their Scope sections. A few rigging and motion scripts call
+  scripts in a sibling skill; [`tools/cross-skill-deps.txt`](tools/cross-skill-deps.txt) lists them, so install those skills together.
 
 ## Skills
 

@@ -48,7 +48,9 @@ Gates (each failing one makes exit 2):
 
 Report: {tool, file, height, triangles, vertices, midline_x, crotch_h, legs{band, cuts, separated,
 ratio, first_fused_h}, arms{band, cuts, run_h, armpit_h, left, right}, double_shell{ratio, inner_shell,
-samples, gap}, gates[{name, value, limit, ok}], ok}. Heights ending in `_h` are fractions of H.
+samples, gap}, gates[{name, value, limit, pass}], schema, pass, ok}: a gate/1 report
+(schemas/gate-1.json); `ok`, pass's old name, equals it for one release. Heights ending in `_h` are
+fractions of H.
 
 Prints one JSON object. Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed;
 1 refused input (unreadable or compressed file, no triangles) or a failed --selftest.
@@ -60,6 +62,7 @@ import argparse
 import base64
 import json
 import math
+import os
 import struct
 import sys
 import tempfile
@@ -455,17 +458,18 @@ def check(v: np.ndarray, f: np.ndarray, args) -> dict:
     ds = double_shell(v, f, args.shell_gap * height, args.shell_samples)
     gates = [
         {"name": "legs_separated", "value": round(lg["ratio"], 4), "limit": f">= {args.leg_min_ratio}",
-         "ok": lg["ratio"] >= args.leg_min_ratio},
+         "pass": bool(lg["ratio"] >= args.leg_min_ratio)},
         {"name": "arms_separated", "value": am["run_h"], "limit": f">= {args.arm_min_span}",
-         "ok": am["run_h"] >= args.arm_min_span - 1e-9},
+         "pass": bool(am["run_h"] >= args.arm_min_span - 1e-9)},
         {"name": "double_shell", "value": round(ds["ratio"], 4), "limit": f"<= {args.shell_max}",
-         "ok": ds["ratio"] <= args.shell_max},
+         "pass": bool(ds["ratio"] <= args.shell_max)},
     ]
     ds["gap"] = round(ds["gap"], 6)
-    return {"tool": "mesh_check", "height": round(height, 6), "triangles": int(len(f)),
+    ok = all(g["pass"] is True for g in gates)
+    return {"schema": "gate/1", "tool": "mesh_check", "pass": ok, "ok": ok, "height": round(height, 6), "triangles": int(len(f)),
             "vertices": int(len(v)), "midline_x": round(prof["midline_x"], 6),
             "crotch_h": crotch(prof), "legs": lg, "arms": am, "double_shell": ds,
-            "gates": gates, "ok": all(g["ok"] for g in gates)}
+            "gates": gates}
 
 
 # ------------------------------------------------------------------------------ CLI
@@ -506,19 +510,32 @@ def parser() -> argparse.ArgumentParser:
 def run(argv: list[str]) -> tuple[int, dict]:
     args = parser().parse_args(argv)
     if args.mesh is None:
-        return 1, {"error": "a mesh file is required (or --selftest)"}
+        return 1, {"schema": "gate/1", "tool": "mesh_check", "pass": False, "ok": False, "gates": [],
+                   "refused": "a mesh file is required (or --selftest)"}
     try:
         v, f = load_mesh(args.mesh, args.up)
     except (OSError, ValueError, KeyError, IndexError, struct.error, Refused) as exc:
-        return 1, {"tool": "mesh_check", "error": str(exc)}
+        return 1, {"schema": "gate/1", "tool": "mesh_check", "pass": False, "ok": False, "gates": [],
+                   "refused": str(exc), "error": str(exc)}
     report = check(v, f, args)
     report["file"] = str(args.mesh)
     if args.out:
         args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    return (0 if report["ok"] else 2), report
+    return (0 if report["pass"] is True else 2), report
 
 
 # ------------------------------------------------------------------------------ selftest
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
+
 
 
 def tube(a, b, r, n=20, rings=8, rx=None, ry=None, flip=False):
@@ -646,20 +663,27 @@ def selftest() -> int:
         ok("separated body: exit 0", code == 0)
         ok("separated body: crotch found near 0.5 H", rep["crotch_h"] is not None and 0.45 <= rep["crotch_h"] <= 0.6)
         ok("separated body: height 1.7", abs(rep["height"] - 1.70) < 0.02)
+        ok("separated body: a passing gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is True
+           and rep["ok"] is True and len(rep["gates"]) == 3)
+        contract_sample("mesh_check", "good", rep)
         code, rep = reports["legs"]
-        ok("fused legs: exit 2, legs gate fails", code == 2 and not gate(rep, "legs_separated")["ok"]
-           and gate(rep, "arms_separated")["ok"])
+        ok("fused legs: exit 2, legs gate fails", code == 2 and not gate(rep, "legs_separated")["pass"]
+           and gate(rep, "arms_separated")["pass"])
+        ok("fused legs: a failed gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is False
+           and rep["ok"] is False and all(set(g) >= {"name", "value", "limit", "pass"} and "ok" not in g
+                                          for g in rep["gates"]))
+        contract_sample("mesh_check", "fused_legs", rep)
         code, rep = reports["arms"]
-        ok("fused arms: exit 2, arms gate fails", code == 2 and not gate(rep, "arms_separated")["ok"]
-           and gate(rep, "legs_separated")["ok"])
+        ok("fused arms: exit 2, arms gate fails", code == 2 and not gate(rep, "arms_separated")["pass"]
+           and gate(rep, "legs_separated")["pass"])
         code, rep = reports["tpose"]
-        ok("T-pose: arms gate fails", code == 2 and not gate(rep, "arms_separated")["ok"])
+        ok("T-pose: arms gate fails", code == 2 and not gate(rep, "arms_separated")["pass"])
         code, rep = reports["shell"]
         ok("inward-facing inner shell: exit 0, reported as inner_shell, not gated",
            code == 0 and gate(rep, "double_shell")["value"] < 0.1 and rep["double_shell"]["inner_shell"] > 0.3)
         code, rep = reports["nested"]
-        ok("same-facing inner twin: exit 2, shell gate fails", code == 2 and not gate(rep, "double_shell")["ok"]
-           and gate(rep, "legs_separated")["ok"])
+        ok("same-facing inner twin: exit 2, shell gate fails", code == 2 and not gate(rep, "double_shell")["pass"]
+           and gate(rep, "legs_separated")["pass"])
         ok("single shell: ratio small, no inner shell", gate(reports["good"][1], "double_shell")["value"] < 0.1
            and reports["good"][1]["double_shell"]["inner_shell"] < 0.05)
         # two plates 4 mm apart: facing each other is gated, back to back is an inner shell
@@ -680,7 +704,9 @@ def selftest() -> int:
         ok("glb and obj read alike", vg.shape == vo.shape and np.allclose(vg, vo, atol=1e-4))
         # refused inputs
         (d / "bad.obj").write_text("# nothing\n", encoding="utf-8")
-        ok("empty obj: exit 1", run([str(d / "bad.obj")])[0] == 1)
+        code, rep = run([str(d / "bad.obj")])
+        ok("empty obj: exit 1, a refused gate/1 report", code == 1 and rep["pass"] is False and rep["gates"] == [])
+        contract_sample("mesh_check", "refused", rep)
         ok("missing file: exit 1", run([str(d / "none.glb")])[0] == 1)
         packed = {"asset": {"version": "2.0"}, "extensionsRequired": ["KHR_draco_mesh_compression"]}
         (d / "packed.gltf").write_text(json.dumps(packed), encoding="utf-8")

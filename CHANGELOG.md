@@ -2,6 +2,191 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.35.0
+
+Sixty skills. This release is about data contracts: the files one skill writes and another reads.
+Until now each was prose, restated in every skill that touched it, and the copies had drifted. One
+producer wrote `margin_px` where another wrote `foot_margin_px`. Only one of three producers
+recorded its chroma key, so the Unity audit measured a green-keyed set's fringe against magenta and
+passed it. Gate reports came in two dialects (`ok` and `pass`), and the two stage runners counted a
+gate with neither key as passed. Three timeline readers each carried their own key lookup, and two
+claimed an order they did not follow. Nothing in Unity applied the pivot that `frames.json`
+recorded, although one doc said something did. Each contract is now defined once in `schemas/` as
+JSON Schema. Producers stamp what they write, and CI validates their selftest output against the
+schema.
+
+**Behaviour change — `frames.json` is `frames/1`.** `sheet_to_frames.py`, `breathe.py` and
+`sprite-from-video`'s `video_loop.py` stamp `"schema": "frames/1"` and always write:
+- `key_color`: the declared key, lowercase `#rrggbb`. It is `null` only for an explicit
+  `--key-color none` (art never keyed). `video_loop.py` copies it from `frames.report.json`'s
+  `key.declared` and records the painted colour as `key_painted`.
+- `register.reference_core_height_px`: an integer, measured on the written reference frame after
+  any `--upscale`, in every register mode.
+- `register.foot_margin_px`: the one name for the gap under the feet. `video_loop.py` used to
+  write `margin_px`, which was its canvas margin (`--margin`). It now writes that value as
+  `canvas_margin_px`, and `foot_margin_px` as the rows under frame 0's feet. `frames/1` refuses
+  `margin_px`.
+- `loop`, plus `hold_last` (a bool: a one-shot that ends on its last pose and holds it).
+
+A producer that writes frames with no key at all now refuses with exit 1. Pass `--key-color HEX`,
+or `--key-color none` for native alpha. `breathe.py` takes the key from the `frames.json` beside
+the still, and `video_loop.py` from the report, so an ordinary run needs no new flag. A bare PNG
+folder given to `video_loop.py` needs `--key-color`. New flags: `sheet_to_frames.py --no-loop` and
+`--hold-last-pose`, and `--key-color` on `breathe.py` and `video_loop.py`.
+
+**Behaviour change — gate reports are `gate/1`.** Every gate script stamps `"schema": "gate/1"`.
+The report carries `pass`, and each gate is `{name, value, limit, pass}`. A gate's `ok` is gone.
+The report still writes `ok` equal to `pass` for one release, for old readers. **A missing `pass`
+is a failure everywhere.** In `autorig.py` and `twocam.py` a gate with neither `pass` nor `ok`
+now fails, where it used to pass. `registry.py`'s approval check treats any gate without
+`pass: true` as failing. `contact_sheet.py --require` accepts a `gate/1` file only on
+`pass: true`. `brt_audit.py` exits 1 on a result with no gates. `twocam/skeleton.py rig-info`
+passes only with at least one gate. A Blender op that reports no gates returns a result, not a gate
+report: it carries no stamp and keeps its `ok`.
+
+**Behaviour change — the timeline stamp is `"schema": "timeline/1"`.** `JourneyRecorder.cs`
+writes it on the meta line instead of the integer `1`. GameProbe's live probe response keeps its
+own integer stamp.
+
+**Migration, one release.** Readers still accept the 0.34 dialect: an unstamped `frames.json`,
+`margin_px`, `set_metrics.key_color`, a gate's `ok`, and a timeline stamped `1` or not at all.
+Each prints one `WARN` naming the old key, and 0.36 removes them. Only an unstamped file gets that
+grace. A file stamped `frames/1`, `gate/1` or `timeline/1` that lacks a required key is a producer
+bug, and the reader fails on it.
+
+**Behaviour change — `SheetToAnimationClip` exit codes.** It used to exit 1 on every failure. Now
+it exits 1 on a usage error or a refused file, 2 when the clip reads back different, and 3 when
+there is nothing to build. With `-framesJson` it takes `loop` and `hold_last` from the file unless
+`-loop` is given. It refuses a `frames/1` file without `loop`, and one with `hold_last` true and
+`loop` true. `-holdLast N` is unchanged: it still adds N held frames.
+
+**Behaviour change — Android `targetSdk`.** Google Play now requires target API 36 for new apps
+and updates, and 16 KB page support for anything that targets 35 or higher. Pinning `targetSdk`
+to 34 is therefore no longer a way to ship a 4 KB-aligned native library to the store.
+`unity-android-release` now says to rebuild the library with 16 KB alignment or replace it. A 34
+pin is only for builds sideloaded outside Play. `build-android.sh` changes its wording only: its
+preflight still refuses a 4 KB library under targetSdk 35 and up, and still only warns at 34 or
+below.
+
+**Removed from the docs:** `-autoplay` is no longer documented as a harness flag. A game may ship
+its own autoplay switch, but `unity-play-harness/resources/` ships none. `PackageProbe.RunAsync`
+never existed. `package-bootstrap.md` now builds its transcript around the doc's own
+`ProjectBootstrap.PackageInstaller.Install`, whose codes are 0 resolved and 3 for a UPM error or a
+timeout.
+
+**Contracts and the checks on them**
+
+- **`schemas/`** (new): `frames-1.json`, `gate-1.json` and `timeline-1.json`, plus a `README.md`
+  with what each field means, who writes it, who reads it, the PPU rule and the migration rule.
+- **Selftests hand over samples.** Each producer's selftest writes the shapes it emits to
+  `$UNITY_DEV_CONTRACT_OUT` (a fixed temp folder when unset) and prints `selftest-output: PATH`.
+  Skills still never import a validator. Each selftest checks its own required keys by hand, so a
+  skill stays copyable on its own.
+- **`tools/check-contracts.py`** (new, in CI as "Data contracts") runs four checks:
+  - every selftest sample validates against the schema its stamp names, and a timeline also passes
+    the file rules (meta first, one end line and only last, the right sample count);
+  - every long flag in a documented `scripts/*.py` command is defined by that script, and every
+    documented `-executeMethod Class.Method` is a static method in shipped C# or in the doc's own
+    C# block;
+  - every skill script that builds a path into another skill is declared in the new
+    `tools/cross-skill-deps.txt`, and both paths exist (the four READMEs now point at that list:
+    those rigging and motion skills install together);
+  - version tokens match `VERSIONS.md`.
+
+  Exit 0 pass, 2 a contract violated, 3 harness error, 1 usage. `--only` runs one check.
+- **`VERSIONS.md`** (new): the version facts the skills depend on: Play's target API and 16 KB
+  rule, the Unity LTS streams and releases after 6000.4, the Android `minSdk` floor per Editor
+  (26 from 6000.5), and the UGS, IAP, LevelPlay, Input System, Cinemachine, 2D Animation,
+  Netcode and AI Navigation packages. Each row has an official source link and the date it was
+  checked. **The version check is narrower than "every number lives in `VERSIONS.md`".** It
+  checks only a package pin in a manifest, a package-table row or `pkg` 1.2+ floor, and a
+  `targetSdkVersion` or `minSdkVersion` assignment. Other version numbers in prose, such as an
+  Editor version in an example or the LevelPlay 9.4 / 9.5 API forks, are not checked.
+- **UGS floors made conditional, not equal.** `unity-ugs` keeps its general floors and says they
+  rise to Core 1.18.0 and Authentication 3.8.1 once IAP 5.4 direct-to-consumer payments are in
+  the project. `unity-iap`'s page now says the same.
+- **One timeline lookup.** `journey_report.py`, `jump_report.py` and `camera_jitter.py` carry one
+  pasted `resolve()` (`tools/shared-blocks/timeline_resolve.py`), with `pos.x` and `vel.y` first.
+  A stamped timeline with a missing field or a wrong end count exits 2. `camera_jitter.py` gains
+  its first selftest.
+- **`.github/CONTRIBUTING.md`** gains a Data contracts section: how to change a contract, the
+  selftest hand-off, the four checks, keeping `VERSIONS.md` up to date, and the C#
+  `-executeMethod` exit table.
+
+**Frames into Unity**
+
+- **`FramesJsonImporter`** (new, `unity-2d-sprites/resources/Editor/`): an `AssetPostprocessor`,
+  and the one place that applies `frames.json`'s import settings. A PNG listed in the
+  `frames.json` beside it gets Sprite / Single, a Custom pivot from `pivot_norm`, and PPU =
+  `reference_core_height_px` ÷ the character's world height. A pixel set also gets Point and
+  Uncompressed, and Max Size is raised to fit the canvas. The world height comes from
+  `-worldHeight`, else the value stored on the frame's `.meta`, else an EditorPref, else 1.8.
+  `UnityDev.Sprites.FramesJsonImporter.RunFromCommandLine -framesDir <one set folder>` re-applies
+  the settings and reads them back. It exits 0 when they match, 2 on a mismatch, 3 when a file is
+  missing, and 1 on usage. `SheetToAnimationClip` still owns the clip (fps, loop, hold) and never
+  sets the pivot. `sprite-from-video`'s `pipeline.md` now says so, where it used to credit the clip
+  builder with the pivot.
+- **`SpriteFramesAudit`** measures the rim against each set's own `key_color` and never against
+  an assumed magenta. A set with no key is skipped with a warning, and if every set is skipped the
+  test is inconclusive, never green. A `frames/1` set with no core height fails the size test.
+- **`audit_frames.py`** reads the key from `frames.json` for the fringe and tint checks as well as
+  for the residual. `registry_ingest.py` records the canvas, `pivot_norm`, `key_color`, `fps_hint`,
+  `loop`, `hold_last`, `block_px`, the core height and the foot margin. A `contact_bake` report
+  can now be ingested with `--write`.
+- **The PPU rule in one sentence, everywhere it applies.** PPU = core height ÷ world height, one
+  PPU per character. For pixel art, choose the world height so that PPU ÷ F is whole.
+  `unity-2d-pixel-perfect` now says that frames upscaled by F import at F × the art-pixel PPU.
+- **Checking the importer** is a Unity step, run before a release with a licensed Editor: compile
+  with `tools/unity-compile-check.sh`, then re-import a frames set under `Assets/` and run
+  `SpriteFramesAudit`'s pivot and key tests. The compile check now also stops the Roslyn compiler
+  server the Editor leaves behind.
+
+**Headless Unity entry points**
+
+- **`BatchAudit.Run`** (new, `unity-cli/resources/Editor/`): runs any Editor audit that returns
+  its report as a string. Examples are `KitAudit`, `PrefabOverrideAudit`, `Physics2DAudit` and
+  `LightingAudit`, which had only a menu item. Use `-audit Type[.Method]`; each method parameter
+  becomes a flag, and `-scene` and `-out` are also accepted. The exit code is the report's own
+  verdict (`pass`, then `ok`, then `verdict`): 0, 2 or 3. A census audit with no verdict needs
+  `-census`, because a report with no verdict never passes. The new
+  `unity-cli/reference/batch-audit.md` lists which audit carries which verdict. `unity-3d-level`'s
+  "run the audits headless" handoff now points there.
+- **`SituationBoot`** now implements `-screenshotDir DIR`, which writes one PNG once the situation
+  is ready, and `-quit`. A built player exits 0 when ready, 2 when the ready set timed out, 1 on an
+  unknown id, and 3 when the shot could not be written.
+- **Test asmdef.** `unity-debug`'s `cli-harness.md` now matches the fourteen PlayMode templates:
+  it references `UnityEditor.TestRunner`. It also says journey tests run only in the Editor.
+
+**Courier-run preview**
+
+- **`unity-game-brief/resources/Sim/courier_rules.json`** (new) holds every `RunConfig` field, plus
+  the preview-only staging (lane plan, pickups, the gate rhythm, the sentry). A new
+  `RulesMatchCourierRulesJson` test in `RunSimulationTests` fails when the C# defaults and the file
+  differ.
+- **`courier_run_preview.py`** reads that file and moves the runner by the simulation's own rules:
+  launch, acceleration up to the launch speed, a lane change at the press with its speed scrub,
+  and a stop at the gate. `.github/media/preview.gif` is regenerated from it.
+
+**Handoff gaps closed**
+
+- `unity-2d-animation` → `unity-physics-2d`: new `reference/bone-colliders.md` (colliders that
+  follow a bone, hitbox and hurtbox layers, physics-step animation).
+- `unity-2d-grid` → `unity-game-ui`: new `reference/board-hud.md` (turn-order strip, range legend).
+- `unity-combat` → `unity-live-services` `multiplayer.md` §2: who decides damage, as an
+  intent / resolution / presentation table.
+- `unity-scene-flow`: host migration goes to `unity-multiplayer-services`, and networked scene
+  management is marked out of scope.
+- `unity-animation`'s footstep event goes to `unity-game-feel`'s `SfxPlayer`, with a receiver
+  example in `events-and-windows.md`.
+- `unity-2d-controller`'s click-to-move goes to `unity-2d-grid` on a tile board and to
+  `unity-navigation`'s new recipe §9 in a free 2D world.
+
+**Lean**
+
+- `unity-rigged-character` states its Generic-against-Humanoid comparison as a method (play one
+  clip under both rig types and compare bone rotation and socket position) in place of measured
+  numbers. `blender-character-rig`'s headless pipeline drops its stage timings.
+
 ## 0.34.0
 
 Sixty skills. This release is about routing and verification. Claude Code lists every installed

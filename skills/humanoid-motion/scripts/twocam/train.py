@@ -442,13 +442,13 @@ def _train(a, log, views) -> dict:
             break
     if run_n:
         windows.append(float(run_loss.item()) / run_n)
-    gate = {"name": "reader.val_mean_px", "value": round(best, 3), "limit": round(limit, 3), "pass": best <= limit}
+    gate = {"name": "reader.val_mean_px", "value": round(best, 3), "limit": round(limit, 3), "pass": bool(best <= limit)}
     return {"tool": "train.py", "out": a.out, "epochs": a.epochs, "epochs_run": len(history), "stopped": stopped,
             "best_epoch": best_ep, "target_px": round(target, 3), "patience": a.patience, "warmup_steps": warm,
             "steps": step, "device": dev, "workers": workers,
             "cache": bool(cache), "init": a.init, "seconds": round(time.time() - t0, 1), "val": history,
             "first_loss": first_loss, "last_loss": windows[-1] if windows else None,
-            "gates": [gate], "ok": gate["pass"]}
+            "schema": "gate/1", "gates": [gate], "pass": bool(gate["pass"]), "ok": bool(gate["pass"])}
 
 
 class UsageParser(argparse.ArgumentParser):
@@ -490,24 +490,24 @@ def run(argv, log=lambda m: print(m, file=sys.stderr, flush=True)) -> int:
     a = parser().parse_args(argv)
     a.epochs = epochs_cap(a)
     if a.device == "mps":
-        print(json.dumps({"tool": "train.py", "ok": False, "error": "refused: training is not supported on a Mac "
+        print(json.dumps({"schema": "gate/1", "tool": "train.py", "pass": False, "ok": False, "gates": [], "error": "refused: training is not supported on a Mac "
                           "(MPS). Train on a CUDA machine and copy reader.pt back; detect.py reads on the CPU."}))
         return 1
     if a.device == "cpu" and not a.allow_cpu:
-        print(json.dumps({"tool": "train.py", "ok": False, "error": "refused: training needs CUDA; --allow-cpu is "
+        print(json.dumps({"schema": "gate/1", "tool": "train.py", "pass": False, "ok": False, "gates": [], "error": "refused: training needs CUDA; --allow-cpu is "
                           "for smoke runs only"}))
         return 1
     try:
         import torch  # noqa: F401
         import cv2  # noqa: F401
     except ImportError as exc:
-        print(json.dumps({"tool": "train.py", "ok": False, "error": f"refused: {exc}"})); return 1
+        print(json.dumps({"schema": "gate/1", "tool": "train.py", "pass": False, "ok": False, "gates": [], "error": f"refused: {exc}"})); return 1
     try:
         r = train(a, log)
     except (OSError, ValueError, RuntimeError, KeyError, json.JSONDecodeError) as exc:
-        print(json.dumps({"tool": "train.py", "ok": False, "error": f"{type(exc).__name__}: {exc}"})); return 1
+        print(json.dumps({"schema": "gate/1", "tool": "train.py", "pass": False, "ok": False, "gates": [], "error": f"{type(exc).__name__}: {exc}"})); return 1
     print(json.dumps(r))
-    return 0 if r["ok"] else 2
+    return 0 if r["pass"] is True else 2
 
 
 def make_synthetic_dataset(d: pathlib.Path, layout: Layout, names, n=26, scale=0.25, seed=0):
@@ -529,6 +529,17 @@ def make_synthetic_dataset(d: pathlib.Path, layout: Layout, names, n=26, scale=0
             cv2.imwrite(str(d / f"{i:05d}_{view}.png"), img)
             meta[f"{view}_uv"] = uv.round(3).tolist()
         (d / f"{i:05d}_meta.json").write_text(json.dumps(meta))
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 def selftest() -> int:
@@ -579,6 +590,8 @@ def selftest() -> int:
         code, r = go("r.pt", "--target-px", "0")
         check("a stand-in barely trained fails reader.val_mean_px, exit 2", code == 2 and not r["gates"][0]["pass"],
               val=r["gates"][0]["value"])
+        check("a failed gate/1 report", r.get("schema") == "gate/1" and r.get("pass") is False and r.get("ok") is False)
+        contract_sample("train", "stand_in_fails", r)
         check("loss is finite", r["last_loss"] is not None and math.isfinite(r["last_loss"]))
         ck = torch.load(td / "r.pt", map_location="cpu", weights_only=True)
         check("checkpoint carries names and layout", ck["names"] == names and ck["layout"]["H"] == L.H)

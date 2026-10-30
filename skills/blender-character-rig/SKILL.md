@@ -58,7 +58,7 @@ a short stub imports and reloads it and `result` is the dict it returns (`refere
   camera, light or world instead of editing the user's. Report every non-additive change.
 - **Find nodes by type, not by name.** With a non-English UI `nodes["Principled BSDF"]` raises
   `KeyError`; `bcr_common.node_of` looks a node up by `bl_idname`.
-- **`ok` covers one step.** Read a failed gate's `value` against its `limit`, change one
+- **`pass` covers one step.** Read a failed gate's `value` against its `limit`, change one
   parameter and rerun before the next step. Calls are idempotent by name, and `bcr_import_prep`
   and `bcr_attach` reuse what exists and ignore new parameters: remove the object, or put the
   prop back, before a rerun. A call that raises

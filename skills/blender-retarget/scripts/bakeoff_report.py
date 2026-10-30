@@ -75,8 +75,11 @@ def load_routes(specs: list) -> list:
                 doc = json.loads(Path(f).read_text(encoding="utf-8"))
             except (OSError, ValueError) as e:
                 raise Refused(f"{f}: {e}") from e
-            if "refused" in doc:
-                raise Refused(f"{f}: the measurement was refused: {doc['refused']}")
+            if not isinstance(doc, dict):
+                raise Refused(f"{f}: not a JSON object")
+            if "refused" in doc or "error" in doc:
+                why = doc.get("refused") or doc.get("error")
+                raise Refused(f"{f}: the measurement was refused: {why}")
             reports.append(doc)
         if not reports:
             raise Refused(f"--route {name!r} has no report")
@@ -187,7 +190,8 @@ def selftest() -> int:
         check("different clips: exit 2", code == 2)
         code, _ = run(["--route", f"Fit={d / 'missing.json'}"])
         check("missing report: exit 2", code == 2)
-        (d / "ref.json").write_text(json.dumps({"ok": False, "refused": "toe_l missing"}))
+        (d / "ref.json").write_text(json.dumps({"schema": "gate/1", "pass": False, "ok": False, "gates": [],
+                                                "refused": "toe_l missing"}))
         code, _ = run(["--route", f"Fit={d / 'ref.json'}"])
         check("refused report: exit 2", code == 2)
         (d / "m.json").write_text(json.dumps([{"label": "x", "path": "no.such"}]))

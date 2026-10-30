@@ -51,7 +51,8 @@ The report carries `retarget_map` {contract_bone: source_bone}, the orientation 
 `map` takes (target: source), and `human` [{humanName, boneName}] for Unity's HumanDescription
 (also written by --unity-out, the file CharacterHumanoidAvatar.cs reads).
 
-Prints one JSON object. Exit codes: 0 every gate passed; 2 a gate failed (required bones missing,
+Prints one JSON object; the `map` report is a gate/1 report (schemas/gate-1.json): `pass`, and
+`ok`, its old name, equal to it for one release. Exit codes: 0 every gate passed; 2 a gate failed (required bones missing,
 a broken chain, ...); 1 refused input (unreadable file, unknown preset, malformed BVH).
 Requires Python 3 and numpy.
 """
@@ -60,6 +61,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -557,8 +559,8 @@ def evaluate(skel: dict, spec: str = "auto", require: str = "unity", min_fingers
     human = [{"humanName": BY_NAME[c]["unity"], "boneName": s} for c, s in
              sorted(mapped.items(), key=lambda kv: [b["name"] for b in CONTRACT].index(kv[0]))
              if BY_NAME[c]["unity"]]
-    ok = all(g["pass"] for g in gates)
-    return {"op": "map", "ok": ok, "preset": role_map["name"], "require": require,
+    ok = all(g["pass"] is True for g in gates)
+    return {"schema": "gate/1", "op": "map", "pass": ok, "ok": ok, "preset": role_map["name"], "require": require,
             "mapped": len(mapped), "contract_bones": len(CONTRACT),
             "missing_required": missing_req,
             "missing_optional": [b["name"] for b in CONTRACT if b["name"] not in mapped and not b["required"]],
@@ -650,7 +652,7 @@ def cmd_map(args) -> int:
     _write(args.unity_out, {"schema": "unity-human-map/1", "preset": report["preset"], "human": report["human"]})
     _write(args.map_out, {"schema": "role-map/1", "name": report["preset"], "bones": report["retarget_map"]})
     print(json.dumps(report))
-    return 0 if report["ok"] else 2
+    return 0 if report["pass"] is True else 2
 
 
 class UsageParser(argparse.ArgumentParser):
@@ -727,9 +729,24 @@ def main(argv=None) -> int:
             print(json.dumps({k: v["bones"] for k, v in BUILTIN.items()}))
             return 0
     except Refused as exc:
-        print(json.dumps({"op": args.cmd, "ok": False, "error": str(exc)}))
+        out = {"op": args.cmd, "ok": False, "error": str(exc)}
+        if args.cmd == "map":     # the gate report's refusal: gate/1 with no gates
+            out = {"schema": "gate/1", "op": "map", "pass": False, "ok": False, "gates": [], "refused": str(exc),
+                   "error": str(exc)}
+        print(json.dumps(out))
         return 1
     return 1
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 # ------------------------------------------------------------------------------- selftest
@@ -803,12 +820,16 @@ def selftest() -> int:
     rep = evaluate(normalise_skeleton(contract), "auto", "contract", 10)
     check("full contract passes --require contract", rep["ok"] and rep["preset"] == "contract",
           [g for g in rep["gates"] if not g["pass"]])
+    check("map: a passing gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is True and rep["ok"] is True)
+    contract_sample("contract_map", "full_contract", rep)
 
     no_root = _renamed(contract, {}, drop=("Root",))
     rep = evaluate(normalise_skeleton(no_root), "contract", "unity")
     check("no Root passes the unity tier", rep["ok"], [g for g in rep["gates"] if not g["pass"]])
     rep = evaluate(normalise_skeleton(no_root), "contract", "contract")
     check("no Root fails the contract tier", not rep["ok"] and "Root" in gate_of(rep, "contract")["missing"])
+    check("map: a failed gate/1 report", rep["pass"] is False and rep["ok"] is False)
+    contract_sample("contract_map", "no_root", rep)
 
     deform_root = json.loads(json.dumps(contract))
     deform_root["bones"][0]["deform"] = True

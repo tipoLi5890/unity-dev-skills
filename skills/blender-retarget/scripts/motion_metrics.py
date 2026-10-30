@@ -96,7 +96,9 @@ Metrics and gates (a gate appears only when its input exists):
                  Gated: agreement (mean) >= --agreement-min (0.8); reprojection p95 <=
                  --reproj-p95-px (8 px at a 768 px frame height, scaled to the given height).
 
-Prints one JSON report (also to --out): per-metric p50/p95/max/n, plants, loop, gates, ok.
+Prints one JSON report (also to --out): per-metric p50/p95/max/n, plants, loop, gates and pass: a
+gate/1 report (schemas/gate-1.json), each gate {name, value, limit, pass}; `ok`, pass's old name,
+equals it for one release. A refused input reports pass false, no gates and `refused`.
 Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed; 1 refused input
 (unreadable file, wrong schema, a named joint missing, frame counts that differ, a non-finite
 value), a usage error or a failed --selftest. clip_metrics.py, which imports the plant helpers from
@@ -119,6 +121,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -259,7 +262,7 @@ def bend_deg(a, b, c) -> np.ndarray:
 
 
 def gate(name, value, limit, ok) -> dict:
-    return {"name": name, "value": value, "limit": limit, "ok": bool(ok)}
+    return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
 
 
 # ------------------------------------------------------------------- loop search (ported)
@@ -720,7 +723,8 @@ def measure(doc: dict, a) -> dict:
     if warnings:   # only with sole_offsets: an input without them reports as before
         out["warnings"] = warnings
     out["gates"] = gates
-    out["ok"] = all(g["ok"] for g in gates)
+    out["schema"] = "gate/1"
+    out["pass"] = out["ok"] = all(g["pass"] is True for g in gates)
     return out
 
 
@@ -768,13 +772,25 @@ def run(argv) -> tuple:
             float(a.floor)
         rep = measure(load(a.samples), a)
     except (ValueError, TypeError, KeyError, Refused) as e:
-        rep, code = {"ok": False, "refused": str(e)}, 1
+        rep, code = {"schema": "gate/1", "tool": "motion_metrics.py", "pass": False, "ok": False, "gates": [],
+                     "refused": str(e)}, 1
     else:
-        code = 0 if rep["ok"] else 2
+        code = 0 if rep["pass"] is True else 2
     text = json.dumps(rep, indent=1)
     if a.out:
         Path(a.out).write_text(text + "\n", encoding="utf-8")
     return code, rep, text
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 # --------------------------------------------------------------------------------- selftest
@@ -846,12 +862,15 @@ def selftest() -> int:
         check("clean walk: plants_per_foot per foot, plants_found their total, the gate the fewest",
               rep["plants_per_foot"] == {s: len(rep["plants"][s]["ranges"]) for s in SIDES}
               and rep["plants_found"] == sum(rep["plants_per_foot"].values())
-              and pm.get("value") == min(rep["plants_per_foot"].values()) and pm.get("ok"))
+              and pm.get("value") == min(rep["plants_per_foot"].values()) and pm.get("pass"))
         check("clean walk: stance coverage >= 10 %", all(rep["plants"][s]["coverage"] >= 0.10 for s in SIDES))
         check("clean walk: slide ~0", rep["foot_slide_m"]["max"] < 1e-9)
         check("clean walk: period 32", rep["loop"].get("period") == 32 and rep["loop"]["length"] in (31, 32, 33))
         check("clean walk: seam about one step", 0.5 <= rep["loop"]["seam_ratio"] <= SEAM_RATIO_MAX)
         check("clean walk: no pops", rep["pops"]["count"] == 0)
+        check("clean walk: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True
+              and rep.get("ok") is True and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep["gates"]))
+        contract_sample("motion_metrics", "clean_walk", rep)
 
         # 2. known slide: each plant creeps 2 cm (the slow creep stays under the plant speed);
         #    the slide max reads 2 cm and the p95 gate of 1.5 cm fails
@@ -859,10 +878,10 @@ def selftest() -> int:
         mx = rep["foot_slide_m"]["max"]
         check("known slide: max reads the creep", 0.015 < mx <= 0.02 + 1e-9)
         check("known slide: exit 2", code == 2 and not next(g for g in rep["gates"]
-                                                           if g["name"] == "foot_slide_p95_m")["ok"])
+                                                           if g["name"] == "foot_slide_p95_m")["pass"])
         code, rep, _ = go(_body(slide_per_plant=0.04), "--state", "walk")
         sm = next(g for g in rep["gates"] if g["name"] == "foot_slide_max_m")
-        check("4 cm creep: the max gate fails too", code == 2 and not sm["ok"] and abs(sm["value"] - 0.04) < 1e-9)
+        check("4 cm creep: the max gate fails too", code == 2 and not sm["pass"] and abs(sm["value"] - 0.04) < 1e-9)
 
         # ... a body that travels 25 % faster than its legs step (a retarget with the wrong k): the
         #    stance feet skate at 0.3 m/s, no plant is found, the slide reads 0, and plants_min_per_foot
@@ -874,18 +893,18 @@ def selftest() -> int:
         code, rep, _ = go(doc)
         pf = next((g for g in rep["gates"] if g["name"] == "plants_min_per_foot"), None)
         check("skating on the ground: plants_min_per_foot fails without --state, exit 2",
-              code == 2 and pf is not None and not pf["ok"] and rep["foot_slide_m"]["max"] == 0.0)
+              code == 2 and pf is not None and not pf["pass"] and rep["foot_slide_m"]["max"] == 0.0)
 
         # 3. penetration: the feet sink 3 cm during stance
         code, rep, _ = go(_body(sink=0.03), "--state", "walk")
         check("penetration: reads 2 cm (the toe joint sits 1 cm over the sole)",
               abs(rep["penetration_m"]["max"] - 0.02) < 1e-6)
-        check("penetration: exit 2", code == 2 and any(g["name"] == "penetration_max_m" and not g["ok"]
+        check("penetration: exit 2", code == 2 and any(g["name"] == "penetration_max_m" and not g["pass"]
                                                        for g in rep["gates"]))
 
         # 4. jitter: 6 mm of noise on every joint fails; the clean walk passed above
         code, rep, _ = go(_body(noise=0.006), "--state", "walk")
-        check("jitter: exit 2", code == 2 and any(g["name"] == "jitter_p95_mps2" and not g["ok"]
+        check("jitter: exit 2", code == 2 and any(g["name"] == "jitter_p95_mps2" and not g["pass"]
                                                   for g in rep["gates"]))
 
         # 5. a pop: the left forearm's hand jumps for one frame
@@ -954,14 +973,14 @@ def selftest() -> int:
         code, rep, _ = go(raised(0.03), "--state", "walk")
         pf = next(g for g in rep["gates"] if g["name"] == "plants_min_per_foot")
         check("raised feet, no offsets: no plants, slide reads 0, plants_min_per_foot fails",
-              code == 2 and not pf["ok"] and rep["foot_slide_m"]["max"] == 0.0)
+              code == 2 and not pf["pass"] and rep["foot_slide_m"]["max"] == 0.0)
         code, rep, _ = go(dict(raised(0.0), sole_offsets=offs), "--state", "walk")
         check("raised feet with sole_offsets: plants on both feet, exit 0",
               code == 0 and all(len(rep["plants"][s]["ranges"]) >= 2 for s in SIDES))
         code, rep, _ = go(dict(raised(0.03), sole_offsets=offs), "--state", "walk")
         sp = next(g for g in rep["gates"] if g["name"] == "foot_slide_p95_m")
         check("raised feet with sole_offsets: a 3 cm creep fails the slide, exit 2",
-              code == 2 and not sp["ok"] and abs(rep["foot_slide_m"]["max"] - 0.03) < 1e-6)
+              code == 2 and not sp["pass"] and abs(rep["foot_slide_m"]["max"] - 0.03) < 1e-6)
         code, rep, _ = go(dict(raised(0.0), sole_offsets=offs), "--floor", "auto")
         check("raised feet with sole_offsets: --floor auto reads the sole floor", code == 0
               and abs(rep["floor_m"]) < 1e-6)
@@ -992,7 +1011,7 @@ def selftest() -> int:
                 doc["joints"][nm] = (sh + (j - sh) * grow).tolist()
         code, rep, _ = go(doc, "--state", "walk", "--loop")
         seam = next(g for g in rep["gates"] if g["name"] == "loop_seam_ratio")
-        check("broken loop: the seam fails, exit 2", code == 2 and not seam["ok"])
+        check("broken loop: the seam fails, exit 2", code == 2 and not seam["pass"])
         # ... a pose that only jitters has no period: periodicity fails, the seam alone would pass
         doc = _body(travel=0.0)
         noise = np.random.default_rng(2)
@@ -1000,11 +1019,11 @@ def selftest() -> int:
                          for k, v in doc["joints"].items()}
         code, rep, _ = go(doc, "--loop")
         per = next(g for g in rep["gates"] if g["name"] == "loop_periodicity")
-        check("no period: periodicity fails, exit 2", code == 2 and not per["ok"])
+        check("no period: periodicity fails, exit 2", code == 2 and not per["pass"])
         # ... and a walk shorter than two strides finds no cycle at all
         code, rep, _ = go(_body(n=40), "--state", "walk", "--loop")
         found = next(g for g in rep["gates"] if g["name"] == "loop_period_found")
-        check("too short for a stride: no period, exit 2", code == 2 and not found["ok"])
+        check("too short for a stride: no period, exit 2", code == 2 and not found["pass"])
 
         # 8. in place: the same walk with the travel taken out of every joint and declared as
         #    travel_mps reads the same plants; without the declaration the feet never plant
@@ -1014,7 +1033,7 @@ def selftest() -> int:
         doc["joints"] = {k: (np.asarray(v) - off).tolist() for k, v in doc["joints"].items()}
         code0, rep0, _ = go(doc, "--state", "walk")
         check("in place undeclared: no plants, plants_min_per_foot fails", code0 == 2 and any(
-            g["name"] == "plants_min_per_foot" and not g["ok"] for g in rep0["gates"]))
+            g["name"] == "plants_min_per_foot" and not g["pass"] for g in rep0["gates"]))
         code, rep, _ = go(doc, "--state", "walk", "--in-place", "--travel-mps", "0,1.2")
         check("in place, travel on the command line: exit 0", code == 0)
         doc["travel_mps"] = [0.0, 1.2]
@@ -1029,13 +1048,13 @@ def selftest() -> int:
         wander = dict(doc, joints={k: (np.asarray(v) + side).tolist() for k, v in doc["joints"].items()})
         code, rep, _ = go(wander, "--state", "walk", "--in-place")
         check("in place wandering: root drift fails, exit 2", code == 2 and any(
-            g["name"] == "root_drift_m" and not g["ok"] for g in rep["gates"]))
+            g["name"] == "root_drift_m" and not g["pass"] for g in rep["gates"]))
         # ... and a loop whose root climbs 10 cm per cycle fails the vertical drift gate
         climb = np.stack([np.zeros(n), np.zeros(n), 0.1 * np.arange(n) / 32], 1)
         rising = dict(doc, joints={k: (np.asarray(v) + climb).tolist() for k, v in doc["joints"].items()})
         code, rep, _ = go(rising, "--state", "walk", "--loop", "--floor", "auto")
         check("climbing loop: vertical drift fails, exit 2", any(
-            g["name"] == "root_vertical_drift_m" and not g["ok"] for g in rep["gates"]) and code == 2)
+            g["name"] == "root_vertical_drift_m" and not g["pass"] for g in rep["gates"]) and code == 2)
 
         # 9. a retarget that dropped the root's translation fails; one that kept it passes
         src = _body()
@@ -1048,7 +1067,7 @@ def selftest() -> int:
         doc["joints"] = dropped
         code, rep, _ = go(doc)
         tk = next(g for g in rep["gates"] if g["name"] == "translation_kept")
-        check("translation dropped: exit 2", code == 2 and not tk["ok"])
+        check("translation dropped: exit 2", code == 2 and not tk["pass"])
 
         # 10. contacts define the plant; a two-view block gates agreement and reprojection
         doc = _body()
@@ -1062,7 +1081,7 @@ def selftest() -> int:
         doc["two_view"] = {"agreement": 0.6, "reprojection_px": [12.0] * n}
         code, rep, _ = go(doc)
         tvg = [g for g in rep["gates"] if g["name"].startswith("two_view")]
-        check("two view: both gates fail, exit 2", code == 2 and len(tvg) == 2 and not any(g["ok"] for g in tvg))
+        check("two view: both gates fail, exit 2", code == 2 and len(tvg) == 2 and not any(g["pass"] for g in tvg))
 
         # 11. npz input reads the same as json
         doc = _body()
@@ -1097,7 +1116,9 @@ def selftest() -> int:
         bad = _body()
         bad["feet"] = {"l": ["foot.L"]}
         check("one foot named: exit 1", go(bad)[0] == 1)
-        check("wrong schema: exit 1", go(dict(_body(), schema="other"))[0] == 1)
+        code, rep, _ = go(dict(_body(), schema="other"))
+        check("wrong schema: exit 1, a refused gate/1 report", code == 1 and rep["pass"] is False and rep["gates"] == [])
+        contract_sample("motion_metrics", "refused", rep)
         check("unreadable file: exit 1", run([str(Path(d) / "none.json")])[0] == 1)
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
     return 0 if not failed else 1

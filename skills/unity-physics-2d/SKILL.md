@@ -31,6 +31,7 @@ First match wins. **Stop at the first cause you confirm** and write the diagnosi
 | The one-way platform blocks from below, or grips at the sides | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §6 |
 | Works in the editor, not in the build | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §7 |
 | Collisions changed after a respawn or a return to the pool | [`reference/shapes-platforms-build.md`](reference/shapes-platforms-build.md) §7 — per-instance ignore pairs |
+| Hurtboxes or hitboxes that follow a bone of a skinned character | [`reference/bone-colliders.md`](reference/bone-colliders.md) |
 
 ## 0. Before diagnosing
 

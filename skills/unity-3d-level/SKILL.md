@@ -146,7 +146,7 @@ NavMesh, lighting, optimisation, URP, cameras, journeys. Also not here:
 | 2D levels, tilemaps, cell boards | `unity-2d-level`, `unity-tilemap`, `unity-2d-grid` |
 | Frame cost of a dressed room | `unity-profiling` |
 | Finding what uses a prefab | `unity-search` |
-| Running the audits headless | `unity-cli` |
+| Running the audits headless (`BatchAudit.Run`, exit 0/2/3) | `unity-cli` → `reference/batch-audit.md` |
 
 What a switch does when used, how a sentry decides to chase and how rooms are loaded are the
 game's own code: the level gives them a pedestal on the grid, a post, a NavMesh baked from

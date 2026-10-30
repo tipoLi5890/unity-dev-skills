@@ -149,9 +149,22 @@ def solve_device(device: str) -> str:
     return "cpu" if device == "mps" else device
 
 
+_WARNED: set = set()
+
+
 def gate_failed(g: dict) -> bool:
-    """A gate reads 'pass' (twocam's Blender scripts, detect, train) or 'ok' (solve, motion_metrics, contact_bake)."""
-    return not g.get("pass", g.get("ok", True))
+    """A gate/1 gate passes only on `pass: true`; one without a boolean `pass` has failed. The 0.34 dialect's
+    `ok` is read in its place for one release, only when `pass` is absent, with one WARN."""
+    if not isinstance(g, dict):
+        return True
+    if "pass" in g:
+        return g["pass"] is not True
+    if "ok" in g:
+        if "gate-ok" not in _WARNED:
+            _WARNED.add("gate-ok")
+            print("WARN a gate carries the old key `ok`, read as `pass` (gate/1 names it `pass`)", file=sys.stderr)
+        return g["ok"] is not True
+    return True
 
 
 def last_json(lines: list):
@@ -474,8 +487,11 @@ with open(os.environ["FAKE_TRACE"], "a", encoding="utf-8") as f:
 print("progress \u00e9\u4e2d", file=sys.stderr)
 if script == "train.py":
     print("epoch 0 val mean px error (layout pixels) front 3.0 side 3.0", file=sys.stderr)
-key = "ok" if script in ("solve.py", "motion_metrics.py", "contact_bake.py") else "pass"
-rep = {"tool": script, "ok": code == 0, "gates": [{"name": "fake.gate", key: code == 0}], "exit_code": code}
+key = "ok" if os.environ.get("FAKE_OLD_DIALECT") == script else "pass"
+rep = {"schema": "gate/1", "tool": script, "pass": code == 0, "ok": code == 0,
+       "gates": [{"name": "fake.gate", key: code == 0}], "exit_code": code}
+if key == "ok":
+    del rep["schema"], rep["pass"]
 if script == "contact_bake.py" and "--report" in args:
     open(args[args.index("--report") + 1], "w").write(json.dumps(rep))
 if script == "motion_metrics.py" and "--out" in args and not os.environ.get("FAKE_NO_OUT"):
@@ -661,7 +677,7 @@ def selftest() -> int:
         check("capture: a solve error stops it, exit 1", code == 1 and ran == ["detect.py", "solve.py"], ran=ran)
         code, r, err, ran = real(stages["capture"], {"motion_metrics.py": 2})
         fg = {s_["name"]: s_["failed_gates"] for s_ in r.get("steps", [])}
-        check("capture: a metrics gate fails, exit 2, its gate named from the 'ok' key of the --out file",
+        check("capture: a metrics gate fails, exit 2, its gate named from the --out file",
               code == 2 and len(ran) == 4 and fg.get("metrics") == ["fake.gate"], fg=fg)
         code, r, err, ran = real(stages["capture"], {"motion_metrics.py": 2}, FAKE_NO_OUT=1)
         fg = {s_["name"]: s_["failed_gates"] for s_ in r.get("steps", [])}
@@ -669,12 +685,16 @@ def selftest() -> int:
               code == 2 and fg.get("metrics") == ["fake.gate"], fg=fg)
         code, r, err, ran = real(stages["capture"], {"solve.py": 2})
         fg = {s_["name"]: s_["failed_gates"] for s_ in r.get("steps", [])}
-        check("capture: a solve gate ('ok' key) is named", code == 2 and fg.get("solve") == ["fake.gate"], fg=fg)
+        check("capture: a solve gate is named", code == 2 and fg.get("solve") == ["fake.gate"], fg=fg)
+        code, r, err, ran = real(stages["capture"], {"solve.py": 2}, FAKE_OLD_DIALECT="solve.py")
+        fg = {s_["name"]: s_["failed_gates"] for s_ in r.get("steps", [])}
+        check("capture: an old-dialect gate ('ok' key) is still read", code == 2 and fg.get("solve") == ["fake.gate"], fg=fg)
         check("last_json: indented after noise, one line, and trailing noise",
               last_json(["noise {x}\n", "{\n", ' "a": {\n', '  "b": 1\n', " }\n", "}\n"]) == {"a": {"b": 1}}
               and last_json(['{"a": 1}\n']) == {"a": 1} and last_json(['{"a": 1}\n', "Traceback\n"]) is None
               and gate_failed({"ok": False}) and gate_failed({"pass": False}) and not gate_failed({"ok": True})
-              and not gate_failed({"name": "x"}))
+              and gate_failed({"name": "x"}) and gate_failed({}) and gate_failed({"pass": None})
+              and gate_failed({"pass": False, "ok": True}) and not gate_failed({"pass": True}))
         code, r, err, ran = real(stages["capture"], {"apply_motion.py": 1})
         check("capture: an apply error, exit 1", code == 1)
         code, r, err, ran = real(stages["ref"], {"render_ref.py": 2}, FAKE_BLENDER_EXIT=0)

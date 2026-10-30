@@ -104,11 +104,12 @@ The commands in full, the per-motion choices and a worked runner walk: `referenc
 `video_loop.py` writes `OUT/NAME/NAME_000.png …` on **one canvas** (the union of every frame's box
 plus `--margin`, bottom-aligned, never resampled) and `OUT/NAME/frames.json` beside them, with
 `OUT/NAME.gif` (the preview) and `OUT/NAME.report.json` (the whole decision) **outside** the frame
-folder, so a Unity folder import picks up frames only. `frames.json` follows the frame contract
-of `codex-visual` → `reference/animation-scripts.md` §4: `canvas`, `pivot_norm` (foot centre,
-from the bottom-left), `fps_hint` (output frames / cycle seconds), `loop`, `hold_last`, `register`
+folder, so a Unity folder import picks up frames only. `frames.json` is frames/1 (the repo's
+`schemas/frames-1.json`; `codex-visual` → `reference/animation-scripts.md` §4): `canvas`,
+`pivot_norm` (foot centre, from the bottom-left), `key_color` (the declared key; a bare PNG folder
+needs `--key-color`), `fps_hint` (output frames / cycle seconds), `loop`, `hold_last`, `register`
 (mode `ground` with every frame seated on one feet line when it spreads by at most max(3 px, 2 % of
-the body), `keep` for vertical travel),
+the body), `keep` for vertical travel; `reference_core_height_px`, `foot_margin_px`),
 `verdict{ok, faults}`, `producer{skill: sprite-from-video, script: video_loop.py}`, the clip's
 `sha256`, and per frame its `source_frame`.
 

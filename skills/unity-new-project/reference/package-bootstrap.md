@@ -20,19 +20,15 @@ Two ways to break that, and both fail without an error:
 > log, no packages. This is the failure that reads as "the script ran fine but nothing
 > installed".
 
-**A/B it yourself** — same script, same project, one flag different. The method hooks
-`EditorApplication.update` and logs from the completion callback:
+**A/B it yourself** — the installer below, same project, one flag different. It hooks
+`EditorApplication.update` and logs only from the completion callback:
 
 ```
-Unity -batchmode -quit -projectPath . -executeMethod PackageProbe.RunAsync
-    entered RunAsync()
-    RunAsync() returning — update hooked, request NOT complete yet
-    (nothing further)                                     exit 0
+Unity -batchmode -quit -projectPath . -logFile - -executeMethod ProjectBootstrap.PackageInstaller.Install
+    (no [PackageInstaller] line: the Editor quit before the first update tick)    exit 0
 
-Unity -batchmode       -projectPath . -executeMethod PackageProbe.RunAsync
-    entered RunAsync()
-    RunAsync() returning — update hooked, request NOT complete yet
-    COMPLETED  status=Success  packages=49                exit 0
+Unity -batchmode       -projectPath . -logFile - -executeMethod ProjectBootstrap.PackageInstaller.Install
+    [PackageInstaller] resolved: com.unity.inputsystem@…, …                       exit 0
 ```
 
 > **Both runs exit 0.** That is the whole danger: the exit code is identical whether the work
@@ -43,7 +39,9 @@ So: **do not use `unity run` for package installs.** Invoke the Editor binary di
 
 ## The shape that works
 
-`Assets/Editor/ProjectBootstrap/PackageInstaller.cs`:
+`Assets/Editor/ProjectBootstrap/PackageInstaller.cs`, inside `namespace ProjectBootstrap` and
+`public static class PackageInstaller`, with `PackagesToAdd` / `PackagesToRemove` as `string[]`
+constants of your own:
 
 ```csharp
 static AddAndRemoveRequest _request;
@@ -61,7 +59,7 @@ static void Poll() {
         if (EditorApplication.timeSinceStartup > _deadline) {
             EditorApplication.update -= Poll;
             Debug.LogError("[PackageInstaller] timed out");
-            EditorApplication.Exit(2);
+            EditorApplication.Exit(3);
         }
         return;
     }
@@ -71,13 +69,15 @@ static void Poll() {
         EditorApplication.Exit(0);
     } else {
         Debug.LogError($"[PackageInstaller] {_request.Error?.message}");
-        EditorApplication.Exit(1);
+        EditorApplication.Exit(3);
     }
 }
 ```
 
 `EditorApplication.Exit(code)` both terminates the Editor and sets the exit code — that is why
-no `-quit` is needed. Exit convention: `0` resolved, `1` UPM error, `2` timed out.
+no `-quit` is needed. Exit convention (the plugin's 0/2/3/1): `0` resolved, `3` a UPM error or a
+timeout — nothing installed, and the log line says which. The Editor's own `1` is a compile error
+(`unity-cli` → `reference/editor-binary.md` §1).
 
 **One `AddAndRemove` beats a loop of `Add`.** It resolves the whole set in a single pass, which
 is faster and cannot leave the manifest half-applied if one id is wrong.

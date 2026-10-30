@@ -71,7 +71,8 @@ grep -rn 'm_UseSRPBatcher' --include='*.asset' Assets Settings 2>/dev/null
 
 - **Neither package resolved** — `com.unity.feature.2d` brings both; a 3D project adds
   `com.unity.2d.animation` and `com.unity.2d.psdimporter`. Majors pair with the Editor: 13.x and
-  12.x on 6000.3, 14.x and 13.x on 6000.4. Everything in `resources/` compiles on both.
+  12.x on 6000.3, 14.x and 13.x on 6000.4, one major per Editor after that (`VERSIONS.md`).
+  Everything in `resources/` compiles on 6000.3 and 6000.4.
 - **`meshDeformation: 0`, or no URP, or the SRP Batcher off** — every `SpriteSkin` deforms on the
   CPU and the 2D renderer batches the results. That is the right default for many small parts.
 - **All three set** — parts whose shader supports sprite skinning deform on the GPU and draw
@@ -164,7 +165,7 @@ deforming and solving.
 | Animator state graphs, blend trees, override controllers; 2D lights and shadows on the character | `unity-animation`; `unity-2d-rendering` |
 | Slicing, pivots, an Aseprite or sheet source | `unity-2d-sprites` |
 | Moving the character: grounding, jumps, slopes, facing from velocity | `unity-2d-controller` |
-| Colliders and hitboxes that follow a bone | `unity-physics-2d` |
+| Colliders and hitboxes that follow a bone | `unity-physics-2d` → `reference/bone-colliders.md` |
 | Pixel-art filtering and camera snapping | `unity-2d-pixel-perfect` |
 | 3D rigs, Humanoid Avatars, Mixamo | `unity-rigged-character` |
 | Rigging and animating a 3D mesh in Blender | `character-autorig` (default) · `blender-character-rig` (hand-built fallback) |

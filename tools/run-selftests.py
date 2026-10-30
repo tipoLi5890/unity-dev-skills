@@ -79,6 +79,7 @@ SELFTESTS = [
     ('sprite-from-video/scripts/video_loop.py', ['--selftest'], ['numpy', 'pillow']),
     ('unity-2d-level/scripts/level_validate.py', ['selftest'], ['stdlib']),
     ('unity-audio/scripts/spectrum_check.py', ['selftest'], ['numpy']),
+    ('unity-camera/scripts/camera_jitter.py', ['selftest'], ['stdlib']),
     ('unity-debug/scripts/merge_results.py', ['selftest'], ['stdlib']),
     ('unity-game-brief/scripts/examples/courier_run_preview.py', ['selftest'], ['numpy', 'pillow', 'ffmpeg']),
     ('unity-game-brief/scripts/preview_compose.py', ['selftest'], ['numpy', 'pillow', 'ffmpeg']),

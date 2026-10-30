@@ -3,8 +3,15 @@
 // "noEngineReferences": true — which is the whole point of the split.
 //
 // One test per invariant in the brief, named after it, and every test prints the number it
-// asserted on so the log still says WHY it passed after the next change.
+// asserted on so the log still says WHY it passed after the next change. One more test holds
+// RunConfig to Sim/courier_rules.json, the rules file the preview is drawn from.
+using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Game.Sim;
 using NUnit.Framework;
 
@@ -144,6 +151,49 @@ namespace Game.Sim.Tests
             }
 
             TestContext.WriteLine($"INV-5 seeds=1..1000 hazards checked={rowsChecked} lanes={cfg.LaneCount}");
+        }
+
+        // The preview (scripts/examples/courier_run_preview.py) reads courier_rules.json; this keeps
+        // the rules it shows equal to the ones the game runs. Every key of its "sim" block is a
+        // RunConfig field with the same default, and every RunConfig field is in the block.
+        [Test]
+        public void RulesMatchCourierRulesJson()
+        {
+            string path = FindRulesFile();
+            Assert.IsNotNull(path, "courier_rules.json not found: keep it next to RunSimulation.cs");
+            Match sim = Regex.Match(File.ReadAllText(path), "\"sim\"\\s*:\\s*\\{([^{}]*)\\}");
+            Assert.IsTrue(sim.Success, $"{path} has no \"sim\" block");
+
+            RunConfig cfg = RunConfig.Courier();
+            var seen = new HashSet<string>();
+            foreach (Match m in Regex.Matches(sim.Groups[1].Value, "\"(\\w+)\"\\s*:\\s*([-+0-9.eE]+)"))
+            {
+                string key = m.Groups[1].Value;
+                FieldInfo field = typeof(RunConfig).GetField(key, BindingFlags.Public | BindingFlags.Instance);
+                Assert.IsNotNull(field, $"{key} in courier_rules.json is not a RunConfig field");
+                double want = double.Parse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture);
+                double have = Convert.ToDouble(field.GetValue(cfg), CultureInfo.InvariantCulture);
+                Assert.AreEqual(want, have, 1e-5 * Math.Max(1.0, Math.Abs(want)),
+                    $"{key}: courier_rules.json says {want}, RunConfig says {have}");
+                seen.Add(key);
+            }
+            foreach (FieldInfo field in typeof(RunConfig).GetFields(BindingFlags.Public | BindingFlags.Instance))
+                Assert.IsTrue(seen.Contains(field.Name), $"RunConfig.{field.Name} is missing from courier_rules.json");
+            TestContext.WriteLine($"RULES {seen.Count} RunConfig fields equal {path}");
+        }
+
+        // Sim/ sits beside Tests/ as shipped; a project that moved them is searched under Assets/.
+        static string FindRulesFile([CallerFilePath] string here = "")
+        {
+            if (!string.IsNullOrEmpty(here))
+            {
+                string beside = Path.Combine(Path.GetDirectoryName(here) ?? "", "..", "Sim", "courier_rules.json");
+                if (File.Exists(beside)) return Path.GetFullPath(beside);
+            }
+            string assets = Path.Combine(Directory.GetCurrentDirectory(), "Assets");
+            if (!Directory.Exists(assets)) return null;
+            string[] found = Directory.GetFiles(assets, "courier_rules.json", SearchOption.AllDirectories);
+            return found.Length > 0 ? found[0] : null;
         }
 
         // Steers away from a hazard in the current lane. It is test-only: shipping this is a

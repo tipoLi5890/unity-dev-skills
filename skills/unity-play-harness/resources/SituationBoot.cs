@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using UnityEngine;
 
 /// <summary>
@@ -13,6 +14,14 @@ using UnityEngine;
 ///
 ///   "$UNITY" -projectPath &lt;p&gt; -situation approach-gate -situation-param angle=80
 ///   PLAY_SITUATION=approach-gate ./Build/Game
+///   ./Build/Game -situation approach-gate -screenshotDir Shots -quit
+///
+/// -screenshotDir DIR  once the situation is ready, one PNG of the screen:
+///                     DIR/&lt;id with / as _&gt;-ready.png, logged as "[SHOT] &lt;path&gt; WxH".
+///                     A -batchmode player renders nothing; run it windowed.
+/// -quit               a player quits after the probe line (and the shot): 0 ready, 2 the
+///                     ready set timed out, 1 an unknown id, 3 the shot could not be written.
+///                     The Editor ignores Application.Quit, so this is for built players.
 ///
 /// Installs itself after the first scene loads. Suppressed during -runTests, because a test
 /// enters its own situation and two Enters race each other.
@@ -69,6 +78,7 @@ public sealed class SituationBoot : MonoBehaviour
         {
             Debug.LogError("[SITUATION] unknown id=" + Requested + " registered=" +
                            string.Join(",", Situations.Ids()));
+            QuitIfAsked(1);
             yield break;
         }
 
@@ -87,6 +97,7 @@ public sealed class SituationBoot : MonoBehaviour
                 // A boot must not throw into nothing: name the missing members and leave the
                 // window up, so the moment can still be looked at and photographed.
                 Debug.LogError("[SITUATION] TIMEOUT " + timedOut);
+                QuitIfAsked(2);
                 yield break;
             }
             if (!moved) break;
@@ -94,5 +105,46 @@ public sealed class SituationBoot : MonoBehaviour
         }
 
         GameProbe.Log("PROBE");
+
+        int code = 0;
+        string dir = ArgValue("-screenshotDir");
+        if (dir != null)
+        {
+            yield return new WaitForEndOfFrame();
+            Texture2D shot = ScreenCapture.CaptureScreenshotAsTexture();
+            try
+            {
+                Directory.CreateDirectory(dir);
+                string path = Path.Combine(dir, Requested.Replace('/', '_') + "-ready.png");
+                File.WriteAllBytes(path, shot.EncodeToPNG());
+                Debug.Log(string.Format(CultureInfo.InvariantCulture, "[SHOT] {0} {1}x{2}",
+                                        path, shot.width, shot.height));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[SHOT] not written: " + e.Message);
+                code = 3;
+            }
+            finally { Destroy(shot); }
+        }
+        QuitIfAsked(code);
+    }
+
+    static string ArgValue(string flag)
+    {
+        string[] args = Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+            if (args[i] == flag) return args[i + 1];
+        return null;
+    }
+
+    static void QuitIfAsked(int code)
+    {
+        foreach (string a in Environment.GetCommandLineArgs())
+            if (a == "-quit")
+            {
+                Application.Quit(code);
+                return;
+            }
     }
 }

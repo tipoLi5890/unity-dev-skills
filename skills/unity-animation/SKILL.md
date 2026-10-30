@@ -161,7 +161,7 @@ frames into clips, agents, input, camera, the movement model, journeys — is th
 | Bones, skinning weights, PSB rigs, Sprite Library and 2D IK on a sprite | `unity-2d-animation` |
 | Generating the sprite frames or the sheet in the first place | `codex-visual` |
 | A hitbox trigger that never fires once the window is open | `unity-physics-3d` · `unity-physics-2d` |
-| Playing the footstep or the swing sound an event asks for | `unity-audio` |
+| Playing the footstep or the swing sound an event asks for | `unity-game-feel` (`SfxPlayer`) |
 | Running tests headless, screenshots, trusting a result file | `unity-debug` |
 | Animator cost on a crowd: culling modes measured, not guessed | `unity-profiling` |
 | The simulation's mover — its speed, acceleration and the predicted stop the swing waits for | `unity-3d-controller` |

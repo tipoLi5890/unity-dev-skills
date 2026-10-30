@@ -84,6 +84,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -123,7 +124,7 @@ def metrics():
 
 
 def gate(name, value, limit, ok) -> dict:
-    return {"name": name, "value": value, "limit": limit, "ok": bool(ok)}
+    return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
 
 
 def _r(x, d=5):
@@ -490,7 +491,7 @@ def finish(before, after, pen_after, info, a, any_contacts) -> tuple:
     gates.append(gate("foot_slide_p95_m", after["p95"], f"<= {a.slide_p95}", after["p95"] <= a.slide_p95))
     gates.append(gate("foot_slide_max_m", after["max"], f"<= {a.slide_max}", after["max"] <= a.slide_max))
     gates.append(gate("penetration_max_m", _r(pen_after, 5), f"<= {a.penetration_max}", pen_after <= a.penetration_max))
-    return gates, all(g["ok"] for g in gates)
+    return gates, all(g["pass"] is True for g in gates)
 
 
 def _rot_change_deg(A, B):
@@ -566,7 +567,8 @@ def run_bvh(a) -> tuple:
         still &= weights[s] == 0
     outside = float(max((_rot_change_deg(Wr[still, j], Wr2[still, j]).max() if still.any() else 0.0) for j in touched))
     gates, ok = finish(before, after, pen_after, info, a, contacts is not None)
-    rep = {"tool": "contact_bake", "mode": "bvh" + (" sample-only" if a.sample_only else ""), "ok": ok, "clip": str(a.clip), "frames": b.n_frames,
+    rep = {"schema": "gate/1", "tool": "contact_bake", "mode": "bvh" + (" sample-only" if a.sample_only else ""), "pass": ok, "ok": ok,
+           "clip": str(a.clip), "frames": b.n_frames,
            "fps": round(b.fps, 4), "legs": preset, "leg_joints": {s: [b.names[j] if j is not None else None for j in legs[s]] for s in SIDES},
            "floor_m": _r(fl, 4), "sole_offsets": {b.names[j]: h for j, h in offsets.items()}, "plants": info,
            **plant_counts(info),
@@ -695,7 +697,8 @@ def run_blender(a) -> tuple:
         still &= weights[s] == 0
     outside = float(max((_rot_change_deg(Wr[still, j], Wr2[still, j]).max() if still.any() else 0.0) for j in touched))
     gates, ok = finish(before, after, pen_after, info, a, contacts is not None)
-    rep = {"tool": "contact_bake", "mode": "blender" + (" sample-only" if a.sample_only else ""), "ok": ok, "armature": obj.name, "action": act.name,
+    rep = {"schema": "gate/1", "tool": "contact_bake", "mode": "blender" + (" sample-only" if a.sample_only else ""), "pass": ok, "ok": ok,
+           "armature": obj.name, "action": act.name,
            "frame_range": [f0, f1], "frames": len(frames), "fps": round(fps, 4), "legs": preset,
            "leg_joints": {s: [names[j] if j is not None else None for j in legs[s]] for s in SIDES},
            "floor_m": _r(fl, 4), "sole_offsets": {names[j]: h for j, h in offsets.items()}, "plants": info,
@@ -796,7 +799,7 @@ def main(argv=None) -> int:
                 raise Refused("give CLIP.bvh and --out (or --armature inside Blender)")
             rep, code = run_bvh(a)
     except (_ArgError, Refused, ValueError) as e:
-        print(json.dumps({"tool": "contact_bake", "ok": False, "refused": str(e)}))
+        print(json.dumps({"schema": "gate/1", "tool": "contact_bake", "pass": False, "ok": False, "gates": [], "refused": str(e)}))
         return 1
     text = json.dumps(rep, indent=1)
     if a.report:
@@ -882,6 +885,17 @@ def synthetic_gait(F=90, fps=30.0, creep=0.02, period=30, speed=0.8, lift=0.08, 
     return bvh_io.Bvh(names, parents, offsets, ch, {4: [0, 0, 0.05], 8: [0, 0, 0.05]}, frames, 1 / fps), cont
 
 
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
+
+
 def selftest() -> int:
     checks = []
 
@@ -913,6 +927,10 @@ def selftest() -> int:
         sb, sa = rep.get("slide_before_m", {}), rep.get("slide_after_m", {})
         check("sliding feet fail the slide gate before the bake", sb.get("p95", 0) > 0.015, sb)
         check("and pass after it (exit 0)", code == 0 and sa.get("p95", 1) <= 0.002 and sa.get("max", 1) <= 0.005, (code, sa, rep.get("gates")))
+        check("a passing gate/1 report: pass and ok true, every gate named with a pass",
+              rep.get("schema") == "gate/1" and rep.get("pass") is True and rep.get("ok") is True
+              and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep.get("gates", [])), rep.get("gates"))
+        contract_sample("contact_bake", "baked", rep)
         check("plants come from the contacts, both feet", all(rep["plants"][s]["source"] == "contacts"
               and len(rep["plants"][s]["ranges"]) >= 2 for s in SIDES), rep.get("plants"))
         check("nothing changes outside the plants and blends", (rep.get("outside_change_deg") or 0) < 1e-6, rep.get("outside_change_deg"))
@@ -931,7 +949,7 @@ def selftest() -> int:
                 m = json.loads(r.stdout)
             except ValueError:
                 m = {}
-            return r.returncode, m, {g["name"]: g["ok"] for g in m.get("gates", [])}
+            return r.returncode, m, {g["name"]: g.get("pass") for g in m.get("gates", [])}
 
         c0, m0, g0 = metrics_of(td / "src.npz")
         c1, m1, g1 = metrics_of(td / "s.npz")
@@ -969,18 +987,25 @@ def selftest() -> int:
         bad = {s: np.clip(1.0 - cs[s], 0, 1).tolist() for s in SIDES}            # contact on the swing
         (td / "swing.json").write_text(json.dumps(bad))
         code, rep = cli(td / "high.bvh", "--out", td / "x.bvh", "--contacts", td / "swing.json")
-        check("contacts on the swing fail contact_height (exit 2)", code == 2 and gate_of(rep, "contact_height_m").get("ok") is False,
+        check("contacts on the swing fail contact_height (exit 2)", code == 2 and gate_of(rep, "contact_height_m").get("pass") is False,
               gate_of(rep, "contact_height_m"))
+        check("a failed gate/1 report", rep.get("pass") is False and rep.get("ok") is False, rep.get("pass"))
+        contract_sample("contact_bake", "swing_contacts", rep)
+        code, rep = cli(td / "nope.bvh", "--out", td / "x.bvh")
+        check("an unreadable clip is refused (exit 1), a gate/1 report with no gates",
+              code == 1 and rep.get("schema") == "gate/1" and rep.get("pass") is False and rep.get("gates") == []
+              and rep.get("refused"), rep)
+        contract_sample("contact_bake", "refused", rep)
         bd, cd = synthetic_gait(drag=True)
         bd.save(td / "drag.bvh")
         (td / "all.json").write_text(json.dumps({s: [1.0] * bd.n_frames for s in SIDES}))
         code, rep = cli(td / "drag.bvh", "--out", td / "x.bvh", "--contacts", td / "all.json")
-        check("a foot locked while the hips travel 3 m fails reach (exit 2)", code == 2 and gate_of(rep, "reach_m").get("ok") is False,
+        check("a foot locked while the hips travel 3 m fails reach (exit 2)", code == 2 and gate_of(rep, "reach_m").get("pass") is False,
               gate_of(rep, "reach_m"))
         bh, _ = synthetic_gait(hang=True, creep=0.0)
         bh.save(td / "hang.bvh")
         code, rep = cli(td / "hang.bvh", "--out", td / "x.bvh")
-        check("no plant anywhere fails plants_found (exit 2)", code == 2 and gate_of(rep, "plants_found").get("ok") is False,
+        check("no plant anywhere fails plants_found (exit 2)", code == 2 and gate_of(rep, "plants_found").get("pass") is False,
               gate_of(rep, "plants_found"))
         code, rep = cli(td / "hang.bvh", "--out", td / "x.bvh", "--allow-no-plants")
         check("--allow-no-plants passes it", code == 0, rep.get("gates"))
@@ -999,7 +1024,7 @@ def selftest() -> int:
         (td / "rig_info.json").write_text(json.dumps({"twocam": {"ground": ground}}))
         code, rep = cli(td / "raised.bvh", "--out", td / "x.bvh")
         check("joints 6 cm over the sole, no offsets: no plant, exit 2",
-              code == 2 and gate_of(rep, "plants_found").get("ok") is False, gate_of(rep, "plants_found"))
+              code == 2 and gate_of(rep, "plants_found").get("pass") is False, gate_of(rep, "plants_found"))
         code, rep = cli(td / "raised.bvh", "--out", td / "r6.bvh", "--rig-info", td / "rig_info.json",
                         "--samples-out", td / "r6.npz")
         check("with --rig-info: the detector plants both feet, the bake passes (exit 0)",
@@ -1025,7 +1050,7 @@ def selftest() -> int:
         rng = rep.get("plants", {}).get("l", {}).get("ranges", [[0, 0]])
         z_in = np.array([W4[f, 3, 1] for a_, e_ in rng for f in range(a_, e_ + 1)])
         check("sole under the floor by its offset: the lock lifts the ankle 2 cm, penetration passes (exit 0)",
-              code == 0 and gate_of(rep, "penetration_max_m").get("ok") is True and np.abs(z_in - 0.13).max() < 2e-3,
+              code == 0 and gate_of(rep, "penetration_max_m").get("pass") is True and np.abs(z_in - 0.13).max() < 2e-3,
               (code, gate_of(rep, "penetration_max_m"), z_in.min() if z_in.size else None))
         (td / "nomatch.json").write_text(json.dumps({"sole_offsets": {"Heel.L": 0.02}}))
         code, rep = cli(td / "walk.bvh", "--out", td / "x.bvh", "--rig-info", td / "nomatch.json")
@@ -1178,7 +1203,7 @@ def selftest_blender() -> int:
         r = subprocess.run(["python3", str(METRICS_DIR / "motion_metrics.py"), str(td / "s.npz"), "--state", "walk"],
                            capture_output=True, text=True)
         try:
-            g = {x["name"]: x["ok"] for x in json.loads(r.stdout)["gates"]}
+            g = {x["name"]: x["pass"] for x in json.loads(r.stdout)["gates"]}
         except (ValueError, KeyError):
             g = {}
         check("Blender: motion_metrics passes the slide and penetration gates on the samples",
@@ -1204,7 +1229,7 @@ def selftest_blender() -> int:
         base = ["--armature", arm.name, "--action", act.name, "--frame-range", "1", str(b6.n_frames), "--legs", "contract"]
         rep0, code0 = run_blender(parser().parse_args(base + ["--out", str(td / "r0.blend")]))
         check("Blender: joints 6 cm over the sole without offsets find no plant (exit 2)",
-              code0 == 2 and not next(x for x in rep0["gates"] if x["name"] == "plants_found")["ok"], rep0.get("gates"))
+              code0 == 2 and not next(x for x in rep0["gates"] if x["name"] == "plants_found")["pass"], rep0.get("gates"))
         arm, act = import_bvh(td / "raised.bvh")
         rep1, code1 = run_blender(parser().parse_args(base + ["--rig-info", str(td / "rig_info.json"),
                                                             "--out", str(td / "r6.blend")]))

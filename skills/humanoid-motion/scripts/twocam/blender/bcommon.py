@@ -20,6 +20,7 @@ import json
 import math
 import os
 import sys
+import tempfile
 import traceback
 
 import bpy
@@ -43,13 +44,31 @@ def gate(name, value, limit, passed) -> dict:
 
 
 def report(script: str, params: dict, gates: list, **extra) -> dict:
-    ok = all(g["pass"] for g in gates)
-    out = {"tool": script, "ok": ok, "gates": gates, "blender": list(bpy.app.version)}
+    """A gate/1 report (schemas/gate-1.json): `pass` is true only when every gate's `pass` is true; `ok`, its old
+    name, equals it for one release. With no gates it is a result, not a verdict: no `schema` or `pass`."""
+    ok = all(g.get("pass") is True for g in gates)
+    out = {"tool": script, "gates": gates, "blender": list(bpy.app.version)}
     out.update(extra)
+    for k in ("schema", "pass"):
+        out.pop(k, None)
+    if gates:
+        out.update({"schema": "gate/1", "pass": ok})
+    out["ok"] = ok
     out["record"] = {"tool": {"skill": SKILL, "script": f"twocam/blender/{script}"},
                      "params": {k: v for k, v in params.items() if "path" not in k and not str(k).endswith(("blend", "dir"))},
                      "gates": gates, "verdict": "green" if ok else "failed"}
     return out
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 def emit(result: dict, code: int) -> int:
@@ -65,7 +84,8 @@ def guarded(main_fn):
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 - every failure must reach the exit code
-        result, code = {"ok": False, "error": f"{type(exc).__name__}: {exc}", "trace": traceback.format_exc()[-1500:]}, 1
+        result, code = {"schema": "gate/1", "pass": False, "ok": False, "gates": [],
+                        "error": f"{type(exc).__name__}: {exc}", "trace": traceback.format_exc()[-1500:]}, 1
     sys.exit(emit(result, code))
 
 

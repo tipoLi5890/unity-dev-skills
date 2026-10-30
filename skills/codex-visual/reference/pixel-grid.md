@@ -254,7 +254,7 @@ or a table without the key.
 | each file within K, the set's `opaque_colours` over K | the files were quantised one by one | one palette for all: `--palette-out` on the first, `--palette-file` on the rest (§6) |
 | `off_palette_px` > 0 | a tint, a resize or a per-sheet `--palette` after the palette was applied; the wrong palette file | re-run the pixel step with `--palette-file`; `--palette-tol` only for a known re-encode |
 | `single_block_pct` high and the art looks noisy | N finer than the drawn grid, so one drawn block's blended edge became its own cell; or K too large | lower N toward `native_cells`; lower K |
-| every gate passes and the art still reads soft in the engine | the import filters it | Point filtering, no compression, a PPU that keeps blocks square (`unity-2d-sprites`) |
+| every gate passes and the art still reads soft in the engine | the import filters it | Point filtering, no compression, and a PPU of `reference_core_height_px / world height` chosen so `PPU / pixel.block_px` (F) is whole (`unity-2d-sprites`) |
 | exit 2 on a set that has files | no sidecar `pixel` block and no expectation flag | pass `--block F` and `--max-colours K` or `--palette-file` |
 
 ## 8. One size per pixel character
@@ -265,7 +265,10 @@ every sheet of the character**, with the same neutral stand as the reference fra
 share of the cell filled (lock 2). `frames.json` records `register.reference_core_height_px` — with
 N 64 and F 4 a courier 51 cells tall reads 204 in the idle and in the run. A sheet that reads a block
 or more off was drawn at another size: re-generate it chained to the first sheet; do not rescale it.
-One PPU then draws every sheet at one size, and every block is the same size on screen.
+One PPU then draws every sheet at one size, and every block is the same size on screen. The core
+height is in px of the written files, so F is already inside it: PPU = `reference_core_height_px`
+/ the courier's height in world units, with that height chosen so PPU / F is a whole number — the
+art-pixel PPU the tiles and the Pixel Perfect Camera use.
 
 ## 9. What this does not do
 

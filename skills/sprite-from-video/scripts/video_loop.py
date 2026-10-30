@@ -63,14 +63,21 @@ Output (OUT = --out-dir, NAME = --name):
                            bottom), no resampling; under `ground` each frame
                            moved up or down whole pixels onto frame 0's feet
                            line
-  OUT/NAME/frames.json     tool, producer, source{file, sha256, fps}, canvas,
+  OUT/NAME/frames.json     frames/1 (the repo's schemas/frames-1.json): schema,
+                           tool, producer, source{file, sha256, fps}, canvas,
                            pivot, pivot_norm (the first frame's foot centre from
-                           the bottom-left), fps_hint (frames / cycle seconds),
+                           the bottom-left), key_color (the report's
+                           key.declared, or --key-color; null for `none`),
+                           key_painted (the report's painted key, when read),
+                           fps_hint (frames / cycle seconds),
                            loop, hold_last, register{mode ground: the feet line
                            (the core silhouette's lowest row, as audit_frames
                            reads it) spreads by at most max(3 px, 2 % of the
                            body) and every frame is seated on frame 0's; keep:
-                           more (a jump, a run's flight), nothing seated},
+                           more (a jump, a run's flight), nothing seated;
+                           reference_core_height_px (frame 0's core height),
+                           foot_margin_px (rows under frame 0's feet line),
+                           canvas_margin_px (--margin)},
                            verdict{ok, faults[]},
                            cycle_frames, cycle_seconds, cut, period, seam,
                            drift, subsample{indices, steps: the source frames
@@ -88,7 +95,8 @@ Examples
 
 stdout: one JSON object (the summary). Exit codes:
   0  frames and frames.json written, verdict ok (or --selftest passed)
-  1  bad arguments, unreadable frames, no source fps, or a failed --selftest
+  1  bad arguments, unreadable frames, no source fps, no key (no report and no
+     --key-color), or a failed --selftest
   2  refused, nothing handed over: no period (flat profile), only a half
      stride (nothing near twice a too-short period repeats), no one-shot
      return, no settled end, or a seam over --seam-max
@@ -575,8 +583,21 @@ def shift(rgba, dx):
 
 # ------------------------------------------------------------------- loading ----
 
-def resolve_input(path, source_fps):
-    """-> (keyed dir, PNG files, source dict). Reads video_frames.py's report when there is one."""
+def canon_key(text):
+    """'#RRGGBB' / 'rrggbb' / '#rgb' -> lowercase '#rrggbb'; ValueError otherwise."""
+    h = str(text).strip().lstrip("#").lower()
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6 or any(c not in "0123456789abcdef" for c in h):
+        raise ValueError(f"not a hex colour: {text!r}")
+    return "#" + h
+
+
+def resolve_input(path, source_fps, key_color=None):
+    """-> (keyed dir, PNG files, source dict, key dict). Reads video_frames.py's report when there
+    is one: its `key.declared` is the key_color frames.json carries, `key.painted_rgb` the
+    key_painted. `key_color` (--key-color: a hex colour, or 'none' for art that was never keyed)
+    overrides it, and is required when there is no report."""
     p = Path(path)
     if (p / "keyed").is_dir():
         keyed, report = p / "keyed", p / "frames.report.json"
@@ -586,18 +607,37 @@ def resolve_input(path, source_fps):
     if not files:
         raise ValueError(f"no PNG frames in {keyed}")
     source = {"file": None, "sha256": None, "fps": None}
+    declared = painted = None
     if report.is_file():
         try:
             rep = json.loads(report.read_text(encoding="utf-8"))
             src = rep.get("source") or {}
             source = {"file": src.get("file"), "sha256": src.get("sha256"), "fps": src.get("fps")}
-        except (OSError, ValueError):
+            k = rep.get("key") if isinstance(rep.get("key"), dict) else {}
+            declared = canon_key(k["declared"]) if isinstance(k.get("declared"), str) else None
+            prgb = k.get("painted_rgb")
+            painted = ("#" + "".join(f"{int(v):02x}" for v in prgb[:3])) if isinstance(prgb, list) and len(prgb) >= 3 else None
+        except (OSError, ValueError, TypeError):
             pass
     if source_fps:
         source["fps"] = float(source_fps)
     if not source["fps"]:
         raise ValueError(f"no source fps: {report} is missing or has none — pass --source-fps")
-    return keyed, files, source
+    if key_color is not None:
+        if str(key_color).strip().lower() == "none":
+            key = {"key_color": None}
+        else:
+            key = {"key_color": canon_key(key_color)}
+            if painted and declared == key["key_color"]:
+                key["key_painted"] = painted
+    elif declared:
+        key = {"key_color": declared}
+        if painted:
+            key["key_painted"] = painted
+    else:
+        raise ValueError(f"no key declared: {report} is missing or names no key.declared — pass --key-color HEX "
+                         f"(the key the clip was keyed against) or --key-color none (never chroma-keyed)")
+    return keyed, files, source, key
 
 
 def load_features(files):
@@ -683,7 +723,7 @@ def sha256(path):
 # ----------------------------------------------------------------------- run ----
 
 def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_fps=None, min_len=None,
-        max_len=None, seam_max=SEAM_RATIO_MAX, margin=8, drift=True, gif=True):
+        max_len=None, seam_max=SEAM_RATIO_MAX, margin=8, drift=True, gif=True, key_color=None):
     """-> (exit code, report)."""
     out_dir = Path(out_dir)
     frame_dir, gif_path, report_path = out_dir / name, out_dir / f"{name}.gif", out_dir / f"{name}.report.json"
@@ -707,7 +747,7 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
     if mode not in MODES:
         return 1, {**report, "ok": False, "error": f"unknown --mode {mode!r}"}
     try:
-        keyed, files, source = resolve_input(frames_dir, source_fps)
+        keyed, files, source, key = resolve_input(frames_dir, source_fps, key_color)
         flat, boxes, masses, size = load_features(files)
     except (OSError, ValueError) as exc:
         return 1, {**report, "ok": False, "error": str(exc)}
@@ -840,11 +880,14 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
     floor_spread = max(out_feet) - min(out_feet) if out_feet else 0
     fx = foot_centre(out_frames[0])
     pivot_norm = [round(fx / W, 6), round((H - bottoms[0]) / H, 6)]
+    ref_rows = core_rows(out_frames[0][..., 3])
+    ref_core_h = max(1, ref_rows[1] - ref_rows[0] + 1) if ref_rows is not None else 1
     name_fmt = [f"{name}_{i:03d}.png" for i in range(len(out_frames))]
     verdict = {"ok": not faults, "faults": faults}
     cut_pub = _public(cut)
     cut_pub["end_frame"] = start + L - 1
     doc = {
+        "schema": "frames/1",
         "tool": "video_loop.py",
         "producer": PRODUCER,
         "source": source,
@@ -852,10 +895,15 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
         "canvas": [W, H],
         "pivot": "foot-center",
         "pivot_norm": pivot_norm,
+        **key,
         "fps_hint": fps_hint,
         "loop": loop,
         "hold_last": cut["kind"] == "once",
-        "register": {"mode": mode_reg, "ref": 0, "anchor": drift_rec["anchor"], "margin_px": margin,
+        # foot_margin_px: the rows under frame 0's feet line (pivot_norm's y, in px); canvas_margin_px:
+        # --margin, the transparent px kept round the union box
+        "register": {"mode": mode_reg, "ref": 0, "anchor": drift_rec["anchor"],
+                     "reference_core_height_px": int(ref_core_h), "foot_margin_px": int(H - bottoms[0]),
+                     "canvas_margin_px": margin,
                      "floor_spread_px": int(floor_spread), "source_floor_spread_px": int(src_spread),
                      "seated_max_px": int(pad), "crop_origin": [origin[0] + union[0] - margin,
                                                                 origin[1] - pad + union[1] - margin]},
@@ -937,9 +985,39 @@ def _write(frames, d, fps=24.0):
     keyed.mkdir(parents=True)
     for i, f in enumerate(frames):
         Image.fromarray(f, "RGBA").save(keyed / f"frame-{i + 1:04d}.png")
-    (Path(d) / "frames.report.json").write_text(json.dumps({"source": {"file": "synthetic.mp4", "sha256": "0" * 64,
-                                                                       "fps": fps}}))
+    (Path(d) / "frames.report.json").write_text(json.dumps({
+        "source": {"file": "synthetic.mp4", "sha256": "0" * 64, "fps": fps},
+        "key": {"declared": "#00ff00", "declared_rgb": [0, 255, 0], "painted_rgb": [18, 238, 30], "off_by": 25.0}}))
     return Path(d)
+
+
+FRAMES_REQUIRED = ("schema", "tool", "canvas", "pivot_norm", "key_color", "fps_hint", "loop", "register",
+                   "verdict", "frames")
+REGISTER_REQUIRED = ("mode", "ref", "reference_core_height_px", "foot_margin_px")
+
+
+def _contract(doc):
+    """frames/1 by hand: the required keys, their types, a flat register with no margin_px."""
+    reg = doc.get("register") or {}
+    kc = doc.get("key_color", "missing")
+    return (all(k in doc for k in FRAMES_REQUIRED) and doc["schema"] == "frames/1"
+            and all(k in reg for k in REGISTER_REQUIRED) and "margin_px" not in reg
+            and isinstance(reg["reference_core_height_px"], int) and reg["reference_core_height_px"] >= 1
+            and isinstance(reg["foot_margin_px"], int) and reg["foot_margin_px"] >= 0
+            and not any(isinstance(v, dict) for v in reg.values())
+            and (kc is None or (isinstance(kc, str) and len(kc) == 7 and kc == kc.lower() and kc[0] == "#"))
+            and isinstance(doc["loop"], bool) and not (doc.get("hold_last") and doc["loop"]))
+
+
+def contract_out(path, case):
+    """Copy a frames.json the selftest wrote to where tools/check-contracts.py validates it against
+    schemas/frames-1.json: $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints
+    `selftest-output: PATH`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    dest = os.path.join(out, f"video_loop__{case}.frames.json")
+    shutil.copyfile(path, dest)
+    print(f"selftest-output: {dest}")
 
 
 def selftest():
@@ -956,6 +1034,16 @@ def selftest():
                        and doc.get("loop") is True and doc.get("hold_last") is False
                        and doc.get("producer") == PRODUCER and list(doc)[-1] == "frames"
                        and len(doc.get("pivot_norm", [])) == 2 and doc.get("verdict", {}).get("ok") is True))
+        checks.append(("walk: frames/1 by hand, the report's declared key and painted key", code == 0 and _contract(doc)
+                       and doc["key_color"] == "#00ff00" and doc.get("key_painted") == "#12ee1e"))
+        if code == 0:
+            ref = np.asarray(Image.open(tmp / "out" / "runner_walk" / doc["frames"][0]["file"]))
+            rr = core_rows(ref[..., 3])
+            checks.append(("walk: core height and foot margin read off frame 0 as written",
+                           doc["register"]["reference_core_height_px"] == rr[1] - rr[0] + 1
+                           and doc["register"]["foot_margin_px"] == round(doc["pivot_norm"][1] * doc["canvas"][1])
+                           and doc["register"]["canvas_margin_px"] == 8))
+            contract_out(tmp / "out" / "runner_walk" / "frames.json", "walk_loop")
         checks.append(("walk: subsampled to 12 fps", code == 0 and doc["fps_hint"] == round(len(doc["frames"]) / (cut["length"] / 24), 4)
                        and len(doc["frames"]) == round(cut["length"] / 2)))
         files = sorted((tmp / "out" / "runner_walk").glob("runner_walk_*.png"))
@@ -1033,6 +1121,10 @@ def selftest():
         checks.append(("one-shot: keep, no loop, trend removed", doc.get("register", {}).get("mode") == "keep"
                        and doc.get("loop") is False and doc.get("hold_last") is False
                        and doc.get("drift", {}).get("anchor") == "trend"))
+        if code == 0 and _contract(doc):
+            contract_out(tmp / "out" / "runner_launch" / "frames.json", "launch_oneshot")
+        else:
+            checks.append(("one-shot: frames/1 by hand", False))
 
         # 5. once: rest, a move into a new pose, held
         once = []
@@ -1043,6 +1135,11 @@ def selftest():
         cut = rep.get("cut") or {}
         checks.append(("once: ends at the settled pose, hold_last", code == 0 and cut.get("kind") == "once"
                        and 31 <= cut["start"] + cut["length"] - 1 <= 36 and rep.get("hold_last") is True))
+        doc = json.loads((tmp / "out" / "runner_land" / "frames.json").read_text()) if code == 0 else {}
+        checks.append(("once: frames/1 by hand, hold_last true, loop false", code == 0 and _contract(doc)
+                       and doc["hold_last"] is True and doc["loop"] is False))
+        if code == 0:
+            contract_out(tmp / "out" / "runner_land" / "frames.json", "land_hold_last")
         code, rep = run(_write(still, tmp / "once_still"), tmp / "out", "x", mode="once")
         checks.append(("once: no action refused (2)", code == 2))
 
@@ -1055,6 +1152,8 @@ def selftest():
                        and any(f["kind"] == "multi-cycle-suspect" for f in faults)
                        and (tmp / "out" / "alt" / "frames.json").is_file()
                        and json.loads((tmp / "out" / "alt" / "frames.json").read_text())["verdict"]["ok"] is False))
+        if (tmp / "out" / "alt" / "frames.json").is_file():
+            contract_out(tmp / "out" / "alt" / "frames.json", "alt_uncertain")
 
         code, _ = run(tmp / "nowhere", tmp / "out", "x")
         checks.append(("no frames -> 1", code == 1))
@@ -1062,6 +1161,18 @@ def selftest():
         (empty / "frames.report.json").unlink()
         code, _ = run(empty, tmp / "out", "x")
         checks.append(("no source fps -> 1", code == 1))
+        code, rep = run(empty, tmp / "out", "bare", source_fps=24)
+        checks.append(("bare PNG folder without --key-color -> 1, nothing written", code == 1
+                       and "--key-color" in rep.get("error", "") and not (tmp / "out" / "bare").exists()))
+        bare = _write(walk, tmp / "bare_walk")
+        (bare / "frames.report.json").unlink()
+        code, rep = run(bare / "keyed", tmp / "out", "bare_walk", state="walk", source_fps=24, key_color="none")
+        doc = json.loads((tmp / "out" / "bare_walk" / "frames.json").read_text()) if code == 0 else {}
+        checks.append(("--key-color none -> key_color null", code == 0 and _contract(doc) and doc["key_color"] is None
+                       and "key_painted" not in doc))
+        code, rep = run(bare / "keyed", tmp / "out", "bare_hex", state="walk", source_fps=24, key_color="#F0F")
+        doc = json.loads((tmp / "out" / "bare_hex" / "frames.json").read_text()) if code == 0 else {}
+        checks.append(("--key-color #F0F -> #ff00ff", code == 0 and doc.get("key_color") == "#ff00ff"))
     fails = [name for name, ok in checks if not ok]
     for name, ok in checks:
         print(f"{'ok  ' if ok else 'FAIL'} {name}")
@@ -1090,6 +1201,10 @@ def main(argv=None):
                          "(rest -> action -> rest); once (an action ending in a held pose)")
     ap.add_argument("--fps", type=float, default=12.0, help="subsample to this rate (default 12; 0 keeps every frame)")
     ap.add_argument("--source-fps", type=float, help="the clip's frame rate when there is no frames.report.json")
+    ap.add_argument("--key-color", metavar="HEX",
+                    help="the key the frames were keyed against, written to frames.json as key_color (default: "
+                         "frames.report.json's key.declared; required without a report); 'none' = never "
+                         "chroma-keyed, key_color null")
     ap.add_argument("--min-len", type=int, help="shortest cut in source frames (overrides the state window)")
     ap.add_argument("--max-len", type=int, help="longest cut in source frames (overrides the state window)")
     ap.add_argument("--seam-max", type=float, default=SEAM_RATIO_MAX, help="largest wrap / mean step (default 2.0)")
@@ -1102,7 +1217,7 @@ def main(argv=None):
         return 1
     code, rep = run(args.frames, args.out_dir, args.name, state=args.state, mode=args.mode, fps=args.fps,
                     source_fps=args.source_fps, min_len=args.min_len, max_len=args.max_len, seam_max=args.seam_max,
-                    margin=args.margin, drift=not args.no_drift, gif=not args.no_gif)
+                    margin=args.margin, drift=not args.no_drift, gif=not args.no_gif, key_color=args.key_color)
     print(json.dumps(summary_of(rep), indent=2))
     if code == 3:
         for f in rep["verdict"]["faults"]:

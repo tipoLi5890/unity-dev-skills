@@ -55,8 +55,13 @@ faults depends on what was commissioned.
 
 Per sheet: (optionally key a flat background, quantise to one shared palette,
 pixelate) → cut rows × cols → **measure** every frame → seat or shift → write
-equal-size canvases plus a `frames.json` sidecar that `frames_to_anim.py`,
-`audit_frames.py` and the Unity clip builder read.
+equal-size canvases plus a `frames.json` sidecar (`schema` "frames/1", see the
+repo's schemas/frames-1.json) that `frames_to_anim.py`, `audit_frames.py` and the
+Unity importer read. It carries `key_color` — the key the sheet was keyed
+against (`--key-color` / `--bg-color`), null only for `--key-color none` — `loop`
+(`--no-loop`, `--hold-last-pose`), `pivot_norm`, and in `register` the reference
+frame's `reference_core_height_px` (its core height on the written frames) and
+`foot_margin_px` (the rows under its feet line).
 
 INPUT is either RGBA that is already keyed, or RGB plus `--bg-color` for a hard
 distance key done here. Key a colour the art does not contain: with
@@ -248,12 +253,15 @@ none of them is on by default, and each is recorded in `frames.json`'s
                     `register.resample` "split".
 
 `sheet_to_frames.py --selftest` builds synthetic sheets in a temp dir, runs the
-default paths and every fit option through this script, and prints one JSON
-line `{"selftest": "pass"|"fail", ...}`.
+default paths and every fit option through this script, copies sample
+frames.json files out (one `selftest-output: PATH` line each, into
+$UNITY_DEV_CONTRACT_OUT when set) and prints one JSON line
+`{"selftest": "pass"|"fail", ...}`.
 
 Exit codes: 0 ok · 1 rows × cols cells cannot be formed, bad args (including a
 fit option outside its mode, or `--scale reach` without `--canvas`), a missing
-`--outdir`, writing without `--register`, or `--bg-color` on an input that
+`--outdir`, writing without `--register` or without a key (`--key-color HEX |
+none`, or `--bg-color`), or `--bg-color` on an input that
 already carries alpha (see `--force-key`) · 2 `--align` needed a shift larger
 than `--max-shift` (nothing written) · 3 a gate failed (the frames ARE written,
 `frames.json` carries the faults; `--no-gate` turns this into 0).
@@ -296,6 +304,7 @@ import argparse
 import json
 import math
 import os
+import re
 import statistics
 import sys
 
@@ -353,6 +362,27 @@ def near(v, step):
 
 def hex_of(rgb):
     return "#%02x%02x%02x" % tuple(int(v) for v in rgb[:3])
+
+
+def written_core(canvases, ref):
+    """(core height, core bottom row) of the reference frame as written — the frame `ref`, else
+    the first frame with content. The core is sprite_ops.core (the silhouette the seat metric and
+    audit_frames.py measure); without numpy it is the alpha > THR bbox. (1, None) for an empty set:
+    frames/1 needs a height of at least 1."""
+    order = ([ref] if 0 <= ref < len(canvases) else []) + list(range(len(canvases)))
+    for i in order:
+        m, canvas = canvases[i]
+        if m.get("empty"):
+            continue
+        if ops():
+            np, so = ops()
+            ys = np.nonzero(so.core(np.asarray(canvas.getchannel("A"))).any(axis=1))[0]
+            if len(ys):
+                return int(ys.max() - ys.min() + 1), int(ys.max())
+        bb = canvas.getchannel("A").point(lambda v: 255 if v > THR else 0).getbbox()
+        if bb:
+            return int(bb[3] - bb[1]), int(bb[3] - 1)
+    return 1, None
 
 
 def cv(xs):
@@ -901,7 +931,9 @@ def main():
                                        "--force-key")
     ap.add_argument("--key-color", metavar="HEX",
                     help="the key colour an already-keyed sheet was generated on: measures the rim's fringe and "
-                         "tint on the written frames and gates them (--bg-color implies it)")
+                         "tint on the written frames and gates them, and is written to frames.json as "
+                         "key_color (--bg-color implies it). Writing needs one of the two; 'none' declares "
+                         "art that was never chroma-keyed (native alpha) and writes key_color null")
     ap.add_argument("--bg-tol", type=float, default=40.0,
                     help="RGB euclidean distance from --bg-color still counted as background (default 40)")
     ap.add_argument("--force-key", action="store_true",
@@ -978,6 +1010,10 @@ def main():
                          "which is what an --align shift needs. ground/free are always bottom-center: the "
                          "reference's feet line is the pivot")
     ap.add_argument("--fps-hint", type=float, default=10.0, help="recorded in frames.json for downstream tools")
+    ap.add_argument("--no-loop", action="store_true",
+                    help="a one-shot: frames.json says loop false (default: loop true, the clip cycles)")
+    ap.add_argument("--hold-last-pose", action="store_true",
+                    help="a one-shot that ends on its last pose and holds it: hold_last true (implies --no-loop)")
     ap.add_argument("--pixelate", type=int, metavar="N",
                     help="downscale every cell to N px on its long side with NEAREST (after --palette). "
                          "It resizes the WHOLE sheet to cols*N x rows*N, so it also regularises a ragged "
@@ -1082,6 +1118,30 @@ def main():
               "(--report prints incell_x_grid_r2), so `keep` on an in-place action is a character that "
               "jumps sideways on every frame change.", file=sys.stderr)
         return 1
+    # ---- the key the frames were keyed against is part of the contract: frames.json carries it
+    key_none = (a.key_color or "").strip().lower() == "none"
+    if key_none and a.bg_color:
+        print("ERROR: --key-color none says the art was never chroma-keyed; --bg-color keys it here.",
+              file=sys.stderr)
+        return 1
+    for flag, h in (("--bg-color", a.bg_color), ("--key-color", None if key_none else a.key_color)):
+        if h:
+            try:
+                parse_hex(h)
+            except ValueError:
+                print(f"ERROR: {flag} {h!r} is not a hex colour (#rrggbb, rrggbb or #rgb)", file=sys.stderr)
+                return 1
+    if key_none:
+        a.key_color = None
+    key_hex = a.key_color or a.bg_color
+    if not a.report and not key_hex and not key_none:
+        print("ERROR: say what the frames were keyed against — frames.json records it as key_color, and the "
+              "fringe checks downstream measure the rim against it:\n"
+              "  --key-color HEX   the key colour the sheet was generated on (or --bg-color HEX to key it here)\n"
+              "  --key-color none  the art was never chroma-keyed (native alpha): key_color null, and the "
+              "fringe check is skipped and says so", file=sys.stderr)
+        return 1
+    key_doc = hex_of(parse_hex(key_hex)) if key_hex else None
     if registered and not ops():
         print(f"ERROR: --register {a.register} needs numpy and sprite_ops.py beside this script "
               f"({_OPS[1]}) — codex's imagegen venv has numpy.", file=sys.stderr)
@@ -1656,8 +1716,8 @@ def main():
         # these fields to float, and a JSON null there is not a value it promises to accept
         reg_top = dict(mode=a.register, ref=a.ref,
                        scale_search=(list(a.scale_search) if a.scale_search else [1.0, 1.0]),
-                       subject_px=float(a.subject_px or 0.0), set_scale=round(k, 6), foot_margin_px=margin,
-                       anchor_px=[ax, ay], reference_core_height_px=(round(ref_h * k, 2) if ref_h else 0.0))
+                       subject_px=float(a.subject_px or 0.0), set_scale=round(k, 6), foot_margin_px=int(margin),
+                       anchor_px=[ax, ay], reference_core_height_px=1)
         # the fit options, as keys that only exist when the option was used
         if reach is not None:
             reg_top.update(scale_rule="reach", reach_factor=round(reach, 6), reach_margin_px=room)
@@ -1769,7 +1829,6 @@ def main():
 
     # ---- what the key left on the rim of the frames as written
     rim_doc = {}
-    key_hex = a.key_color or a.bg_color
     if key_hex and ops():
         np, so = ops()
         key = so.parse_hex(key_hex)
@@ -1926,15 +1985,26 @@ def main():
 
     side = a.json or os.path.join(a.outdir, "frames.json")
     register_doc = reg_top or dict(mode="keep", ref=a.ref)
+    # the reference's core height and its feet gap, measured on the canvas as written (after any
+    # --upscale): import PPU = this height / the character's height in world units
+    core_h, core_bottom = written_core(canvases, a.ref)
+    register_doc["reference_core_height_px"] = core_h
+    if not reg_top:
+        register_doc["foot_margin_px"] = max(0, CH - 1 - core_bottom) if core_bottom is not None else 0
     if a.align == "foot":
         register_doc.update(align_x="foot", foot_band_frac=FOOT_BAND)
+    hold_last = bool(a.hold_last_pose)
     doc = dict(
+        schema="frames/1",
         tool="sheet_to_frames.py", sheet=os.path.abspath(a.sheet),
         rows=a.rows, cols=a.cols, cell=[cw, ch], canvas=[CW, CH], pivot=pivot,
         # where the sprite's pivot goes, as a fraction of the canvas from its bottom-left:
         # the reference's feet line under ground/free, so a foot margin never floats the character
         pivot_norm=pivot_norm,
-        fps_hint=a.fps_hint, align=a.align, register=register_doc,
+        # the declared key, lowercase #rrggbb; null only for --key-color none (never keyed)
+        key_color=key_doc,
+        fps_hint=a.fps_hint, loop=not (a.no_loop or hold_last), hold_last=hold_last,
+        align=a.align, register=register_doc,
         gutters=gutters, cell_pad=pad, base_offset=[ox, oy], alpha_threshold=THR,
         alpha_cleared_below_thr=bool(a.clear_below_thr), dup_metric=a.dup_metric,
         clipped_count=len(clipped),
@@ -1956,6 +2026,24 @@ def main():
           f"register {register_doc['mode']}")
     return finish()
 
+FRAMES_REQUIRED = ("schema", "tool", "canvas", "pivot_norm", "key_color", "fps_hint", "loop", "register",
+                   "verdict", "frames")
+REGISTER_REQUIRED = ("mode", "ref", "reference_core_height_px", "foot_margin_px")
+
+
+def contract_out(path, case):
+    """Copy a frames.json a selftest wrote to where tools/check-contracts.py validates it against
+    schemas/frames-1.json: $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints
+    `selftest-output: PATH`. The selftest's own hand checks stay the gate; this is the hand-off."""
+    import shutil
+    import tempfile
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    dest = os.path.join(out, f"sheet_to_frames__{case}.frames.json")
+    shutil.copyfile(path, dest)
+    print(f"selftest-output: {dest}")
+
+
 def selftest():
     """Synthetic sheets in a temp dir, run through this script as a subprocess (main() keeps
     module state). Checks the default paths keep their sidecar shape and each fit option does what
@@ -1972,7 +2060,10 @@ def selftest():
             failed.append(f"{name} [{last[0]}]")
 
     def runner(tmp):
-        def run(*args):
+        def run(*args, key=True):
+            # every writing run declares its key; these synthetic sheets were never keyed
+            if key and not {"--key-color", "--bg-color", "--report"} & set(args):
+                args = (*args, "--key-color", "none")
             p = subprocess.run([sys.executable, os.path.abspath(__file__), *args],
                                capture_output=True, text=True, cwd=tmp)
             out = p.stdout + p.stderr
@@ -2010,6 +2101,20 @@ def selftest():
             with open(os.path.join(tmp, sub, "frames.json"), encoding="utf-8") as fh:
                 return json.load(fh)
 
+        def contract(d):
+            """frames/1 by hand: the required keys, their types, a flat register."""
+            reg = d.get("register") or {}
+            kc = d.get("key_color", "missing")
+            return (all(k in d for k in FRAMES_REQUIRED) and d["schema"] == "frames/1"
+                    and all(k in reg for k in REGISTER_REQUIRED) and "margin_px" not in reg
+                    and isinstance(reg["reference_core_height_px"], int) and reg["reference_core_height_px"] >= 1
+                    and isinstance(reg["foot_margin_px"], int) and reg["foot_margin_px"] >= 0
+                    and not any(isinstance(v, dict) for v in reg.values())
+                    and (kc is None or (isinstance(kc, str) and re.fullmatch(r"#[0-9a-f]{6}", kc)))
+                    and isinstance(d["loop"], bool) and not (d.get("hold_last") and d["loop"])
+                    and len(d["pivot_norm"]) == 2 and all(0 <= v <= 1 for v in d["pivot_norm"])
+                    and (d["verdict"]["ok"] is False or not d["verdict"]["faults"]))
+
         def frames_of(sub):
             d = doc(sub)
             return d, [Image.open(os.path.join(tmp, sub, f["file"])).convert("RGBA") for f in d["frames"]]
@@ -2018,7 +2123,11 @@ def selftest():
         code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--no-gate", "--outdir", "keep")
         d = doc("keep")
         check("keep default exit 0", code == 0)
-        check("keep default register is {mode, ref}", set(d["register"]) == {"mode", "ref"})
+        check("keep default register is {mode, ref, core height, foot margin}",
+              set(d["register"]) == {"mode", "ref", "reference_core_height_px", "foot_margin_px"})
+        check("keep: frames/1 by hand, key_color null for --key-color none", contract(d) and d["key_color"] is None
+              and d["loop"] is True and d["hold_last"] is False)
+        contract_out(os.path.join(tmp, "keep", "frames.json"), "keep")
         check("keep default align none", d["align"] == "none")
         check("keep default prints no fit line", "fit scale_rule" not in out)
         code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "ground", "--outdir", "ground")
@@ -2028,6 +2137,40 @@ def selftest():
               set(d["register"]) == {"mode", "ref", "scale_search", "subject_px", "set_scale", "foot_margin_px",
                                      "anchor_px", "reference_core_height_px"})
         check("ground default carries no fit key", not (new_keys & set(d["register"])))
+        check("ground: frames/1 by hand, integer core height", contract(d))
+        ref_im = Image.open(os.path.join(tmp, "ground", d["frames"][0]["file"])).convert("RGBA")
+        bb = ref_im.getchannel("A").point(lambda v: 255 if v > 127 else 0).getbbox()
+        check("ground: core height and foot margin read off the written reference",
+              abs(d["register"]["reference_core_height_px"] - (bb[3] - bb[1])) <= 2
+              and abs(d["register"]["foot_margin_px"] - (d["canvas"][1] - bb[3])) <= 2)
+        contract_out(os.path.join(tmp, "ground", "frames.json"), "ground")
+
+        # ---- the key is declared: none given refuses a write, a given one is written canonical
+        code, out = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--outdir", "nokey", key=False)
+        check("no key on the writing path refused (1)", code == 1 and "--key-color" in out
+              and not os.path.exists(os.path.join(tmp, "nokey")))
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--report", key=False)
+        check("--report without a key still measures", code in (0, 3))
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--key-color", "#zz00ff",
+                      "--outdir", "x")
+        check("a bad --key-color refused (1)", code == 1)
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--key-color", "#FF00FF",
+                      "--no-gate", "--hold-last-pose", "--outdir", "keyed")
+        d = doc("keyed")
+        check("--key-color #FF00FF written as #ff00ff", code == 0 and d["key_color"] == "#ff00ff" and contract(d))
+        check("--hold-last-pose: loop false, hold_last true", d["loop"] is False and d["hold_last"] is True)
+        contract_out(os.path.join(tmp, "keyed", "frames.json"), "keyed_hold_last")
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--no-loop", "--no-gate",
+                      "--outdir", "oneshot")
+        check("--no-loop: loop false, hold_last false", doc("oneshot")["loop"] is False
+              and doc("oneshot")["hold_last"] is False)
+        code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--pixelate", "32",
+                      "--upscale", "4", "--no-gate", "--outdir", "pix")
+        d = doc("pix")
+        check("pixel: block_px is the integer F, core height in written px", code == 0 and contract(d)
+              and d["pixel"]["block_px"] == 4 and isinstance(d["pixel"]["block_px"], int)
+              and d["register"]["reference_core_height_px"] > 32)
+        contract_out(os.path.join(tmp, "pix", "frames.json"), "pixel")
 
         # ---- refusals: a fit option outside its mode, reach without a canvas
         code, _ = run("run.png", "--rows", "2", "--cols", "2", "--register", "keep", "--scale", "reach",

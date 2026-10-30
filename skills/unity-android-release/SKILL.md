@@ -41,11 +41,14 @@ Get these right before the **first** artifact leaves your machine.
   (`com.DefaultCompany.<Project>`) reaching a store is unrecoverable. Set it on every platform.
 - **`versionCode` is monotonic per artifact handed to anyone**, not just per store upload.
 - **Keystore before the first release build**, backed up outside the repo, password with it.
-- **`minSdk` has a floor and `targetSdk` has a ceiling, and neither is your preference.** Unity
-  6000.4 would not take `minSdkVersion` below 25, so a plan promising "Android 6 / API 23" is
-  already wrong; and a prebuilt `.so` aligned to 4 KB pages caps you at `targetSdk` 34, because
-  from Android 15 a `targetSdk` 35+ app cannot load it on a 16 KB-page device. Check the alignment
-  **before** promising a `targetSdk` — `reference/player-settings-android.md`.
+- **`minSdk` has a floor and `targetSdk` has a store minimum, and neither is your preference.**
+  Unity clamps `minSdkVersion` up to its own floor (25 on 6000.4, 26 from 6000.5), so a plan
+  promising "Android 6 / API 23" is already wrong. Play requires a recent `targetSdk` (the current
+  level is in the repo's `VERSIONS.md`), and from Android 15 a `targetSdk` 35+ app cannot load a
+  `.so` aligned to 4 KB pages on a 16 KB-page device. So a 4 KB-aligned library is a **blocker to
+  rebuild or replace**, not a ceiling to pin under: pinning `targetSdk` 34 is for sideloaded builds
+  outside Play only. Check the alignment **before** promising a store date —
+  `reference/player-settings-android.md`.
 - **Secrets arrive on stdin, never in `argv`.** A password expanded from an environment variable
   is still visible in the process list; CI must mask it in logs as well. `Tools/.build-env` stays
   gitignored and is read, not passed.
@@ -121,10 +124,11 @@ the `.aar` has no `arm64-v8a` while you build ARM64-only. Check it before buildi
 installing — and make sure the check actually looked somewhere, because a `file:` UPM dependency
 lives outside the project and a naive scan finds nothing and passes.
 
-The same `.aar` also decides your `targetSdk`. Its `.so` files being aligned to 4 KB pages
-(`llvm-readelf -l …| awk '$1=="LOAD"{print $NF}'` → `0x1000` rather than `0x4000`) means a
-`targetSdk` 35+ build fails to load them on 16 KB-page devices — a crash that appears only on some
-hardware. Pin `targetSdk` with the reason in a comment: `reference/player-settings-android.md`.
+The same `.aar` also decides whether you can ship to Play at all. Its `.so` files being aligned to
+4 KB pages (`llvm-readelf -l …| awk '$1=="LOAD"{print $NF}'` → `0x1000` rather than `0x4000`)
+means a `targetSdk` 35+ build fails to load them on 16 KB-page devices — a crash that appears only
+on some hardware — and Play no longer accepts a lower target. Get the library rebuilt at 16 KB or
+replace it: `reference/player-settings-android.md`.
 
 When a plugin needs custom Gradle (minSdk, dependencies), prefer a **Custom Main Gradle Template**
 over hand-editing the export — exports are regenerated, templates persist.

@@ -23,7 +23,7 @@ directory produces a set of images that describes a game that never existed.
 crashes still says what it was:
 
 ```json
-{"meta":true,"schema":1,"journey":"approach-gate","situation":"approach-gate","params":{"angle":"80"},"startedUtc":"2024-01-01T00:00:00Z","batch":false,"unity":"6000.0.0f1"}
+{"meta":true,"schema":"timeline/1","journey":"approach-gate","situation":"approach-gate","params":{"angle":"80"},"startedUtc":"2024-01-01T00:00:00Z","batch":false,"unity":"6000.0.0f1"}
 ```
 
 **Lines 2..n — samples**, one per sampled frame, in order:
@@ -31,6 +31,12 @@ crashes still says what it was:
 ```json
 {"n":0,"frame":412,"t":6.833,"ut":6.902,"dt":0.0167,"timeScale":1.000,"scene":"Run","situation":"approach-gate","state":"Approach","cam":"RunCam","pos":[0.000,1.200,-12.000],"vel":[0.000,0.000,9.800],"speed":9.800,"ready":{"gate":true,"laneMesh":true,"laneCollider":false,"sentry":true},"allReady":false,"counts":{"hazards":6,"pickups":3},"custom":{"lane":1,"gateDist":12.000},"milestone":null}
 ```
+
+Each line is one `timeline/1` line on its own: the meta line is the only one with `schema`, a
+sample is closed at its top level (game values go in `custom`, `counts` and `ready`), and the
+schema is `schemas/timeline-1.json` in the plugin repository. A stamped file that lacks a required
+key is a recorder bug and the readers exit 2; the older stamp `"schema":1` is read as `timeline/1`
+with one `WARN` line.
 
 A sample with a `milestone` string is the tagged frame; everything else about it is a normal row,
 which is what lets a report filter "the ten frames before arrival" without a second file.
@@ -80,9 +86,11 @@ python3 scripts/journey_report.py --after approach-gate/timeline.jsonl \
 | `--together a,b` | Two members flip to true in the same sample — the readiness-set rule, checked |
 | `--no-null key` | The key is never null: a camera that disappeared, a state that went blank |
 
-Key paths resolve in this order, so the short name usually works: exact dotted path (`pos.y`,
-`custom.gateDist`, `ready.laneMesh`), then `custom.<name>`, then `counts.<name>`, then
-`ready.<name>`. **A key that does not exist is a violation, not a crash** — a report that silently
+Key paths resolve in this order, so the short name usually works: a component of `pos` or `vel`
+(`pos.y`, `vel.x`, or `.0` to `.2`), then an exact dotted path (`custom.gateDist`,
+`ready.laneMesh`), then `custom.<name>`, `counts.<name>`, `ready.<name>`, then a top-level field.
+`jump_report.py` (`unity-gameplay`) and `camera_jitter.py` (`unity-camera`) carry the same
+`resolve()`, so a key means the same thing in all three. **A key that does not exist is a violation, not a crash** — a report that silently
 checks nothing is the failure mode this whole skill is about.
 
 Output:

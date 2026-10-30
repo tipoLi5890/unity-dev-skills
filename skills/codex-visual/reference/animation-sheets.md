@@ -287,7 +287,7 @@ a transform **around the feet**, and a pose swap on the beat.
 The idle needs no sheet at all. `scripts/breathe.py` breathes one keyed pose into a loop on its
 own canvas — the head block bit-identical, the feet pinned on the content's bottom line, every
 pixel a copy of the input's, with a `frames.json` whose `pivot_norm` is the foot centre:
-`breathe.py sentry_idle.png --out-dir out/sentry_idle --frames 12` (usage, the refusals and how
+`breathe.py sentry_idle.png --out-dir out/sentry_idle --frames 12 --key-color '#ff00ff'` (usage, the refusals and how
 `--depth auto` scales with the figure: `reference/animation-scripts.md` §2). A moving loop from one
 still — a walk or a run in place — is made from a video: `sprite-from-video`.
 

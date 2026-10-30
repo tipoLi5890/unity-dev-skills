@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -300,6 +301,27 @@ def demo_skeleton(height=1.7) -> dict:
                       for n, (h, t) in P.items()]}
 
 
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
+
+
+def _captured(fn, *args) -> tuple:
+    """fn's exit code and the one JSON object it printed (a selftest helper)."""
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = fn(*args)
+    return code, json.loads(buf.getvalue())
+
+
 def selftest() -> int:
     checks = []
 
@@ -358,8 +380,10 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / "sk.json"; p.write_text(json.dumps(demo_skeleton()))
         o = Path(td) / "ri.json"
-        code = main(["rig-info", str(p), "--out", str(o)], quiet=True)
+        code, rep = _captured(main, ["rig-info", str(p), "--out", str(o)])
         check("CLI writes rig_info, exit 0", code == 0 and o.exists())
+        check("CLI: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True and rep.get("ok") is True)
+        contract_sample("skeleton", "rig_info", rep)
         sk = demo_skeleton(); sk["bones"] = [b for b in sk["bones"] if b["name"] != "Toes.R"]
         p.write_text(json.dumps(sk))
         check("CLI exit 2 on a missing bone", main(["rig-info", str(p), "--out", str(o)], quiet=True) == 2)
@@ -403,8 +427,8 @@ def main(argv=None, quiet=False) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from layout import Layout
     info, gates = build_rig_info(skel, role)
-    ok = all(g["pass"] for g in gates)
-    out = {"tool": "skeleton.py", "op": "rig-info", "gates": gates, "ok": ok}
+    ok = bool(gates) and all(g["pass"] is True for g in gates)
+    out = {"schema": "gate/1", "tool": "skeleton.py", "op": "rig-info", "gates": gates, "pass": ok, "ok": ok}
     if info is not None:
         top = max(b["head"][2] for b in skel.values()) if a.height is None else a.height
         top = max(top, max(b["tail"][2] for b in skel.values())) if a.height is None else top

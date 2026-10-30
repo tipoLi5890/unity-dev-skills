@@ -7,7 +7,8 @@ triangle count against the budget the graph was asked for, one material, UVs
 and normals on every primitive, the texture slots that were supposed to be
 baked, texture dimensions, and sane bounds.
 
-Stdlib only. Prints one JSON object; exit 0 = pass, 1 = a gate failed,
+Stdlib only. Prints one gate/1 report (schemas/gate-1.json: `pass`, and `ok`,
+its old name, equal to it for one release); exit 0 = pass, 1 = a gate failed,
 2 = the file could not be read (with --budgets: nor the budget row).
 
 Examples
@@ -447,7 +448,11 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
         "verdict": "failed" if failures else "green",
     })
 
+    passed = not failures and all(g["pass"] is True for g in gates)
     report = {
+        "schema": "gate/1",
+        "pass": passed,
+        "ok": passed,
         "file": str(path),
         "bytes": size_bytes,
         "triangles": triangles,
@@ -467,6 +472,11 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
         "record": record,
     }
     return report, failures
+
+
+def harness(path: Path, error: str) -> dict:
+    """A gate/1 report for a file that could not be measured: pass false, no gates."""
+    return {"schema": "gate/1", "pass": False, "ok": False, "gates": [], "file": str(path), "error": error}
 
 
 def finish(obj: dict, code: int, json_out: Path | None, **dump) -> int:
@@ -518,15 +528,14 @@ def main() -> int:
     try:
         args.asset_class, budget, notes = load_budget(args.asset_class, args.budgets)
     except (OSError, ValueError) as exc:
-        return finish({"file": str(args.glb), "error": f"--budgets: {exc}"}, 2, args.json_out)
+        return finish(harness(args.glb, f"--budgets: {exc}"), 2, args.json_out)
 
     try:
         report, failures = inspect(args.glb, args, budget, explicit)
     except (OSError, ValueError, struct.error) as exc:
-        return finish({"file": str(args.glb), "error": str(exc)}, 2, args.json_out)
+        return finish(harness(args.glb, str(exc)), 2, args.json_out)
     except (KeyError, IndexError, TypeError, AttributeError) as exc:
-        return finish({"file": str(args.glb), "error": f"malformed glTF: {type(exc).__name__}: {exc}"},
-                      2, args.json_out)
+        return finish(harness(args.glb, f"malformed glTF: {type(exc).__name__}: {exc}"), 2, args.json_out)
     report["warnings"][:0] = notes
     return finish(report, 1 if failures else 0, args.json_out, indent=2)
 

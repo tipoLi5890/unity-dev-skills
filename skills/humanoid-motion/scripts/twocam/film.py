@@ -158,32 +158,32 @@ def run_film(a) -> tuple:
             raise ValueError(f"missing: {p}")
     oi = json.loads(Path(a.object_info).read_text(encoding="utf-8")) if a.object_info else None
     gates = size_gates(a.width, a.height, oi)
-    out = {"tool": "film.py", "op": "run", "out_dir": str(a.out_dir), "seed": a.seed, "size": [a.width, a.height],
+    out = {"schema": "gate/1", "tool": "film.py", "op": "run", "out_dir": str(a.out_dir), "seed": a.seed, "size": [a.width, a.height],
            "length": a.length, "server_label": a.server_label, "gates": gates, "warnings": []}
     if oi is None:
         out["warnings"].append("width/height not checked against the server's node: run `film.py object-info` once "
                                "and pass --object-info")
     if not all(g["pass"] for g in gates):
-        out["ok"] = False
+        out["pass"] = out["ok"] = False
         return out, 2
     if a.dry_run:
         h = sha256(a.ref)
         cmd = client_cmd(a, Path(a.out_dir) / f"ref_{h[:12]}{Path(a.ref).suffix or '.png'}")
-        out.update({"ok": True, "dry_run": True, "client_args": cmd[2:]})
+        out.update({"pass": True, "ok": True, "dry_run": True, "client_args": cmd[2:]})
         return out, 0
     cmd = client_cmd(a, upload_copy(a))
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        out.update({"ok": False, "error": f"comfy_asset_client exited {r.returncode}: {r.stderr.strip()[-400:]}"})
+        out.update({"pass": False, "ok": False, "error": f"comfy_asset_client exited {r.returncode}: {r.stderr.strip()[-400:]}"})
         return out, 1
     try:
         rep = json.loads(r.stdout)
     except json.JSONDecodeError:
-        out.update({"ok": False, "error": "comfy_asset_client printed no JSON report"})
+        out.update({"pass": False, "ok": False, "error": "comfy_asset_client printed no JSON report"})
         return out, 1
     videos = [Path(p) for p in rep.get("outputs", []) if str(p).lower().endswith((".mp4", ".webm", ".mov", ".mkv"))]
     if not videos:
-        out.update({"ok": False, "error": f"no video among the outputs {rep.get('outputs')}"})
+        out.update({"pass": False, "ok": False, "error": f"no video among the outputs {rep.get('outputs')}"})
         return out, 1
     clip = Path(a.out_dir) / "h3.mp4"
     silent = strip_audio(videos[0], clip)
@@ -205,9 +205,9 @@ def run_film(a) -> tuple:
     out.update({"video": str(clip), "audio_discarded": silent, "raw_outputs": rep.get("outputs"),
                 "prompt_id": rep.get("prompt_id"), "elapsed_seconds": rep.get("elapsed_seconds"),
                 "workflow_sha256": rep.get("workflow_sha256"), "record": record,
-                "ok": all(g["pass"] for g in gates)})
+                "pass": all(g["pass"] is True for g in gates), "ok": all(g["pass"] is True for g in gates)})
     (Path(a.out_dir) / "film.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
-    return out, 0 if out["ok"] else 2
+    return out, 0 if out["pass"] else 2
 
 
 def fetch_object_info(a) -> tuple:
@@ -252,6 +252,17 @@ def parser():
     o = sub.add_parser("object-info")
     o.add_argument("--out", required=True); o.add_argument("--server"); o.add_argument("--config", default=str(DEFAULT_CONFIG))
     return ap
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 FAKE_CLIENT = r'''
@@ -331,6 +342,8 @@ def _selftest(check, checks) -> int:
         code, r = go(base + [str(out), "--seed", "1"] + tail)
         sets = json.loads((out / "sets.json").read_text()) if (out / "sets.json").exists() else {}
         check("a clip is filmed, exit 0", code == 0, code=code, err=r.get("error"))
+        check("a passing gate/1 report", r.get("schema") == "gate/1" and r.get("pass") is True and r.get("ok") is True)
+        contract_sample("film", "filmed", r)
         check("node 7 gets width, height, length and the prompt file", sets.get("7.width") == "1376" and
               sets.get("7.height") == "768" and sets.get("7.length") == "124" and sets.get("7.prompt", "").startswith("@"))
         check("node 8 gets the seed, node 1 the upload", sets.get("8.noise_seed") == "1"
@@ -345,7 +358,9 @@ def _selftest(check, checks) -> int:
         check("licence carries the H3 territory", r.get("record", {}).get("licence") == LICENCE)
         check("no address in the report", "://" not in json.dumps(r))
         code, r = go(base + [str(td / "b"), "--seed", "1", "--width", "1365"] + tail)
-        check("a width off the 32 step fails before submission, exit 2", code == 2 and not (td / "b").exists())
+        check("a width off the 32 step fails before submission, exit 2", code == 2 and not (td / "b").exists()
+              and r.get("pass") is False and r.get("ok") is False)
+        contract_sample("film", "width_step", r)
         code, r = go(base + [str(td / "c"), "--seed", "1", "--width", "2048", "--height", "1152"] + tail)
         check("a size above the node's max fails film.size_range, exit 2",
               code == 2 and not next(g for g in r["gates"] if g["name"] == "film.size_range")["pass"])

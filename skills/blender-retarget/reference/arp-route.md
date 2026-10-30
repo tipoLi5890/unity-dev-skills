@@ -301,7 +301,7 @@ metadata of **every** clip (below). Then, per clip:
 | `bind` | the bind with the settings above | `arp.vertices_without_group` |
 | `retarget` | the sequence above, per clip | `arp.retarget_clips`, `arp.metadata_clips` |
 
-- **A refusal changes nothing**: `ok` False, gate `arp.precondition` failing beside
+- **A refusal changes nothing**: `pass` false, gate `arp.precondition` failing beside
   `arp.addon_present`, and a `reason` (`addon_missing`, `operator_missing`, `object_missing`,
   `no_view3d_area`, `smart_not_started`, `already_bound`, `bind_option_not_found`, `clip_invalid`,
   `metadata_invalid`, `nla_tweak_mode`, `scene_property_missing`, …) with a `message`.

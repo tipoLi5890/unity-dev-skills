@@ -23,6 +23,7 @@ description: >-
 | Carving obstacles are costing frames | [`reference/obstacles-links-baking.md`](reference/obstacles-links-baking.md) §4, then §6 tile size |
 | Click-to-move, a patrol route, a chase — a working agent script rather than an explanation; also corner speed, locomotion, runtime bake | [`reference/recipes.md`](reference/recipes.md) |
 | `agent.target` or `NavMesh.Bake()` will not compile | [`reference/agent-api.md`](reference/agent-api.md) |
+| Click-to-move in a 2D (XY) top-down game | [`reference/recipes.md`](reference/recipes.md) §9 |
 
 > **Two things own the transform and only one can win.** A `NavMeshAgent` writes
 > `transform.position` every frame; so does root motion, and so does any movement script you

@@ -3,7 +3,9 @@
     Blender --background --factory-startup --python tests/test_blender_common.py
 
 Prints `PASS <name>` or `FAIL <name>: <why>` per case and exits 1 when any case
-fails. Covers: every result carries schema, file, warnings and record; an extra
+fails. Covers: every result carries file, warnings and record, and a gated one is a
+gate/1 report (schema, pass, ok equal to pass) while one with no gates carries no
+schema or pass; an extra
 named `file` cannot replace the file state; destructive_guard on a clean file,
 a dirty file, with acknowledge_destructive and with strict; brt_weights transfer,
 normalize and restore warn on a dirty file without raising; strict raises before
@@ -110,7 +112,8 @@ def main() -> int:
 
     def result_keys_retarget():
         r = W.run(region(op="probe", backup_path=snap, report_path=report_path))
-        assert r["schema"] == 1, r["schema"]
+        assert r["schema"] == "gate/1" and r["pass"] is r["ok"] is True, (r.get("schema"), r.get("pass"))
+        assert all("ok" not in g and isinstance(g["pass"], bool) for g in r["gates"]), r["gates"]
         assert r["file"] == {"path": "", "saved": False, "dirty": False}, r["file"]
         assert r["warnings"] == [], r["warnings"]
         rec = r["record"]
@@ -131,7 +134,7 @@ def main() -> int:
         import bcr_common
         r = bcr_common.report({"mesh": "Runner", "fbx_path": "/x/Runner.fbx"},
                               [bcr_common.gate("skin.max_influences", 5, "<= 4", False)], bones=4)
-        assert r["schema"] == 1 and r["ok"] is False and r["bones"] == 4, r
+        assert r["schema"] == "gate/1" and r["pass"] is False and r["ok"] is False and r["bones"] == 4, r
         assert set(r["file"]) == {"path", "saved", "dirty"}, r["file"]
         assert r["record"]["tool"] == {"skill": "blender-character-rig",
                                        "script": "test_blender_common"}, r["record"]["tool"]
@@ -139,9 +142,10 @@ def main() -> int:
         assert r["record"]["verdict"] == "failed", r["record"]
 
     def extras_cannot_replace_file_state():
-        r = C.report({}, [], file="Runner.blend", warnings=["one", "two"])
+        r = C.report({}, [], file="Runner.blend", warnings=["one", "two"], schema=1, ok=False)
         assert r["file"] == C.file_state() and isinstance(r["file"], dict), r["file"]
         assert r["warnings"] == ["one", "two"] and r["ok"] is True, r
+        assert "schema" not in r and "pass" not in r, r       # no gates: a result, not a gate/1 report
 
     def guard_clean_file():
         assert C.destructive_guard({}, "op") is None

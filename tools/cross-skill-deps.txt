@@ -1,0 +1,17 @@
+# Skill scripts that reach into another skill's files: a path built from the other skill's name,
+# or a skills/B/... or ../B/... path. Each skill is meant to be copyable on its own; these are the
+# exceptions, declared so a copy knows what else it needs. tools/check-contracts.py (deps) fails
+# on an undeclared reference and on a declared path that does not exist.
+#
+# SOURCE -> TARGET | reason        (both relative to skills/; TARGET is what the source reads or runs)
+
+blender-retarget/scripts/tests/test_blender_common.py -> blender-character-rig/scripts/bcr_common.py | checks the shared report() in the other pasted copy; skips when that skill is not installed beside this one
+character-autorig/scripts/autorig.py -> blender-character-rig/scripts | imports bcr_import_prep inside Blender for the prep stage
+character-autorig/scripts/autorig.py -> blender-retarget/scripts | imports brt_arp (the Auto-Rig Pro pipeline) and brt_weights (the weight repair) inside Blender
+character-autorig/scripts/autorig.py -> unity-rigged-character/scripts/contract_map.py | maps the rig onto the humanoid contract (contract_map.py map)
+character-autorig/scripts/tests/test_arp_pipeline.py -> blender-retarget/scripts | imports the brt modules the pipeline drives
+character-autorig/scripts/tests/test_arp_pipeline.py -> unity-rigged-character/scripts/contract_map.py | runs the contract step on the test rig
+humanoid-motion/scripts/contact_bake.py -> blender-retarget/scripts/motion_metrics.py | imports the plant and slide metrics, so the bake gates what motion_metrics gates
+humanoid-motion/scripts/twocam/film.py -> comfyui-asset-generation/scripts/comfy_asset_client.py | submits the image-to-video job through the ComfyUI client and its workflow template
+humanoid-motion/scripts/twocam/solve.py -> blender-retarget/scripts/motion_metrics.py | imports the pop test for the despike step
+humanoid-motion/scripts/twocam/twocam.py -> blender-retarget/scripts/motion_metrics.py | runs motion_metrics on the solved and baked samples

@@ -91,7 +91,7 @@ import bpy, brt_arp
 r = brt_arp.run({'op': 'pipeline', 'mesh': 'Runner', 'markers': 'rig/runner.markers.json',
                  'fbx': 'export/Runner.fbx', 'report_path': 'rig/runner.arp.json'})
 bpy.ops.wm.save_as_mainfile(filepath='rig/Runner_arp.blend')
-sys.exit(0 if r['ok'] else 2)
+sys.exit(0 if r.get('pass') is True else 2)
 PY
 )"
 python3 <skills>/unity-rigged-character/scripts/contract_map.py map export/Runner.skeleton.json \

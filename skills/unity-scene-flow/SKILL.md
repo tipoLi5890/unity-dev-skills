@@ -159,7 +159,8 @@ runtime files compile with no harness in the project.
 | Damage, projectiles, hit windows | `unity-combat` |
 | Sentry behaviour, spawners and waves | `unity-game-ai` |
 | Hit stop, shake, particles, haptics | `unity-game-feel` |
-| Networked scene management and host migration | Out of scope — netcode APIs are out of scope for this plugin; topology and authority: `unity-live-services` → `reference/multiplayer.md` |
+| Host migration | `unity-multiplayer-services` → `reference/session-api.md` |
+| Networked scene management | Out of scope (netcode APIs); topology and authority: `unity-live-services` → `reference/multiplayer.md` |
 
 What is left is the frame the rest hangs on: **what exists for the whole session, how one room
 replaces another, which phase the game is in, and the facts that put a room back.**

@@ -95,12 +95,13 @@ prints one JSON object and exits 1 when no key clears the radius.
 
 # 5. motion AUTHORED inside the cell: keep the in-cell position (and, optionally, pin the set to
 #    its median ground line by whole-set translation)
-"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --register keep --outdir /abs/out/hop
-"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 \
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --key-color '#ff00ff' \
+  --register keep --outdir /abs/out/hop
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --key-color '#ff00ff' \
   --align baseline --max-shift 24 --outdir /abs/out/hop
 
 # 6. pixel-art post-process: one shared palette for the whole sheet, 64 px cells back up at 4x
-"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 5 --cols 6 \
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 5 --cols 6 --key-color '#ff00ff' \
   --palette 24 --pixelate 64 --upscale 4 --register ground --outdir /abs/out/morph --names morph
 #    the same, snapped: each cell cut along its own block edges, the palette applied to the small
 #    sheet and written down for the next sheet (`reference/pixel-grid.md`)
@@ -117,24 +118,29 @@ prints one JSON object and exits 1 when no key clears the radius.
 "$PY" "$S/sheet_to_frames.py" /abs/swing_keyed.png --rows 3 --cols 3 --key-color '#ff00ff' \
   --register ground --canvas 256 256 --scale reach --resample split --outdir /abs/out/swing --names swing
 #    authored motion (keep) seated by the feet, not by a cape or a trailing arm
-"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 \
+"$PY" "$S/sheet_to_frames.py" /abs/sheet_keyed.png --rows 4 --cols 4 --key-color '#ff00ff' \
   --align foot --max-shift 24 --outdir /abs/out/hop
+# 9. a one-shot that ends on its landing pose and holds it; art drawn on transparency, never keyed
+"$PY" "$S/sheet_to_frames.py" /abs/land.png --rows 2 --cols 3 --key-color none \
+  --register ground --hold-last-pose --outdir /abs/out/land --names land
 ```
 
 Full flag set: `sheet --rows --cols [--register ground|free|centroid|keep] [--ref 0]
 [--subject-px PX] [--scale-search LO HI] [--foot-margin PX] [--gutters search|nominal]
-[--key-color HEX] [--bg-color HEX] [--bg-tol 40] [--force-key] [--alpha-thr 16]
+[--key-color HEX|none] [--bg-color HEX] [--bg-tol 40] [--force-key] [--alpha-thr 16]
 [--clear-below-thr] [--drop-strays] [--inset-frac 0] [--names frame]
 [--align none|baseline|centroid|both|foot] [--scale none|reach] [--resample lanczos|split]
 [--max-shift PX] [--outdir DIR] [--canvas W H]
-[--pivot bottom-center|center] [--fps-hint 10] [--pixelate N] [--pixel-method nearest|snap]
+[--pivot bottom-center|center] [--fps-hint 10] [--no-loop] [--hold-last-pose] [--pixelate N]
+[--pixel-method nearest|snap]
 [--snap-warp on|off] [--palette K] [--palette-file PATH] [--palette-section Palette]
 [--palette-out PATH] [--colour-metric lab|rgb] [--dither none|floydsteinberg] [--upscale F]
 [--dup-metric signature|pixel] [--dup-threshold 2.0] [--feet-max 3] [--fringe-max 0.5] [--tint-max 2] [--no-gate]
 [--json PATH] [--report] | --selftest`.
 Exit codes: 0 ok · 1 the cells cannot be formed / bad args (a fit option outside its mode,
 `--scale reach` without `--canvas`) / missing `--outdir` / **writing without
-`--register`** / `--bg-color` on an input that already carries alpha · 2 `--align` needed a shift
+`--register`** / **writing without a key** (`--key-color HEX`, `--bg-color HEX`, or
+`--key-color none` for art never chroma-keyed) / `--bg-color` on an input that already carries alpha · 2 `--align` needed a shift
 larger than `--max-shift`, and nothing was written · **3 a gate failed** — the frames *are* written
 and `frames.json` carries the faults under `verdict`; `--no-gate` exits 0 instead.
 
@@ -242,9 +248,12 @@ Exit 0 pass · 1 a hard gate failed · 2 nothing was read.
 
 Two gates are on by default beside feet, slip, fringe, tint and cut. **`resid`** counts, per
 frame, the pixels at alpha > 16 within 150 RGB of the key — anywhere, not only on the rim — and
-fails a frame over `--residual-max` (120); the key is `--key-color`, else the sidecar's
-`set_metrics.key_color`, else the column reads `n/a` and nothing is gated (fringe and tint still
-need `--key-color`). **`opaque/floor`** is the frame's count of pixels at alpha > 0 against the
+fails a frame over `--residual-max` (120). The key behind fringe, tint and resid is
+`--key-color`, else the sidecar's `key_color` (the key the frames were keyed against); with
+`key_color: null` (never keyed), a bare directory or no key at all, the three read `n/a` with a
+`WARN` — not measured, which is not a pass. A sidecar stamped `frames/1` that lacks a required key
+fails its sequence (a producer bug); an unstamped 0.34 sidecar is read for one release with one
+`WARN`, its `set_metrics.key_color` standing for `key_color`. **`opaque/floor`** is the frame's count of pixels at alpha > 0 against the
 sparse floor `ceil(sqrt(W x H))` of its canvas — half that for a `centroid` (effect) sequence —
 or `--sparse-min N`; under it the frame is empty or debris. `-1` / `0` turn them off. The table
 prints the worst frame of each (`resid` the largest count, `opaque/floor` the smallest), a failing
@@ -268,7 +277,8 @@ on the content's bottom line; equal phases are identical frames, so the loop clo
 
 ```bash
 # the sentry's idle: 12 frames, one breath, the neck found from the width profile
-"$PY" "$S/breathe.py" /abs/keyed/sentry_idle.png --out-dir /abs/out/sentry_idle --frames 12 --fps 8
+"$PY" "$S/breathe.py" /abs/keyed/sentry_idle.png --out-dir /abs/out/sentry_idle --frames 12 --fps 8 \
+  --key-color '#ff00ff'
 # a large illustration: depth auto already keeps the breath shallow; the rigid part named by hand
 "$PY" "$S/breathe.py" /abs/keyed/runner_portrait.png --out-dir /abs/out/runner_breathe \
   --rigid-from 0.35 --name runner_breathe
@@ -277,7 +287,9 @@ on the content's bottom line; equal phases are identical frames, so the loop clo
 ```
 
 Full flag set: `IMAGE --out-dir DIR [--frames 12] [--breaths 1] [--depth auto] [--lag 0.10]
-[--rigid-from auto|0.xx] [--rigid-fallback 0.30] [--fps 8] [--name STEM] | --selftest`.
+[--rigid-from auto|0.xx] [--rigid-fallback 0.30] [--fps 8] [--name STEM] [--key-color HEX|none]
+| --selftest`. The key is `--key-color`, else the `key_color` of a `frames.json` beside the still
+(the set it was taken from); with neither nothing is written (exit 1).
 `--depth` is the total stretch as a share of the body below the neck; the head lifts by about
 depth × those rows. The default `auto` aims that lift at max(3 px, 1.5% of the content height)
 and caps depth at 0.06: 0.06 on a 64 px sprite, about 0.017 on a 280 px figure (a ±4 px lift,
@@ -286,13 +298,14 @@ records `depth` and `depth_source`. `--rigid-from auto` takes the narrowest widt
 in the top 5–60% of the content (the neck), falls back to `--rigid-fallback` when there is none (a
 blob, a hooded figure), and caps the boundary at 80% of the height; `--lag` delays the upper body
 by a share of a breath. Fewer than 6 frames per breath is a warning — it reads as a twitch.
-Exit 0 written · 1 usage, an unreadable or empty input, a bad fraction, or a failed selftest ·
+Exit 0 written · 1 usage, no key, an unreadable or empty input, a bad fraction, or a failed selftest ·
 **2 refused, nothing written**: the per-row strain exceeds 0.25 (lower `--depth` or raise the
 rigid boundary) or a frame pushes an opaque pixel off the canvas top, left or right (widen the
 canvas margin or lower `--depth`). It prints one JSON object.
 
-Its `frames.json` follows the §4 contract: `register {mode: keep, ref: 0}` (each frame stays where
-it is drawn), `pivot_norm` at the foot centre, `fps_hint`, `loop: true`, `verdict {ok, faults}`,
+Its `frames.json` follows the §4 contract: `register {mode: keep, ref: 0, reference_core_height_px,
+foot_margin_px}` (each frame stays where it is drawn), `pivot_norm` at the foot centre, `key_color`,
+`fps_hint`, `loop: true`, `hold_last: false`, `verdict {ok, faults}`,
 `producer {skill: codex-visual, script: breathe.py}`, the input as `source` and `source_sha256`
 (there is no `sheet`), a `breathe` block (the parameters, the neck and rigid rows, `identity_rows`,
 `row_strain`, `period_s`, warnings) and per frame `phase` and `head_dy_px`. Its ground line is the
@@ -389,17 +402,24 @@ The handoff contract, which `unity-2d-sprites` relies on to build an `AnimationC
 | Equal canvas | every frame the same `W x H` — fitted to the registered set, or `--canvas`; **not** assumed to be 512 or square. No per-frame trim, no per-frame rescale |
 | One ground line | `register.mode` `ground` with `seat metric feet_drift_px` ≤ 3, or `keep` with `align residual baseline_drift_max_px` 0.000 |
 | The pivot | **`pivot_norm`** `[x, y]`, a fraction of the canvas from its bottom-left — the reference's feet line under `ground` / `free` (a foot margin sits under it, so `(0.5, 0)` would float the character), `[0.5, 0.5]` under `centroid`, `[0.5, 0]` for a `keep` set on `--pivot bottom-center` |
-| One size per character | every sheet of a character sliced with the same `--subject-px`; `register.reference_core_height_px` is that number, and one PPU then draws them at one size |
+| One size per character | every sheet of a character sliced with the same `--subject-px`; `register.reference_core_height_px` (an integer, measured on the written reference frame, after any `--upscale`) is that number, and one PPU — `reference_core_height_px / the character's height in world units` — then draws them at one size. Pixel art: pick the world height so `PPU / pixel.block_px` is whole |
+| The key | **`key_color`**, lowercase `#rrggbb`: the key the frames were keyed against (`--key-color` / `--bg-color`). The fringe and tint checks, here and in the engine, measure against it — never an assumed magenta. `null` only for `--key-color none` (never keyed) |
+| Loop or one-shot | **`loop`** is always written; `hold_last: true` (`--hold-last-pose`) is a one-shot that ends on its last pose and holds it |
 | Naming | `<name>_000`, `_001`, … zero-padded to three digits, row-major — the sort order is the play order |
 | Timing | fps lives in `frames.json` (`fps_hint`), never in a filename |
 | Alpha | keyed by `key_unmix.py`: the 2 px rim carries real alpha (0.35–1) over un-mixed colour and the interior is opaque, so the importer's alpha and the GIF's 1-bit cut land on clean pixels. A resampled set (`--subject-px`) ends in a 1–5 px tail at alpha 1–16 that carries its neighbour's colour; `frames.json` records the `alpha_threshold` and each frame's bare `alpha > 0` bbox beside its thresholded one, and `--clear-below-thr` removes the tail when a trimmer has to agree with the report |
 | Cycle or hold | a one-pose loop that `audit_frames.py --hold` calls `BOIL` ships as its reference frame; the motion is the engine's, or `breathe.py` on that frame (`reference/animation-sheets.md` §3a) |
 | Verdict | `verdict.ok` true. The engine side re-measures the shipped PNGs anyway (`unity-2d-sprites` → `resources/Tests/SpriteFramesAudit.cs`): the slicer's numbers are the slicer's |
 
-`frames.json` is additive: every key a reader of the older sidecar used is still there with the
-same meaning (`frames[].file`, `canvas`, `pivot`, `fps_hint`, `set_metrics.*`, `shift`,
-`canvas_offset`, `written`). New: `pivot_norm`, `register {mode, ref, set_scale, subject_px,
-foot_margin_px, reference_core_height_px}`, `gutters`, `cell_pad`, `verdict {ok, faults[]}`, per
+`frames.json` is **frames/1**, defined once in the repo's `schemas/frames-1.json` (rules in
+`schemas/README.md`): `"schema": "frames/1"`, and required `tool`, `canvas`, `pivot_norm`,
+`key_color`, `fps_hint`, `loop`, `register {mode, ref, reference_core_height_px, foot_margin_px}`
+(flat: no object inside it), `verdict {ok, faults[]}` and `frames`; the top level stays open for
+each producer's own keys. The margin's one name is `foot_margin_px` (`margin_px` is refused). A
+reader meets a 0.34 sidecar (no `schema`) for one release and says so in one `WARN`. Beside the
+contract, `sheet_to_frames.py` writes `frames[].file`, `pivot`, `set_metrics.*`, `shift`,
+`canvas_offset`, `written`, `hold_last`, `register {set_scale, subject_px, anchor_px,
+scale_search}`, `gutters`, `cell_pad`, per
 frame `register {scale, dx, dy, iou}`, `cut_rect`, `cut_sides`, `bleed_dropped_px`, and in
 `set_metrics` the `seat` numbers (`feet_drift_px`, `slip_max_px`, `head_x_drift_px`,
 `iou_to_ref_min` / `_mean`), the `rim` numbers (`fringe_pct`, `tint_pct`) and
@@ -407,10 +427,13 @@ frame `register {scale, dx, dy, iou}`, `cut_rect`, `cut_sides`, `bleed_dropped_p
 carries `scale_rule: "reach"`, `reach_factor` (≤ 1) and `reach_margin_px` (`--scale reach`),
 `resample: "split"` (`--resample split`), and `align_x: "foot"` with `foot_band_frac: 0.2`
 (`--align foot`, which also sets the top-level `align` to `"foot"`). A `breathe.py` sidecar adds
-`producer`, `loop`, `source` / `source_sha256` and the `breathe` block above. A
+`producer`, `key_color_source` (the flag, or the frames.json the key was read from), `source` /
+`source_sha256` and the `breathe` block above. A
 `sprite-from-video` `video_loop.py` sidecar adds `producer`, `loop`, `hold_last`, `source {file,
-sha256, fps}`, in `register` the feet-line numbers (`floor_spread_px`, `source_floor_spread_px`,
-`seated_max_px`), and `cut`, `seam`, `drift` and `subsample {indices, steps, even}`.
+sha256, fps}`, `key_painted` (the key the model painted, from `frames.report.json`), in
+`register` `canvas_margin_px` (`--margin`) and the feet-line numbers (`floor_spread_px`,
+`source_floor_spread_px`, `seated_max_px`), and `cut`, `seam`, `drift` and `subsample {indices,
+steps, even}`.
 
 Unity plays no GIF, APNG or WebP. The game wants the frames plus a clip, and that is where
 `codex-visual` stops.

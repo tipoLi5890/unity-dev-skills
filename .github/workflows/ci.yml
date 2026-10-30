@@ -30,6 +30,13 @@ jobs:
       - name: Script selftests
         run: python3 tools/run-selftests.py
 
+      # What one skill writes and another reads (schemas/), the flags and -executeMethod
+      # entries the docs name, declared cross-skill paths, and version tokens (VERSIONS.md).
+      - name: Data contracts
+        run: |
+          pip install jsonschema
+          python3 tools/check-contracts.py
+
       # Where exit 2 means "a gate failed", argparse's own exit 2 on a bad flag would read
       # as a verdict. These scripts exit 1 on a usage error instead; each must say so.
       - name: Usage errors are not gate failures

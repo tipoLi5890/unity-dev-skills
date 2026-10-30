@@ -40,7 +40,8 @@ Definitions (the plant detector, slide, summaries and pop test are motion_metric
   those frames + 3 deg in the frame (a pop the route added, not a fast swing the clip has).
   Gated: count <= --pops-max (0).
 
-Prints one JSON report (also to --out): per-metric p50, p95, max, n; plants; gates; ok.
+Prints one JSON report (also to --out): per-metric p50, p95, max, n; plants; gates; pass. It is a
+gate/1 report (schemas/gate-1.json); `ok`, pass's old name, equals pass for one release.
 Exit codes (motion_metrics.py's): 0 every gate passed (or selftest passed); 2 a gate failed;
 1 refused input (unreadable file, wrong schema, a required role missing, frame counts that
 differ, a non-finite value), a usage error or a failed selftest. Requires numpy.
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -121,7 +123,7 @@ def load(doc: dict) -> tuple:
 def measure(doc: dict, a) -> dict:
     fps, c, r = load(doc)
     floor = float(min(r["sole_l"].min(), r["sole_r"].min()))
-    out = {"clip": doc.get("clip"), "frames": int(len(c["foot_l"])), "fps": fps,
+    out = {"tool": "clip_metrics.py", "clip": doc.get("clip"), "frames": int(len(c["foot_l"])), "fps": fps,
            "clip_floor_m": floor}
     sl_c, sl_r, sl_add, n_plants = [], [], [], 0
     for s in SIDES:
@@ -165,19 +167,20 @@ def measure(doc: dict, a) -> dict:
     out["pops"] = {"count": len(found) if n_segs else None, "list": found[:60]}
     gates = [
         {"name": "added_slide_p95_m", "value": out["foot_slide_added_m"]["p95"],
-         "limit": f"<= {a.slide_p95}", "ok": out["foot_slide_added_m"]["p95"] <= a.slide_p95},
+         "limit": f"<= {a.slide_p95}", "pass": bool(out["foot_slide_added_m"]["p95"] <= a.slide_p95)},
         {"name": "added_slide_max_m", "value": out["foot_slide_added_m"]["max"],
-         "limit": f"<= {a.slide_max}", "ok": out["foot_slide_added_m"]["max"] <= a.slide_max},
+         "limit": f"<= {a.slide_max}", "pass": bool(out["foot_slide_added_m"]["max"] <= a.slide_max)},
     ]
     if n_segs:
         gates.append({"name": "pops", "value": len(found), "limit": f"<= {a.pops_max}",
-                      "ok": len(found) <= a.pops_max})
+                      "pass": len(found) <= a.pops_max})
     if errs:
         v = out["limb_direction_error_deg"]["p95"]
         gates.append({"name": "limb_direction_p95_deg", "value": v,
-                      "limit": f"<= {a.limb_p95}", "ok": v <= a.limb_p95})
+                      "limit": f"<= {a.limb_p95}", "pass": bool(v <= a.limb_p95)})
     out["gates"] = gates
-    out["ok"] = all(g["ok"] for g in gates)
+    out["schema"] = "gate/1"
+    out["pass"] = out["ok"] = all(g["pass"] is True for g in gates)
     return out
 
 
@@ -209,14 +212,26 @@ def run(argv) -> tuple:
         doc = json.loads(Path(a.samples).read_text(encoding="utf-8"))
         rep = measure(doc, a)
     except (OSError, ValueError, Refused) as e:
-        rep = {"ok": False, "refused": str(e)}
+        rep = {"schema": "gate/1", "tool": "clip_metrics.py", "pass": False, "ok": False, "gates": [],
+               "refused": str(e)}
         code = 1
     else:
-        code = 0 if rep["ok"] else 2
+        code = 0 if rep["pass"] is True else 2
     text = json.dumps(rep, indent=1)
     if a.out:
         Path(a.out).write_text(text + "\n", encoding="utf-8")
     return code, rep, text
+
+
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
 
 
 # ------------------------------------------------------------------------------------ selftest
@@ -261,12 +276,16 @@ def selftest() -> int:
         check("plants found", rep.get("plants", 0) >= 4)
         check("absolute slide over 1.5 cm", rep["foot_slide_m"]["max"] > 0.015)
         check("added slide ~0", rep["foot_slide_added_m"]["max"] < 1e-9)
+        check("a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True
+              and rep.get("ok") is True and all("pass" in g and "ok" not in g for g in rep["gates"]))
+        contract_sample("clip_metrics", "drifting_reference", rep)
         # 2. the character drifts 6 cm per plant where the reference drifts 1 cm: added ~5 cm fails
         doc["character"] = _walk(80, 0.06)
         doc["reference"] = _walk(80, 0.01)
         p.write_text(json.dumps(doc))
         code, rep, _ = run([str(p)])
-        check("added slide fails: exit 2", code == 2)
+        check("added slide fails: exit 2", code == 2 and rep["pass"] is False)
+        contract_sample("clip_metrics", "added_slide", rep)
         mx = rep["foot_slide_added_m"]["max"]
         check("added slide max = 9/10 of the 5 cm extra drift", abs(mx - 0.045) < 1e-6)
         # 3. a forearm rotated by 10 degrees reads 10 degrees, and fails a 2-degree gate

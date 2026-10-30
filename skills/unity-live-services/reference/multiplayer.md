@@ -9,6 +9,7 @@
 | Deciding how players connect at all | §1 |
 | A player cheated and it affected someone else | §1 — the topology gave them authority |
 | Lobby says one thing, the game says another | §2 |
+| Who decides that a hit landed; two players disagree about a hit | §2 — damage |
 | A player lost signal and the session broke | §2 reconnection |
 | Voice chat killed another microphone feature | §3 |
 | Mute does not take effect immediately | §3 |
@@ -56,6 +57,31 @@ Draw this once, explicitly, and keep it near the code:
 > tunnel. Decide what their character does while they are gone, and what they can rejoin into,
 > before shipping. The rejoin call itself is `unity-multiplayer-services`
 > (`ReconnectToSessionAsync`).
+
+**Damage is gameplay state, so the authority decides it.** Split every hit into three steps and
+put each on its side of the line:
+
+| Step | Who | What crosses the network |
+|---|---|---|
+| Intent: the swing was pressed, aimed here, at this tick | The attacking client | The input, never "I hit the sentry for 12" |
+| Resolution: did it connect, how much, was the target in invincibility frames, did they block | The authority, against its own copy of positions and timers | The result: target, amount, new health, knock-back |
+| Presentation: hit flash, sound, the health bar moving | Every client | Nothing — it plays the result it was sent |
+
+- **The client may predict the presentation, never the health.** Play the swing and a provisional
+  hit flash at once; change health and trigger death only when the authority's result arrives. A
+  rejected hit then costs a flash, not a corpse that stands back up.
+- **Every timer that gates damage lives on the authority**: invincibility frames, cooldowns,
+  hitbox windows. A client-side i-frame timer is a client that decides it cannot be hit.
+- **Decide what "where the target was" means** before writing the hit test: where the authority
+  has it now, or where the attacker saw it (rewinding positions by the attacker's latency). The
+  first favours the target and is simple; the second favours the attacker and needs a short
+  position history per target. Pick one per game and write it here.
+- On a listen server the host's own hits skip the network and its view has no latency: the
+  advantage named in §1. Peer-to-peer has no authority, so each peer resolves hits on itself and
+  the others accept them.
+
+The single-player version of the same split (`Health`, hurt, invincibility frames) is
+`unity-combat`; this table is the part that changes when a second machine joins.
 
 Anything persistent — currency, unlocks, progression earned in a session — is server-authoritative
 regardless of what topology the session used: the router's §3 (`unity-live-services`).

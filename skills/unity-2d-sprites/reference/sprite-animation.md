@@ -12,18 +12,25 @@ check the scene's `isDirty` is still `False` afterwards.
 
 ## 1. The input contract — what "equal canvas" buys you
 
-`codex-visual`'s `sheet_to_frames.py` writes a frame set plus a `frames.json` sidecar, and that
-sidecar is the handoff. The fields this side reads:
+`codex-visual`'s `sheet_to_frames.py` and `breathe.py`, and `sprite-from-video`'s `video_loop.py`,
+write a frame set plus a `frames.json` sidecar, and that sidecar is the handoff. Its contract is
+`frames/1`: `schemas/frames-1.json` and `schemas/README.md` at the plugin root. The fields this
+side reads:
 
 | Field | Use here |
 |---|---|
+| `schema` | `"frames/1"`. A file without it is the 0.34 dialect, read for one release with a `WARN`; a stamped file missing a required key is refused |
 | `frames[].file` / `frames[].name` | import order and sprite names — `idle_000`, `idle_001`, … |
 | `canvas` `[W, H]` | every frame is the same pixel size, so one rect size fits all. **Not 512, and not square** — a registered set's canvas is fitted to its frames (`352x500`, `720x499`); read it, never assume it |
 | `pivot_norm` `[x, y]` | **the pivot to write on every rect**, as a fraction of the canvas from its bottom-left. For a seated set it is the reference frame's feet line, which is *not* the canvas floor: a foot margin sits under it (`[0.5, 0.048]` on a 500 px canvas with a 24 px margin) |
-| `pivot` (`bottom-center` / `center`) | the older, coarser statement of the same thing; use it only when `pivot_norm` is absent — then `(0.5, 0)` / `(0.5, 0.5)` |
+| `pivot` (`bottom-center` / `center` / `foot-center`) | the older, coarser statement of the same thing; use it only when `pivot_norm` is absent — then `(0.5, 0)` / `(0.5, 0.5)` |
 | `fps_hint` | the clip's `frameRate`; the preview GIF used the same number |
+| `loop` / `hold_last` | `loopTime` on the clip. `loop` is always written; `hold_last: true` is a one-shot that ends on its last pose and holds it (so `loop` is false). It is a bool, not a count of frames |
+| `key_color` | the key the frames were keyed against, `#rrggbb`. The engine-side rim check (§7) measures against it; `null` means the art was never keyed, and the rim check is skipped, not passed |
+| `pixel.block_px` | present only on a pixel-art set: F, written pixels per art pixel. Point filter, no compression (§2) |
 | `register.mode` | how the frames were seated: `ground` / `free` (by silhouette, on one reference), `centroid` (effects), `keep` (at the position the cell held). Absent = an older slicer that kept in-cell position without saying so |
-| `register.reference_core_height_px` | the height the reference frame was placed at; every sheet of one character must carry the same number, or one PPU draws it at two sizes |
+| `register.reference_core_height_px` | the reference frame's core height in pixels of the written files; every set of one character carries the same number. **PPU = this ÷ the character's height in world units**, one PPU for every set of the character. For pixel art choose the height so that PPU ÷ `pixel.block_px` is whole |
+| `register.foot_margin_px` | transparent pixels under the reference frame's feet; already inside `pivot_norm`'s y. The 0.34 name `margin_px` is read with a `WARN` |
 | `set_metrics.slip_max_px` / `feet_drift_px` | how far a frame sits from register, and the feet-line spread, on the written frames — the jump and the bob, in pixels, before you build anything |
 | `set_metrics.iou_to_ref_min` | how alike the frames are; see §5 before cycling a one-pose loop |
 | `verdict.ok` | the slicer's own gate. `false` is a reason to send the set back; `true` is the slicer's opinion of its own work (§7, the fifth read) |
@@ -73,7 +80,7 @@ All of these have public setters on `UnityEditor.TextureImporter`: `textureType`
 
 | Setting | Value for a frame set | Why it matters to the animation |
 |---|---|---|
-| `spritePixelsPerUnit` | one number for the whole set | Per-asset. Two frames at different PPU are two different on-screen sizes, and the character pulses. |
+| `spritePixelsPerUnit` | `reference_core_height_px` ÷ the character's world height, one number for the whole set and every set of the character | Per-asset. Two frames at different PPU are two different on-screen sizes, and the character pulses. |
 | `filterMode` | `FilterMode.Point` for pixel art | Enum members are `Point, Bilinear, Trilinear`. Bilinear on pixel art softens edges differently per frame, which reads as flicker. |
 | `textureCompression` | `TextureImporterCompression.Uncompressed` for pixel art | Members are `Uncompressed, Compressed, CompressedHQ, CompressedLQ`. Block compression puts its artifacts in different places per frame — a static area shimmers. |
 | `mipmapEnabled` | `false` | A 2D frame never samples a mip; enabling it wastes memory and can pick a blurrier level per frame. |
@@ -83,6 +90,29 @@ All of these have public setters on `UnityEditor.TextureImporter`: `textureType`
 `SpriteAlignment` members, enumerated rather than recalled:
 `Center, TopLeft, TopCenter, TopRight, LeftCenter, RightCenter, BottomLeft, BottomCenter,
 BottomRight, Custom`.
+
+**Two files read `frames.json`, and each owns its half.**
+
+| File | Owns | Reads |
+|---|---|---|
+| `resources/Editor/FramesJsonImporter.cs` (an `AssetPostprocessor`) | import metadata: Sprite / Single, `Custom` pivot = `pivot_norm`, PPU, Point + Uncompressed on a pixel set, Max Size | `pivot_norm`, `register.reference_core_height_px`, `pixel.block_px`, `canvas` |
+| `resources/Editor/SheetToAnimationClip.cs` | the clip: `frameRate`, `loopTime`, held frames, binding, end event | `fps_hint`, `loop`, `hold_last` |
+
+The importer handles a PNG only when the `frames.json` beside it lists it in `frames[].file`. The
+world height comes from `-worldHeight`, else the value the importer stored on the frame's `.meta`
+last time, else the `UnityDev.Sprites.WorldHeight` EditorPref, else 1.8. Copy the folder under
+`Assets/` and the settings are applied on import. To re-apply them headless and read them back
+(`-framesDir` is the one set folder that holds `frames.json`; one call per set):
+
+```bash
+"$UNITY" -batchmode -projectPath . -logFile - \
+  -executeMethod UnityDev.Sprites.FramesJsonImporter.RunFromCommandLine \
+  -framesDir Assets/Art/runner_walk -worldHeight 1.8
+# 0 settings read back as frames.json states · 2 an importer reads back different (another
+#   postprocessor overrode it) · 3 folder, frames.json or a frame missing · 1 usage / refused file
+```
+
+Import first, then build the clip (§8: rects before references).
 
 ## 3. The clip — one object-reference curve on `m_Sprite`
 
@@ -311,10 +341,11 @@ every frame of every `frames.json` under a root and measures again, with the def
 slicer's gate uses — the scan found sequences at all; each says how it was seated; one canvas and
 nothing cut by it; the key's colour off the rim (fringe ≤ 0.5%, tint ≤ 2%); one feet line for a
 grounded action (≤ 3 px); no frame sitting away from its reference (slip); one size per character;
-and the importer's pivot equal to `pivot_norm`. Its measuring half was run outside Unity against
-the Python gate on 210 frames and matched it on every number; the NUnit half is compiled, so read
-what it prints the first time it runs on your art. A contact sheet cannot replace it: a sheet with
-one frame per cell proves each frame was drawn, and jitter lives between them.
+and the importer's pivot equal to `pivot_norm`. The rim is measured against each set's own
+`key_color`: there is no default key, a `frames/1` file without one fails, and a `null` key skips
+that set's rim check and says so. Read what it prints the first time it runs on your art. A
+contact sheet cannot replace it: a sheet with one frame per cell proves each frame was drawn, and
+jitter lives between them.
 
 A `null` in the keyframe values is the ordering failure below, arriving one indirection late.
 
@@ -350,6 +381,8 @@ Same binding name, different component and a different sizing model.
 
 `resources/Editor/SheetToAnimationClip.cs` implements all of the above end to end — a folder of frame PNGs
 or one sliced texture, an output clip, fps, loop flag, target type, optional controller and optional
-end event. It reads one thing from `frames.json` (`fps_hint`) and takes the sprites as the importer
-publishes them, so a canvas that is not 512 and a sidecar with the newer fields change nothing in
-it: the pivot is import metadata (§2), not the clip's.
+end event. From `frames.json` (`-framesJson`) it reads `fps_hint`, `loop` and `hold_last`; a
+`-loop` flag overrides the file, and `-holdLast N` adds N extra keyframes of the last sprite. It
+takes the sprites as the importer publishes them: the pivot and PPU are import metadata (§2,
+`FramesJsonImporter.cs`), not the clip's. Exit 0 a verified clip, 2 the clip reads back different
+from what was asked, 3 nothing built, 1 a bad flag or a refused `frames.json`.

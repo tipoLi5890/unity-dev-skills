@@ -30,6 +30,9 @@ SPEC.json:
 object whose `ok`, `all_pass` or `pass` is true, or whose `verdict` or
 `record.verdict` is "green" (the producer scripts' partial ledger record);
 every one of those keys it carries must pass, and it must carry at least one.
+A gate/1 report (`"schema": "gate/1"`, the repo's schemas/gate-1.json) passes on
+its boolean `pass` alone (and a `verdict`, when present, must be "green"): a
+missing `pass` fails, and the old `ok` beside it is not read.
 A missing, unreadable or failing file refuses the sheet.
 
 Prints one JSON object: `written` (the sheet paths), `sheets`, `items`, and
@@ -73,6 +76,16 @@ def check_required(paths: list[Path]) -> list[dict[str, Any]]:
         else:
             if not isinstance(data, dict):
                 row["why"] = "not a JSON object"
+            elif data.get("schema") == "gate/1":
+                bad = []
+                if data.get("pass") is not True:
+                    bad.append("pass=" + (json.dumps(data["pass"]) if "pass" in data else "missing"))
+                if "verdict" in data and data["verdict"] != "green":
+                    bad.append(f"verdict={json.dumps(data['verdict'])}")
+                if bad:
+                    row["why"] = "failing gate/1: " + ", ".join(bad)
+                else:
+                    row["pass"] = True
             else:
                 verdicts = {key: data[key] for key in ("ok", "all_pass", "pass") if key in data}
                 if "verdict" in data:
@@ -317,8 +330,13 @@ def selftest() -> int:
         (t / "truthy.json").write_text(json.dumps({"ok": 1}))
         (t / "rec.json").write_text(json.dumps({"failures": [], "record": {"verdict": "green"}}))
         (t / "recfail.json").write_text(json.dumps({"record": {"verdict": "failed"}}))
+        gate = {"name": "runner.feet", "value": 0.0, "limit": 0.03, "pass": True}
+        (t / "g1.json").write_text(json.dumps({"schema": "gate/1", "pass": True, "ok": True, "gates": [gate]}))
+        (t / "g1nopass.json").write_text(json.dumps({"schema": "gate/1", "ok": True, "gates": [gate]}))
+        (t / "g1fail.json").write_text(json.dumps({"schema": "gate/1", "pass": False, "ok": True, "gates": [gate]}))
 
-        code, res = run(t / "qa.json", t / "out" / "qa.png", [t / "ok.json", t / "green.json", t / "rec.json"])
+        code, res = run(t / "qa.json", t / "out" / "qa.png", [t / "ok.json", t / "green.json", t / "rec.json",
+                                                             t / "g1.json"])
         checks.append(("written", code == 0 and Path(res["written"][0]).is_file()))
         sheet = Image.open(t / "out" / "qa.png")
         label_px = max(14, min(32, 256 // 20))
@@ -328,7 +346,8 @@ def selftest() -> int:
         checks.append(("cell placed", centre == (80, 200, 30)))
         centre = sheet.getpixel((256 * 3 + 128, title_h + 256 + strip + strip + 128))   # uv_atlas: k=7
         checks.append(("second row", centre == (180, 200, 30)))
-        for name in ("fail.json", "mixed.json", "none.json", "truthy.json", "missing.json", "recfail.json"):
+        for name in ("fail.json", "mixed.json", "none.json", "truthy.json", "missing.json", "recfail.json",
+                     "g1nopass.json", "g1fail.json"):
             out = t / "out" / f"refused-{name}.png"
             code, res = run(t / "qa.json", out, [t / "ok.json", t / name])
             checks.append((f"refused {name}", code == 2 and not out.exists() and res["required"][1]["pass"] is False))

@@ -23,19 +23,24 @@ invent screens nobody needs. Steps 1–5 together should take less time than ste
 
 ## The timings are written down
 
-The preview is worth making only because its numbers are. Write the rules as constants in one
-block (lane width, run speed, the gate's open window, pickup spacing), generate the timeline from
-them, and copy the same constants into the brief. When the first build runs, the invariants are
+The preview is worth making only because its numbers are. Write the rules in one file (lane
+spacing, run speed, the gate's open window, pickup spacing), generate the timeline from it, have
+the code's tests compare their defaults against the same file, and copy the numbers into the brief. When the first build runs, the invariants are
 checked against these numbers — the preview stops being a picture and becomes the first spec of
 timing. A timeline keyed by hand ("the runner looks about here at 2 s") is a drawing, and nothing
 can be checked against it.
 
 `scripts/examples/courier_run_preview.py` is the worked case: placeholder shapes for the Runner, the
-three lanes, the gate, the sentry and the pickups; every position derived from the constants block;
-a `gate_pass` or `gate_hit` event when the Runner reaches a gate, and a `pickup` event for each pickup
-in the Runner's lane. Its selftest checks the frame count against fps × duration, the encoded
-duration within one frame, one event per rule trigger (and the count worked by hand from the
-constants), and that two runs give the same events and the same frame hashes.
+three lanes, the gate, the sentry and the pickups, every position derived from one rules file,
+`resources/Sim/courier_rules.json`. Its `sim` block is the C# skeleton's `RunConfig` field for field,
+and `RunSimulationTests.RulesMatchCourierRulesJson` fails when the two differ; the script moves the
+Runner with `RunSimulation.Tick`'s rules (launch, acceleration, the speed a lane shift scrubs). Its
+`preview` block is staging the skeleton does not simulate yet (the gates' rhythm, the sentry, where
+things sit, the lanes the player picks); move a rule into `sim` when the code implements it. The
+preview emits a `gate_pass` or `gate_hit` event when the Runner reaches a gate, and a `pickup` event
+for each pickup in the Runner's lane. Its selftest checks the frame count against fps × duration,
+the encoded duration within one frame, one event per rule trigger (and the events worked by hand
+from the rules), and that two runs give the same events and the same frame hashes.
 
 ## The compositor in one paragraph
 

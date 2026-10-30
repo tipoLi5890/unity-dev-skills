@@ -22,15 +22,19 @@ key reduction: under a tenth of a degree with **Anim. Compression Off**, around 
 default Keyframe Reduction. When a held prop must line up with something in the world, turn
 compression off (`ModelImporter.animationCompression = Off`) or tighten the rotation error.
 
-**Humanoid moves the pose, so measure it on the real clip.** On a 22-bone courier rig playing a
-jog keyed on its own skeleton in Blender, Humanoid put bones 17–20° off the Blender pose at the
-worst frames and a hand socket 13–15 cm away from where Blender had it; compression made no
-difference. Even with character and clips on **the same skeleton** (a fitted character playing
-its pack's mocap), the muscle-space round trip moved limbs 1.5–4.4° and the head up to 5.3°, put
-the arm pose 8% off and pushed added foot slide to 2.7 cm on a forehand, where Generic stayed at
-0.0002°; foot IK pulled the slide back to 1.2 cm but bent the knees 5–9° more
-(`blender-retarget` → `reference/route-bakeoff.md`). The automatic mapping took all 22 body bones
-and no finger: a Humanoid with fingers needs an explicit finger map. Build it with
+**Humanoid moves the pose, so measure it on the real clip.** Muscle space re-solves every
+frame, so a Humanoid copy can put bones and a held socket away from the Blender pose at the
+worst frames, and compression does not cause it or cure it. That holds even when character and
+clips share **the same skeleton** (a fitted character playing its pack's mocap): the round trip
+can still turn limbs and the head, change the arm pose and add foot slide that Generic does not;
+foot IK can pull the slide back at the cost of extra knee bend. Measure it the way
+`blender-retarget` → `reference/route-bakeoff.md` does: the same clip under both rig types, each
+bone's world rotation and each socket's world position against the Blender action at every
+frame, the worst frame reported, and the added foot slide, held to the limits the game sets for
+that clip.
+
+The automatic mapping can take every body bone and no finger: a Humanoid with fingers needs
+an explicit finger map. Build it with
 `CharacterHumanoidAvatar.cs` (Build Humanoid Avatar) from the contract map or a `humanMap` file
 (`reference/humanoid-contract.md`); it gates on `isValid`, `isHuman`, Chest and the finger count. A clip
 whose pose is outside the muscle limits (a knee bent backwards) is clamped, and that joint ends far

@@ -31,9 +31,18 @@ grep -o "uses-permission: name='[^']*'" <<<"$B" | sort -u
 grep -o "native-code: .*" <<<"$B"
 ```
 
-The `sdkVersion` / `targetSdkVersion` line is the only proof that a pinned `targetSdk` survived into
-the artifact — and if it did not, a 4 KB-aligned native library is now a crash on 16 KB-page devices
+The `sdkVersion` / `targetSdkVersion` line is the only proof of what the artifact targets: a store
+build must show Play's required level (`VERSIONS.md`), and an internal build pinned to 34 must
+show 34, or its 4 KB-aligned native library is now a crash on 16 KB-page devices
 (`player-settings-android.md`).
+
+16 KB support has two halves, and the artifact proves the zip half: `zipalign` from the same
+build-tools checks that every uncompressed `.so` in the APK starts on a 16 KB boundary. The ELF
+half (`LOAD` segments at `0x4000`) is the `llvm-readelf` check in `player-settings-android.md`.
+
+```bash
+"$BT/zipalign" -c -P 16 -v 4 app.apk | grep -E "lib/.*\.so|Verification"
+```
 
 **Read the permissions from the artifact, never from your own manifest.** A build whose project
 declares none can still ship seven, e.g.:

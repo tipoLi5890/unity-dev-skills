@@ -284,15 +284,18 @@ def main(argv: list[str]) -> int:
     except SystemExit as exc:
         if not exc.code:           # --help
             raise
-        return _emit({"ok": False, "error": f"bad arguments (exit {exc.code})"}, 2)
+        return _emit({"schema": "gate/1", "pass": False, "ok": False, "gates": [],
+                      "refused": f"bad arguments (exit {exc.code})", "error": f"bad arguments (exit {exc.code})"}, 2)
     except ValueError as exc:      # json.JSONDecodeError included
-        return _emit({"ok": False, "error": f"refused: {exc}"}, 2)
+        return _emit({"schema": "gate/1", "pass": False, "ok": False, "gates": [], "refused": str(exc),
+                      "error": f"refused: {exc}"}, 2)
     try:
         result = run({"expect": expect, "props": props, "armature": args.armature, "mesh": args.mesh,
                       "review_track_name": args.review_track_name, "report_path": args.report_path})
     except Exception as exc:
-        return _emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 1)
-    return _emit(result, 0 if result["ok"] else 1)
+        return _emit({"schema": "gate/1", "pass": False, "ok": False, "gates": [],
+                      "error": f"{type(exc).__name__}: {exc}"}, 1)
+    return _emit(result, 0 if result.get("pass") is True else 1)
 
 
 def _emit(result: dict, code: int) -> int:

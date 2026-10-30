@@ -22,8 +22,11 @@ nothing stands in front of it, on the reference, by eye.
 Pass when both images have the same size (and equal --size, when given) and
 |cand row - ref row| <= --tol. Keep --tol under about 1% of the image height.
 
-Prints one JSON line: pass, delta, tol, why, and for ref and cand the path,
-size and horizon row. `which` names the image a failure belongs to ("ref",
+Prints one JSON line, a gate/1 report (schemas/gate-1.json): pass, gates
+(camera.size, camera.horizon_delta_px, each once it could be measured), delta,
+tol, why, and for ref and cand the path, size and horizon row; `ok`, pass's old
+name, equals pass for one release, and a run that measured nothing carries
+`error` (exit 3) or `refused` (exit 64). `which` names the image a failure belongs to ("ref",
 "cand" or "both"), so a retry loop can tell a bad roll from a bad setup.
 
 Exit codes: 0 pass; 2 fail (rows differ by more than --tol, or sizes differ);
@@ -39,6 +42,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -103,7 +107,24 @@ def parse_size(s: str | None):
 
 
 def gate(ref: str, cand: str, column=0.1, tol=6, size=None, dist=40.0, run=3):
-    """Return (exit_code, report dict)."""
+    """Return (exit_code, gate/1 report dict)."""
+    code, rep = _measure(ref, cand, column, tol, size, dist, run)
+    gates = []
+    if "size" in rep["ref"] and "size" in rep["cand"]:
+        want = size or rep["ref"]["size"]
+        gates.append({"name": "camera.size", "value": rep["cand"]["size"], "limit": want,
+                      "pass": rep["cand"]["size"] == rep["ref"]["size"] == want})
+    if rep["delta"] is not None:
+        gates.append({"name": "camera.horizon_delta_px", "value": rep["delta"], "limit": tol,
+                      "pass": abs(rep["delta"]) <= tol})
+    rep["pass"] = code == 0 and bool(gates) and all(g["pass"] for g in gates)
+    out = {"schema": "gate/1", "pass": rep["pass"], "ok": rep["pass"], "gates": gates, **rep}
+    if code == 3:
+        out["error"] = rep["why"]
+    return code, out
+
+
+def _measure(ref: str, cand: str, column, tol, size, dist, run):
     rep = {"pass": False, "delta": None, "tol": tol, "column": column, "why": "",
            "ref": {"path": ref}, "cand": {"path": cand}}
     try:
@@ -135,6 +156,17 @@ def gate(ref: str, cand: str, column=0.1, tol=6, size=None, dist=40.0, run=3):
     return 2, rep
 
 
+def contract_sample(script: str, case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(doc, handle, indent=1)
+    print(f"selftest-output: {path}")
+
+
 # ------------------------------------------------------------------------------------ selftest
 def _two_tone(path: Path, row: int, size=(400, 600), noise=0):
     w, h = size
@@ -162,6 +194,9 @@ def selftest() -> int:
         def check(name, args, code, extra=None):
             got, rep = gate(*args)
             ok = got == code and (extra is None or extra(rep))
+            ok = ok and rep["schema"] == "gate/1" and rep["pass"] is rep["ok"] is (got == 0)
+            ok = ok and all(set(g) == {"name", "value", "limit", "pass"} for g in rep["gates"])
+            ok = ok and (got != 3 or "error" in rep)
             checks.append(name)
             if not ok:
                 failed.append({"check": name, "exit": got, "report": rep})
@@ -170,7 +205,11 @@ def selftest() -> int:
         check("300 vs 306 passes at tol 6", (r("k300.png"), r("k306.png")), 0,
               lambda p: p["ref"]["horizon"] == 300 and p["delta"] == 6)
         check("300 vs 320 fails", (r("k300.png"), r("k320.png")), 2,
-              lambda p: p["delta"] == 20 and p["which"] == "cand")
+              lambda p: p["delta"] == 20 and p["which"] == "cand"
+              and [g["pass"] for g in p["gates"]] == [True, False])
+        contract_sample("camera_gate", "pass", gate(r("k300.png"), r("k306.png"))[1])
+        contract_sample("camera_gate", "moved", gate(r("k300.png"), r("k320.png"))[1])
+        contract_sample("camera_gate", "unreadable", gate(r("k300.png"), r("junk.png"))[1])
         check("tol 20 lets 320 through", (r("k300.png"), r("k320.png"), 0.1, 20), 0)
         check("flat candidate exits 3", (r("k300.png"), r("flat.png")), 3, lambda p: p["which"] == "cand")
         check("flat reference exits 3", (r("flat.png"), r("k300.png")), 3, lambda p: p["which"] == "ref")
@@ -188,7 +227,7 @@ def selftest() -> int:
                 got = main(argv)
             line = json.loads(out.getvalue())
             checks.append(f"usage error {name}: exit 64")
-            if got != USAGE or line.get("which") != "args":
+            if got != USAGE or line.get("which") != "args" or line.get("pass") is not False:
                 failed.append({"check": checks[-1], "exit": got, "report": line})
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
     return 0 if not failed else 1
@@ -212,7 +251,8 @@ def main(argv=None) -> int:
             raise UsageError("--column must be in [0, 1], --run >= 1, --tol >= 0")
         size = parse_size(a.size)
     except UsageError as e:
-        print(json.dumps({"pass": False, "which": "args", "why": str(e)}))
+        print(json.dumps({"schema": "gate/1", "pass": False, "ok": False, "gates": [], "which": "args",
+                          "why": str(e), "refused": str(e)}))
         return USAGE
     code, rep = gate(a.ref, a.cand, a.column, a.tol, size, a.dist, a.run)
     print(json.dumps(rep))

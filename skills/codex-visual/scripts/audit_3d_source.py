@@ -41,9 +41,10 @@ opposite-facing views is the left one: that shows only after conversion, as a hu
 Exit 0 = pass, 1 = a gate failed, 2 = a file could not be read. An alpha PNG is read by its
 alpha; an opaque one by distance from its corner colour (--bg-tol).
 
---json-out PATH also writes {"gates": [{name, value, limit, pass}, ...], "verdict"} (green,
-failed, or harness with "error" when a file could not be read) for a script to read; the text
-above is unchanged. A single image's gates are named <file name>/<check>.
+--json-out PATH also writes a gate/1 report (the repo's schemas/gate-1.json): {"schema":
+"gate/1", "pass", "gates": [{name, value, limit, pass}, ...], "verdict"} (green, failed, or
+harness with "error" when a file could not be read; `ok`, the old name of `pass`, is written
+beside it for one release) for a script to read; the text above is unchanged. A single image's gates are named <file name>/<check>.
 
 --selftest builds synthetic views (a profile with a forward nose and feet) in a temp dir and
 runs them through main(): opposite-facing passes, same-facing fails, a symmetric pair is
@@ -259,6 +260,16 @@ def selftest():
             px[mask] = (40, 40, 160, 255)
             Image.fromarray(px, "RGBA").save(path)
 
+    def contract_out(path, case):
+        """Copy a report to where tools/check-contracts.py validates it against schemas/gate-1.json:
+        $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints `selftest-output: PATH`."""
+        import shutil
+        out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+        os.makedirs(out, exist_ok=True)
+        dest = os.path.join(out, f"audit_3d_source__{case}.gate.json")
+        shutil.copyfile(path, dest)
+        print(f"selftest-output: {dest}")
+
     def audit(folder):
         buf = io.StringIO()
         out = os.path.join(folder, "audit.json")
@@ -270,7 +281,12 @@ def selftest():
         finally:
             sys.argv = saved
         with open(out, encoding="utf-8") as handle:
-            facing_gate = next(g for g in json.load(handle)["gates"] if g["name"] == "facing")
+            rep = json.load(handle)
+        facing_gate = next(g for g in rep["gates"] if g["name"] == "facing")
+        check(f"{os.path.basename(folder)}: gate/1 report, pass matches the exit code",
+              rep.get("schema") == "gate/1" and rep.get("pass") is (code == 0) and rep.get("ok") is rep.get("pass")
+              and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep["gates"]))
+        contract_out(out, os.path.basename(folder))
         return code, buf.getvalue(), facing_gate
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -331,10 +347,14 @@ def main():
                 failed = failed or bool(fails)
     except OSError as exc:
         print(f"unreadable: {exc}")
-        write_json(args.json_out, {"gates": gates, "verdict": "harness", "error": str(exc)})
+        write_json(args.json_out, {"schema": "gate/1", "tool": "audit_3d_source.py", "pass": False, "ok": False,
+                                   "gates": gates, "verdict": "harness", "error": str(exc)})
         return 2
     print("FAIL" if failed else "PASS")
-    write_json(args.json_out, {"gates": gates, "verdict": "failed" if failed else "green"})
+    # gate/1 (schemas/gate-1.json): `pass` is the verdict; `ok` is its old name, written beside it for one release
+    passed = not failed and bool(gates) and all(g["pass"] is True for g in gates)
+    write_json(args.json_out, {"schema": "gate/1", "tool": "audit_3d_source.py", "pass": passed, "ok": passed,
+                               "gates": gates, "verdict": "green" if passed else "failed"})
     return 1 if failed else 0
 
 

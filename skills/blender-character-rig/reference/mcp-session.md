@@ -75,15 +75,16 @@ result = bcr_survey.run({"mesh": "Runner"})
 then the module that imports it. Every `run` returns the same envelope:
 
 ```python
-{"ok": True,                                  # every gate passed
+{"schema": "gate/1", "pass": True,          # every gate passed (gate/1; absent with no gates)
+ "ok": True,                                  # pass's old name, equal to it, for one release
  "gates": [{"name": "has_vertices", "value": 9994, "limit": "> 0", "pass": True}, ...],
  "created": {"objects": [...], ...},         # datablocks this call added; kinds with nothing are absent
  "blender": [major, minor, patch],
  ...}                                         # the module's own keys
 ```
 
-- **Read `ok` and the failing gate, not the absence of an error.** A call that returns with
-  `ok: false` did its work and missed a number; the gate's `value` and `limit` say by how much.
+- **Read `pass` and the failing gate, not the absence of an error.** A call that returns with
+  `pass: false` did its work and missed a number; the gate's `value` and `limit` say by how much.
 - **A raise is different**: the tool reports an error, the text names the module and ends with
   `(rolled back: …)` listing the datablocks it removed.
 - **`report_path`** in the params also writes the dict as JSON to that path — the way to keep a

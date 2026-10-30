@@ -136,7 +136,7 @@ marker at a time and look again.
 | `arp_refs` | head and tail per reference bone of Auto-Rig Pro's human preset, `.x` and `.l` only: root, spine_01…03, neck, head, shoulder, arm, forearm, hand, the finger bases and phalanges, thumb1–3, thigh, leg, foot, toes, foot_heel, foot_bank_01/02 |
 | `arp_spine_count` | spine bones + 1 (the add-on's Count includes its root) |
 | `contract_bones` | `{mirror: true, bones: [...]}`: a `bcr_armature` spec with the contract's names and a radius per bone |
-| `previews`, `gates`, `ok` | as above |
+| `previews`, `gates`, `pass` | as above; each gate `{name, value, limit, pass}` as in a gate/1 report, and `ok`, pass's old name, beside it for one release |
 
 `arp_refs` is what `blender-retarget` → `brt_arp` op `pipeline` writes onto the preset
 (`reference/arp-pipeline.md`); `contract_bones` is what the hand-built route builds

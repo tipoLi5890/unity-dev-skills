@@ -22,6 +22,7 @@ that, `--help` outranks this file.**
 | A non-zero exit you must decide whether to retry; a CI step exits `2` and you cannot see which flag | §Exit codes |
 | A headless `Unity -batchmode …` exits `198` ("No valid Unity Editor license"), `1`, `2` or `3` | §The other CLI → `reference/editor-binary.md` |
 | A batch run that exits `0` having done nothing, or with no results file | skill `unity-debug` |
+| An Editor audit (`KitAudit`, `LightingAudit`) as a CI exit code | `reference/batch-audit.md` |
 | "install Unity 6000.x with the Android module", create a project | §Editors, modules, templates, projects |
 | "wire Unity into an agent via MCP" | `reference/mcp-and-shell.md` |
 | Every headless command fails at once on a machine that worked yesterday | §Auth and licence |
@@ -54,8 +55,8 @@ which unity && unity --version          # detect before installing
 curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
 ```
 
-The script checks the binary's SHA-256 against the release manifest (drop `| bash` to read it
-first). **Open a new shell afterwards** — the PATH entry is not in this one; `unity doctor` checks.
+The script checks the binary's SHA-256 against the release manifest.
+**Open a new shell afterwards** — the PATH entry is not in this one; `unity doctor` checks.
 
 ## The conventions that apply to every command
 
@@ -94,8 +95,7 @@ than queueing, retryable once the first exits. **`2` is checked before the proje
 project path that does not exist is a `6` — retryable on paper, though no retry grows a
 `ProjectVersion.txt`. Read `errors[0].code` first (`ci-surface.md` §1).
 
-> Retrying an `8` reruns a genuine failure until it flakes green. A suite retried until it passes
-> is indistinguishable from a suite with no assertions.
+> Retrying an `8` reruns a real failure until it flakes green: as good as a suite with no assertions.
 
 ## The other CLI: the Editor binary itself
 

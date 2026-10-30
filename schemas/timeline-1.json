@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/timeline-1.json",
+  "title": "timeline/1 — one line of a journey's timeline.jsonl",
+  "description": "JourneyRecorder.cs writes timeline.jsonl: a meta line first (the only line carrying `schema`), one sample line per sampled frame, and an end line last when the run finished. Each line validates against this schema on its own; the file-level rules (meta first, at most one end and only last, samples counted by it) are checked by the reader. journey_report.py, jump_report.py and camera_jitter.py read it.",
+  "oneOf": [
+    {"$ref": "#/$defs/meta"},
+    {"$ref": "#/$defs/sample"},
+    {"$ref": "#/$defs/end"}
+  ],
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "required": ["meta", "schema", "journey"],
+      "properties": {
+        "meta": {"const": true},
+        "schema": {"const": "timeline/1"},
+        "journey": {"type": "string", "minLength": 1},
+        "situation": {"type": ["string", "null"]},
+        "params": {"type": "object", "additionalProperties": {"type": "string"}},
+        "startedUtc": {"type": "string"},
+        "batch": {"type": "boolean"},
+        "unity": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "vec3": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+        {"type": "null"}
+      ]
+    },
+    "sample": {
+      "description": "GameProbe.ToJson of one snapshot with n set. Closed at the top level: game-specific values go in custom, counts and ready, so a misspelt top-level key is an error rather than a silently unread field.",
+      "type": "object",
+      "required": ["n"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 0},
+        "playing": {"const": false},
+        "frame": {"type": "integer"},
+        "t": {"type": "number"},
+        "ut": {"type": "number"},
+        "dt": {"type": "number"},
+        "timeScale": {"type": "number"},
+        "scene": {"type": ["string", "null"]},
+        "situation": {"type": ["string", "null"]},
+        "state": {"type": ["string", "null"]},
+        "cam": {"type": ["string", "null"]},
+        "pos": {"$ref": "#/$defs/vec3"},
+        "vel": {"$ref": "#/$defs/vec3"},
+        "speed": {"type": ["number", "null"]},
+        "ready": {"type": "object", "additionalProperties": {"type": "boolean"}},
+        "allReady": {"type": "boolean"},
+        "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "custom": {"type": "object"},
+        "milestone": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false,
+      "if": {"required": ["playing"]},
+      "then": {"maxProperties": 2},
+      "else": {"required": ["frame", "t"]}
+    },
+    "end": {
+      "type": "object",
+      "required": ["end", "samples", "milestones"],
+      "properties": {
+        "end": {"const": true},
+        "samples": {"type": "integer", "minimum": 0},
+        "milestones": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  }
+}

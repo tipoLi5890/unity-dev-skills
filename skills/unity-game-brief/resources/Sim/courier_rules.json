@@ -1,0 +1,23 @@
+{
+  "about": "The courier run's rule constants, in one place. `sim` holds every RunConfig field by name: RunSimulation.cs keeps the same defaults, RunSimulationTests.RulesMatchCourierRulesJson fails when the two differ, and scripts/examples/courier_run_preview.py moves the Runner with them. `preview` is staging the skeleton does not simulate yet: where the preview puts its gates, sentry and pickups, the gates' open-and-close rhythm, and the lanes the player picks.",
+  "sim": {
+    "LaneCount": 3,
+    "LaneSpacing": 1.3,
+    "GateDistance": 120,
+    "LaunchSpeed": 4.4,
+    "Acceleration": 6,
+    "ShiftSpeedFactor": 0.9,
+    "RowSpacing": 6,
+    "LookAhead": 5,
+    "TickSeconds": 0.016666668
+  },
+  "preview": {
+    "LanePlan": [[0.0, 1], [1.4, 0], [3.3, 2], [4.9, 1], [6.4, 0]],
+    "PickupRows": [[1, 0], [2, 1], [3, 2], [4, 1]],
+    "GateDistances": [17, 29],
+    "GatePeriod": 2.0,
+    "GateOpenWindow": 0.8,
+    "SentryDistance": 21,
+    "SentryPeriod": 1.6
+  }
+}
