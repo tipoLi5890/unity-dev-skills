@@ -1,6 +1,6 @@
 # Data contracts
 
-Three files that cross skill boundaries, each defined once, here, as JSON Schema (draft 2020-12).
+Four files that cross skill boundaries, each defined once, here, as JSON Schema (draft 2020-12).
 A producer stamps the file with `schema`. `tools/check-contracts.py` validates producer output
 against these schemas in CI. Skills never import a validator: each skill's scripts stay copyable
 on their own, and a selftest checks its own output's required keys by hand.
@@ -14,6 +14,7 @@ misread the file. Adding an optional key does not need a new version.
 | A frame set's `frames.json` | [`frames-1.json`](frames-1.json) | `codex-visual` `sheet_to_frames.py`, `breathe.py`; `sprite-from-video` `video_loop.py` | `audit_frames.py`, `audit_pixel.py`, `frames_to_anim.py`, `registry_ingest.py`, `unity-2d-sprites` `FramesJsonImporter`, `SheetToAnimationClip`, `SpriteFramesAudit` |
 | A gate script's report | [`gate-1.json`](gate-1.json) | `rig_gate`, `deform_gate`, `mesh_check`, `motion_metrics`, `clip_metrics`, `contact_bake`, `twocam/solve`, the Blender ops (`blender_common` / `bcommon` `report()`), `contract_map map`, `inspect_glb`, `audit_3d_source`, `camera_gate` | `autorig.py`, `twocam.py`, `registry_ingest.py`, `contact_sheet.py --require`, `bakeoff_report.py` |
 | One line of a journey's `timeline.jsonl` | [`timeline-1.json`](timeline-1.json) | `unity-play-harness` `JourneyRecorder.cs` (samples from `GameProbe.ToJson`) | `journey_report.py`, `jump_report.py`, `camera_jitter.py` |
+| A rigged character's `<name>.secondary.json` | [`secondary-1.json`](secondary-1.json) | `character-autorig` `secondary_chains.py` | `unity-rigged-character` `SecondarySpec`, `SecondaryMotionSetup` |
 
 ## frames/1
 
@@ -70,6 +71,16 @@ misread the file. Adding an optional key does not need a new version.
 - Keys resolve in one order: `pos.x|y|z` and `vel.x|y|z` (or `.0` to `.2`), then an exact dotted
   path, then `custom.<k>`, `counts.<k>`, `ready.<k>`, then a top-level field. Every reader carries
   the same pasted `resolve()`, which is kept identical by `tools/shared-blocks`.
+
+## secondary/1
+
+- Every bone is named as the FBX exports it. A chain lists `bones` root to tip, each a `cc_` bone;
+  the last is the unweighted tip `cc_<chain>_end.<side>`, since Unity imports no bone tails.
+  `parent` is the exported bone the chain hangs from; `parent_role` is its `HumanBodyBones` name,
+  the fallback on a Humanoid.
+- Positions are checks, not the source: `joints`, `parent_head` and a sphere's `center` are in
+  the skeleton/1 frame (metres, +Z up, facing −Y). A capsule is two bone origins and a radius.
+- `chains: []` is valid: the body has nothing loose, and the rig was left unchanged.
 
 ## Migration (one release)
 

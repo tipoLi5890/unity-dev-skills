@@ -211,10 +211,13 @@ reading noise on a short segment does not (the clavicle, Hips to Spine, Spine to
 HeadTop, Hand to HandTip, Toes to ToesTip). A gated pop left after that is the fit's: read the
 overlay at its frames; on a short segment of a clean overlay raise `--acc-weight`. Spikes under
 `pops_in_source` are judged on the overlay: keep them when the move should snap, reroll the seed
-when the video glitched. A strike the fit keeps can fail the bake's `jitter_p95_mps2` and `pops`: the
-jitter's 0.1 s high-pass reads a three-frame punch as jitter, and the fingers ride the hand with no
-readings of their own, so their spike counts as the fit's. Compare the readings' jitter at those
-frames and read the overlay before raising `--acc-weight`, which flattens the punch again.
+when the video glitched. The jitter gate is source-relative the same way: the 0.1 s high-pass reads
+a three-frame punch as jitter, so with `reading_joints` each joint's jitter less 1.2 x the readings'
+at the same frame and joint is gated (`jitter_over_source_mps2`; the absolute `jitter_mps2` stays in
+the report). The fingers ride the hand with no readings of their own: they take the hand's jitter
+allowance, and their pops are held to the forearm-to-hand readings. A strike the video has passes
+the bake; jitter or a pop on frames where the readings are calm is still the fit's or the bake's.
+Do not raise `--acc-weight` for a strike the readings show: it flattens the punch again.
 
 The limb gate exists because the median over 37 joints cannot see one arm: a punch the fit smoothed
 away is a hand and two arm joints, off by 100 px for three to six frames, and the median stays at a

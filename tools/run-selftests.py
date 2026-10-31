@@ -48,6 +48,7 @@ SELFTESTS = [
     ('character-autorig/scripts/mesh_check.py', ['--selftest'], ['numpy']),
     ('character-autorig/scripts/rig_exam.py', ['--selftest'], ['numpy', 'pillow']),
     ('character-autorig/scripts/rig_exam_blender.py', ['--selftest'], ['bpy', 'numpy']),
+    ('character-autorig/scripts/secondary_chains.py', ['--selftest'], ['bpy', 'numpy']),
     ('codex-visual/scripts/audit_3d_source.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/audit_frames.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/breathe.py', ['--selftest'], ['numpy', 'pillow']),
@@ -96,6 +97,7 @@ SELFTESTS = [
     ('unity-play-harness/scripts/journey_report.py', ['selftest'], ['stdlib']),
     ('unity-profiling/scripts/compare_windows.py', ['selftest'], ['stdlib']),
     ('unity-rigged-character/scripts/contract_map.py', ['selftest'], ['numpy']),
+    ('unity-rigged-character/scripts/fbx_textures.py', ['--selftest'], ['stdlib']),
 ]
 
 MODULES = {'numpy': 'numpy', 'pillow': 'PIL', 'scipy': 'scipy', 'cv2': 'cv2', 'torch': 'torch'}

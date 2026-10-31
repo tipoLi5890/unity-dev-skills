@@ -54,7 +54,8 @@ CHECKS = ('outputs', 'flags', 'deps', 'versions')
 # A selftest that hands off a sample says so in its source.
 HANDS_OFF = re.compile(r'selftest-output|contract_sample\(|contract_out\(')
 OUTPUT_LINE = re.compile(r'^selftest-output:\s*(.+?)\s*$', re.M)
-SUFFIX_STAMP = {'.frames.json': 'frames/1', '.gate.json': 'gate/1', '.timeline.jsonl': 'timeline/1'}
+SUFFIX_STAMP = {'.frames.json': 'frames/1', '.gate.json': 'gate/1', '.timeline.jsonl': 'timeline/1',
+                '.secondary.json': 'secondary/1'}
 
 
 class Report:
@@ -242,7 +243,7 @@ def check_outputs(rep: Report, blender, only_rows) -> None:
     validators = load_schemas(rep)
     if validators is None:
         return
-    for need in ('frames/1', 'gate/1', 'timeline/1'):
+    for need in ('frames/1', 'gate/1', 'timeline/1', 'secondary/1'):
         if need not in validators:
             rep.broken(f'outputs: schemas/ has no schema for {need}')
             return
@@ -250,6 +251,7 @@ def check_outputs(rep: Report, blender, only_rows) -> None:
     out_dir = tempfile.mkdtemp(prefix='unity-dev-contracts-')
     os.environ['UNITY_DEV_CONTRACT_OUT'] = out_dir      # runner.run() passes os.environ on
     files = ran = skipped = 0
+    handed, silent = set(), []      # a script hands off from at least one of its rows, not each
     for path, argv, deps in runner.SELFTESTS:
         if only_rows and only_rows not in path:
             continue
@@ -277,8 +279,9 @@ def check_outputs(rep: Report, blender, only_rows) -> None:
             rep.broken(f'outputs: {label} exited {code}, nothing verified{runner.tail(out, 8)}')
             continue
         if not paths:
-            rep.broken(f'outputs: {label} hands off samples but printed no selftest-output line')
+            silent.append((path, label))
             continue
+        handed.add(path)
         good = 0
         for p in paths:
             f = pathlib.Path(p)
@@ -288,6 +291,11 @@ def check_outputs(rep: Report, blender, only_rows) -> None:
             files += 1
             good += check_file(validators, f, rep)
         print(f'{"ok  " if good == len(paths) else "FAIL"} {label}: {good}/{len(paths)} samples valid')
+    for path, label in silent:
+        if path in handed:
+            print(f'ok   {label}: no samples of its own (another row of the script hands them off)')
+        else:
+            rep.broken(f'outputs: {label} hands off samples but printed no selftest-output line')
     examples = check_doc_examples(validators, rep)
     print(f'outputs: {ran} selftests ran, {skipped} skipped, {files} samples checked, '
           f'{examples} doc examples checked')

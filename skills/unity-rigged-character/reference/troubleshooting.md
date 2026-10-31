@@ -55,9 +55,10 @@
 | Symptom | Cause | Fix |
 |---|---|---|
 | White mannequin | the FBX carried no materials (Mixamo never does) | rebuild the material from the original export's maps (`textures.md`) |
+| An FBX with embedded maps (Auto-Rig Pro's) imports untextured | the images were never extracted: the FBX sits outside a character folder, or was imported before `CharacterImportSettings.cs` | move it into the character folder, or Reimport Character Folder; `CharacterImportSettings.Maps(folder)` then shows `<Body>_BaseColor` and a `NormalMap` normal (`textures.md`) |
 | Uniform plastic look on a Blender FBX | Unity binds base colour and normal only; the metallic and roughness maps are dropped | build the metallic/smoothness map, bind it with the keyword (`textures.md`) |
 | Uniform plastic look | metallic JPEG carries no smoothness alpha | composite metallic + inverted roughness into an RGBA PNG (`textures.md`) |
-| Another character's texture on this one | an embedded texture resolved by file name to a same-named image elsewhere | extract the maps into the character folder under unique names (`textures.md`) |
+| Another character's texture on this one | an embedded texture resolved by file name to a same-named image elsewhere | keep the body FBX in a character folder: its maps are extracted as `<Body>_BaseColor` / `_Normal` and bound by name; check with `CharacterImportSettings.Maps(folder)` (`textures.md`) |
 | Normals lit wrong | texture not imported as NormalMap | `TextureImporterType.NormalMap` (`textures.md`) |
 | Maps assigned, nothing changes on screen | URP keyword not enabled | `EnableKeyword("_NORMALMAP")` / `"_METALLICSPECGLOSSMAP"` (`textures.md`) |
 | Lighting "vaguely wrong", no obvious cause | mask imported as sRGB | sRGB off (linear) (`textures.md`) |
@@ -73,6 +74,9 @@
 | Hit box far wider than the character | sized from the skinned renderer's bounds | constant volume (`gameplay-rig.md`) |
 | Part of the character vanishes at the edge of the screen mid-swing | the pose leaves the import-time culling box | widen `localBounds`, or Update When Offscreen (`gameplay-rig.md`) |
 | Bounds read in a test do not match the pose | read straight after an Animator evaluate | read after a rendered frame (`gameplay-rig.md`) |
+| Hood, bag, hem or hair never swings | Optimize Game Objects on, the system above the Animator's GameObject, or the renderer culled | `secondary-motion.md` (When it looks wrong) |
+| A spring chain jitters, sinks into the body or pops on the first frame | drag too low; collider radius; a joint starting inside a collider, no `ResetPose()` after a pooled reuse | `secondary-motion.md` (When it looks wrong) |
+| Add Secondary Motion refuses: a parent bone is centimetres off | axis or scale mismatch between the rig export and the import | re-export at unit scale, import with Convert Units on (`secondary-motion.md`) |
 | Character collides with its own accessories | colliders left on the model child | strip them; the root's collider is the hit box (`gameplay-rig.md`) |
 | Character's hit box is a different shape than the collider gizmo suggests | a parent has non-uniform scale | apply scale in the DCC tool so the FBX imports at `(1,1,1)` (`unity-physics-3d` → `reference/sleep-shapes-build.md` §5) |
 | Held prop or hit volume stops moving with the body | a `Rigidbody` on a child cut the compound body | remove it, or make the split deliberate (`unity-physics-3d` → `reference/sleep-shapes-build.md` §5) |

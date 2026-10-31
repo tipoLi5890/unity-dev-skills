@@ -9,7 +9,8 @@ reattached from the source land exactly right.
 | Carrier | In the file | Bound on Unity's imported material |
 |---|---|---|
 | Mixamo download | geometry, skeleton, UVs; no materials (the maps were stripped before upload, `reference/mixamo-route.md`) | nothing: white mannequin |
-| FBX from Blender's exporter | base colour, normal, metallic (as the FBX property `ReflectionFactor`) and roughness (`ShininessExponent`) | base colour (`_MainTex` / `_BaseMap`) and normal (`_BumpMap`) only. `_MetallicGlossMap` stays empty, `_Metallic` 0, smoothness 0.5: plastic |
+| FBX from Blender's exporter | base colour, normal, metallic (as the FBX property `ReflectionFactor`) and roughness (`ShininessExponent`) | base colour (`_MainTex` / `_BaseMap`) and normal (`_BumpMap`) only, found by file name; embedded, only once extracted (below). `_MetallicGlossMap` stays empty, `_Metallic` 0, smoothness 0.5: plastic |
+| Auto-Rig Pro's FBX export (`character-autorig`) | base colour and normal, embedded, named `Image_0.png`, `Image_2.png` | nothing until extracted; in a character folder `CharacterImportSettings` extracts and binds both (below) |
 | GLB through glTFast | one packed `metallicRoughness` texture beside base colour and normal (Blender packs the two maps into it) | glTFast imports the packed texture, named after both source maps, with its own material: check its slots the same way |
 
 The Blender row holds on the Built-in pipeline and on URP Lit, with external or embedded textures:
@@ -26,10 +27,20 @@ Check on each new character before rebuilding anything:
 3. Compare with the maps the source had (the `.blend`, the GLB, the service's download). Every
    map the material does not bind is rebuilt from the source below.
 
-An FBX with embedded textures: Unity does not necessarily extract them. It may resolve the
-material's textures by file name to same-named images elsewhere in the project, so a stale map from
-another character can bind silently. Extract the maps yourself (`scripts/fbx_textures.py`), with
-names no other character uses, as below.
+**An FBX with embedded maps** binds none of them until they are extracted, and then binds by file
+name, so another character's `Image_0.png` elsewhere in the project binds just as readily. In a
+character folder `CharacterImportSettings.cs` handles the body FBX on import: it reads which slot
+each embedded image fills (`DiffuseColor` → base colour, `NormalMap` / `Bump` → normal), extracts
+those once beside the FBX as `<Body>_BaseColor` and `<Body>_Normal` (`<Body>_<Material>_…` when a
+slot holds more than one map), imports the normal as a normal map, and binds both on the FBX's own
+material, Built-in Standard or URP Lit, on every import. Maps already there under those names are
+kept and nothing is extracted. Metallic and roughness slots are not extracted: build the mask as
+below. A project that imported the FBX before the script was added: Reimport Character Folder.
+Check: `CharacterImportSettings.Maps(folder)` lists each material's base and normal map and the
+normal's import type, `"ok": true` when every material has a base map and the normal is a normal
+map. Outside a character folder, or for a map to stage, extract with `scripts/fbx_textures.py`.
+EditMode tests of the slot roles and names: `resources/Tests/CharacterImportTests.cs` (namespace
+`UnityDev.RiggedCharacter.Tests`).
 
 **Source maps go to a staging folder outside the character folder** (outside `Assets/`, or beside
 the `.blend`). Build the `<Name>_MetallicSmoothness.png` composite there, then copy into the
@@ -47,7 +58,8 @@ on the exported FBX. On the Mixamo route they exist only inside the file you upl
 - **Extract from the ORIGINAL export**, never from the rigged FBX.
   `scripts/fbx_textures.py` reads each image's `RelativeFilename` from the FBX `Video` node, so maps
   come out under their authored names instead of `tex0..tex3` in storage order — guessing
-  normal-vs-roughness from file size is a coin flip.
+  normal-vs-roughness from file size is a coin flip. It prints the material slot of each, and a
+  generic name (`Image_0`) becomes `<fbx name>_<Role>` from that slot (`Runner_BaseColor.png`).
   ```bash
   python3 scripts/fbx_textures.py <original>.fbx <staging-dir>
   ```

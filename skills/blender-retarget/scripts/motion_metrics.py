@@ -59,7 +59,12 @@ Metrics and gates (a gate appears only when its input exists):
                  Gated p95 <= --jitter-p95 (20 m/s^2). The raw acceleration p95 is reported.
                  Confirm the default on a clean clip of the same capture type first: when a clean
                  clip fails, its contacts are sharp; set --jitter-p95 once for that capture type,
-                 never per clip.
+                 never per clip. With `reading_joints` the gate is source-relative: each joint's
+                 jitter less 1.2 x the readings' jitter at the same frame and joint (a joint with
+                 no readings, a finger, takes its nearest read ancestor's: the hand's), floored at
+                 0, is gated instead (`jitter_over_source_mps2`; `jitter_source_mps2` is the
+                 readings' own, `jitter_reference` counts read, inherited and unreferenced joints):
+                 a strike the video has passes, jitter the fit or the bake added still fails.
   joint limits   frames whose bend at a limit's middle joint (0 = straight) leaves [min, max]
                  by more than --limit-tol (2 deg). Gated 0.
   loop           the 3D period and best cut, ported from sprite-from-video's video_loop.py with
@@ -81,8 +86,10 @@ Metrics and gates (a gate appears only when its input exists):
                  segment's end by M metres (median length), so reading noise on a short segment
                  is not a pop; read motion (twocam, video) passes 0.03. Gated count <= --pops-max (0).
                  With `reading_joints`, a segment whose two ends were read is held to the readings'
-                 own speed (1.2 x it + the excess, as a clip reference): a spike the readings show
-                 too is a fast move in the source, listed as `pops_in_source` and not gated. Both
+                 own speed (1.2 x it + the excess, as a clip reference), and one with an unread end
+                 to the nearest read segment up its chain (hand>finger to forearm>hand): a spike the
+                 readings show too is a fast move in the source, listed as `pops_in_source` and not
+                 gated. Both
                  `count`s are events, one per frame and joint: the segments that leave one joint
                  turn with that bone, so the shin and an Auto-Rig Pro twist segment beside it
                  (leg_stretch>foot, leg_stretch>leg_twist) are one event; `segments` counts the
@@ -259,6 +266,44 @@ def bend_deg(a, b, c) -> np.ndarray:
     u, v = b - a, c - b
     cos = np.sum(u * v, axis=1) / np.maximum(np.linalg.norm(u, axis=1) * np.linalg.norm(v, axis=1), 1e-12)
     return np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))
+
+
+def jitter(P: np.ndarray, fps: float) -> tuple:
+    """(frames x joints jitter in m/s^2, window): |second difference| x fps^2 of each joint after a centred
+    moving average over ~0.1 s (at least 3 frames, odd); the raw acceleration on a clip too short for it."""
+    n = len(P)
+    w = max(3, int(round(JITTER_WINDOW_S * fps)) | 1)
+    if n < w + 2:
+        return np.linalg.norm(np.diff(P, 2, axis=0), axis=2) * fps * fps, w
+    kern = np.ones(w) / w
+    pad = w // 2
+    Pp = np.pad(P, ((pad, pad), (0, 0), (0, 0)), mode="edge")
+    smooth = np.apply_along_axis(lambda x: np.convolve(x, kern, mode="valid"), 0, Pp)
+    res = (P - smooth)[pad:n - pad]
+    return np.linalg.norm(np.diff(res, 2, axis=0), axis=2) * fps * fps, w
+
+
+def read_ancestor(joint, readings, parent):
+    """The joint itself when it was read, else its nearest read ancestor (a finger -> its hand), else None."""
+    seen = set()
+    while joint not in readings:
+        if joint in seen or joint not in parent:
+            return None
+        seen.add(joint)
+        joint = parent[joint]
+    return joint
+
+
+def read_segment(p, ch, readings, parent):
+    """The segment whose readings' speed a segment's pops are held to: itself when both ends were read,
+    else the nearest segment up its chain with both ends read (hand > finger -> forearm > hand), else None."""
+    seen = set()
+    while not (p in readings and ch in readings):
+        if p in seen or p not in parent:
+            return None
+        seen.add(p)
+        p, ch = parent[p], p
+    return p, ch
 
 
 def gate(name, value, limit, ok) -> dict:
@@ -594,23 +639,31 @@ def measure(doc: dict, a) -> dict:
     gates.append(gate("penetration_max_m", float(depth.max()), f"<= {a.penetration_max}",
                       depth.max() <= a.penetration_max))
 
-    # jitter
+    # jitter; with readings, only what the source does not show on the same frame and joint is gated
     acc = np.linalg.norm(np.diff(P, 2, axis=0), axis=2) * fps * fps
     out["accel_mps2"] = summary(acc)
-    w = max(3, int(round(JITTER_WINDOW_S * fps)) | 1)
-    if n >= w + 2:
-        kern = np.ones(w) / w
-        pad = w // 2
-        Pp = np.pad(P, ((pad, pad), (0, 0), (0, 0)), mode="edge")
-        smooth = np.apply_along_axis(lambda x: np.convolve(x, kern, mode="valid"), 0, Pp)
-        res = (P - smooth)[pad:n - pad]
-        jit = np.linalg.norm(np.diff(res, 2, axis=0), axis=2) * fps * fps
-    else:
-        jit = acc
+    jit, w = jitter(P, fps)
     out["jitter_mps2"] = summary(jit)
     out["jitter_window_frames"] = w
-    jv = out["jitter_mps2"]["p95"]
-    gates.append(gate("jitter_p95_mps2", jv, f"<= {a.jitter_p95}", jv <= a.jitter_p95))
+    R = m["readings"]
+    parent = {c: p for p, c in m["segments"]}
+    jv, jlimit = out["jitter_mps2"]["p95"], f"<= {a.jitter_p95}"
+    if R is not None:
+        rnames = list(R)
+        rjit, _ = jitter(np.stack([R[k] for k in rnames], 1), fps)
+        allow = np.zeros_like(jit)
+        kinds = {"read": 0, "inherited": 0, "none": 0}
+        for j, nm in enumerate(names):
+            ref = read_ancestor(nm, R, parent)
+            kinds["none" if ref is None else "read" if ref == nm else "inherited"] += 1
+            if ref is not None:
+                allow[:, j] = CLIP_FACTOR * rjit[:, rnames.index(ref)]
+        over = np.maximum(0.0, jit - allow)
+        out["jitter_source_mps2"] = summary(rjit)
+        out["jitter_over_source_mps2"] = summary(over)
+        out["jitter_reference"] = kinds
+        jv, jlimit = out["jitter_over_source_mps2"]["p95"], f"<= {a.jitter_p95} over {CLIP_FACTOR} x the source's"
+    gates.append(gate("jitter_p95_mps2", jv, jlimit, jv <= a.jitter_p95))
 
     # joint limits
     if m["limits"]:
@@ -666,7 +719,6 @@ def measure(doc: dict, a) -> dict:
         gates.append(gate("root_vertical_drift_m", vdrift, f"<= {a.root_drift_max}", vdrift <= a.root_drift_max))
 
     # pops; with readings, a spike the source shows too is listed apart and not gated
-    R = m["readings"]
     if m["segments"]:
         found, in_src, events, src_events = [], [], set(), set()
         for p, ch in m["segments"]:
@@ -675,8 +727,9 @@ def measure(doc: dict, a) -> dict:
             w = segment_speed_deg(J[p], J[ch], fps)
             every = pops(w, fps, min_excess_deg=floor)
             kept = every
-            if R is not None and p in R and ch in R:
-                kept = pops(w, fps, clip=segment_speed_deg(R[p], R[ch], fps), min_excess_deg=floor)
+            ref = read_segment(p, ch, R, parent) if R is not None else None
+            if ref is not None:
+                kept = pops(w, fps, clip=segment_speed_deg(R[ref[0]], R[ref[1]], fps), min_excess_deg=floor)
             hit = {g for f, kind in kept for g in ((f,) if kind == "single" else (f, f + 1))}
             found += [{"segment": f"{p}>{ch}", "frame": int(f), "kind": kind} for f, kind in kept]
             events |= {(int(f), p) for f, _ in kept}   # one event per frame and joint, as in the source
@@ -838,6 +891,29 @@ def _body(n=96, fps=30.0, period=32, slide_per_plant=0.0, sink=0.0, noise=0.0, t
     return doc
 
 
+def _strike(doc, jabs=(20, 44, 68), reach=0.3):
+    """Three jabs on the left arm (hand out `reach` m along +Y in two frames, held four, back in three; the
+    elbow a fifth as far) and four two-joint fingers (digitI1.L .. digitP2.L) along the forearm -> hand line."""
+    n = len(doc["joints"]["Hips"])
+    d = np.zeros(n)
+    for f in jabs:
+        d[f:f + 7] = [0.5, 1, 1, 1, 1, 1, 0.67][:max(0, min(7, n - f))]
+        d[f + 7:f + 9] = [0.33, 0.0][:max(0, min(2, n - f - 7))]
+    J = {k: np.asarray(v, float) for k, v in doc["joints"].items()}
+    jab = np.stack([np.zeros(n), reach * d, np.zeros(n)], 1)
+    J["forearm.L"] = J["forearm.L"] + 0.2 * jab
+    J["hand.L"] = J["hand.L"] + jab
+    u = J["hand.L"] - J["forearm.L"]
+    u = u / np.linalg.norm(u, axis=1, keepdims=True)
+    segs = list(doc["segments"])
+    for i, f in enumerate("IMRP"):
+        side = np.array([0.015 * (i - 1.5), 0.0, 0.0])
+        J[f"digit{f}1.L"] = J["hand.L"] + 0.09 * u + side
+        J[f"digit{f}2.L"] = J["hand.L"] + 0.12 * u + side
+        segs += [["hand.L", f"digit{f}1.L"], [f"digit{f}1.L", f"digit{f}2.L"]]
+    return dict(doc, joints={k: v.tolist() for k, v in J.items()}, segments=segs)
+
+
 def selftest() -> int:
     checks, failed = 0, []
 
@@ -960,6 +1036,52 @@ def selftest() -> int:
               code == 2 and rep["pops"]["count"] == 1 and rep["pops_in_source"]["count"] == 0)
         check("reading_joints of the wrong shape: exit 1",
               go(dict(doc, reading_joints=src[:-1].tolist(), reading_names=names))[0] == 1)
+
+        # 5a. a real strike: three jabs, the left hand out 30 cm in two frames, four two-joint fingers that
+        #     ride it with no readings of their own. Without readings the jitter p95 and the pops fail; with
+        #     readings that show the jabs, the fingers inherit the hand's allowance and the clip passes;
+        #     jitter the readings do not have (noise on every joint, or on the unread fingers) still fails
+        sk = _strike(_body())
+        code, rep, _ = go(sk, "--pops-min-move", "0.03")
+        jg = next(g for g in rep["gates"] if g["name"] == "jitter_p95_mps2")
+        check("strike without readings: the jitter p95 and the pops fail (the fingers' among them), exit 2",
+              code == 2 and not jg["pass"] and rep["pops"]["count"] >= 1 and "jitter_over_source_mps2" not in rep
+              and any(e["segment"].startswith("hand.L>digit") for e in rep["pops"]["list"]))
+        read = [k for k in sk["joints"] if not k.startswith("digit")]
+        src = np.stack([np.asarray(sk["joints"][k]) for k in read], 1)
+        src = src + np.random.default_rng(5).normal(0, 0.001, src.shape)
+        with_src = dict(sk, reading_joints=src.tolist(), reading_names=read)
+        code, rep, _ = go(with_src, "--pops-min-move", "0.03")
+        jg = next(g for g in rep["gates"] if g["name"] == "jitter_p95_mps2")
+        check("strike in the readings: jitter over the source passes, the pops are the source's, exit 0",
+              code == 0 and jg["pass"] and jg["value"] == rep["jitter_over_source_mps2"]["p95"]
+              and rep["jitter_mps2"]["p95"] > JITTER_P95 and rep["pops"]["count"] == 0
+              and rep["pops_in_source"]["count"] >= 1)
+        check("strike in the readings: the fingers inherit the hand's (8 joints), their pops are in the source",
+              rep["jitter_reference"] == {"read": len(read), "inherited": 8, "none": 0}
+              and any(e["segment"].startswith("hand.L>digit") for e in rep["pops_in_source"]["list"]))
+        contract_sample("motion_metrics", "strike_in_source", rep)
+        flick = dict(with_src, joints=dict(with_src["joints"]))
+        fi = np.asarray(flick["joints"]["digitI1.L"])
+        fi[32] = fi[32] + [0.0, 0.0, 0.08]
+        flick["joints"]["digitI1.L"] = fi.tolist()
+        code, rep, _ = go(flick, "--pops-min-move", "0.03")
+        check("a finger pop on a frame the hand's readings are calm: gated, exit 2",
+              code == 2 and any(e["segment"] == "hand.L>digitI1.L" and e["frame"] == 32 for e in rep["pops"]["list"]))
+        loose = dict(with_src, joints={k: (np.asarray(v) + (np.random.default_rng(6).normal(0, 0.006, np.shape(v))
+                                                           if k.startswith("digit") else 0)).tolist()
+                                       for k, v in sk["joints"].items()})
+        code, rep, _ = go(loose, "--pops-min-move", "0.03")
+        check("noise on the unread fingers only: not in the source, the jitter gate fails, exit 2",
+              code == 2 and not next(g for g in rep["gates"] if g["name"] == "jitter_p95_mps2")["pass"])
+        noisy = _body(noise=0.006)
+        nn = list(noisy["joints"])
+        clean = _body()
+        src = np.stack([np.asarray(clean["joints"][k]) for k in nn], 1)
+        code, rep, _ = go(dict(noisy, reading_joints=src.tolist(), reading_names=nn), "--state", "walk")
+        jg = next(g for g in rep["gates"] if g["name"] == "jitter_p95_mps2")
+        check("jitter the readings do not have: the gate fails over the source, exit 2",
+              code == 2 and not jg["pass"] and jg["value"] > 0.8 * rep["jitter_mps2"]["p95"])
 
         # 5b. feet whose joints stand 6 cm higher (an ankle over its sole): without sole_offsets no plant is
         #     found and the slide reads nothing; with them the plants come back and a 3 cm creep fails

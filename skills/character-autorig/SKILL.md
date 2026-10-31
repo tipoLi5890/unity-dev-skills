@@ -23,6 +23,7 @@ so every clip made for any contract character plays on it.
 | "Use Auto-Rig Pro's AI", gloved or closed fingers, face bones, hair pushing a marker out of its window: the `smart` stage, options, gates, fallbacks | `reference/arp-ai.md` |
 | "Markers are off": how each marker is found from slices, the windows, the front/side pictures for a person, `--adjust`, the output file | `reference/markers.md` |
 | "Elbow collapses when bent", "skin pokes through in a squat", or any failed gate | `reference/failures.md`; the elbow/knee weight repair in `reference/arp-pipeline.md` |
+| "The hood, bag, hem or hair should swing": spring-chain bones for a fused shell, `secondary/1` for Unity | `reference/secondary-chains.md`; the Unity side: `unity-rigged-character` → `reference/secondary-motion.md` |
 | No add-on, or a chibi outside the marker windows: the hand-built fallback from the markers | [Which route](#which-route); `reference/hand-built-route.md` |
 | Auto-Rig Pro's other ops (probe, retarget clips onto its controls) | `blender-retarget` → `reference/arp-route.md` |
 | The contract skeleton, role maps, Unity Avatar | `unity-rigged-character` → `reference/humanoid-contract.md` |
@@ -72,6 +73,7 @@ so every clip made for any contract character plays on it.
 | 6 | Skin | the pipeline's weight gates; `blender-retarget` → `brt_weights` `probe` | deform weight sum 1 everywhere | `blender-retarget` → `reference/weight-repair.md` |
 | 7 | Deformation | `scripts/deform_gate.py` (Blender) | six poses (five without `fist` when the markers say `fingers.mode` `fixed`; `jaw_open` added for a face), on the outward-facing skin: volume loss ≤ 0.35 at hinge and spine joints, every bent elbow and knee measured, new self-intersection p95 ≤ 8 % | `reference/failures.md`; look at `--render` |
 | 8 | FBX | the pipeline's export and read-back (Auto-Rig Pro); `bcr_fbx` + `rig_gate.py` (hand-built) | names, parents, weights and influences read back from the file | re-export; never hand-edit the FBX |
+| 9 | Spring chains (optional) | `scripts/secondary_chains.py` (Blender) on the rig to take on, then stages 5 and 7 again on its export | `secondary.*`: hood, bag, hem, shorts and hair spikes get `cc_` chains weighted inside their regions only, nothing else moves, colliders clear of every joint; nothing loose = no chain, a pass | `reference/secondary-chains.md`; a missed or wrong region: a marker chain |
 
 Then `unity-rigged-character` (import, Generic by default) and `art-asset-registry` (record the rig
 with `licence: {source: "auto-rig-pro", territory: "worldwide"}`; the pipeline puts it on its
@@ -82,36 +84,19 @@ JSON summary (each step's exit code, seconds, log, report and failed gates), exi
 
 ```bash
 python3 scripts/autorig.py all out/runner Runner.glb --name Runner [--height 1.75] [--threads 4] \
-  [--no-smart] [--facial] [--fingers 5] [--no-render] [--no-repair] [--dry-run]
-# or one stage: prep | check | smart | markers | arp | contract | deform
+  [--no-smart] [--facial] [--fingers 5] [--no-render] [--no-repair] [--no-secondary] [--dry-run]
+# or one stage: prep | check | smart | markers | arp | contract | deform | secondary
 python3 scripts/autorig.py --selftest
 ```
 
 It picks `--min-fingers` and the `fist` pose from the markers' `fingers.mode` (`ai` counts as
 found). A failed `smart` never stops `all` (exit 2): the markers fall back to slices. When the
 deformation gate fails on elbow or knee volume loss alone, it runs the weight transfer from
-`reference/arp-pipeline.md` on a copy (`repair/aN/`) and gates again; the limits never change. The
-summary lists every attempt and the files to take on. What the stages run:
-
-```bash
-python3 scripts/mesh_check.py Runner.glb --out rig/runner.mesh.json
-blender -b Runner.blend -P scripts/arp_markers.py -- --mesh Runner \
-  --out rig/runner.markers.json --preview-dir rig/markers/
-blender -b Runner.blend --python-expr "$(cat <<'PY'
-import sys; sys.path[:0] = ['<skills>/blender-retarget/scripts']
-import bpy, brt_arp
-r = brt_arp.run({'op': 'pipeline', 'mesh': 'Runner', 'markers': 'rig/runner.markers.json',
-                 'fbx': 'export/Runner.fbx', 'report_path': 'rig/runner.arp.json'})
-bpy.ops.wm.save_as_mainfile(filepath='rig/Runner_arp.blend')
-sys.exit(0 if r.get('pass') is True else 2)
-PY
-)"
-python3 <skills>/unity-rigged-character/scripts/contract_map.py map export/Runner.skeleton.json \
-  --map arp --require contract --min-fingers 30 --out rig/runner.contract.json
-blender -b -P scripts/deform_gate.py -- --fbx export/Runner.fbx --map rig/runner.contract.json \
-  --render rig/poses/ --out rig/runner.deform.json
-# fingers.mode "fixed" (a mitten): add --poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120
-```
+`reference/arp-pipeline.md` on a copy (`repair/aN/`) and gates again; the limits never change.
+Then the spring chains go on the rig to take on (`secondary/`: its FBX, `NAME.secondary.json`, the
+contract and deformation gates again, which read the same as without the chains). The summary
+lists every attempt and the files to take on. Each stage by hand: `reference/arp-pipeline.md` →
+"The stages by hand".
 
 Relative paths are read from the working directory (`//` from the .blend). The contract report's
 `retarget_map` feeds `deform_gate.py --map` and `blender-retarget` → `brt_retarget`'s `map`.

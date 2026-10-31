@@ -142,7 +142,7 @@ whose chain excludes the declared `Sales territory:`; with `Sales territory: und
 | `contact_bake` `contact_height_m` | with `--contacts`: contacts that disagree with the pose | bake with the detector (leave `--contacts` out) |
 | `motion_metrics` `pops` | a one- or two-frame snap the fit added | `solve.py` despikes by default and lists `despiked`; a pop left after it on a long segment (upper arm, forearm, thigh, shin) is real: look at that frame in `overlay.mp4`, reroll or trim |
 | `motion_metrics` `pops_in_source` (reported, not gated) | the readings snap too: the video model drew the limb jumping | look at the frame in the video; reroll the seed if it shows |
-| `motion_metrics` `jitter_p95_mps2` | reading noise the fit passed through | raise `solve.py --acc-weight`; set the threshold once per source, never per clip |
+| `motion_metrics` `jitter_p95_mps2` | with readings: jitter beyond 1.2 x the readings' on the same frames, which the fit or the bake added (a strike the video has is discounted); without: reading noise the fit passed through | read `jitter_over_source_mps2` against `jitter_mps2`; raise `solve.py --acc-weight`; set the threshold once per source, never per clip |
 | `motion_metrics` `loop_period_found` | under three strides in the take | film a longer take (or ask the prompt for more strides) |
 | `two_view_agreement` | the halves were animated differently | reroll the seed (`reference/two-camera.md`, Limits) |
 | `retarget.translation_kept` (a pack clip) | `translate: False`, or Hips not mapped | `blender-retarget` |

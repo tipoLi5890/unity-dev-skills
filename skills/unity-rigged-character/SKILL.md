@@ -22,6 +22,7 @@ upstream route has its own skill. An asset with no skeleton belongs to `unity-3d
 | A held prop is left behind or sits off the hand; a prop socket under Optimize Game Objects | below, then `reference/unity-import.md` §3 |
 | A white mannequin; PBR maps an FBX drops | below, then `reference/textures.md` |
 | A hitbox far wider than the character | below, then `reference/gameplay-rig.md` |
+| Hood, bag, hem or hair should swing and settle: spring chains on `cc_` bones, body colliders | `reference/secondary-motion.md` |
 | Curveless bones, root aliases, sampling and skinning in batchmode on a clip pack's skeleton | `reference/shared-skeleton-generic.md` |
 | Which Editor script automates which step | [Editor scripts](#editor-scripts), `reference/editor-scripts.md` |
 | Anything else that looks wrong after import | `reference/troubleshooting.md` |
@@ -86,6 +87,7 @@ Each stage has a reference file. Read the one you are standing in, not all of th
 | 4 | Animator: 1D blend tree, upper-body mask on an override layer | `reference/unity-import.md` §5 |
 | 5 | PBR maps back onto URP Lit — a Blender or Mixamo FBX never arrives with metallic bound | `reference/textures.md` |
 | 6 | Hit box, culling bounds, the Animator to drive, pooling | `reference/gameplay-rig.md` |
+| 7 | Secondary motion: `cc_` chains from `secondary/1`, springs, body colliders, Optimize Game Objects off | `reference/secondary-motion.md` |
 | — | Characters sharing a clip pack's skeleton: RemapRoot, StripNonRootPositions, BakeNodeDefaults, `display_scale` on the prefab root, sampling and skinning in batchmode | `reference/shared-skeleton-generic.md` |
 | — | It went wrong | `reference/troubleshooting.md` |
 
@@ -97,12 +99,17 @@ prefab snippet and an API cheat sheet: `reference/editor-scripts.md`. Menu
 
 | File | Step |
 |---|---|
-| `CharacterImportSettings.cs` | Postprocessor: rig type, Avatar, `@Clip` renames, `loopPose`, map import types, from `character-pipeline.json`. Reimport Character Folder |
+| `CharacterImportSettings.cs` | Postprocessor: rig type, Avatar, `@Clip` renames, `loopPose`, map import types, from `character-pipeline.json`; a body FBX's embedded maps extracted as `<Body>_BaseColor` / `_Normal` and bound. Reimport Character Folder |
 | `CharacterHumanoidAvatar.cs` | Build Humanoid Avatar (`"rig": "Humanoid"` only): an explicit HumanDescription from the contract map or a `humanMap` file; gate: valid, human, Chest, ≥ `minFingerBones` fingers |
 | `CharacterAvatarLinker.cs` | Link Animation Avatars: Copy From Other Avatar for every `<name>@<Clip>.fbx`; on Humanoid, the same gate first |
 | `CharacterAnimatorBuilder.cs` | Build Animator: the controller, with parameter names from the config |
 | `MixamoTextures.cs` | Apply Mixamo Textures: the URP Lit material from the source maps, on any FBX route (needs URP) |
 | `SharedSkeletonClipImporter.cs` | Postprocessor for the fit route, two folders only: Generic characters and the pack's clips, then root aliases renamed, non-root positions stripped, curveless bones given the file's default. Keep `CharacterImportSettings` off those folders |
+| `SecondaryMotionSetup.cs` | Add Secondary Motion: chains, colliders and the system from `<name>.secondary.json`; refuses with Optimize Game Objects on |
+
+Runtime, any runtime folder (namespace `UnityDev.SecondaryMotion`, no package): `SpringSolver.cs`,
+`SpringChain.cs`, `SpringCollider.cs`, `SecondaryMotionSystem.cs`, `SecondarySpec.cs`; EditMode
+tests in `resources/Tests/` (`reference/secondary-motion.md`; `CharacterImportTests.cs`: `reference/textures.md`).
 
 Stdlib Python: `scripts/fbx2mixamo.py` and `scripts/glb2mixamo.py` (Mixamo route: cleanup,
 axes, a Mixamo-ready OBJ); `scripts/fbx_textures.py` (maps out of any FBX, the original export on

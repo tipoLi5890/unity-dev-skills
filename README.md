@@ -140,6 +140,25 @@ see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 The sprite clips and the motion video are machine-generated with MiniMax H3, run locally on its open
 weights under the MiniMax H3 Community License Agreement.
 
+### A bag and hood that follow the run
+
+<div align="center">
+<img src=".github/media/secondary.gif" alt="The courier runner seen from behind, twice side by side, through a run, a lane change, a jump, a stop and a turn. Left, chains off: the bag, hood and hair move rigidly with the body. Right, chains on: the bag and hood swing and lag behind each change of direction, then settle after the stop" width="640">
+<p><sub>Same rig, same motion, in Unity. Left: chains off. Right: the spring chains on.</sub></p>
+</div>
+
+<div align="center">
+<img src=".github/media/secondary.jpg" alt="One frame as the runner starts to turn, side by side. Left, chains off: the bag hangs where it was skinned. Right, chains on: the bag has swung toward the spine, lagging behind the turn" width="640">
+<p><sub>The first frames of the turn: with the chains on, the bag lags behind the body.</sub></p>
+</div>
+
+[`character-autorig`](skills/character-autorig/SKILL.md) →
+[`unity-rigged-character`](skills/unity-rigged-character/SKILL.md)
+
+The rig step adds bone chains for the bag, hood, hair, jacket hem and shorts, and writes how stiff
+each is and where the body is to `<name>.secondary.json`. In Unity one command turns them into
+spring bones that keep their length and stay out of the body at any frame rate.
+
 ## How it works
 
 ```mermaid

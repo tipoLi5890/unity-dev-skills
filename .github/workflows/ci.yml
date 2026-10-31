@@ -53,6 +53,7 @@ jobs:
               'character-autorig/scripts/mesh_check.py': ['numpy'],
               'character-autorig/scripts/rig_exam.py': ['numpy'],
               'character-autorig/scripts/rig_exam_blender.py': [],
+              'character-autorig/scripts/secondary_chains.py': ['numpy'],
               'codex-visual/scripts/audit_pixel.py': ['numpy', 'PIL'],
               'codex-visual/scripts/breathe.py': ['numpy', 'PIL'],
               'codex-visual/scripts/key_unmix.py': ['numpy', 'PIL'],
@@ -78,6 +79,7 @@ jobs:
               'unity-new-project/scripts/pure_tests.py': [],
               'unity-profiling/scripts/compare_windows.py': [],
               'unity-rigged-character/scripts/contract_map.py': ['numpy'],
+              'unity-rigged-character/scripts/fbx_textures.py': [],
           }
           bad = ran = 0
           for path, mods in SCRIPTS.items():

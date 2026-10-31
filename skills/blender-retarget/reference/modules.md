@@ -14,7 +14,7 @@ the parameters of each are in its docstring (`scripts/brt_*.py`). A worked call 
 | `brt_drift` | a carried prop against its anchor bone, sampled over every clip, position and rotation | `drift.max_drift`, `drift.max_rotation` |
 | `brt_audit` | the saved .blend read back in a fresh Blender; exit 0 pass, 1 fail, 2 refused input | `audit.expect_matches`, `audit.props_parented` (with `props`) |
 | `clip_metrics.py` (host, numpy) | a clip on the character against the same clip on the reference body: plants, added foot slide, limb direction, arm pose, pops; exit 0 pass, 2 a gate failed, 1 refused (`motion_metrics`' codes) | `added_slide_p95_m`, `added_slide_max_m`, `limb_direction_p95_deg`, `pops` |
-| `motion_metrics.py` (host, numpy) | one clip: plant slide, penetration, jitter, limits, loop seam, drift, pops; exit 0/2/1 | `foot_slide_p95_m`, `loop_seam_ratio`, `pops` |
+| `motion_metrics.py` (host, numpy) | one clip: plant slide, penetration, jitter, limits, loop seam, drift, pops (jitter and pops relative to the source's readings when the clip carries them); exit 0/2/1 | `foot_slide_p95_m`, `loop_seam_ratio`, `pops` |
 | `bakeoff_report.py` (host, stdlib) | `clip_metrics` reports per route → one markdown table, misses in bold; exit 0/1/2 | — |
 
 **Calling a module.** Through the Blender MCP server's code tool, put this skill's `scripts`

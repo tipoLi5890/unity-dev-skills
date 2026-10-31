@@ -1,8 +1,9 @@
-# The mesh gate and the deformation gate
+# The mesh gate, the deformation gate and the spring-chain gates
 
 > Part of the `character-autorig` skill. `scripts/mesh_check.py` runs before any marker;
-> `scripts/deform_gate.py` runs on the bound result. Both print one JSON object and exit 0 pass,
-> 2 a gate failed, 1 refused input.
+> `scripts/deform_gate.py` runs on the bound result; `scripts/secondary_chains.py` gates the
+> spring chains it adds. Each prints one JSON object and exits 0 pass, 2 a gate failed, 1 refused
+> input.
 
 ## mesh_check.py — is the mesh riggable?
 
@@ -52,6 +53,14 @@ blender -b --factory-startup -P scripts/deform_gate.py -- --selftest
 Pose a plain skeleton. An exported FBX is one; so is a hand-built rig. Auto-Rig Pro's own rig
 drives its deform bones through constraints from its controls, so a rotation set on a deform bone
 there does nothing: gate the export.
+
+**Spring chains do not change a reading.** Blender's FBX importer gives each bone the mean
+distance to its child bones as its length (its parent's when it has none), along the bone's own
+axis. A `cc_` chain under the Head or a thigh therefore lengthens that bone and every childless
+bone below it. The gate reads each tail where the importer puts it without the `cc_` children
+(`chain_free_tails`, the same rule `brt_arp` uses for skeleton/1 tails), so a rig reads the same
+with its chains as without; a rig built in Blender, whose lengths are not the importer's, keeps
+its own tails.
 
 **The poses** are rotations in world axes, each relative to its parent, read off the rest
 skeleton, so they fit any arm angle and hand orientation:
@@ -153,3 +162,40 @@ measured and the single skin's p95 (counted whole, every hinge goes unmeasured a
 the single skin's p95 (the raw vertex test reports the seam as crossing); an opening at the left
 elbow fails `deform.joints_measured`. On mesh_check's tube body, four thin fingers held together
 keep every triangle, and an inner shell standing farther than 0.01 H off the legs is still left out.
+
+## secondary_chains.py — spring chains on a fused shell
+
+```bash
+blender -b rig/Runner_arp.blend -P scripts/secondary_chains.py -- --mesh Runner \
+  --map rig/runner.contract.json --fbx secondary/Runner.fbx --out secondary/Runner.secondary.json
+blender -b --factory-startup -P scripts/secondary_chains.py -- --selftest
+```
+
+What it finds and how it weights is in `reference/secondary-chains.md`. Its gate/1 report:
+
+| Gate | Passes when |
+|---|---|
+| `secondary.chains_placed` | every `--require` kind got a chain (a hem: four or more); `[]` without `--require`, so a body with nothing loose passes with no chain |
+| `secondary.weighted_vertices` | every weighted chain bone holds at least 50 vertices |
+| `secondary.max_influences` | at most 4 deform weights on every vertex (the exporter's own limit pass then trims nothing) |
+| `secondary.weight_sum` | every vertex's deform weights sum to 1 (within 1e-4) |
+| `secondary.body_weights_unchanged` | outside every chain's region, every weight is exactly what the bind left |
+| `secondary.tip_unweighted` | no `cc_<chain>_end` tip carries a weight |
+| `secondary.leak` | each chain's bones turned 25°: no vertex outside its region moves more than 1 mm |
+| `secondary.rest_penetration` | no chain joint below the root starts inside a collider of its group, after shrinking (`colliders.shrunk`, `colliders.dropped`) |
+| `secondary.export_bones` | with `--fbx`: every `cc_` bone is in the re-imported FBX, its parent kept |
+| `secondary.export_weights` | with `--fbx`: every re-imported vertex weighted to a `cc_` bone lies in that chain's region and its weight matches within 0.01 |
+
+With `--fbx` the report also carries `brt_arp`'s own `arp.export_*` gates. Then `contract_map.py`
+on the new skeleton (the `cc_` bones are extras) and `deform_gate.py` on the new FBX:
+`autorig.py secondary` runs all three and puts the volume reading with and without the chains
+side by side in its summary.
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| a chain on a body part that does not hang loose | a bulge or a step that passed the thresholds | `"skip": ["<chain>"]` in the markers file and run again on the rig without chains |
+| a loose part without a chain (`detect.found` lacks it) | it sits outside the search windows, or a thin mesh | a marker chain (`reference/secondary-chains.md`) |
+| `secondary.leak` or `body_weights_unchanged` fails | a region reaching skin of another part | a smaller `region_radius` for a marker chain, or skip the chain |
+| `secondary.rest_penetration` fails | a joint deep inside a body capsule | move the marker chain's joints onto the surface |
+| refused: the rig already has `cc_` bones | a second run on the chained rig | run on the rig before the chains (`repair/aN/` or `rig/`) |
+

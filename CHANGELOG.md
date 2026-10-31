@@ -2,6 +2,66 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.39.0
+
+Secondary motion, free: the hood, back bag, jacket hem, shorts hems and hair spikes of a fused
+image-to-3D shell get spring-chain bones at rig time and swing, lag and settle in Unity, with a
+spring runtime that ships here (plain C#, no package). The chains change no deformation reading.
+Two fixes ride along: an Auto-Rig Pro FBX's embedded maps now bind on import, and the bake's
+jitter gate no longer reads a punch the video has as jitter.
+
+- **`character-autorig` → `secondary_chains.py`, stage `secondary`.** On the bound rig it finds
+  the loose regions (hood and bag: a bulge ≥ 0.04 H off the opened back profile; hem: a lip
+  ≥ 0.004 H in at least four of six sectors; shorts: a thigh-radius drop ≥ 1.35 × and ≥ 0.01 H;
+  hair: clusters with ≥ 0.12 of their skin facing sideways), adds plain `cc_` bones under the
+  contract bone each hangs from with an unweighted `cc_<chain>_end` tip, moves a share of the
+  existing weights onto them inside the region only (four influences, sum 1), sizes body capsules
+  and a head sphere clear of every chain joint, exports through `brt_arp` and writes
+  `<name>.secondary.json` (`secondary/1`). A strap is a marker chain only (one stiff bone with a
+  mid-span sag); `--markers` places or skips chains by hand. Gates `secondary.chains_placed`,
+  `weighted_vertices`, `max_influences`, `weight_sum`, `body_weights_unchanged`, `tip_unweighted`,
+  `leak` (25° turn, 1 mm outside the region), `rest_penetration`, `export_bones`,
+  `export_weights`. A body with nothing loose writes an empty chain list, adds no bone and passes.
+  `autorig.py` runs it last, on the passing repair's rig, then contract and deform again on its
+  export (`--no-secondary`, `--secondary-markers`); the summary puts both volume readings side by
+  side. On the courier runner: 19 chains, every gate green, volume loss 0.1955 and
+  self-intersection p95 0.0772 with and without the chains. `reference/secondary-chains.md`;
+  `gates.md`; the per-stage commands move to `arp-pipeline.md` ("The stages by hand").
+- **Chain-free tails.** Blender's FBX importer lengthens a bone to its children, so a hair chain
+  under the Head doubled its length. `deform_gate.py`, `brt_arp`'s skeleton/1 and
+  `humanoid-motion`'s `prepare_rig.py` read each tail as without the `cc_` bones
+  (`tools/shared-blocks/chain_tails.py`); a rig without chains, or one built in Blender, reads as
+  before.
+- **`unity-rigged-character` → spring runtime and `SecondaryMotionSetup.cs`.** `SpringSolver`,
+  `SpringChain`, `SpringCollider`, `SecondaryMotionSystem`, `SecondarySpec` (namespace
+  `UnityDev.SecondaryMotion`): fixed 60 Hz substeps with Verlet, pull to the animated pose,
+  capsule and sphere push-out, an angle clamp and exact bone lengths; reset on teleport and
+  `ResetPose()`; a frame with no substep still moves; bones a clip does not write go back to rest,
+  so it runs under Generic and Humanoid. Add Secondary Motion (menu, or batch
+  `SecondaryMotionSetup.SetupFromCommandLine`, exit 0/2/1/3) builds chains and colliders from `secondary/1`, refuses
+  Optimize Game Objects, a missing `cc_` bone or a parent more than 1 cm off its bind pose, and
+  shrinks or drops a collider a joint starts inside; an empty chain list clears what a run built.
+  EditMode tests in `SecondaryMotionTests.cs`. `reference/secondary-motion.md`. The README
+  shows the runner chains off and on (`secondary.gif`, `secondary.jpg`).
+- **`unity-rigged-character` → `CharacterImportSettings.cs` embedded maps.** Unity bound none of an
+  Auto-Rig Pro FBX's packed images until extracted, then bound by file name (another character's
+  `Image_0.png` as readily). A body FBX in a character folder now has its base-colour and normal
+  slots extracted once as `<Body>_BaseColor` / `<Body>_Normal`, the normal imported as a normal
+  map, both bound on its own material on every import; `Maps(folder)` checks it.
+  `CharacterImportTests.cs`; `fbx_textures.py` prints each map's slot, names generic images by it
+  and gains `--selftest`.
+- **`blender-retarget` → `motion_metrics.py`.** With `reading_joints`, the jitter gate takes each
+  joint's jitter less 1.2 × the readings' on the same frame and joint (`jitter_over_source_mps2`;
+  the absolute `jitter_mps2` stays in the report); a finger with no readings takes its hand's
+  allowance, and its pops are held to the forearm-to-hand readings. The courier's baked uppercut
+  passes (jitter gate 26.5 → 0, pops 1 → 0). On real two-camera clips the readings' own jitter
+  (p95 about 33) is above the output's almost everywhere, so the gate now catches only jitter
+  beyond the readings' on the same frames; read `jitter_mps2` beside it.
+- **CI.** `fbx_textures.py --selftest` and the usage-error exit 1 of `secondary_chains.py` and
+  `fbx_textures.py`; `secondary_chains.py --selftest` runs with `run-selftests.py --blender`;
+  `check-contracts.py` validates `secondary/1` samples and the doc example, and asks a script for
+  samples from one of its selftest rows, not every row (`contact_bake.py --selftest-blender`).
+
 ## 0.38.0
 
 Three measured gaps closed or charted. `character-autorig` gains an exam that scores the automatic

@@ -9,7 +9,8 @@ usage (in this order; `all` runs them one after another):
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
     autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json
     autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
-    autorig.py all      OUT GLB [any of the options above]
+    autorig.py secondary OUT [--name NAME] [--no-render] [--secondary-markers FILE] -> secondary/
+    autorig.py all      OUT GLB [any of the options above] [--no-secondary]
     autorig.py --selftest
 Every stage takes --blender PATH (env BLENDER, default blender on PATH, else the usual install folder),
 --python PATH (env PYTHON, default this interpreter; numpy for mesh_check), --threads N (Blender -t N) and
@@ -26,6 +27,14 @@ contract: unity-rigged-character contract_map.py map --map arp --require contrac
 markers say fingers.mode fixed (a mitten; `ai` counts as found). deform: deform_gate.py on the FBX with the
 contract's retarget_map (--render rig/poses/ unless --no-render; without fist when fingers.mode is fixed; with
 jaw_open when deform_gate knows that pose, the markers carry the face and the contract maps a Jaw).
+secondary (last, after the repair; --no-secondary skips it): secondary_chains.py on the rig to take on (the
+passing repair's repair/aN/NAME_arp.blend, else rig/NAME_arp.blend; run alone, the newest autorig.deform.json or
+autorig.all.json says which) with the contract report as --map, writing secondary/NAME_sec.blend, NAME.fbx (the
+brt_arp export), NAME.secondary.json (secondary/1) and NAME.secondary.gate.json; then contract_map.py and
+deform_gate.py again on that export (secondary/NAME.contract.json, NAME.deform.json), which deform_gate reads as
+without the chains: the summary's `secondary` block puts both volume readings side by side. A body with nothing
+loose writes an empty chain list and adds no bone; the two re-checks are skipped and the files to take on stay.
+A deform stage that failed skips it.
 
 smart never stops `all`: without the add-on or its AI files it is skipped (no exit change); a smart that fails
 (a gate, an error, a timeout) makes the run's exit 2, and the markers take what passed from its report (a face
@@ -74,8 +83,8 @@ BRT = SKILLS / "blender-retarget" / "scripts"
 CONTRACT_MAP = SKILLS / "unity-rigged-character" / "scripts" / "contract_map.py"
 MAC_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 WIN_BLENDER_GLOB = r"C:\Program Files\Blender Foundation\Blender*\blender.exe"
-STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform")
-STOP_ON_GATE = {"check", "markers", "arp"}       # a later stage cannot use what these failed to make
+STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform", "secondary")
+STOP_ON_GATE = {"check", "markers", "arp", "deform"}   # a later stage cannot use what these failed to make
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 DEFORM_POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")   # deform_gate.POSES
 SMART_KILL = 600 + 60 + 120       # arp_smart's --timeout, its watchdog's margin, then the window is killed
@@ -154,6 +163,14 @@ class Ctx:
                   "deform": o / "rig" / f"{n}.deform.json", "poses": o / "rig" / "poses", "logs": o / "logs",
                   "repair": o / "repair", "smart": o / "rig" / f"{n}.smart.json",
                   "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json"}
+        sec = o / "secondary"
+        self.f.update({"sec_dir": sec, "sec_blend": sec / f"{n}_sec.blend", "sec_fbx": sec / f"{n}.fbx",
+                       "sec_skeleton": sec / f"{n}.skeleton.json", "sec_json": sec / f"{n}.secondary.json",
+                       "sec_gate": sec / f"{n}.secondary.gate.json", "sec_contract": sec / f"{n}.contract.json",
+                       "sec_deform": sec / f"{n}.deform.json", "sec_pics": sec / "pics", "sec_poses": sec / "poses"})
+        self.repair = None        # this run's repair block, once the deform stage ran
+        self.deform_ran = False
+        self.chains = None        # chains the secondary step placed (None: not run)
         self.smart = None      # this run's smart: None (not run), planned, ready, passed, failed, skipped
         self.markers_smart = []   # the --smart the markers were given
         self.smart_why = None     # the probe's failed gates, or the smart step's failed gates or error
@@ -286,6 +303,20 @@ def has_jaw(c: Ctx) -> bool:
     return bool(m.get("facial")) and "Jaw" in (k.get("retarget_map") or {})
 
 
+def take_on(c: Ctx) -> tuple:
+    """(blend, deform report) of the rig to take on: a passing repair's copy, else rig/NAME_arp.blend. When the
+    deform stage ran in this run its repair decides; else the newest autorig.deform.json / autorig.all.json."""
+    blocks = [c.repair] if c.deform_ran else [
+        (read_json(p) or {}).get("repair") for p in sorted((c.out / f"autorig.{s}.json" for s in ("deform", "all")),
+                                                          key=lambda p: p.stat().st_mtime if p.exists() else 0,
+                                                          reverse=True) if p.exists()][:1]
+    for r in blocks:
+        files = (r or {}).get("files") or {}
+        if (r or {}).get("result") == "passed" and files.get("blend"):
+            return Path(files["blend"]), Path(files.get("deform") or c.f["deform"])
+    return c.f["arp_blend"], c.f["deform"]
+
+
 # --- the stages: each a list of steps, planned when it is about to run ---------------------------------------------
 def plan(c: Ctx, stage: str, a) -> list:
     f, logs = c.f, c.f["logs"]
@@ -334,15 +365,32 @@ def plan(c: Ctx, stage: str, a) -> list:
     if stage == "deform":
         need(c, f["fbx"], "arp"); need(c, f["contract"], "contract")
         return [deform_step(c, "deform", f["fbx"], f["deform"], None if a.no_render else f["poses"], logs)]
+    if stage == "secondary":
+        if a.no_secondary:
+            return []
+        blend, _ = take_on(c)
+        need(c, blend, "arp"); need(c, f["contract"], "contract")
+        extra = (["--markers", Path(os.path.abspath(a.secondary_markers))] if a.secondary_markers else []) + \
+            ([] if a.no_render else ["--render", f["sec_pics"]])
+        fingers = [] if fingers_fixed(c) else ["--min-fingers", a.min_fingers]
+        return [step("secondary", blender_cmd(c, HERE / "secondary_chains.py", "--mesh", c.name, "--map", f["contract"],
+                                              "--save", f["sec_blend"], "--fbx", f["sec_fbx"], "--out", f["sec_json"],
+                                              "--report", f["sec_gate"], *extra, blend=blend, factory=False),
+                     f["sec_gate"], logs / "secondary.log"),
+                step("secondary_contract", py_cmd(c, CONTRACT_MAP, "map", f["sec_skeleton"], "--map", "arp", "--require",
+                                                  "contract", *fingers, "--out", f["sec_contract"]), f["sec_contract"],
+                     logs / "secondary_contract.log", kind="python", after_chains=True),
+                dict(deform_step(c, "secondary_deform", f["sec_fbx"], f["sec_deform"],
+                                 None if a.no_render else f["sec_poses"], logs, f["sec_contract"]), after_chains=True)]
     raise Refused(f"unknown stage {stage}")
 
 
-def deform_step(c: Ctx, name, fbx, out, render, logs) -> dict:
+def deform_step(c: Ctx, name, fbx, out, render, logs, contract=None) -> dict:
     chosen = deform_poses(deform_pose_names(), fingers_fixed(c), has_jaw(c))
     poses = ["--poses", chosen] if chosen else []
     rend = ["--render", render] if render else []
-    return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", c.f["contract"], *poses,
-                                  *rend, "--out", out), out, logs / f"{name}.log")
+    return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", contract or c.f["contract"],
+                                  *poses, *rend, "--out", out), out, logs / f"{name}.log")
 
 
 def repair_steps(c: Ctx, n: int, rung: dict, render: bool) -> tuple[list, dict]:
@@ -571,7 +619,7 @@ def parser() -> Parser:
         if s in ("prep", "all"):
             p.add_argument("glb")
             p.add_argument("--height", type=float, default=1.75, help="metres (default 1.75)")
-        if s in ("markers", "deform", "all"):
+        if s in ("markers", "deform", "secondary", "all"):
             p.add_argument("--no-render", action="store_true", help="no marker pictures, no pose renders")
         if s in ("smart", "markers", "all"):
             p.add_argument("--no-smart", action="store_true", help="no Auto-Rig Pro AI: slice markers alone")
@@ -582,13 +630,18 @@ def parser() -> Parser:
             p.add_argument("--min-fingers", type=int, default=30)
         if s in ("deform", "all"):
             p.add_argument("--no-repair", action="store_true")
+        if s in ("secondary", "all"):
+            p.add_argument("--secondary-markers", help="manual chains for secondary_chains.py --markers")
+        if s == "all":
+            p.add_argument("--no-secondary", action="store_true", help="no spring chains")
     return ap
 
 
 def parse(argv) -> argparse.Namespace:
     a = parser().parse_args(argv)
     for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
-                 ("no_smart", False), ("facial", False), ("fingers", 5)):
+                 ("no_smart", False), ("facial", False), ("fingers", 5), ("no_secondary", False),
+                 ("secondary_markers", None)):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -631,14 +684,20 @@ def main(argv=None, osname=None, env=None) -> int:
             for st in plan(c, s, a):
                 if st.get("after_probe") and c.smart == "skipped":
                     continue
+                if st.get("after_chains") and (not c.chains or not c.f["sec_fbx"].exists()):
+                    continue          # nothing loose (the rig is unchanged), or no export to check
                 code, rep, sec = run_step(st, c.env)
                 done.append(done_entry(st, code, rep, sec))
                 if s == "smart":
                     smart_rc = max(smart_rc, smart_outcome(c, st, code, rep, alone=a.stage == "smart"))
                     continue
+                if st["name"] == "secondary":
+                    c.chains = len((rep or {}).get("chains") or []) if code != 1 else None
                 if s == "deform" and code == 2 and not a.no_repair and rep:
                     repair = ladder(c, a, rep, done)
                     code = 0 if repair["result"] == "passed" else 1 if repair["result"] == "error" else 2
+                if s == "deform":
+                    c.deform_ran, c.repair = True, repair
                 if code == 1:
                     rc = 1
                     break
@@ -665,9 +724,28 @@ def main(argv=None, osname=None, env=None) -> int:
         out["repair"] = repair
     files = {"blend": c.f["arp_blend"], "fbx": c.f["fbx"], "contract": c.f["contract"], "deform": c.f["deform"]}
     files.update((repair or {}).get("files") or {})
+    if c.chains is not None:
+        out["secondary"] = secondary_summary(c)
+        files["secondary"] = c.f["sec_json"]
+        if c.chains and rc == 0:
+            files.update(blend=c.f["sec_blend"], fbx=c.f["sec_fbx"], contract=c.f["sec_contract"],
+                         deform=c.f["sec_deform"])
     out["result"] = {k: str(v) for k, v in files.items() if Path(v).exists()}
     out.update({"exit_code": rc, "ok": rc == 0})
     return _emit(c, a, out, rc)
+
+
+def secondary_summary(c: Ctx) -> dict:
+    """The chains placed and the deform gate's volume reading before and after them (the same skin outside the
+    chains' regions: deform_gate reads the bones they hang from as without them)."""
+    gate = read_json(c.f["sec_gate"]) or {}
+    _, before = take_on(c)
+    vol = lambda p: ((read_json(p) or {}).get("volume_loss_max") or {}).get("value")
+    out = {"chains": c.chains, "found": (gate.get("detect") or {}).get("found"),
+           "colliders": gate.get("colliders"), "report": str(c.f["sec_gate"])}
+    if c.chains:
+        out["volume_loss_max"] = {"without_chains": vol(before), "with_chains": vol(c.f["sec_deform"])}
+    return out
 
 
 def smart_outcome(c: Ctx, st: dict, code: int, rep: dict | None, alone: bool) -> int:
@@ -825,6 +903,13 @@ elif script == "inside_arp":
     fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
 elif script == "inside_repair":
     touch(opt("--fbx")); touch(opt("--save"))
+elif script == "secondary_chains.py":
+    n = int(os.environ.get("FAKE_CHAINS", "2"))
+    rep.update(chains=[{"name": f"c{i}"} for i in range(n)], detect={"found": {"hood": ["hood"][:n]}})
+    touch(opt("--out"), json.dumps({"schema": "secondary/1", "chains": []}))
+    if n:
+        fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
+    touch(opt("--report"), json.dumps(rep))
 elif script in ("arp_smart_probe", "arp_smart.py"):
     mode = os.environ.get("FAKE_SMART", "pass")
     if script == "arp_smart_probe":
@@ -842,9 +927,9 @@ elif script in ("arp_smart_probe", "arp_smart.py"):
     sys.exit(code)
 elif script == "deform_gate.py":
     fbx = opt("--fbx")
-    att = os.path.basename(os.path.dirname(fbx)) if "repair" in fbx else "a0"
+    att = os.path.basename(os.path.dirname(fbx)) if "repair" in fbx else "sec" if "secondary" in fbx else "a0"
     plan = json.loads(os.environ.get("FAKE_DEFORM", "{}"))
-    joint, v, si = plan.get(att, ["LowerArm.R", 0.53, 0.04])
+    joint, v, si = plan.get(att, ["LowerArm.R", 0.2 if att == "sec" else 0.53, 0.04])
     vol = {"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "pass": v <= 0.35}
     sig = {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "pass": si <= 0.08}
     rep = {"schema": "gate/1", "poses": {"p": {"samples": [{"volume_loss": {joint: v}}]}},
@@ -895,10 +980,22 @@ def selftest() -> int:
             out = td / f"dry_{osname}"
             code, r, _ = go(["all", str(out), str(glb), "--threads", "4", "--dry-run"], osname, {"BLENDER": bl})
             steps = {s["name"]: s["cmd"] for s in r.get("steps", [])}
-            order = ["prep", "check", "smart_probe", "smart", "markers", "arp", "contract", "deform"]
-            check(f"{osname}: all dry run plans eight steps in stage order, exit 0", code == 0 and list(steps) == order
-                  and STAGES == ("prep", "check", "smart", "markers", "arp", "contract", "deform"),
-                  code=code, err=r.get("error"))
+            order = ["prep", "check", "smart_probe", "smart", "markers", "arp", "contract", "deform", "secondary",
+                     "secondary_contract", "secondary_deform"]
+            check(f"{osname}: all dry run plans eleven steps in stage order, exit 0", code == 0 and list(steps) == order
+                  and STAGES == ("prep", "check", "smart", "markers", "arp", "contract", "deform", "secondary"),
+                  code=code, err=r.get("error"), steps=list(steps))
+            sc = steps["secondary"]
+            check(f"{osname}: secondary opens rig/NAME_arp.blend without --factory-startup (the export is Auto-Rig "
+                  "Pro's), maps with the contract report, writes into secondary/; its contract and deform read the "
+                  "chained export",
+                  sc[sc.index("-P") - 1].endswith("Runner_Courier_arp.blend") and "--factory-startup" not in sc
+                  and script_of(sc) == "secondary_chains.py" and sc[sc.index("--map") + 1].endswith("Runner_Courier.contract.json")
+                  and os.path.basename(os.path.dirname(sc[sc.index("--fbx") + 1])) == "secondary"
+                  and "--render" in sc and steps["secondary_contract"][3].endswith(os.path.join("secondary", "Runner_Courier.skeleton.json"))
+                  and steps["secondary_deform"][steps["secondary_deform"].index("--map") + 1].endswith(
+                      os.path.join("secondary", "Runner_Courier.contract.json"))
+                  and "--factory-startup" in steps["secondary_deform"])
             check(f"{osname}: the name is the GLB stem made safe", r.get("name") == "Runner_Courier")
             bls = [steps[k] for k in ("prep", "smart_probe", "markers", "arp", "deform")] + \
                 [s["cmd"] for s in r["repair_example"]]
@@ -940,12 +1037,20 @@ def selftest() -> int:
             s2 = {s["name"]: s["cmd"] for s in r2.get("steps", [])}
             check(f"{osname}: --no-render drops the marker pictures and the pose renders, no -t unless given",
                   "--preview-dir" not in s2["markers"] and "--render" not in s2["deform"]
+                  and "--render" not in s2["secondary"] and "--render" not in s2["secondary_deform"]
                   and "--render" not in r2["repair_example"][1]["cmd"] and "-t" not in s2["prep"])
             code, r3, _ = go(["all", str(out), str(glb), "--no-smart", "--facial", "--fingers", "4", "--dry-run"],
                              osname, {"BLENDER": bl})
             s3 = {s["name"]: s["cmd"] for s in r3.get("steps", [])}
             check(f"{osname}: --no-smart plans no smart step and no --smart", code == 0 and "smart" not in s3
                   and "smart_probe" not in s3 and "--smart" not in s3["markers"], steps=list(s3))
+            code, r5, _ = go(["all", str(out), str(glb), "--no-secondary", "--dry-run"], osname, {"BLENDER": bl})
+            code6, r6, _ = go(["all", str(out), str(glb), "--secondary-markers", "m.json", "--dry-run"], osname,
+                              {"BLENDER": bl})
+            s6 = {s["name"]: s["cmd"] for s in r6.get("steps", [])}["secondary"]
+            check(f"{osname}: --no-secondary plans no secondary step; --secondary-markers passes --markers down",
+                  code == 0 and not any(s["name"].startswith("secondary") for s in r5["steps"])
+                  and s6[s6.index("--markers") + 1] == os.path.abspath("m.json"))
             _, r4, _ = go(["smart", str(out), "--name", "R", "--facial", "--fingers", "4", "--dry-run"], osname, {"BLENDER": bl})
             s4 = r4["steps"][-1]["cmd"]
             check(f"{osname}: smart alone passes --facial and --fingers 4 down",
@@ -1059,14 +1164,25 @@ def selftest() -> int:
 
         chain = ["inside_prep", "mesh_check.py", "arp_smart_probe", "arp_smart.py", "arp_markers.py", "inside_arp",
                  "contract_map.py", "deform_gate.py"]
+        SEC = ["secondary_chains.py", "contract_map.py", "deform_gate.py"]
         run_dir = td / "run"
+        trace_argv_all = lambda name: next((json.loads(x)["argv"] for x in trace.read_text().splitlines()
+                                            if x.strip() and json.loads(x)["script"] == name), [])
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"],
                                  FAKE_DEFORM={"a1": ["LowerArm.R", 0.3492, 0.05]})
         rs = {s_["name"]: s_ for s_ in r.get("steps", [])}
         att = (r.get("repair") or {}).get("attempts") or []
-        check("all: seven stages, the elbow fails, attempt 1 repairs and passes, exit 0",
-              code == 0 and ran == chain + ["inside_repair", "deform_gate.py"] and r.get("repair", {}).get("result")
+        check("all: the elbow fails, attempt 1 repairs and passes, the chains go on the repaired rig, exit 0",
+              code == 0 and ran == chain + ["inside_repair", "deform_gate.py"] + SEC and r.get("repair", {}).get("result")
               == "passed" and len(att) == 1, code=code, ran=ran, err=r.get("error"))
+        sa = trace_argv_all("secondary_chains.py")
+        check("all: secondary opens repair/a1/NAME_arp.blend; the result points at secondary/ and its secondary/1; "
+              "the summary puts both volume readings side by side",
+              sa and sa[sa.index("-P") - 1].endswith(os.path.join("repair", "a1", "Runner_arp.blend"))
+              and r["result"]["fbx"].endswith(os.path.join("secondary", "Runner.fbx"))
+              and r["result"]["secondary"].endswith("Runner.secondary.json")
+              and r["secondary"]["chains"] == 2 and r["secondary"]["volume_loss_max"] == {
+                  "without_chains": 0.3492, "with_chains": 0.2}, sec=r.get("secondary"), res=r.get("result"))
         check("all: every step timed, the deform step names its failed gate, the summary written, children's noise "
               "kept in the logs",
               all(isinstance(s_["seconds"], float) for s_ in rs.values())
@@ -1076,7 +1192,7 @@ def selftest() -> int:
               att and att[0]["hinges"] == ["elbow"] and att[0]["amount"] == 1.0
               and att[0]["regions"]["elbow"]["below"] == [0.98, 1.01, 1.08, 1.095]
               and att[0]["volume_loss_max"]["value"] == 0.3492 and att[0]["self_intersection_p95"] == 0.05
-              and r["result"]["fbx"].endswith(os.path.join("repair", "a1", "Runner.fbx")), att=att)
+              and r["repair"]["files"]["fbx"].endswith(os.path.join("repair", "a1", "Runner.fbx")), att=att)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"],
                                  FAKE_DEFORM={"a1": ["LowerArm.R", 0.41, 0.05]})
         rp = r.get("repair") or {}
@@ -1109,7 +1225,7 @@ def selftest() -> int:
         sa, ma, pa = trace_argv("arp_smart.py"), trace_argv("arp_markers.py"), trace_argv("arp_smart_probe")
         check("smart passed: the probe headless, the AI in a window without --factory-startup, the markers get "
               "--smart rig/NAME.smart.json, exit 0",
-              code == 0 and ran == chain and "-b" in pa and "-b" not in sa and "--factory-startup" not in sa
+              code == 0 and ran == chain + SEC and "-b" in pa and "-b" not in sa and "--factory-startup" not in sa
               and "--facial" in sa and sa[sa.index("--fingers") + 1] == "4"
               and ma[ma.index("--smart") + 1] == smart_json and r["smart"]["result"] == "passed"
               and r["smart"]["markers_used_it"], code=code, ran=ran, smart=r.get("smart"))
@@ -1118,23 +1234,47 @@ def selftest() -> int:
         ma = trace_argv("arp_markers.py")
         check("smart failed a gate: all goes on to the end, the markers still get its report (they take what "
               "passed), the summary names the failed gate, exit 2",
-              code == 2 and ran == chain and ma[ma.index("--smart") + 1] == smart_json
+              code == 2 and ran == chain + SEC and ma[ma.index("--smart") + 1] == smart_json
               and r["smart"]["result"] == "failed" and r["smart"]["why"] == ["smart.fingers"]
               and r["smart"]["note"].startswith("the markers took what passed"), code=code, ran=ran, smart=r.get("smart"))
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
                                  FAKE_SMART="error")
         check("smart wrote no report (an error): all goes on to the end, the markers without --smart, exit 2",
-              code == 2 and ran == chain and "--smart" not in trace_argv("arp_markers.py")
+              code == 2 and ran == chain + SEC and "--smart" not in trace_argv("arp_markers.py")
               and r["smart"]["result"] == "failed" and r["smart"]["note"].startswith("the markers came from slices"),
               code=code, ran=ran, smart=r.get("smart"))
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
                                  FAKE_SMART="noai")
         check("no add-on or AI files: the probe says so, no window opens, the markers without --smart, exit 0",
-              code == 0 and ran == [x for x in chain if x != "arp_smart.py"] and "--smart" not in trace_argv("arp_markers.py")
+              code == 0 and ran == [x for x in chain if x != "arp_smart.py"] + SEC
+              and "--smart" not in trace_argv("arp_markers.py")
               and r["smart"]["result"] == "skipped", code=code, ran=ran)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"], FAKE_DEFORM=clean)
         check("--no-smart: neither the probe nor the window, exit 0",
-              code == 0 and ran == [x for x in chain if not x.startswith("arp_smart")], ran=ran)
+              code == 0 and ran == [x for x in chain if not x.startswith("arp_smart")] + SEC, ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart", "--no-secondary"],
+                                 FAKE_DEFORM=clean)
+        check("--no-secondary: no chains, the result is the rig's own export, exit 0",
+              code == 0 and ran == [x for x in chain if not x.startswith("arp_smart")] and "secondary" not in r
+              and r["result"]["fbx"].endswith(os.path.join("export", "Runner.fbx")), ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"], FAKE_DEFORM=clean,
+                                 FAKE_CHAINS="0")
+        check("nothing loose: an empty secondary/1, no re-check, the rig's own export is the result, exit 0",
+              code == 0 and ran == [x for x in chain if not x.startswith("arp_smart")] + SEC[:1]
+              and r["secondary"]["chains"] == 0 and "volume_loss_max" not in r["secondary"]
+              and r["result"]["fbx"].endswith(os.path.join("export", "Runner.fbx"))
+              and r["result"]["secondary"].endswith("Runner.secondary.json"), ran=ran, sec=r.get("secondary"))
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"],
+                                 FAKE_DEFORM={"a1": ["LowerArm.R", 0.41, 0.05]})
+        check("a deform stage that failed (repair exhausted) skips the chains, exit 2",
+              code == 2 and "secondary_chains.py" not in ran and "secondary" not in r, ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"],
+                                 FAKE_DEFORM={"a1": ["LowerArm.R", 0.3492, 0.05]})
+        code, r, err, ran = real(["secondary", str(run_dir), "--name", "Runner"])
+        sa = trace_argv_all("secondary_chains.py")
+        check("secondary on its own takes the repaired rig the newest summary names, exit 0",
+              code == 0 and ran == SEC and sa[sa.index("-P") - 1].endswith(os.path.join("repair", "a1", "Runner_arp.blend")),
+              ran=ran)
         code, r, err, ran = real(["smart", str(run_dir), "--name", "Runner"], FAKE_SMART="noai")
         check("smart on its own without the AI: refused, exit 1, the probe's failed gate named",
               code == 1 and ran == ["arp_smart_probe"] and r["smart"]["why"] == ["smart.ai_files"], smart=r.get("smart"))

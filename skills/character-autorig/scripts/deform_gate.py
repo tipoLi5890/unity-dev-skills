@@ -17,7 +17,9 @@ Bones are named by the humanoid contract (`unity-rigged-character` -> humanoid-c
 role map {"bones": {contract bone: rig bone | [candidates]}}; without it the rig's bones carry the
 contract names. Pose a plain skeleton: an exported FBX (`--fbx`), or a rig whose deform bones are
 not driven by constraints. A control rig (Auto-Rig Pro's own) ignores rotations set on its deform
-bones; gate its export instead.
+bones; gate its export instead. Secondary-chain bones (`cc_*`, secondary_chains.py) are extras: the
+FBX importer lengthens the bone they hang from, so each tail is read where the importer puts it
+without them (chain_free_tails) and a rig reads the same with its chains as without.
 
 The poses, each a rotation in world axes (+Z up, facing -Y) applied relative to the parent, read off
 the rest skeleton so they fit any arm angle and any hand orientation:
@@ -146,8 +148,65 @@ def read_map(path: str | None) -> dict:
     return {k: (v if isinstance(v, list) else [v]) for k, v in bones.items()}
 
 
+# Between the shared:chain_tails markers: a copy of tools/shared-blocks/chain_tails.py (also in
+# blender-retarget's brt_arp.py, which writes skeleton/1 tails, and humanoid-motion's prepare_rig.py);
+# check-consistency keeps them equal.
+# >>> shared:chain_tails
+def chain_free_tails(bones, prefix="cc_", tol=1e-4):
+    """{name: tail} for bones [(name, parent, head, tail)] (armature space), each tail where Blender's
+    FBX importer puts it when the file holds no `prefix` (secondary-chain) bones.
+
+    The importer gives a bone the mean distance to its child bones' heads as its length (a child at the
+    same point counts), its parent's length when it has none, at least 0.01, along the bone's own axis;
+    it never turns a bone toward a child. So a chain hung under a contract bone (hair under the Head,
+    shorts hems under a thigh) lengthens that bone and every childless bone below it, and nothing else.
+    A rig whose lengths do not follow that rule (built in Blender, not imported) is returned unchanged,
+    and so is every bone the chains do not reach. Chain bones keep their own tails."""
+    info = {n: (p, tuple(map(float, h)), tuple(map(float, t))) for n, p, h, t in bones}
+    kids = {}
+    for n, (p, _, _) in info.items():
+        if p in info:
+            kids.setdefault(p, []).append(n)
+
+    def dist(a, b):
+        return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+
+    def sizes(skip):
+        out = {}
+
+        def walk(n, parent_size):
+            h = info[n][1]
+            ch = [c for c in kids.get(n, []) if not (skip and c.startswith(prefix))]
+            own = sum(dist(info[c][1], h) for c in ch) / len(ch) if ch else parent_size
+            out[n] = own
+            for c in kids.get(n, []):
+                walk(c, own)
+        for n, (p, _, _) in info.items():
+            if p not in info:
+                walk(n, 1.0)
+        return out
+
+    tails = {n: t for n, (_, _, t) in info.items()}
+    if not any(n.startswith(prefix) for n in info):
+        return tails
+    with_cc, without = sizes(False), sizes(True)
+    near = lambda a, b: abs(a - b) <= tol * max(1.0, abs(a))
+    if not all(near(max(0.01, with_cc[n]), dist(h, t)) for n, (_, h, t) in info.items()):
+        return tails                       # not the importer's lengths: leave the rig as it is
+    for n, (_, h, t) in info.items():
+        if n.startswith(prefix) or near(with_cc[n], without[n]):
+            continue
+        length = dist(h, t)
+        k = max(0.01, without[n]) / length if length > 0 else 0.0
+        tails[n] = tuple(hh + (tt - hh) * k for hh, tt in zip(h, t))
+    return tails
+# <<< shared:chain_tails
+
+
 class Rig:
-    """The armature with contract names resolved, rest geometry in world space."""
+    """The armature with contract names resolved, rest geometry in world space. Tails are read as the
+    FBX importer places them without secondary-chain (cc_) bones: a chain under a contract bone would
+    lengthen it on import, so its readings stay those of the rig without the chains."""
 
     def __init__(self, rig, mapping: dict):
         self.obj = rig
@@ -161,11 +220,13 @@ class Rig:
         mw = np.array(rig.matrix_world)
         self.mw = mw
         self.head, self.tail, self.rest = {}, {}, {}
+        tails = chain_free_tails([(b.name, b.parent.name if b.parent else None, tuple(b.head_local),
+                                   tuple(b.tail_local)) for b in rig.data.bones])
         for contract, bone in self.name.items():
             b = rig.data.bones[bone]
             m = mw @ np.array(b.matrix_local)
             self.head[contract] = m[:3, 3]
-            self.tail[contract] = (mw @ np.r_[np.array(b.tail_local), 1.0])[:3]
+            self.tail[contract] = (mw @ np.r_[np.array(tails[bone]), 1.0])[:3]
             r = m[:3, :3]
             self.rest[contract] = r / np.linalg.norm(r, axis=0)
 
@@ -924,6 +985,36 @@ def selftest() -> tuple[int, dict]:
            list(rep.get("poses", {}))[-1:] == ["jaw_open"] and len(rep["poses"]) == 7
            and rep["poses"]["jaw_open"]["bent"] == ["Jaw"] and "Jaw" not in
            rep["poses"]["jaw_open"]["samples"][0]["volume_loss"])
+    # secondary chains (cc_ bones) must not change a reading: tails as the FBX importer places them
+    def imported(spec):    # [(name, parent, head, axis)] -> [(name, parent, head, tail)], the importer's rule
+        kids = {}
+        for n, p, _, _ in spec:
+            kids.setdefault(p, []).append(n)
+        heads = {n: np.array(h, float) for n, _, h, _ in spec}
+        size, out = {}, []
+        for n, p, h, ax in spec:      # parents come first
+            ch = kids.get(n, [])
+            size[n] = (sum(np.linalg.norm(heads[c] - heads[n]) for c in ch) / len(ch) if ch
+                       else size.get(p, 1.0))
+            out.append((n, p, tuple(h), tuple(heads[n] + _unit(ax) * max(0.01, size[n]))))
+        return out
+    base = [("Hips", None, (0, 0, 1.0), (0, 0, 1)), ("Spine", "Hips", (0, 0, 1.1), (0, 0.1, 1)),
+            ("Head", "Spine", (0, 0, 1.5), (0, 0, 1)), ("UpperLeg.L", "Hips", (0.1, 0, 0.95), (0, 0, -1)),
+            ("UpperLeg_twist.L", "UpperLeg.L", (0.1, 0, 0.95), (0, 0, -1)),
+            ("LowerLeg.L", "UpperLeg.L", (0.1, 0, 0.5), (0, 0, -1))]
+    chains = [("cc_hair1_01.x", "Head", (0, 0.05, 1.7), (0, 1, 0)), ("cc_hair1_end.x", "cc_hair1_01.x",
+              (0, 0.15, 1.7), (0, 1, 0)), ("cc_shortsLF_01.l", "UpperLeg.L", (0.12, -0.08, 0.7), (0, 0, -1)),
+              ("cc_shortsLF_end.l", "cc_shortsLF_01.l", (0.12, -0.08, 0.62), (0, 0, -1))]
+    plain = {n: t for n, _, _, t in imported(base)}
+    with_cc = imported(base[:3] + [chains[0], chains[1]] + base[3:] + chains[2:])
+    fixed = chain_free_tails(with_cc)
+    worst = max(np.abs(np.subtract(fixed[n], plain[n])).max() for n in plain)
+    moved = max(np.abs(np.subtract(t, plain[n])).max() for n, _, _, t in with_cc if n in plain)
+    ok("cc_ chains on import: Head, thigh and its childless twist lengthen; the chain-free tails undo it",
+       moved > 0.05 and worst < 1e-9 and all(fixed[n] == t for n, _, _, t in with_cc if n.startswith("cc_")))
+    authored = [(n, p, h, tuple(np.add(h, (0, 0, 0.3)))) for n, p, h, _ in base + chains]
+    ok("a rig built in Blender (lengths not the importer's) keeps its own tails",
+       chain_free_tails(authored) == {n: t for n, _, _, t in authored})
     return (0 if not failed else 1), {"selftest": "pass" if not failed else "fail", "checks": checks,
                                       "failed": failed, "gate_values": notes}
 

@@ -9,6 +9,15 @@
 //                                         select the folder first; re-applies after a config edit
 //   CharacterImportSettings.Reimport("Assets/Models/Runner")    the same, for an eval
 //   CharacterImportSettings.Describe("Assets/Models/Runner")    the config in force, as JSON
+//   CharacterImportSettings.Maps("Assets/Models/Runner")        each body FBX's bound maps, as JSON
+//
+// Embedded maps (an Auto-Rig Pro export, any FBX with its images packed in): Unity builds the
+// material but binds nothing until the images are extracted, and then binds them by file name, so
+// another character's Image_0.png binds as readily. A body FBX's embedded images are extracted
+// once, named after the slot the FBX connects them to (<Body>_BaseColor, <Body>_Normal; with more
+// than one map per slot, <Body>_<Material>_BaseColor), and bound by that name on every import.
+// Maps already in the folder under those names are kept and nothing is extracted. A map in another
+// slot (metallic, roughness) is not extracted: build the mask by hand (reference/textures.md).
 //
 // A character folder is the nearest folder above a file that holds character-pipeline.json; else
 // the "folder" named in Assets/Editor/character-pipeline.json; else, with neither file,
@@ -41,6 +50,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEditor;
+using UnityEditor.AssetImporters;
 using UnityEngine;
 
 [Serializable]
@@ -313,6 +323,192 @@ public class CharacterImportSettings : AssetPostprocessor
             importer.alphaSource = TextureImporterAlphaSource.FromInput;  // smoothness lives in A
             importer.alphaIsTransparency = false;                         // a material value, not opacity
         }
+    }
+
+    // ---------------------------------------------------------------- embedded maps
+
+    public const string BaseColorRole = "BaseColor";
+    public const string NormalRole = "Normal";
+    static readonly string[] MapExtensions = { ".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".psd", ".exr" };
+
+    // Per body FBX, what its material descriptions connect: (material, image file name, role).
+    // Filled while the FBX imports, read by OnPostprocessAllAssets in the same refresh.
+    static readonly Dictionary<string, List<string[]>> Slots = new Dictionary<string, List<string[]>>();
+
+    /// <summary>The map role of an FBX material texture property, or null for a slot left alone.</summary>
+    public static string MapRole(string fbxProperty)
+    {
+        if (string.IsNullOrEmpty(fbxProperty)) return null;
+        string p = fbxProperty.ToLowerInvariant();
+        int bar = p.LastIndexOf('|');                       // "Maya|baseColor", "3dsMax|...|base_color_map"
+        if (bar >= 0) p = p.Substring(bar + 1);
+        p = p.Replace("_", "");
+        if (p == "diffusecolor" || p == "diffuse" || p == "basecolor" || p == "basecolormap" || p == "colormap" ||
+            p == "texcolormap")
+            return BaseColorRole;
+        if (p == "normalmap" || p == "bump" || p == "bumpmap" || p == "normalcamera" || p == "texnormalmap")
+            return NormalRole;
+        return null;
+    }
+
+    /// <summary>
+    /// The file name (no extension) a map of this role takes: &lt;Body&gt;_&lt;Role&gt;, or
+    /// &lt;Body&gt;_&lt;Material&gt;_&lt;Role&gt; when the FBX has more than one map in that slot.
+    /// </summary>
+    public static string MapName(string body, string material, string role)
+    {
+        if (string.IsNullOrEmpty(material)) return body + "_" + role;
+        var sb = new StringBuilder(material.Length);
+        foreach (char ch in material) sb.Append(char.IsLetterOrDigit(ch) || ch == '-' ? ch : '_');
+        return body + "_" + sb + "_" + role;
+    }
+
+    /// <summary>The project path of an existing map named stem in folder (any image extension), or null.</summary>
+    public static string FindMap(string folder, string stem)
+    {
+        foreach (string ext in MapExtensions)
+        {
+            string p = folder + "/" + stem + ext;
+            if (File.Exists(p)) return p;
+        }
+        return null;
+    }
+
+    void OnPreprocessMaterialDescription(MaterialDescription description, Material material, AnimationClip[] clips)
+    {
+        if (!IsFbx(assetPath) || ClipText(assetPath) != null || For(assetPath) == null) return;
+        string dir = Norm(Path.GetDirectoryName(assetPath));
+        string body = BodyName(assetPath);
+        var names = new List<string>();
+        description.GetTexturePropertyNames(names);
+        if (!Slots.TryGetValue(assetPath, out List<string[]> slots)) Slots[assetPath] = slots = new List<string[]>();
+        foreach (string prop in names)
+        {
+            string role = MapRole(prop);
+            if (role == null || !description.TryGetProperty(prop, out TexturePropertyDescription tp)) continue;
+            string file = Path.GetFileName(Norm(tp.path));
+            slots.Add(new[] { description.materialName, file, role });
+            // Ours by name; otherwise whatever Unity resolved (it may be a same-named file elsewhere).
+            string path = FindMap(dir, MapName(body, description.materialName, role)) ?? FindMap(dir, MapName(body, null, role));
+            Texture2D tex = path != null ? AssetDatabase.LoadAssetAtPath<Texture2D>(path) : null;
+            if (tex == null) continue;
+            context.DependsOnSourceAsset(path);
+            Bind(material, role, tex);
+        }
+    }
+
+    static void Bind(Material material, string role, Texture2D tex)
+    {
+        if (role == BaseColorRole)
+        {
+            foreach (string slot in new[] { "_BaseMap", "_MainTex" })
+                if (material.HasProperty(slot)) material.SetTexture(slot, tex);
+            foreach (string tint in new[] { "_BaseColor", "_Color" })     // the tint multiplies the map
+                if (material.HasProperty(tint)) material.SetColor(tint, Color.white);
+        }
+        else if (role == NormalRole && material.HasProperty("_BumpMap"))
+        {
+            material.SetTexture("_BumpMap", tex);
+            material.EnableKeyword("_NORMALMAP");                      // without it the map is ignored
+        }
+    }
+
+    static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
+    {
+        foreach (string p in imported)
+        {
+            if (!Slots.TryGetValue(p, out List<string[]> slots)) continue;
+            Slots.Remove(p);
+            string note = ExtractEmbedded(p, slots);
+            if (note != null) Debug.Log("[RIGGED-CHAR] " + note);
+        }
+    }
+
+    // Extracts the body FBX's embedded images into a scratch folder, keeps the ones in a base-colour
+    // or normal slot under their role names, deletes the rest and re-imports the FBX so they bind.
+    // A no-op once every slot has its file, so the re-import does not loop.
+    static string ExtractEmbedded(string fbx, List<string[]> slots)
+    {
+        string dir = Norm(Path.GetDirectoryName(fbx));
+        string body = BodyName(fbx);
+        var perRole = new Dictionary<string, HashSet<string>>();
+        foreach (string[] s in slots)
+        {
+            if (!perRole.TryGetValue(s[2], out HashSet<string> files)) perRole[s[2]] = files = new HashSet<string>();
+            files.Add(s[1].ToLowerInvariant());
+        }
+        var want = new Dictionary<string, string>();          // image file name (lower case) -> map name
+        foreach (string[] s in slots)
+        {
+            string name = MapName(body, perRole[s[2]].Count > 1 ? s[0] : null, s[2]);
+            string key = s[1].ToLowerInvariant();
+            if (FindMap(dir, name) == null && !want.ContainsKey(key)) want[key] = name;
+        }
+        if (want.Count == 0) return null;
+
+        var importer = AssetImporter.GetAtPath(fbx) as ModelImporter;
+        if (importer == null) return null;
+        string scratch = dir + "/" + body + "_embedded";      // left over from an interrupted run: reused
+        if (!Directory.Exists(scratch) && !importer.ExtractTextures(scratch)) return null;
+        AssetDatabase.Refresh();                               // in this callback the files are on disk only
+        if (!AssetDatabase.IsValidFolder(scratch)) return null;
+
+        var kept = new List<string>();
+        foreach (string guid in AssetDatabase.FindAssets("t:Texture2D", new[] { scratch }))
+        {
+            string src = AssetDatabase.GUIDToAssetPath(guid);
+            if (!want.TryGetValue(Path.GetFileName(src).ToLowerInvariant(), out string name)) continue;
+            string dst = dir + "/" + name + Path.GetExtension(src).ToLowerInvariant();
+            if (string.IsNullOrEmpty(AssetDatabase.MoveAsset(src, dst)))
+            {
+                AssetDatabase.ImportAsset(dst, ImportAssetOptions.ForceUpdate);   // NormalMap by name
+                kept.Add(dst);
+            }
+        }
+        AssetDatabase.DeleteAsset(scratch);                    // images in other slots; still in the FBX
+        if (kept.Count == 0) return null;
+        AssetDatabase.ImportAsset(fbx, ImportAssetOptions.ForceUpdate);
+        return "{\"op\":\"embedded-maps\",\"fbx\":" + Q(fbx) + ",\"extracted\":[" +
+               string.Join(",", kept.ConvertAll(Q)) + "]}";
+    }
+
+    /// <summary>
+    /// Each body FBX's materials in a character folder and the maps they bind, as JSON: ok when every
+    /// material has a base-colour map and every bound normal map is imported as a normal map.
+    /// </summary>
+    public static string Maps(string folder)
+    {
+        CharacterPipelineConfig cfg = ForFolder(folder);
+        if (cfg == null) return NotACharacterFolder("maps", folder);
+        bool ok = true;
+        var sb = new StringBuilder();
+        foreach (string guid in AssetDatabase.FindAssets("t:Model", new[] { Norm(folder).TrimEnd('/') }))
+        {
+            string fbx = AssetDatabase.GUIDToAssetPath(guid);
+            if (!IsFbx(fbx) || ClipText(fbx) != null) continue;
+            var seen = new HashSet<Material>();
+            foreach (UnityEngine.Object o in AssetDatabase.LoadAllAssetsAtPath(fbx))
+            {
+                var m = o as Material;
+                if (m == null || !seen.Add(m)) continue;
+                Texture baseMap = m.HasProperty("_BaseMap") ? m.GetTexture("_BaseMap") : null;
+                if (baseMap == null && m.HasProperty("_MainTex")) baseMap = m.GetTexture("_MainTex");
+                Texture normal = m.HasProperty("_BumpMap") ? m.GetTexture("_BumpMap") : null;
+                string normalPath = normal != null ? AssetDatabase.GetAssetPath(normal) : null;
+                var ti = normalPath != null ? AssetImporter.GetAtPath(normalPath) as TextureImporter : null;
+                bool normalOk = normal == null || (ti != null && ti.textureType == TextureImporterType.NormalMap);
+                bool good = baseMap != null && normalOk;
+                ok &= good;
+                if (sb.Length > 0) sb.Append(',');
+                sb.Append("{\"fbx\":").Append(Q(fbx)).Append(",\"material\":").Append(Q(m.name))
+                  .Append(",\"base\":").Append(Q(baseMap != null ? AssetDatabase.GetAssetPath(baseMap) : null))
+                  .Append(",\"normal\":").Append(Q(normalPath))
+                  .Append(",\"normalType\":").Append(Q(ti != null ? ti.textureType.ToString() : null))
+                  .Append(",\"ok\":").Append(good ? "true" : "false").Append('}');
+            }
+        }
+        return "{\"op\":\"maps\",\"ok\":" + (ok && sb.Length > 0 ? "true" : "false") + ",\"folder\":" + Q(folder) +
+               ",\"materials\":[" + sb + "]}";
     }
 
     // ---------------------------------------------------------------- commands

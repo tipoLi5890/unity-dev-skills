@@ -9,6 +9,7 @@ blender-retarget/scripts/tests/test_blender_common.py -> blender-character-rig/s
 character-autorig/scripts/autorig.py -> blender-character-rig/scripts | imports bcr_import_prep inside Blender for the prep stage
 character-autorig/scripts/autorig.py -> blender-retarget/scripts | imports brt_arp (the Auto-Rig Pro pipeline) and brt_weights (the weight repair) inside Blender
 character-autorig/scripts/autorig.py -> unity-rigged-character/scripts/contract_map.py | maps the rig onto the humanoid contract (contract_map.py map)
+character-autorig/scripts/secondary_chains.py -> blender-retarget/scripts | imports brt_arp inside Blender to export the rig with its chains (op export)
 character-autorig/scripts/tests/test_arp_pipeline.py -> blender-retarget/scripts | imports the brt modules the pipeline drives
 character-autorig/scripts/tests/test_arp_pipeline.py -> unity-rigged-character/scripts/contract_map.py | runs the contract step on the test rig
 humanoid-motion/scripts/contact_bake.py -> blender-retarget/scripts/motion_metrics.py | imports the plant and slide metrics, so the bake gates what motion_metrics gates

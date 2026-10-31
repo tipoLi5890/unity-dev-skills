@@ -12,11 +12,12 @@ command. Every command **rebuilds from a clean state** rather than reconciling w
 
 | File | Kind | Menu: `Tools/Unity Dev/Rigged Character/…` | From an eval | Writes |
 |---|---|---|---|---|
-| `CharacterImportSettings.cs` | `AssetPostprocessor`, plus a command | Reimport Character Folder | `CharacterImportSettings.Reimport(folder)`, `.Describe(folder)` | import settings of every FBX and texture in the folder |
+| `CharacterImportSettings.cs` | `AssetPostprocessor`, plus a command | Reimport Character Folder | `CharacterImportSettings.Reimport(folder)`, `.Describe(folder)`, `.Maps(folder)` (each body FBX material's base and normal map, `ok`) | import settings of every FBX and texture in the folder; a body FBX's embedded base-colour and normal maps, extracted once as `<Body>_BaseColor` / `<Body>_Normal` and bound on its own material (`textures.md`) |
 | `CharacterHumanoidAvatar.cs` | command, `"rig": "Humanoid"` only | Build Humanoid Avatar | `CharacterHumanoidAvatar.Build(folder)` | the body's Rig tab: Human, an explicit `humanDescription` (every mapped `HumanTrait.BoneName`, the skeleton from the imported body); then the gate |
 | `CharacterAvatarLinker.cs` | command | Link Animation Avatars | `CharacterAvatarLinker.Link(folder)` | the Rig tab of every `<name>@<Clip>.fbx` |
 | `CharacterAnimatorBuilder.cs` | command | Build Animator | `CharacterAnimatorBuilder.Build(folder)` | the controller and mask, deleted and created again |
 | `MixamoTextures.cs` | command, any FBX route; needs URP | Apply Mixamo Textures | `MixamoTextures.Apply(folder)` | the URP Lit material; the mask only from a `*_MetallicSmoothness` map, a skipped raw metallic map named in `note` |
+| `SecondaryMotionSetup.cs` | command, optional; namespace `UnityDev.SecondaryMotion`, needs the runtime files | Add Secondary Motion (select the prefab) | `SecondaryMotionSetup.Setup(root, specPath)`; batch `-executeMethod UnityDev.SecondaryMotion.SecondaryMotionSetup.SetupFromCommandLine -character <prefab> [-spec <json>] [-out <prefab>]` | spring chains, `SM_Collider_*` children and the system on the prefab, from `<name>.secondary.json` (`secondary-motion.md`); logs `{"step":"secondary",…}` |
 
 Order: drop the files in (the postprocessor applies on import) → on a Humanoid folder only, Build
 Humanoid Avatar → Link Animation Avatars → Build Animator → Apply Mixamo Textures → the prefab
@@ -24,7 +25,8 @@ step below. Re-run Build Humanoid Avatar after every re-export of the body. A me
 selected in the Project window, else the default folder. Each logs `[RIGGED-CHAR] {json}` and an
 eval call returns the same string; `"ok": false` carries the reason. Build Animator and Apply Mixamo
 Textures overwrite assets at the config's paths: confirm a path holds nothing hand-built before
-the first run.
+the first run. Add Secondary Motion, when the rig has `cc_` chains, comes after the prefab step and
+is re-run after every re-export of the body.
 
 ## The naming contract
 

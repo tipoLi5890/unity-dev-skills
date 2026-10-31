@@ -137,6 +137,9 @@ reconciling with what is there. Re-exports happen constantly.
     (`Find("RunnerRig/Hips/…/PropSocket")`) gets null: find it by name.
   - Check: with the option on, the socket exists, and at a mid-clip frame it sits where the same
     socket sits on a copy imported with the option off.
+  - **Secondary-motion chains need the option off.** An exposed transform is an output the
+    Animator writes, not a bone that skins the mesh: a spring writing it moves nothing. A rig with
+    `cc_` chain bones imports with Optimize Game Objects off (`reference/secondary-motion.md`).
 - **Skin Weights defaults to Standard: four bones per vertex.** It is the same four the Blender
   skills gate with `max_influences` ≤ 4 (`blender-character-rig`, `blender-retarget`), so a rig
   that passes there needs nothing here. **Custom** (`ModelImporter.skinWeights`,

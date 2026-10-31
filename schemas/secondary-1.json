@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/secondary-1.json",
+  "title": "secondary/1 — a rigged character's secondary-motion chains and body colliders",
+  "description": "Written beside the character FBX (<name>.secondary.json) by character-autorig secondary_chains.py; read by unity-rigged-character SecondaryMotionSetup. Every bone is named as it is in the exported FBX. Positions are optional rest-pose checks in the skeleton/1 frame (metres, +Z up, facing -Y); the Unity side anchors everything on bones. An empty chain list is valid: the body has nothing loose.",
+  "type": "object",
+  "required": [
+    "schema",
+    "tool",
+    "character",
+    "chains",
+    "colliders"
+  ],
+  "properties": {
+    "schema": {
+      "const": "secondary/1"
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producer": {
+      "type": "object",
+      "required": [
+        "skill",
+        "script"
+      ],
+      "properties": {
+        "skill": {
+          "type": "string"
+        },
+        "script": {
+          "type": "string"
+        }
+      }
+    },
+    "character": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the body FBX's base name"
+    },
+    "units": {
+      "const": "m"
+    },
+    "up": {
+      "const": "+Z"
+    },
+    "forward": {
+      "const": "-Y"
+    },
+    "chains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "parent",
+          "bones",
+          "stiffness",
+          "drag",
+          "gravity",
+          "max_angle_deg",
+          "radius"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+$"
+          },
+          "kind": {
+            "enum": [
+              "hood",
+              "bag",
+              "hem",
+              "shorts_hem",
+              "hair",
+              "strap",
+              "cloth",
+              "prop"
+            ]
+          },
+          "parent": {
+            "type": "string",
+            "description": "the exported bone the chain hangs from (kinematic)"
+          },
+          "parent_role": {
+            "type": "string",
+            "description": "optional HumanBodyBones name of the parent, used when the name lookup fails on a Humanoid"
+          },
+          "bones": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string",
+              "pattern": "^cc_"
+            },
+            "description": "root to tip; the last is the unweighted tip bone (cc_<name>_end.<side>)"
+          },
+          "joints": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "description": "optional: each bone's rest head, skeleton/1 frame; a check, never the source of truth"
+          },
+          "radius": {
+            "type": "number",
+            "minimum": 0,
+            "description": "particle collision radius, m"
+          },
+          "stiffness": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "pull back to the animated pose per 1/60 s"
+          },
+          "drag": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "velocity lost per 1/60 s"
+          },
+          "gravity": {
+            "type": "number",
+            "minimum": 0,
+            "description": "multiple of world gravity"
+          },
+          "wind": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "inertia": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 1,
+            "description": "1 = the chain lags the character's whole-body motion fully; lower follows it more"
+          },
+          "max_angle_deg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 180
+          },
+          "colliders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "collider names this chain tests; default all"
+          },
+          "weighted_vertices": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "parent_head": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "optional: the parent bone's rest head, skeleton/1 frame; Unity's axis/scale self-check against its bindpose"
+          }
+        }
+      }
+    },
+    "colliders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "shape",
+          "a",
+          "radius"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "shape": {
+            "enum": [
+              "sphere",
+              "capsule"
+            ]
+          },
+          "a": {
+            "type": "string",
+            "description": "bone whose origin is the sphere centre or capsule end A"
+          },
+          "b": {
+            "type": "string",
+            "description": "capsule: bone whose origin is end B"
+          },
+          "a_role": {
+            "type": "string"
+          },
+          "b_role": {
+            "type": "string"
+          },
+          "inset": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0.5,
+            "default": 0,
+            "description": "capsule: fraction trimmed off each end"
+          },
+          "center": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "sphere only, optional: rest centre in the skeleton/1 frame when it is not a bone origin (the head)"
+          },
+          "radius": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -125,6 +125,23 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 
 3D モデル、リグ、モーションは自分のマシンで作ります。`codex` CLI を通るのは 2D アートだけです。二台カメラからのモーション推定は [anymove](https://github.com/patch-gg/anymove)（Apache-2.0、[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) を参照）から移植したものです。スプライトのクリップとモーションの動画は MiniMax H3 で機械生成したもので、オープンウェイトを MiniMax H3 Community License Agreement のもとローカルで実行しています。
 
+### 走りについて揺れるバッグとフード
+
+<div align="center">
+<img src="media/secondary.gif" alt="配達ランナーの後ろ姿を左右に二つ並べ、走る、レーン変更、ジャンプ、停止、振り向きの順に動かしたもの。左はチェーンなし：バッグ、フード、髪が体と一緒に固まって動く。右はチェーンあり：バッグとフードが向きを変えるたびに揺れて遅れ、停止のあと落ち着く" width="640">
+<p><sub>同じリグ、同じモーションを Unity で。左：チェーンなし。右：スプリングチェーンあり。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/secondary.jpg" alt="ランナーが振り向き始めた一コマを左右に並べたもの。左はチェーンなし：バッグはスキニングした位置のまま。右はチェーンあり：バッグが背骨の方へ振れ、振り向きに遅れている" width="640">
+<p><sub>振り向きの最初の数コマ：チェーンありではバッグが体に遅れてついてくる。</sub></p>
+</div>
+
+[`character-autorig`](../skills/character-autorig/SKILL.md) →
+[`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
+
+リグの工程でバッグ、フード、髪、上着の裾、ショートパンツにボーンチェーンを加え、それぞれの硬さと体の位置を `<name>.secondary.json` に書き出します。Unity ではコマンド一つでスプリングボーンになり、どのフレームレートでも長さを保ち、体にめり込みません。
+
 ## 仕組み
 
 ```mermaid

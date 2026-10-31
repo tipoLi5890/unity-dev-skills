@@ -52,7 +52,8 @@ The `.R` side mirrors every `.L` row (`Right…`, `Right Thumb Proximal`, …). 
 say **Little**, never Pinky: a map that says `Left Pinky Proximal` maps nothing, which is why
 `CharacterHumanoidAvatar.cs` refuses any name not in `HumanTrait.BoneName`. Twist, bend,
 helper and prop-socket bones are allowed beside the contract (a `Socket.R` under `Hand.R` for the
-runner's pickup); they are reported as extra and never fail a gate.
+runner's pickup); they are reported as extra and never fail a gate. So are secondary-motion chain
+bones, `cc_<chain>_<NN>` with an unweighted `cc_<chain>_end` tip (`reference/secondary-motion.md`).
 
 ## Role maps
 

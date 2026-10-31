@@ -116,7 +116,9 @@ the reference body (1.2 × the reference's speed + the same excess). Motion read
 its readings (`reading_joints` with `reading_names`, the joints triangulated straight from the
 views; arrays beside the positions in an NPZ) as that
 reference: a spike the readings show too is a fast move in the source, listed as
-`pops_in_source` and not gated; only a spike the solve added fails. Both counts are events, one
+`pops_in_source` and not gated; only a spike the solve added fails. A segment with an unread end
+(a finger) is held to the nearest read segment up its chain, and the jitter gate reads each joint's
+jitter over 1.2 x the readings' at the same frame (a finger takes its hand's). Both counts are events, one
 per frame and parent joint, so a twist segment beside the shin is not a second pop; `segments`
 counts the segments that spiked. The runtime test (§6) logs
 pops and asserts them once the count reaches 0.

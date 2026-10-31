@@ -185,3 +185,32 @@ under 0.22); read your own from the markers and the probe, or from the `regions`
 amount (1.0) hands each band over completely and leaves the crease band blended; take it down
 toward 0.9 when the intersections climb. When the two gates cannot both pass, go back to the
 marker and the views, not a looser limit.
+
+## The stages by hand
+
+What `autorig.py all` runs, one stage at a time (paths relative to the character's folder; the
+rig to chain is the passing repair's `repair/aN/Runner_arp.blend` when there was one):
+
+```bash
+python3 scripts/mesh_check.py Runner.glb --out rig/runner.mesh.json
+blender -b Runner.blend -P scripts/arp_markers.py -- --mesh Runner \
+  --out rig/runner.markers.json --preview-dir rig/markers/
+blender -b Runner.blend --python-expr "$(cat <<'PY'
+import sys; sys.path[:0] = ['<skills>/blender-retarget/scripts']
+import bpy, brt_arp
+r = brt_arp.run({'op': 'pipeline', 'mesh': 'Runner', 'markers': 'rig/runner.markers.json',
+                 'fbx': 'export/Runner.fbx', 'report_path': 'rig/runner.arp.json'})
+bpy.ops.wm.save_as_mainfile(filepath='rig/Runner_arp.blend')
+sys.exit(0 if r.get('pass') is True else 2)
+PY
+)"
+python3 <skills>/unity-rigged-character/scripts/contract_map.py map export/Runner.skeleton.json \
+  --map arp --require contract --min-fingers 30 --out rig/runner.contract.json
+blender -b -P scripts/deform_gate.py -- --fbx export/Runner.fbx --map rig/runner.contract.json \
+  --render rig/poses/ --out rig/runner.deform.json
+# fingers.mode "fixed" (a mitten): add --poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120
+blender -b rig/Runner_arp.blend -P scripts/secondary_chains.py -- --mesh Runner --map rig/runner.contract.json \
+  --save secondary/Runner_sec.blend --fbx secondary/Runner.fbx --out secondary/Runner.secondary.json \
+  --report secondary/Runner.secondary.gate.json
+# then contract_map.py and deform_gate.py again on secondary/Runner.skeleton.json and secondary/Runner.fbx
+```

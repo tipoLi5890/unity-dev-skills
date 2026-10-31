@@ -129,6 +129,23 @@ claude plugin install unity-dev@unity-dev
 3D 模型、骨架和动作都在你自己的机器上完成；只有 2D 美术会经过 `codex` CLI。双机位解算移植自
 [anymove](https://github.com/patch-gg/anymove)（Apache-2.0；见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)）。sprite 片段和动作视频都由 MiniMax H3 机器生成，基于其开放权重在本地运行，遵循 MiniMax H3 Community License Agreement。
 
+### 跟着奔跑摆动的背包和兜帽
+
+<div align="center">
+<img src="media/secondary.gif" alt="快递跑者的背影，左右并排两次，依次跑步、换车道、跳跃、停下、转身。左边关闭骨链：背包、兜帽和头发跟身体一起僵硬地移动。右边开启骨链：背包和兜帽在每次转向时摆动、滞后，停下后再慢慢静止" width="640">
+<p><sub>同一套骨架、同一段动作，在 Unity 中。左：关闭骨链。右：开启弹簧骨链。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/secondary.jpg" alt="跑者开始转身时的一帧，左右并排。左边关闭骨链：背包停在蒙皮时的位置。右边开启骨链：背包甩向脊柱，滞后于转身" width="640">
+<p><sub>转身的头几帧：开启骨链时，背包滞后于身体。</sub></p>
+</div>
+
+[`character-autorig`](../skills/character-autorig/SKILL.md) →
+[`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
+
+绑骨步骤为背包、兜帽、头发、外套下摆和短裤加上骨链，并把每条的硬度和身体的位置写进 `<name>.secondary.json`。在 Unity 里一条命令就把它们变成弹簧骨，在任何帧率下都保持长度、不穿进身体。
+
 ## 工作原理
 
 ```mermaid

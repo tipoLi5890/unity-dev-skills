@@ -56,7 +56,7 @@ look at), 1 refused input or an error (it stops).
 | 4 | `dataset` | character | `dataset/` | `dataset.in_view`, `dataset.written` |
 | 5 | `train` | character (CUDA) | `reader.pt`: 20 epochs, or 12 with `--init` for the next character on about 1,000 new samples | `reader.val_mean_px` |
 | 6 | `capture` | move | `clips/<name>/`: detect → `solve.py --samples-out` (despike on) → `motion_metrics samples.json --pops-min-move 0.03` → `apply_motion --glb` | `overlay.mp4`, `two_view_agreement`, `pops`; exit 2 on `foot_slide_*` is expected, `bake` locks the feet |
-| 7 | `bake` | move | `apply_motion --save keyed.blend` → `contact_bake.py` in Blender, `--legs contract --rig-info rig_info.json` (its `contract_names` find an Auto-Rig Pro rig's bones) `--readings samples.json` → `motion_metrics` on the baked samples; `--render`: `baked.mp4`, front \| side | slide, `reach_m`, `contact_height_m`, `pops` (a pop the video has stays under `pops_in_source`) |
+| 7 | `bake` | move | `apply_motion --save keyed.blend` → `contact_bake.py` in Blender, `--legs contract --rig-info rig_info.json` (its `contract_names` find an Auto-Rig Pro rig's bones) `--readings samples.json` → `motion_metrics` on the baked samples; `--render`: `baked.mp4`, front \| side | slide, `reach_m`, `contact_height_m`, `pops` and jitter (what the video has is discounted: `pops_in_source`, `jitter_over_source_mps2`) |
 
 The prompt for `film` comes from `make_prompt.py` (one action sentence per clip). Training does not
 run on a Mac; read and fit do. The stages, the frame, the reader, the fit and their gates:
@@ -113,6 +113,7 @@ torch (`reference/two-camera.md`).
 - **A pop the video has is not the solve's.** `motion_metrics` reports a spike the two-view
   readings also show as `pops_in_source`, not gated; only a spike the fit added counts in `pops`.
   Both count one event per frame and joint, so a twist bone beside the shin is not a second pop.
+  Jitter is gated over 1.2 x the readings' on the same frames; unread fingers take their hand's.
   `solve.py --despike` replaces a one- or two-frame pop the fit added with a slerp of its neighbours
   and lists what it changed.
 - **Hands are fixed.** Two views do not resolve fingers; the clip ships with a hand pose layered on

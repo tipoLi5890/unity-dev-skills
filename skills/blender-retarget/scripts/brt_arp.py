@@ -160,8 +160,9 @@ pipeline  one call from a prepared mesh to a skeleton JSON, no window (`blender 
           secondary face bones' weights onto head.x and the jaw after the limit, one weight too
           many) (scene settings set for the call and put back); import the file again,
           write its skeleton (skeleton/1, armature space in metres, Z up; `deform` is true for a
-          bone some vertex is weighted to, since the FBX importer marks every bone deform) and
-          take the import back. Gates arp.rig_appended, arp.spine_bones (== Count - 1),
+          bone some vertex is weighted to, since the FBX importer marks every bone deform; each
+          tail where the importer puts it without secondary-chain cc_ bones, which would lengthen
+          the bone they hang from) and take the import back. Gates arp.rig_appended, arp.spine_bones (== Count - 1),
           arp.face_added (with `facial` or ears: the limb added reference bones),
           arp.refs_placed (every name exists on the rig, the face's included, each end within
           1e-4 m, each given roll within 0.1 degrees; `refs` reports rolls_given and
@@ -1596,6 +1597,60 @@ def _name_packed_images(meshes: list) -> list:
     return changed
 
 
+# Between the shared:chain_tails markers: a copy of tools/shared-blocks/chain_tails.py (also in
+# character-autorig's deform_gate.py and humanoid-motion's prepare_rig.py); check-consistency keeps them equal.
+# >>> shared:chain_tails
+def chain_free_tails(bones, prefix="cc_", tol=1e-4):
+    """{name: tail} for bones [(name, parent, head, tail)] (armature space), each tail where Blender's
+    FBX importer puts it when the file holds no `prefix` (secondary-chain) bones.
+
+    The importer gives a bone the mean distance to its child bones' heads as its length (a child at the
+    same point counts), its parent's length when it has none, at least 0.01, along the bone's own axis;
+    it never turns a bone toward a child. So a chain hung under a contract bone (hair under the Head,
+    shorts hems under a thigh) lengthens that bone and every childless bone below it, and nothing else.
+    A rig whose lengths do not follow that rule (built in Blender, not imported) is returned unchanged,
+    and so is every bone the chains do not reach. Chain bones keep their own tails."""
+    info = {n: (p, tuple(map(float, h)), tuple(map(float, t))) for n, p, h, t in bones}
+    kids = {}
+    for n, (p, _, _) in info.items():
+        if p in info:
+            kids.setdefault(p, []).append(n)
+
+    def dist(a, b):
+        return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+
+    def sizes(skip):
+        out = {}
+
+        def walk(n, parent_size):
+            h = info[n][1]
+            ch = [c for c in kids.get(n, []) if not (skip and c.startswith(prefix))]
+            own = sum(dist(info[c][1], h) for c in ch) / len(ch) if ch else parent_size
+            out[n] = own
+            for c in kids.get(n, []):
+                walk(c, own)
+        for n, (p, _, _) in info.items():
+            if p not in info:
+                walk(n, 1.0)
+        return out
+
+    tails = {n: t for n, (_, _, t) in info.items()}
+    if not any(n.startswith(prefix) for n in info):
+        return tails
+    with_cc, without = sizes(False), sizes(True)
+    near = lambda a, b: abs(a - b) <= tol * max(1.0, abs(a))
+    if not all(near(max(0.01, with_cc[n]), dist(h, t)) for n, (_, h, t) in info.items()):
+        return tails                       # not the importer's lengths: leave the rig as it is
+    for n, (_, h, t) in info.items():
+        if n.startswith(prefix) or near(with_cc[n], without[n]):
+            continue
+        length = dist(h, t)
+        k = max(0.01, without[n]) / length if length > 0 else 0.0
+        tails[n] = tuple(hh + (tt - hh) * k for hh, tt in zip(h, t))
+    return tails
+# <<< shared:chain_tails
+
+
 def _reimport(fbx: str) -> tuple[dict | None, dict, str | None]:
     """Import the FBX, read its skeleton and skin, take the import back. (skeleton, stats, error)."""
     sub = C.Tracker()
@@ -1610,9 +1665,12 @@ def _reimport(fbx: str) -> tuple[dict | None, dict, str | None]:
                   and any(m.type == 'ARMATURE' and m.object == rig for m in o.modifiers)]
         used, stats = _weighted(rig, meshes)
         mw = rig.matrix_world
+        # a secondary chain (cc_ bones) lengthens the bone it hangs from on import: tails as without it
+        tails = chain_free_tails([(b.name, b.parent.name if b.parent else None, tuple(b.head_local),
+                                   tuple(b.tail_local)) for b in rig.data.bones])
         bones = [{"name": b.name, "parent": b.parent.name if b.parent else None,
                   "head": [round(x, 6) for x in mw @ b.head_local],
-                  "tail": [round(x, 6) for x in mw @ b.tail_local],
+                  "tail": [round(x, 6) for x in mw @ Vector(tails[b.name])],
                   "deform": b.name in used} for b in rig.data.bones]
         skeleton = {"schema": "skeleton/1", "source": "auto-rig-pro export (FBX re-import)",
                     "up": "+Z", "forward": "-Y", "units": "m", "bones": bones}
