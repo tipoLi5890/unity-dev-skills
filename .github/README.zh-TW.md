@@ -46,7 +46,7 @@ claude plugin install unity-dev@unity-dev
 ### 需求
 
 - **必要**：Claude Code 或 Codex；一個 Unity 6 專案；執行腳本需要 Python 3.10 以上，讀取圖片或音訊的腳本另需 NumPy 與 Pillow。
-- **選用，只有資產與角色管線需要**：Blender，版本須是你那一版 Auto-Rig Pro 支援的（`character-autorig` 有說明）；Auto-Rig Pro，使用你自己的授權；在 GPU 機器上自架的 ComfyUI；做 2D 美術用的 `codex` CLI；`mesh-texture-paint` 需要的 SciPy。
+- **選用，只有資產與角色管線需要**：Blender，版本須是你那一版 Auto-Rig Pro 支援的（`character-autorig` 有說明）；Auto-Rig Pro，作者 Artell 的付費 add-on：請在 [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) 或 [Superhive](https://superhivemarket.com/products/auto-rig-pro) 購買正版授權，這也支持它的開發與後續更新；選用的 AI 檔隨授權提供，一份授權限一台裝置；在 GPU 機器上自架的 ComfyUI；做 2D 美術用的 `codex` CLI；`mesh-texture-paint` 需要的 SciPy。
 - **選用，影片用**：ffmpeg，凡是要輸出影片的都需要（預覽、reel、由影片做成的 sprite）。
 - **選用，裝置用**：iOS 需要一台裝有 Xcode 15 以上的 Mac；Android 需要 Android SDK。
 
@@ -259,7 +259,7 @@ flowchart LR
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 透過生成影片，把一張角色靜態圖變成透明的 sprite 循環動畫 |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` 不適用時在 Blender 裡手工綁骨，再重新匯入 FBX 來證明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把現成的 clip 套到你的 Blender 骨架上，以滑步、抖動與 pop 把關 |
-| [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地替人形角色綁骨，一個 headless 指令完成 |
+| [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地替人形角色綁骨，一個指令完成；選用的 AI 偵測會開一個 Blender 視窗 |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 把一個動作做成 clip：從雙機位影片直接解算到骨架上 |
 
 </details>

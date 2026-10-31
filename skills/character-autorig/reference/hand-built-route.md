@@ -13,7 +13,9 @@ contract skeleton directly, so no role map is needed afterwards.
 
 1. **mesh_check** and **arp_markers** as in `SKILL.md`. Outside the windows, rerun
    `arp_markers.py` with `--no-window-gate` once a person has looked at the pictures, and
-   `--adjust` the markers that are off. A hand with no finger geometry: add `--mitten`.
+   `--adjust` the markers that are off. A hand with no finger geometry: add `--mitten`. With
+   `--smart`, the AI's fingers reach `contract_bones` too; its face references serve Auto-Rig Pro
+   only, and this route builds no face bones.
 2. **Armature** from `contract_bones` (contract names, `.L` mirrored to `.R`, a radius per bone):
 
    ```python

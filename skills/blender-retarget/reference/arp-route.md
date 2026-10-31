@@ -23,7 +23,10 @@ The Voxelized bind does not need a watertight surface, so a generated mesh alone
 leave this route; proportions are. A landmark outside its search window below says the same.
 
 Installing is the user's, on request: the main add-on from disk in Preferences, the optional
-Smart AI files from the add-on's own preferences. Nothing of the add-on lives in this skill:
+Smart AI files with the add-on's own Install AI Files… button. Both come with a paid licence from
+the author, Artell ([Gumroad](https://artell.gumroad.com/l/auto-rig-pro) or
+[Superhive](https://superhivemarket.com/products/auto-rig-pro)); the AI files are licensed per
+device and never leave the user's machine. Nothing of the add-on lives in this skill:
 `brt_arp` finds an enabled add-on whose module name contains `auto_rig_pro` and refuses with
 `addon_missing` when there is none (saying so when it is installed but not enabled).
 
@@ -53,8 +56,8 @@ props = [p.identifier for p in bpy.ops.arp.retarget.get_rna_type().properties]
 ```
 
 - **Another prefix.** An add-on version may register an operator under a prefix other than
-  `arp.`. `probe` tries `arp.<name>` first (Smart's detection is `arp.go_detect`), then an
-  operator of the same function name that the add-on's own classes registered. `operators` says
+  `arp.`. `probe` tries each listed name first (`arp.<name>`; Smart's Go! is listed as `id.go_detect`),
+  then an operator of the same function name that the add-on's own classes registered. `operators` says
   found or not per name, `operator_idnames` where each was found, `operator_properties` what each
   declares.
 - Operators, `arp_` scene properties and functions inside the add-on are not a stable public
@@ -119,19 +122,26 @@ rows check proportions. `mesh` (optional) is selected first. Each name goes to t
 `mirror` (default True) as its mirror switch; the marker it makes, `<name>_loc`, is moved to the
 point and read back evaluated. Place limb markers on +X: the add-on holds a limb marker on one
 side, so one given on −X never gets there and counts as not placed (`miss` in the result); the
-mirrored `<name>_loc_sym` follows by constraint. Gate `arp.markers_placed`. Detection (Smart's Go,
-`arp.go_detect`) is not run by the module.
+mirrored `<name>_loc_sym` follows by constraint. Gate `arp.markers_placed`. Detection (Smart's Go!,
+`id.go_detect`) is not run by the module; the AI chain that ends in it is below.
 
-## Smart AI is optional
+## Smart AI: run by `character-autorig`, in a window
 
-The AI component estimates markers from the mesh. It is a separate download with its own
-inference executable per platform; the main add-on works without it.
+The AI files estimate body, finger and face markers from pictures of the 3D viewport, so they need
+a Blender with a window: `blender -b` cannot run them, and neither can a call through the MCP code
+tool while that Blender is busy. `character-autorig` → `scripts/arp_smart.py` runs the whole chain
+(`id.get_selected_objects`, `arp.guess_markers`, `arp.guess_fingers`, the facial setup and
+`arp.guess_facial`, then `id.go_detect`) in a window it opens and closes, and writes every marker
+and reference bone to `autorig-smart/1`; `arp_markers.py --smart` merges it and the `pipeline` op
+places it (`character-autorig` → `reference/arp-ai.md`).
 
 - `probe`'s `ai_files` and `ai_version` say only that an `inference` folder is installed (its path
-  is never reported). **The success check is output**: marker objects at non-default positions
-  inside their search windows. Files, a version string or a preference show nothing about it.
+  is never reported); `ai_ready` that its programs may be run by this user, read without changing
+  any permission or flag. **The success check is output**: markers the AI placed and a rig Go! built.
+  Files, a version string or a preference show nothing about it.
 - **On failure, fall back** to markers from the survey. Do not lift OS protections (quarantine
-  flags, signing, security settings) to make the binary run.
+  flags, signing, security settings) to make the binary run: reinstall the AI files with the
+  add-on's own installer, which clears macOS quarantine itself.
 
 ## Match to Rig, then bind
 
@@ -302,7 +312,7 @@ metadata of **every** clip (below). Then, per clip:
 | `retarget` | the sequence above, per clip | `arp.retarget_clips`, `arp.metadata_clips` |
 
 - **A refusal changes nothing**: `pass` false, gate `arp.precondition` failing beside
-  `arp.addon_present`, and a `reason` (`addon_missing`, `operator_missing`, `object_missing`,
+  `arp.addon_present`, and a `reason` (`addon_missing`, `operator_missing`, `operator_property_missing`, `object_missing`,
   `no_view3d_area`, `smart_not_started`, `already_bound`, `bind_option_not_found`, `clip_invalid`,
   `metadata_invalid`, `nla_tweak_mode`, `scene_property_missing`, …) with a `message`.
 - **A vertex in some group is a floor, not quality.** Next come `brt_weights`

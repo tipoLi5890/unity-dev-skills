@@ -46,7 +46,7 @@ claude plugin install unity-dev@unity-dev
 ### 必要なもの
 
 - **必須**：Claude Code または Codex、Unity 6 のプロジェクト、スクリプト用の Python 3.10 以降（画像や音声を読むスクリプトには NumPy と Pillow も）。
-- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、ご自身のライセンスで使う Auto-Rig Pro、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI、`mesh-texture-paint` 用の SciPy。
+- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、Auto-Rig Pro（Artell による有料アドオンです。正規ライセンスを [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) または [Superhive](https://superhivemarket.com/products/auto-rig-pro) でお求めください。開発とアップデートの支えになります。オプションの AI ファイルはライセンスに含まれ、1 ライセンスにつき 1 台で使えます）、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI、`mesh-texture-paint` 用の SciPy。
 - **任意**（動画）：動画を書き出すもの（プレビュー、リール、動画からのスプライト）には ffmpeg。
 - **任意**（デバイス）：iOS には Xcode 15 以降を入れた Mac、Android には Android SDK。
 
@@ -259,7 +259,7 @@ flowchart LR
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | キャラクターの静止画一枚を、生成した動画を通して透過スプライトのループにする |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` が合わないときに Blender で手作りするリグ。FBX は再インポートで証明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 既製のクリップを自分の Blender のリグへ。足滑り、ジッター、ポップでゲート |
-| [`character-autorig`](../skills/character-autorig/SKILL.md) | 自分の Auto-Rig Pro で、人型をローカルでリグ付け。ヘッドレスのコマンド一つで |
+| [`character-autorig`](../skills/character-autorig/SKILL.md) | 自分の Auto-Rig Pro で、人型をローカルでリグ付け。コマンド一つで（オプションの AI 検出は Blender のウィンドウを開きます） |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 動きを一本のクリップに。二台カメラの動画から、骨格へ直接推定する |
 
 </details>

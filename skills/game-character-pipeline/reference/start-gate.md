@@ -62,8 +62,8 @@ character and decides to pay for a better mesh.
    the service (re-generate) or to S1, exactly as for a local mesh.
 3. **S5 on the ship track.** The cloud mesh is a new showcase: the game mesh is built from it at
    the class's picked rung, through S5's gates.
-4. **S6, local, the same contract.** `character-autorig`: markers, Auto-Rig Pro (or the
-   hand-built route), `contract_map.py --require contract`, `deform_gate.py`. The same gates, the
+4. **S6, local, the same contract.** `character-autorig`: markers (with Auto-Rig Pro's AI when
+   its files are installed), Auto-Rig Pro (or the hand-built route), `contract_map.py --require contract`, `deform_gate.py`. The same gates, the
    same limits; the rig record keeps `auto-rig-pro`.
 5. **Clips carry over.** The skeleton is the contract, so every clip made for the demo binds on
    the new rig unchanged: skip S7–S9 for clips; S9's prop grip and drift checks run again on the new

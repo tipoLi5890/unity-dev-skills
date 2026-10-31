@@ -4,10 +4,12 @@
 > from `scripts/mesh_check.py`, which `arp_markers.py` imports.
 
 Auto-Rig Pro's Smart step asks a person to click a chin, a neck, shoulders, wrists, a spine root
-and ankles in a 3D view, or asks its AI files to guess them. Neither runs headless, and a click
-lands beside a limb on a generated mesh. `arp_markers.py` reads the same points from the mesh
-itself, places what the mesh does not show by a stated body proportion, and draws the result for a
-person before any rig exists.
+and ankles in a 3D view, or asks its AI files to guess them. A click lands beside a limb on a
+generated mesh, and the AI needs a window and the user's licensed AI files. `arp_markers.py` reads
+the same points from the mesh itself, runs headless, places what the mesh does not show by a stated
+body proportion, and draws the result for a person before any rig exists. When stage `smart` ran,
+`--smart` cross-checks the body with the AI and takes its fingers and face (below, and
+`reference/arp-ai.md`); without it, or when it failed, the slices stand alone.
 
 ## Input
 
@@ -50,7 +52,10 @@ mirrored and compared (`asymmetry_m`), and the two averaged into one mirrored pa
 one adjusted.
 
 **Windows.** A marker outside its window says the proportions are not the ones this route was
-built for; take the hand-built route rather than force it. `--no-window-gate` reports without
+built for; take the hand-built route rather than force it. With `--smart`, a near miss (a landmark
+at most `--smart-tol`, 0.03 H, outside its window) whose AI marker lies inside it passes,
+`confirmed_by: "auto-rig-pro-ai"`: a tall hairdo raising H is the usual cause. One further out
+fails whatever the AI says. `--no-window-gate` reports without
 gating, for a known-odd body a person has looked at.
 
 | Marker | Window (fraction of H) |
@@ -86,6 +91,10 @@ so the index side faces −Y. `L` = |hand_tip − wrist|.
   and turned into the hand frame. `fingers.reason` says why detection was not used.
 - The **thumb** always takes the fixed shape: from 0.10 L along and 0.11 L toward the index side,
   forward and down to 0.62 L.
+- **`--smart`** with a `fixed` hand (a glove, fingers held together): the AI's hand and finger
+  references replace the fixed shape in `arp_refs`, and the wrist and finger joints in `landmarks`
+  and `contract_bones` follow, with their rolls in `ref_rolls`; `fingers.mode` is `ai`. A finger
+  the AI did not fit (the add-on's four-finger hand has no index) keeps the fixed shape.
 - `--mitten` keeps the 30 finger bones in `contract_bones` but makes them non-deforming, so a
   hand without finger geometry skins to `Hand` in the hand-built route. The contract still holds
   every finger bone; Auto-Rig Pro binds its own fingers either way.
@@ -131,10 +140,12 @@ marker at a time and look again.
 | `methods` | per marker: measured, proportion, fixed, adjusted |
 | `height`, `ground_z`, `midline_x`, `crotch_h`, `arm_angle_deg`, `asymmetry_m` | the measures above |
 | `asymmetry_accepted` | the measured left/right difference of each adjusted side marker, left out of `markers.symmetry` |
-| `fingers` | `{mode: detected|fixed, reason?}` |
+| `fingers` | `{mode: detected|fixed|ai, reason?}`; with `ai` also `count`, `names` and the slices' own `slices` |
 | `hand_frames` | `{".L"/".R": {x, y, z, length}}`, the hand frames used for the fingers |
 | `arp_refs` | head and tail per reference bone of Auto-Rig Pro's human preset, `.x` and `.l` only: root, spine_01…03, neck, head, shoulder, arm, forearm, hand, the finger bases and phalanges, thumb1–3, thigh, leg, foot, toes, foot_heel, foot_bank_01/02 |
 | `arp_spine_count` | spine bones + 1 (the add-on's Count includes its root) |
+| `smart`, `smart_agreement` | with `--smart`: the file, what was used, notes (`rejected` when its body sits over 0.10 H off: another mesh or frame, nothing taken); per landmark the distance and height difference to the AI's marker as fractions of H, and `agrees` |
+| `ref_rolls`, `facial` | the roll per reference taken from the AI (hand, fingers, face), written as is; `facial` true when `arp_refs` holds the face. Empty and false without `--smart` |
 | `contract_bones` | `{mirror: true, bones: [...]}`: a `bcr_armature` spec with the contract's names and a radius per bone |
 | `previews`, `gates`, `pass` | as above; each gate `{name, value, limit, pass}` as in a gate/1 report, and `ok`, pass's old name, beside it for one release |
 

@@ -55,7 +55,9 @@ in `scripts/` that returns a dict of gates.
   a project or this repository; `brt_arp` drives the copy the user installed, through the
   operators it registers. Purchased clips stay outside the repository too.
 - **Auto-Rig Pro only when the user has installed it.** `brt_retarget` and `brt_arp` op
-  `source_bones` need stock Blender alone.
+  `source_bones` need stock Blender alone. It is a paid add-on by Artell: a genuine licence from
+  the author's Gumroad or Superhive store funds its development; its AI files are licensed per
+  device (`character-autorig` → `reference/arp-ai.md`).
 
 ## Pipeline
 

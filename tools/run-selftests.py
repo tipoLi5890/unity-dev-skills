@@ -42,6 +42,7 @@ SELFTESTS = [
     ('blender-retarget/scripts/motion_metrics.py', ['--selftest'], ['numpy']),
     ('character-autorig/scripts/arp_markers.py', ['--selftest'], ['numpy']),
     ('character-autorig/scripts/arp_markers.py', ['--selftest'], ['bpy', 'numpy']),
+    ('character-autorig/scripts/arp_smart.py', ['--selftest'], ['stdlib']),
     ('character-autorig/scripts/autorig.py', ['--selftest'], ['stdlib']),
     ('character-autorig/scripts/deform_gate.py', ['--selftest'], ['bpy', 'numpy']),
     ('character-autorig/scripts/mesh_check.py', ['--selftest'], ['numpy']),

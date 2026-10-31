@@ -2,6 +2,85 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.37.0
+
+`character-autorig` can use Auto-Rig Pro's own AI for the markers: the body, each finger and the
+face. Two cases needed a person before. A glove, or fingers held together, gave the slice markers
+no fingers to find, so the hand took a fixed shape. A hairdo that raises the mesh's top pushed a
+marker just outside its window, and only a person could pass it. The AI runs on the user's licensed
+copy, through its own operators, and the slice markers stay the fallback for every part of it.
+
+- **`character-autorig` → `arp_smart.py`, stage `smart`.** The AI takes its pictures from the 3D
+  viewport, so `blender -b` cannot run it. The script opens Blender with a window and drives the
+  chain from a timer on that window's 3D view: `id.get_selected_objects`, `arp.guess_markers`,
+  `arp.guess_fingers`, the facial setup with `arp.guess_facial`, then Go! (`id.go_detect`, invoked).
+  It writes every marker and every reference bone Go! placed to `autorig-smart/1`, saves the file
+  for a person, and quits Blender itself, also on an error or a timeout. Gates `smart.ai_files`,
+  `smart.body_markers`, `smart.fingers`, `smart.facial`, `smart.go`, `smart.refs`; exit 0/2/1. Each
+  step is judged by the scene it leaves: an add-on error arrives in the user's interface language,
+  and a popup raises nothing.
+- **What the chain needs.** Material viewport shading for the face, since a generated mesh has its
+  mouth and eyes in the paint: in Solid shading the lips go unseen and the add-on drops the mouth
+  and jaw without an error. Fingers before the face, whose setup hides the body the finger step
+  reads. Proxy eyeballs, since an image-to-3D mesh has no eye objects; or eyes off. A face that
+  fails is cancelled before Go!, which then still builds the body and fingers. Preferences are not
+  saved on quit, and a file that already holds a rig is refused. Go! scales the rig object, so
+  references are read in world space. The add-on's four-finger hand has no index finger.
+- **`arp_markers.py --smart`.** The body stays measured from slices and is paired, landmark by
+  landmark, with the AI's markers in `smart_agreement`. The two put a joint at different depths
+  (the AI shoulder on the deltoid, the slice one at the armpit), so the window decides, not the
+  distance: a near miss, a landmark at most `--smart-tol` (0.03 H) outside its window whose AI
+  marker lies inside it, passes `markers.windows` with `confirmed_by: "auto-rig-pro-ai"`; one
+  further out fails whatever the AI says. The AI's head top sits on the skull under the hair, so it
+  is not thrown by a spiky hairdo that pushes the slice shoulder below its window. A hand the
+  slices could not part takes Go!'s hand and finger references (`fingers.mode` `ai`), and the
+  wrist follows the AI's, on the cuff where Go!'s finger bases start; a finger the four-finger hand
+  lacks keeps the fixed shape. The face and ears go into `arp_refs` with `facial`, each side as Go!
+  placed it; every reference from Go! keeps its roll in `ref_rolls`. A file whose body sits over
+  0.10 H from the slices (another mesh or frame) is noted and nothing is taken from it; a malformed
+  one refuses.
+- **`blender-retarget` → `brt_arp` `pipeline`.** With `facial`, the face is turned on at the head
+  limb (and ears added, `arp.add_limb`) before the references are placed: gate `arp.face_added`, and
+  `arp.refs_placed` covers the face. A bone in `ref_rolls` takes that roll as it is instead of
+  turning with the hand, checked within 0.1° (`rolls_given`, `worst_roll_miss_deg`). A rig with a
+  face exports with the add-on's Full Facial on; without it the exporter folded secondary face
+  weights onto `head.x` and the jaw, past 4 influences. `probe` reports `ai_ready`, read without
+  changing any permission.
+- **Fixes in `brt_arp` and `arp_markers` for every character.** The fixed hand's palm frame came out
+  as a zero vector, so the fixed-shape knuckles sat in a line about 2 mm apart: they fan out across
+  the palm again. The human preset edits with X-mirror on, so writing a `.r` reference overwrote
+  its `.l` twin's roll; placement now turns X-mirror off and puts it back. `brt_arp.OPERATORS` lists
+  Go! as `id.go_detect`, the name it registers.
+- **`autorig.py`.** Stages `prep → check → smart → markers → arp → contract → deform`. `smart` runs
+  when a headless probe finds the add-on and its AI files, in a window and without
+  `--factory-startup`; `--no-smart` skips it, `--facial` adds the face and `--fingers` passes
+  through. A failed `smart` never stops `all`: the run exits 2, and the markers take what passed in
+  its report (slices alone when it wrote none); without the AI the stage is skipped and the exit
+  code unchanged. `ARP_AI_DIR` points one run at another AI folder, in memory only. `fingers.mode`
+  `ai` counts as fingers found.
+- **`deform_gate.py` pose `jaw_open`.** The jaw 20° down, run only when named (`--poses
+  all,jaw_open`), under the same self-intersection limit; `autorig.py` names it when the markers
+  carry the face and the contract maps a Jaw. **`unity-rigged-character` → `contract_map.py`**
+  maps `c_jawbone.x` to `Jaw` in the `arp` preset, an extra role outside the contract: it reaches
+  `retarget_map`, `extra_roles` and Unity's optional Jaw, never the contract tier or the bone count.
+- **`deform_gate.py` measures a joint's patch joint to joint.** The patch radius was half the
+  shorter adjoining bone; Auto-Rig Pro's `forearm_stretch` ends at the twist bone, short of the
+  wrist, so on a sleeve wider than that half no skin fell in the patch and the elbow went
+  unmeasured. It is now half the shorter adjoining span, from the joint to the next contract joint;
+  a bone with no mapped next joint keeps its length. The limits do not change.
+- **A genuine licence.** Auto-Rig Pro is a paid add-on by Artell. `character-autorig`,
+  `blender-retarget` and the READMEs now ask for a genuine licence from the author's Gumroad or
+  Superhive store, which funds its development and brings its updates. The AI files come with the
+  licence, one device each, installed with the add-on's own Install AI Files…, which also clears
+  macOS quarantine; they are never copied into a project, this repository, CI or another machine.
+  `art-asset-registry`'s `auto-rig-pro` row says so.
+- **Docs.** `character-autorig` → `reference/arp-ai.md` holds the flow, options, gates, fallbacks
+  and where the AI and the slices differ by design (head top, shoulder, hips, chin, foot bank,
+  brows). Every "no Smart detection, headless only" statement is rewritten; `game-character-pipeline`
+  S6 accepts the markers on AI agreement or a person's look. `blender-retarget` →
+  `reference/arp-route.md` names Go! by its registered name, `id.go_detect`.
+- **CI.** `arp_smart.py --selftest` (no add-on, no Blender) and its usage-error exit 1.
+
 ## 0.36.2
 
 The rigged-character example now follows the courier from the texture example, through its

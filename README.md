@@ -50,8 +50,11 @@ manifests, so they cannot come to say anything different.
 - **Required:** Claude Code or Codex; a Unity 6 project; Python 3.10 or newer for the scripts, with
   NumPy and Pillow for the ones that read images or audio.
 - **Optional, for the asset and character pipeline only:** Blender, in a version your Auto-Rig Pro
-  release supports (`character-autorig` explains); Auto-Rig Pro under your own licence; a
-  self-hosted ComfyUI on a GPU machine; the `codex` CLI for 2D art; SciPy for `mesh-texture-paint`.
+  release supports (`character-autorig` explains); Auto-Rig Pro, a paid add-on by Artell: please
+  buy a genuine licence from [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) or
+  [Superhive](https://superhivemarket.com/products/auto-rig-pro), which funds its development and
+  brings its updates (the optional AI files come with it, one device per licence); a self-hosted
+  ComfyUI on a GPU machine; the `codex` CLI for 2D art; SciPy for `mesh-texture-paint`.
 - **Optional, for video:** ffmpeg, for anything that writes one (previews, reels, sprites from video).
 - **Optional, for devices:** a Mac with Xcode 15 or newer for iOS; the Android SDK for Android.
 
@@ -278,7 +281,7 @@ flowchart LR
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
 | [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |
-| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid rigged locally with your own Auto-Rig Pro, in one headless command |
+| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid rigged locally with your own Auto-Rig Pro, in one command; its optional AI step opens a Blender window |
 | [`humanoid-motion`](skills/humanoid-motion/SKILL.md) | A move as a clip, solved from a two-camera video straight onto the skeleton |
 
 </details>

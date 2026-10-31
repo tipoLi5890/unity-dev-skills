@@ -64,6 +64,7 @@ skeleton, so they fit any arm angle and hand orientation:
 | `fist` | each finger phalanx 60° toward the palm, the thumb's 30°; skipped without finger bones |
 | `leg_raise` | the left thigh 90° forward, knee straight |
 | `elbow_120` | both forearms 120° toward the front |
+| `jaw_open` | the Jaw 20° down; only when named (`--poses all,jaw_open`), for a rig with a face; the self-intersection gate covers it, the volume gate does not |
 
 Each pose is sampled at `--steps` fractions (default 2: half and full); `--poses` picks a subset.
 
@@ -85,8 +86,8 @@ skin as it folds (the intersection ratio inflates).
 other back to back) within its smaller gap, so the inner shell's own share is about half of it, or
 more where the shell stands farther off; compare `inward_triangles` with that half, not the whole.
 
-**Volume loss** per rotated joint: the skin triangles within half the shorter adjoining bone of the
-joint at rest, and the volume they wrap, as the sum of cones from their vertex centroid,
+**Volume loss** per rotated joint: the skin triangles within half the shorter adjoining span of the
+joint at rest (joint to joint, so a limb split into twist and stretch bones counts whole), and the volume they wrap, as the sum of cones from their vertex centroid,
 (a − c) · ((b − c) × (d − c)) / 6. loss = 1 − posed / rest. A rigid turn keeps it; a blend that
 averages two rotations shrinks the skin toward the joint (a 50/50 blend at a 120° elbow loses
 0.75). Gated, `deform.volume_loss_max` ≤ 0.35, at the elbows, knees, wrists, ankles and spine
@@ -115,7 +116,9 @@ the value lists the ones never measured. A hinge the volume gate cannot read is 
 pass at 0.0: an opening at the joint, too few triangles there, or a mesh that faces inward.
 
 **`deform.poses`**: every requested pose was applied. Under `--poses all` the fist may be skipped on a rig
-without finger bones; named in `--poses`, a skipped fist fails.
+without finger bones; named in `--poses`, a skipped fist fails, and so does `jaw_open` when the map
+names no Jaw. `autorig.py` names `jaw_open` when the markers carry the face and the contract maps a
+Jaw.
 
 **A mitten in a fist.** Auto-Rig Pro binds finger bones to a mitten hand too, and a mitten folds
 into itself when its phalanges close, so the fist alone can fail the intersection gate on a sound

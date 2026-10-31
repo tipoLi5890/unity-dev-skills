@@ -4,7 +4,8 @@
 usage (in this order; `all` runs them one after another):
     autorig.py prep     OUT GLB [--name NAME] [--height 1.75]      -> OUT/NAME.glb, OUT/NAME.blend
     autorig.py check    OUT [--name NAME]                           -> rig/NAME.mesh.json
-    autorig.py markers  OUT [--name NAME] [--no-render]             -> rig/NAME.markers.json, rig/markers/
+    autorig.py smart    OUT [--name NAME] [--facial] [--fingers 5|4] -> rig/NAME.smart.json, rig/NAME_smart.blend
+    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] -> rig/NAME.markers.json, rig/markers/
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
     autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json
     autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
@@ -15,11 +16,21 @@ Every stage takes --blender PATH (env BLENDER, default blender on PATH, else the
 --dry-run (print the commands, run nothing). NAME defaults to the GLB's stem (prep, all), else the one .glb in OUT.
 
 prep: blender-character-rig bcr_import_prep (height, backface culling, no weld) -> NAME.blend. check:
-mesh_check.py on NAME.glb. markers: arp_markers.py --mesh NAME (--preview-dir rig/markers/ unless --no-render).
+mesh_check.py on NAME.glb. smart: arp_smart.py --probe (headless) asks whether Auto-Rig Pro, its operators and
+its AI files are there; only then arp_smart.py runs the add-on's AI on NAME.blend in a Blender WITH a window
+(--fingers, --facial or --no-facial; it quits by itself). markers: arp_markers.py --mesh NAME (--preview-dir
+rig/markers/ unless --no-render; --smart rig/NAME.smart.json whenever smart wrote it, passed or not: the
+markers read its gates one by one and take only what passed; never with --no-smart).
 arp: blender-retarget brt_arp op pipeline, the rig saved as rig/NAME_arp.blend, the Unity FBX in export/.
 contract: unity-rigged-character contract_map.py map --map arp --require contract, --min-fingers 30 unless the
-markers say fingers.mode fixed (a mitten). deform: deform_gate.py on the FBX with the contract's retarget_map
-(--render rig/poses/ unless --no-render; without fist when fingers.mode is fixed).
+markers say fingers.mode fixed (a mitten; `ai` counts as found). deform: deform_gate.py on the FBX with the
+contract's retarget_map (--render rig/poses/ unless --no-render; without fist when fingers.mode is fixed; with
+jaw_open when deform_gate knows that pose, the markers carry the face and the contract maps a Jaw).
+
+smart never stops `all`: without the add-on or its AI files it is skipped (no exit change); a smart that fails
+(a gate, an error, a timeout) makes the run's exit 2, and the markers take what passed from its report (a face
+that failed leaves the AI's fingers) or go on from slices alone when it wrote none. Run on its own, `smart`
+refuses (exit 1) when the probe finds no add-on or AI files.
 
 Repair ladder (deform, on unless --no-repair): when the only failing gate is deform.volume_loss_max and every
 joint over the limit is an elbow (LowerArm.*) or a knee (LowerLeg.*), each attempt opens rig/NAME_arp.blend,
@@ -31,8 +42,10 @@ with the height. Next attempt: a hinge that only now fails is added; volume held
 -> amount 0.9; anything else stops. The limits are never changed. A finer bind and a moved marker are not
 automated: the failure message names them (reference/arp-pipeline.md).
 
-Blender runs headless; prep, markers and deform with --factory-startup, arp and repair without it (Auto-Rig Pro
-is an add-on). Commands are argument lists (no shell, no inline Python), so a Windows path passes as is; the
+Blender runs headless except smart (the AI reads pictures of the 3D view; --python-exit-code 1 closes its window
+on a script error, and it is killed after its timeout plus margins); prep, markers and deform with
+--factory-startup, smart, arp and repair without it (Auto-Rig Pro is an add-on). Commands are argument lists
+(no shell, no inline Python), so a Windows path passes as is; the
 Blender-side work of prep, arp and repair runs this file inside Blender (`-P autorig.py -- _inside ...`).
 Children run with PYTHONIOENCODING=utf-8. Prints one JSON summary (each step's exit code, seconds, log, report,
 failed gates; the repair attempts; the files to take on) and writes it to OUT/autorig.<stage>.json.
@@ -61,9 +74,11 @@ BRT = SKILLS / "blender-retarget" / "scripts"
 CONTRACT_MAP = SKILLS / "unity-rigged-character" / "scripts" / "contract_map.py"
 MAC_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 WIN_BLENDER_GLOB = r"C:\Program Files\Blender Foundation\Blender*\blender.exe"
-STAGES = ("prep", "check", "markers", "arp", "contract", "deform")
+STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform")
 STOP_ON_GATE = {"check", "markers", "arp"}       # a later stage cannot use what these failed to make
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
+DEFORM_POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")   # deform_gate.POSES
+SMART_KILL = 600 + 60 + 120       # arp_smart's --timeout, its watchdog's margin, then the window is killed
 GATED = ("LowerArm", "LowerLeg", "Spine", "Chest", "UpperChest", "Hand", "Foot")   # deform_gate.GATED
 HINGE_OF = {"LowerArm": "elbow", "LowerLeg": "knee"}
 HINGE_BONES = {"elbow": ("UpperArm", "LowerArm"), "knee": ("UpperLeg", "LowerLeg")}
@@ -137,7 +152,11 @@ class Ctx:
                   "arp_blend": o / "rig" / f"{n}_arp.blend", "fbx": o / "export" / f"{n}.fbx",
                   "skeleton": o / "export" / f"{n}.skeleton.json", "contract": o / "rig" / f"{n}.contract.json",
                   "deform": o / "rig" / f"{n}.deform.json", "poses": o / "rig" / "poses", "logs": o / "logs",
-                  "repair": o / "repair"}
+                  "repair": o / "repair", "smart": o / "rig" / f"{n}.smart.json",
+                  "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json"}
+        self.smart = None      # this run's smart: None (not run), planned, ready, passed, failed, skipped
+        self.markers_smart = []   # the --smart the markers were given
+        self.smart_why = None     # the probe's failed gates, or the smart step's failed gates or error
 
 
 def safe_name(stem: str) -> str:
@@ -151,8 +170,10 @@ def find_name(out: Path) -> str:
     return hits[0].stem
 
 
-def blender_cmd(c: Ctx, script: Path, *args, blend=None, factory=True) -> list:
-    return (c.blender + ["-b"] + (["--factory-startup"] if factory else [])
+def blender_cmd(c: Ctx, script: Path, *args, blend=None, factory=True, background=True) -> list:
+    # a window stays open after a script error unless told to exit: --python-exit-code closes it
+    return (c.blender + (["-b"] if background else ["--python-exit-code", "1"])
+            + (["--factory-startup"] if factory else [])
             + (["-t", str(c.threads)] if c.threads else []) + ([str(blend)] if blend else [])
             + ["-P", str(script), "--"] + [str(x) for x in args])
 
@@ -166,8 +187,9 @@ def need(c: Ctx, path: Path, stage: str):
         raise Refused(f"missing {path} (run the '{stage}' stage first)")
 
 
-def step(name, cmd, report_file, log, kind="file") -> dict:
-    return {"name": name, "cmd": [str(x) for x in cmd], "report": str(report_file), "log": str(log), "kind": kind}
+def step(name, cmd, report_file, log, kind="file", **extra) -> dict:
+    return {"name": name, "cmd": [str(x) for x in cmd], "report": str(report_file), "log": str(log), "kind": kind,
+            **extra}
 
 
 _WARNED: set = set()
@@ -216,9 +238,52 @@ def read_json(path):
 
 
 def fingers_fixed(c: Ctx) -> bool | None:
-    """The markers' fingers.mode is 'fixed' (a mitten); None while the markers are not written yet."""
+    """The markers' fingers.mode is 'fixed' (a mitten); None while the markers are not written yet. 'ai'
+    (Auto-Rig Pro's AI placed them) and 'auto' are fingers found."""
     m = read_json(c.f["markers"])
     return None if m is None else (m.get("fingers") or {}).get("mode") == "fixed"
+
+
+def smart_args(c: Ctx, a) -> list:
+    """--smart FILE for the markers whenever smart wrote an autorig-smart/1 report, passed or not: arp_markers
+    reads its gates one by one (body, fingers, face, Go!) and takes only what passed. A stage run on its own
+    takes an earlier report. Never with --no-smart, nor when this run skipped smart."""
+    if a.no_smart or c.smart == "skipped":
+        return []
+    if c.smart == "planned" or (read_json(c.f["smart"]) or {}).get("schema") == "autorig-smart/1":
+        return ["--smart", c.f["smart"]]
+    return []
+
+
+def deform_pose_names(src: Path = HERE / "deform_gate.py") -> tuple:
+    """deform_gate.POSES and NAMED_ONLY (poses run only when named) read from its source (it imports bpy,
+    so it is parsed, not imported)."""
+    import ast
+    found = {}
+    try:
+        for node in ast.parse(src.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if getattr(t, "id", None) in ("POSES", "NAMED_ONLY"):
+                        found[t.id] = tuple(ast.literal_eval(node.value))
+    except (OSError, SyntaxError, ValueError):
+        pass
+    return found.get("POSES", DEFORM_POSES) + found.get("NAMED_ONLY", ())
+
+
+def deform_poses(known: tuple, fixed: bool | None, jaw: bool) -> str | None:
+    """--poses for deform_gate: None (all) unless a mitten drops fist or a face adds jaw_open (all,jaw_open:
+    `all` keeps fist's skip rule). jaw_open only when deform_gate knows it; otherwise it is never named."""
+    jaw = jaw and "jaw_open" in known
+    if not fixed:
+        return "all,jaw_open" if jaw else None
+    return ",".join([p for p in known if p != "jaw_open" and p != "fist"] + (["jaw_open"] if jaw else []))
+
+
+def has_jaw(c: Ctx) -> bool:
+    """The markers carry the face (facial true) and the contract maps a Jaw bone."""
+    m, k = read_json(c.f["markers"]) or {}, read_json(c.f["contract"]) or {}
+    return bool(m.get("facial")) and "Jaw" in (k.get("retarget_map") or {})
 
 
 # --- the stages: each a list of steps, planned when it is about to run ---------------------------------------------
@@ -236,11 +301,25 @@ def plan(c: Ctx, stage: str, a) -> list:
         need(c, f["glb"], "prep")
         return [step("check", py_cmd(c, HERE / "mesh_check.py", f["glb"], "--out", f["mesh"]), f["mesh"],
                      logs / "check.log", kind="python")]
+    if stage == "smart":
+        need(c, f["blend"], "prep")
+        if a.no_smart:
+            return []
+        probe = step("smart_probe", blender_cmd(c, HERE / "arp_smart.py", "--probe", "--out", f["smart_probe"],
+                                                factory=False), f["smart_probe"], logs / "smart_probe.log", kind="inner")
+        run = step("smart", blender_cmd(c, HERE / "arp_smart.py", "--mesh", c.name, "--out", f["smart"],
+                                        "--save-blend", f["smart_blend"], "--fingers", a.fingers,
+                                        "--facial" if a.facial else "--no-facial", blend=f["blend"], factory=False,
+                                        background=False), f["smart"], logs / "smart.log", kind="inner",
+                   after_probe=True, timeout=SMART_KILL)
+        return [probe, run]
     if stage == "markers":
         need(c, f["blend"], "prep")
         prev = [] if a.no_render else ["--preview-dir", f["previews"]]
+        c.markers_smart = smart_args(c, a)
         return [step("markers", blender_cmd(c, HERE / "arp_markers.py", "--mesh", c.name, "--out", f["markers"],
-                                            *prev, blend=f["blend"]), f["markers"], logs / "markers.log")]
+                                            *c.markers_smart, *prev, blend=f["blend"]), f["markers"],
+                     logs / "markers.log")]
     if stage == "arp":
         need(c, f["blend"], "prep"); need(c, f["markers"], "markers")
         return [step("arp", blender_cmd(c, SELF, "_inside", "arp", "--mesh", c.name, "--markers", f["markers"],
@@ -259,7 +338,8 @@ def plan(c: Ctx, stage: str, a) -> list:
 
 
 def deform_step(c: Ctx, name, fbx, out, render, logs) -> dict:
-    poses = ["--poses", NO_FIST] if fingers_fixed(c) else []
+    chosen = deform_poses(deform_pose_names(), fingers_fixed(c), has_jaw(c))
+    poses = ["--poses", chosen] if chosen else []
     rend = ["--render", render] if render else []
     return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", c.f["contract"], *poses,
                                   *rend, "--out", out), out, logs / f"{name}.log")
@@ -388,17 +468,32 @@ def run_step(st: dict, env: dict) -> tuple[int, dict | None, float]:
     Path(st["report"]).unlink(missing_ok=True)   # an older run's report must not stand in for this one's
     with open(st["log"], "w", encoding="utf-8") as logf:
         t0 = time.perf_counter()
+        group = bool(st.get("timeout")) and os.name == "posix"   # a killed window takes its AI programs along
         p = subprocess.Popen(st["cmd"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True,
-                             encoding="utf-8", errors="replace", bufsize=1)
+                             encoding="utf-8", errors="replace", bufsize=1, start_new_session=group)
         out_lines = []
         echo = None if st["kind"] == "python" else ECHO
         ts = [threading.Thread(target=_pump, args=(p.stdout, logf, echo, out_lines, p), daemon=True),
               threading.Thread(target=_pump, args=(p.stderr, logf, echo, None), daemon=True)]
         for t in ts:
             t.start()
-        code = p.wait()
+        killed = False
+        try:
+            code = p.wait(timeout=st.get("timeout"))
+        except subprocess.TimeoutExpired:   # a windowed Blender that never quit: killed, an error
+            killed = True
+            if group:
+                import signal
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except OSError:
+                    p.kill()
+            else:
+                p.kill()
+            p.wait()
+            code = 1
         for t in ts:
-            t.join()
+            t.join(timeout=10 if killed else None)   # a child that kept the pipe open must not hang us
     rep = read_json(st["report"])
     if rep is None and st["kind"] == "inner":
         for line in reversed(out_lines):
@@ -478,6 +573,11 @@ def parser() -> Parser:
             p.add_argument("--height", type=float, default=1.75, help="metres (default 1.75)")
         if s in ("markers", "deform", "all"):
             p.add_argument("--no-render", action="store_true", help="no marker pictures, no pose renders")
+        if s in ("smart", "markers", "all"):
+            p.add_argument("--no-smart", action="store_true", help="no Auto-Rig Pro AI: slice markers alone")
+        if s in ("smart", "all"):
+            p.add_argument("--facial", action="store_true", help="the AI's face markers and references too")
+            p.add_argument("--fingers", type=int, choices=(5, 4), default=5, help="fingers the AI fits (5 falls back to 4)")
         if s in ("contract", "all"):
             p.add_argument("--min-fingers", type=int, default=30)
         if s in ("deform", "all"):
@@ -487,7 +587,8 @@ def parser() -> Parser:
 
 def parse(argv) -> argparse.Namespace:
     a = parser().parse_args(argv)
-    for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False)):
+    for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
+                 ("no_smart", False), ("facial", False), ("fingers", 5)):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -505,6 +606,8 @@ def main(argv=None, osname=None, env=None) -> int:
         c = Ctx(a, osname, env)
         stages = list(STAGES) if a.stage == "all" else [a.stage]
         if c.dry:
+            if "smart" in stages and not a.no_smart:
+                c.smart = "planned"
             planned = {s: plan(c, s, a) for s in stages}   # need() is off in a dry run
             rung = {"hinges": ["elbow"], "amount": AMOUNTS[0]}
             example = repair_steps(c, 1, rung, not a.no_render)[0] if "deform" in stages and not a.no_repair else []
@@ -518,14 +621,21 @@ def main(argv=None, osname=None, env=None) -> int:
         print(json.dumps(out))
         return 0
     c.out.mkdir(parents=True, exist_ok=True)
-    done, rc, repair = [], 0, None
+    done, rc, repair, smart_rc = [], 0, None, 0    # smart's exit is kept apart: it never stops a later stage
     try:
         if "prep" in stages and c.glb and c.glb != c.f["glb"]:
             shutil.copyfile(c.glb, c.f["glb"])
+        if a.no_smart:
+            c.smart = "skipped"
         for s in stages:
             for st in plan(c, s, a):
+                if st.get("after_probe") and c.smart == "skipped":
+                    continue
                 code, rep, sec = run_step(st, c.env)
                 done.append(done_entry(st, code, rep, sec))
+                if s == "smart":
+                    smart_rc = max(smart_rc, smart_outcome(c, st, code, rep, alone=a.stage == "smart"))
+                    continue
                 if s == "deform" and code == 2 and not a.no_repair and rep:
                     repair = ladder(c, a, rep, done)
                     code = 0 if repair["result"] == "passed" else 1 if repair["result"] == "error" else 2
@@ -541,7 +651,16 @@ def main(argv=None, osname=None, env=None) -> int:
     except OSError as exc:   # the Blender or Python executable is missing
         out.update({"steps": done, "ok": False, "exit_code": 1, "error": f"{type(exc).__name__}: {exc}"})
         return _emit(c, a, out, 1)
+    rc = rc if rc == 1 else max(rc, smart_rc)
     out["steps"] = done
+    out["smart"] = {"result": c.smart or "not_run",
+                    "report": str(c.f["smart"]) if c.smart in ("passed", "failed") and c.f["smart"].exists() else None,
+                    "markers_used_it": bool(c.markers_smart)}
+    if c.smart_why:
+        out["smart"]["why"] = c.smart_why
+    if c.smart in ("failed", "skipped") and "markers" in stages and not a.no_smart:
+        out["smart"]["note"] = ("the markers took what passed in the AI's report, slices for the rest"
+                                if c.markers_smart else "the markers came from slices alone")
     if repair is not None:
         out["repair"] = repair
     files = {"blend": c.f["arp_blend"], "fbx": c.f["fbx"], "contract": c.f["contract"], "deform": c.f["deform"]}
@@ -549,6 +668,23 @@ def main(argv=None, osname=None, env=None) -> int:
     out["result"] = {k: str(v) for k, v in files.items() if Path(v).exists()}
     out.update({"exit_code": rc, "ok": rc == 0})
     return _emit(c, a, out, rc)
+
+
+def smart_outcome(c: Ctx, st: dict, code: int, rep: dict | None, alone: bool) -> int:
+    """What a smart step adds to the run's exit code. The probe: ready runs the window, not ready skips it
+    (refused when `smart` runs alone). The window: passed, or failed (exit 2 in `all`, never a stop)."""
+    failed = [g.get("name") for g in (rep or {}).get("gates", []) if gate_failed(g)]
+    if st["name"] == "smart_probe":
+        if code == 0 and (rep or {}).get("ready") is True:
+            c.smart = "ready"
+            return 0
+        c.smart = "skipped"
+        c.smart_why = failed or (rep or {}).get("error") or f"the probe exited {code}"
+        return 1 if alone else (2 if code == 1 else 0)
+    c.smart = "passed" if code == 0 else "failed"
+    if code:
+        c.smart_why = failed or (rep or {}).get("error") or (rep or {}).get("refused") or f"exit {code}, no report"
+    return code if alone else (0 if code == 0 else 2)
 
 
 def _emit(c, a, out, code) -> int:
@@ -660,11 +796,13 @@ def _in_repair(a):
 FAKE = r'''
 import json, os, sys
 argv = sys.argv[1:]
-blender = "-b" in argv
+blender = "-P" in argv
 script = os.path.basename(argv[argv.index("-P") + 1] if blender else argv[0])
 args = argv[argv.index("--") + 1:] if blender and "--" in argv else argv[1:]
 if script == "autorig.py":
     script = "inside_" + args[1]
+if script == "arp_smart.py" and "--probe" in args:
+    script = "arp_smart_probe"
 codes = json.loads(os.environ.get("FAKE_CODES", "{}"))
 def opt(k):
     return args[args.index(k) + 1] if k in args else None
@@ -687,6 +825,21 @@ elif script == "inside_arp":
     fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
 elif script == "inside_repair":
     touch(opt("--fbx")); touch(opt("--save"))
+elif script in ("arp_smart_probe", "arp_smart.py"):
+    mode = os.environ.get("FAKE_SMART", "pass")
+    if script == "arp_smart_probe":
+        ready = mode != "noai"
+        rep = {"schema": "gate/1", "ready": ready, "pass": ready, "ok": ready,
+               "gates": [{"name": "smart.ai_files", "pass": ready}]}
+        code = 0 if ready else 2
+    else:
+        code = {"pass": 0, "fail": 2, "error": 1}[mode]
+        rep = {"schema": "autorig-smart/1", "pass": code == 0, "ok": code == 0, "exit_code": code,
+               "gates": [{"name": "smart.fingers", "pass": code == 0}]}
+    if mode != "error" or script == "arp_smart_probe":
+        touch(opt("--out"), json.dumps(rep))
+        print("AUTORIG_JSON " + json.dumps(rep))
+    sys.exit(code)
 elif script == "deform_gate.py":
     fbx = opt("--fbx")
     att = os.path.basename(os.path.dirname(fbx)) if "repair" in fbx else "a0"
@@ -742,19 +895,34 @@ def selftest() -> int:
             out = td / f"dry_{osname}"
             code, r, _ = go(["all", str(out), str(glb), "--threads", "4", "--dry-run"], osname, {"BLENDER": bl})
             steps = {s["name"]: s["cmd"] for s in r.get("steps", [])}
-            check(f"{osname}: all dry run plans six steps in order, exit 0", code == 0 and list(steps) == list(STAGES),
+            order = ["prep", "check", "smart_probe", "smart", "markers", "arp", "contract", "deform"]
+            check(f"{osname}: all dry run plans eight steps in stage order, exit 0", code == 0 and list(steps) == order
+                  and STAGES == ("prep", "check", "smart", "markers", "arp", "contract", "deform"),
                   code=code, err=r.get("error"))
             check(f"{osname}: the name is the GLB stem made safe", r.get("name") == "Runner_Courier")
-            bls = [steps[k] for k in ("prep", "markers", "arp", "deform")] + [s["cmd"] for s in r["repair_example"]]
-            check(f"{osname}: every Blender step is [$BLENDER, -b, ...] with -t 4, no shell, no inline Python",
+            bls = [steps[k] for k in ("prep", "smart_probe", "markers", "arp", "deform")] + \
+                [s["cmd"] for s in r["repair_example"]]
+            sm = steps["smart"]
+            check(f"{osname}: every Blender step is [$BLENDER, -b, ...] with -t 4, no shell, no inline Python; "
+                  "smart alone has a window (no -b)",
                   all(c_[:2] == [bl, "-b"] and c_[c_.index("-t") + 1] == "4" for c_ in bls)
-                  and not any("--python-expr" in c_ for c_ in bls))
-            fac = {k: "--factory-startup" in steps[k] for k in ("prep", "markers", "arp", "deform")}
+                  and sm[0] == bl and "-b" not in sm and sm[sm.index("-t") + 1] == "4"
+                  and sm[sm.index("--python-exit-code") + 1] == "1" and "--python-exit-code" not in steps["markers"]
+                  and not any("--python-expr" in c_ for c_ in bls + [sm]))
+            fac = {k: "--factory-startup" in steps[k] for k in ("prep", "smart_probe", "smart", "markers", "arp",
+                                                                "deform")}
             fac.update({s["name"]: "--factory-startup" in s["cmd"] for s in r["repair_example"]})
-            check(f"{osname}: --factory-startup on prep, markers, deform; not on arp or repair (the add-on)",
-                  fac == {"prep": True, "markers": True, "arp": False, "deform": True, "repair_a1": False,
-                          "deform_a1": True}, fac=fac)
+            check(f"{osname}: --factory-startup on prep, markers, deform; not on smart, its probe, arp or repair "
+                  "(the add-on)",
+                  fac == {"prep": True, "smart_probe": False, "smart": False, "markers": True, "arp": False,
+                          "deform": True, "repair_a1": False, "deform_a1": True}, fac=fac)
             o = str(out)
+            check(f"{osname}: smart opens NAME.blend, writes rig/NAME.smart.json, no face, 5 fingers; the markers "
+                  "get --smart; the probe opens no file",
+                  sm[sm.index("-P") - 1] == str(Path(o) / "Runner_Courier.blend") and "--no-facial" in sm
+                  and sm[sm.index("--fingers") + 1] == "5" and sm[sm.index("--out") + 1].endswith("Runner_Courier.smart.json")
+                  and steps["markers"][steps["markers"].index("--smart") + 1] == sm[sm.index("--out") + 1]
+                  and "--probe" in steps["smart_probe"] and steps["smart_probe"][steps["smart_probe"].index("-P") - 1] == "4")
             check(f"{osname}: prep and arp run this file inside Blender; arp opens NAME.blend",
                   script_of(steps["prep"]) == "autorig.py" and steps["prep"][steps["prep"].index("--") + 1:][:2]
                   == ["_inside", "prep"] and steps["arp"][steps["arp"].index("-P") - 1] == str(Path(o) / "Runner_Courier.blend"))
@@ -773,6 +941,15 @@ def selftest() -> int:
             check(f"{osname}: --no-render drops the marker pictures and the pose renders, no -t unless given",
                   "--preview-dir" not in s2["markers"] and "--render" not in s2["deform"]
                   and "--render" not in r2["repair_example"][1]["cmd"] and "-t" not in s2["prep"])
+            code, r3, _ = go(["all", str(out), str(glb), "--no-smart", "--facial", "--fingers", "4", "--dry-run"],
+                             osname, {"BLENDER": bl})
+            s3 = {s["name"]: s["cmd"] for s in r3.get("steps", [])}
+            check(f"{osname}: --no-smart plans no smart step and no --smart", code == 0 and "smart" not in s3
+                  and "smart_probe" not in s3 and "--smart" not in s3["markers"], steps=list(s3))
+            _, r4, _ = go(["smart", str(out), "--name", "R", "--facial", "--fingers", "4", "--dry-run"], osname, {"BLENDER": bl})
+            s4 = r4["steps"][-1]["cmd"]
+            check(f"{osname}: smart alone passes --facial and --fingers 4 down",
+                  "--facial" in s4 and s4[s4.index("--fingers") + 1] == "4" and "--no-facial" not in s4)
         # a mitten: the markers say fingers.mode fixed
         mo = td / "mitten"
         (mo / "rig").mkdir(parents=True)
@@ -872,7 +1049,7 @@ def selftest() -> int:
             trace.write_text("")
             env = {**os.environ, "FAKE_TRACE": str(trace), "FAKE_CODES": json.dumps(codes or {}),
                    **{k: (v if isinstance(v, str) else json.dumps(v)) for k, v in extra.items()}}
-            OVERRIDE.update(blender=fake + ["-b"], python=fake)
+            OVERRIDE.update(blender=fake, python=fake)
             try:
                 code, r, err = go(argv, None, env)
             finally:
@@ -880,13 +1057,14 @@ def selftest() -> int:
             ran = [json.loads(x)["script"] for x in trace.read_text().splitlines() if x.strip()]
             return code, r, err, ran
 
-        chain = ["inside_prep", "mesh_check.py", "arp_markers.py", "inside_arp", "contract_map.py", "deform_gate.py"]
+        chain = ["inside_prep", "mesh_check.py", "arp_smart_probe", "arp_smart.py", "arp_markers.py", "inside_arp",
+                 "contract_map.py", "deform_gate.py"]
         run_dir = td / "run"
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"],
                                  FAKE_DEFORM={"a1": ["LowerArm.R", 0.3492, 0.05]})
         rs = {s_["name"]: s_ for s_ in r.get("steps", [])}
         att = (r.get("repair") or {}).get("attempts") or []
-        check("all: six stages, the elbow fails, attempt 1 repairs and passes, exit 0",
+        check("all: seven stages, the elbow fails, attempt 1 repairs and passes, exit 0",
               code == 0 and ran == chain + ["inside_repair", "deform_gate.py"] and r.get("repair", {}).get("result")
               == "passed" and len(att) == 1, code=code, ran=ran, err=r.get("error"))
         check("all: every step timed, the deform step names its failed gate, the summary written, children's noise "
@@ -918,9 +1096,83 @@ def selftest() -> int:
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"mesh_check.py": 2})
         check("all: a mesh check failure stops before the rig, exit 2", code == 2 and ran == chain[:2])
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"inside_arp": 1})
-        check("all: an Auto-Rig Pro error stops, exit 1", code == 1 and ran == chain[:4])
+        check("all: an Auto-Rig Pro error stops, exit 1", code == 1 and ran == chain[:6])
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"contract_map.py": 2})
-        check("all: a contract gate failure still gates the deformation, exit 2", code == 2 and ran[:6] == chain)
+        check("all: a contract gate failure still gates the deformation, exit 2", code == 2 and ran[:8] == chain)
+        # the smart stage: passed, failed, an error, no AI, turned off
+        clean = {"a0": ["LowerArm.R", 0.2, 0.04]}
+        trace_argv = lambda name: next((json.loads(x)["argv"] for x in trace.read_text().splitlines()
+                                        if x.strip() and json.loads(x)["script"] == name), [])
+        smart_json = str(run_dir / "rig" / "Runner.smart.json")
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--facial", "--fingers", "4"],
+                                 FAKE_DEFORM=clean, FAKE_SMART="pass")
+        sa, ma, pa = trace_argv("arp_smart.py"), trace_argv("arp_markers.py"), trace_argv("arp_smart_probe")
+        check("smart passed: the probe headless, the AI in a window without --factory-startup, the markers get "
+              "--smart rig/NAME.smart.json, exit 0",
+              code == 0 and ran == chain and "-b" in pa and "-b" not in sa and "--factory-startup" not in sa
+              and "--facial" in sa and sa[sa.index("--fingers") + 1] == "4"
+              and ma[ma.index("--smart") + 1] == smart_json and r["smart"]["result"] == "passed"
+              and r["smart"]["markers_used_it"], code=code, ran=ran, smart=r.get("smart"))
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
+                                 FAKE_SMART="fail")
+        ma = trace_argv("arp_markers.py")
+        check("smart failed a gate: all goes on to the end, the markers still get its report (they take what "
+              "passed), the summary names the failed gate, exit 2",
+              code == 2 and ran == chain and ma[ma.index("--smart") + 1] == smart_json
+              and r["smart"]["result"] == "failed" and r["smart"]["why"] == ["smart.fingers"]
+              and r["smart"]["note"].startswith("the markers took what passed"), code=code, ran=ran, smart=r.get("smart"))
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
+                                 FAKE_SMART="error")
+        check("smart wrote no report (an error): all goes on to the end, the markers without --smart, exit 2",
+              code == 2 and ran == chain and "--smart" not in trace_argv("arp_markers.py")
+              and r["smart"]["result"] == "failed" and r["smart"]["note"].startswith("the markers came from slices"),
+              code=code, ran=ran, smart=r.get("smart"))
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
+                                 FAKE_SMART="noai")
+        check("no add-on or AI files: the probe says so, no window opens, the markers without --smart, exit 0",
+              code == 0 and ran == [x for x in chain if x != "arp_smart.py"] and "--smart" not in trace_argv("arp_markers.py")
+              and r["smart"]["result"] == "skipped", code=code, ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"], FAKE_DEFORM=clean)
+        check("--no-smart: neither the probe nor the window, exit 0",
+              code == 0 and ran == [x for x in chain if not x.startswith("arp_smart")], ran=ran)
+        code, r, err, ran = real(["smart", str(run_dir), "--name", "Runner"], FAKE_SMART="noai")
+        check("smart on its own without the AI: refused, exit 1, the probe's failed gate named",
+              code == 1 and ran == ["arp_smart_probe"] and r["smart"]["why"] == ["smart.ai_files"], smart=r.get("smart"))
+        code, r, err, ran = real(["smart", str(run_dir), "--name", "Runner"], FAKE_SMART="fail")
+        check("smart on its own, a gate failed: exit 2", code == 2 and ran == ["arp_smart_probe", "arp_smart.py"])
+        code, r, err, ran = real(["smart", str(run_dir), "--name", "Runner"], FAKE_SMART="pass")
+        code, r, err, ran = real(["markers", str(run_dir), "--name", "Runner"])
+        check("markers on its own takes an earlier smart.json",
+              smart_json in trace_argv("arp_markers.py"))
+        code, r, err, ran = real(["markers", str(run_dir), "--name", "Runner", "--no-smart"])
+        check("markers --no-smart leaves it out", "--smart" not in trace_argv("arp_markers.py"))
+        # fingers the AI placed count as found; jaw_open only when deform_gate knows it
+        ai = td / "ai"
+        (ai / "rig").mkdir(parents=True)
+        (ai / "export").mkdir()
+        (ai / "Runner.glb").write_text("x")
+        for p_ in ("export/Runner.fbx", "export/Runner.skeleton.json"):
+            (ai / p_).write_text("{}")
+        (ai / "rig" / "Runner.markers.json").write_text(json.dumps({"fingers": {"mode": "ai"}, "facial": True}))
+        (ai / "rig" / "Runner.contract.json").write_text(json.dumps({"retarget_map": {"Jaw": "jaw.x"}}))
+        _, rc_, _ = go(["contract", str(ai), "--dry-run"], None, {"BLENDER": "B"})
+        _, rd_, _ = go(["deform", str(ai), "--dry-run"], None, {"BLENDER": "B"})
+        cc, dc = rc_["steps"][0]["cmd"], rd_["steps"][0]["cmd"]
+        known = deform_pose_names()
+        check("fingers.mode ai with a face and a mapped Jaw: contract with --min-fingers 30, deform "
+              "--poses all,jaw_open (deform_gate's NAMED_ONLY read from its source)",
+              "--min-fingers" in cc and "jaw_open" in known and dc[dc.index("--poses") + 1] == "all,jaw_open",
+              known=known, dc=dc)
+        (ai / "rig" / "Runner.contract.json").write_text(json.dumps({"retarget_map": {"Head": "head.x"}}))
+        _, rd_, _ = go(["deform", str(ai), "--dry-run"], None, {"BLENDER": "B"})
+        check("a face but no Jaw in the contract: no jaw_open", "--poses" not in rd_["steps"][0]["cmd"])
+        check("deform poses: all by default; a mitten drops fist; a face adds jaw_open only when known",
+              deform_poses(DEFORM_POSES, False, False) is None and deform_poses(DEFORM_POSES, True, False) == NO_FIST
+              and deform_poses(DEFORM_POSES, False, True) is None
+              and deform_poses(DEFORM_POSES + ("jaw_open",), True, True) == NO_FIST + ",jaw_open"
+              and deform_poses(DEFORM_POSES + ("jaw_open",), False, True) == "all,jaw_open"
+              and deform_poses(DEFORM_POSES + ("jaw_open",), False, False) is None
+              and set(DEFORM_POSES) <= set(known))
         code, r, err, ran = real(["markers", str(run_dir), "--name", "Runner"], FAKE_NO_OUT="arp_markers.py")
         check("a step that writes no report is an error, exit 1", code == 1)
         code, r, err, ran = real(["prep", str(run_dir), str(glb), "--name", "Runner"], FAKE_SILENT="inside_prep")

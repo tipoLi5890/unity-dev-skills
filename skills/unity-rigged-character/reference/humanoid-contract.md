@@ -101,6 +101,9 @@ the master trajectory is exported). Both columns follow the add-on's rename code
   only. `brt_arp`'s `pipeline` op takes the count from the markers file, 4 by default.
 - Twist bones (`thigh_twist.l`, `arm_twist.l`) sit inside the chains; the chain check walks past
   them, and they are reported as extra.
+- A rig with a face exports `c_jawbone.x` under `head.x`; `arp` maps it to `Jaw`, an extra role
+  outside the contract: it reaches `retarget_map`, `extra_roles` and Unity's optional `Jaw`, never
+  the contract tier or the bone count. Without a face nothing changes.
 
 **A purchased clip pack, or any skeleton without a preset.** Many packs share `arp-ue`'s mannequin
 names; try `--map auto` first. Otherwise build the map once per skeleton (per level of detail, for

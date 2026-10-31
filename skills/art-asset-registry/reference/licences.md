@@ -66,7 +66,7 @@ run `check`, and put the line back.
 | `minimax-h3-local` | MiniMax H3 video generated on local open weights under the H3 community licence | `{"excludes": ["US", "EU", "UK", "KR"]}` |
 | `fal-h3` | H3 or H3 Max run on fal, under fal's terms | `"worldwide"` |
 | `phone-footage` | footage the team shot itself, of performers who agreed to it | `"worldwide"` |
-| `auto-rig-pro` | a rig or weights made with Auto-Rig Pro | `"worldwide"` |
+| `auto-rig-pro` | a rig or weights made with Auto-Rig Pro (a paid add-on by Artell, on the user's own licence; its optional AI files are licensed per device and never redistributed: not in a project, a repository, CI or another machine). The rig is the user's | `"worldwide"` |
 | `hy-motion` | HY-Motion text-to-motion | `{"excludes": ["EU", "UK", "KR"]}` |
 | `qwen-image-edit-2511` | a texture repainted by `mesh-texture-paint` with Qwen-Image-Edit-2511 and its Lightning LoRA on local weights, both Apache-2.0 | `"worldwide"` |
 

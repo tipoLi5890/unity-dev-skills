@@ -47,6 +47,10 @@ Gates (each failing one makes exit 2):
   sides        (heads present) every .L bone lies at larger x than its .R twin
   axes         (heads present) Head above Hips above the feet; toes in front of the foot (-Y)
 
+Jaw is an extra role outside the contract: mapped when the skeleton has it (the arp preset's
+c_jawbone.x), it joins retarget_map, `extra_roles` and `human` (Unity's optional Jaw) but never the
+contract gate, `mapped`, `contract_bones` or `missing_optional`.
+
 The report carries `retarget_map` {contract_bone: source_bone}, the orientation brt_retarget's
 `map` takes (target: source), and `human` [{humanName, boneName}] for Unity's HumanDescription
 (also written by --unity-out, the file CharacterHumanoidAvatar.cs reads).
@@ -119,7 +123,12 @@ def contract_bones() -> list[dict]:
 
 
 CONTRACT = contract_bones()
-BY_NAME = {b["name"]: b for b in CONTRACT}
+# roles mapped when the skeleton has them, outside the contract: never required, not in the contract
+# gate, the bone count or missing_optional; they reach retarget_map and Unity's human map
+EXTRA = [dict(name="Jaw", parent="Head", unity="Jaw", required=False, finger=False)]
+EXTRA_NAMES = {b["name"] for b in EXTRA}
+BY_NAME = {b["name"]: b for b in CONTRACT + EXTRA}
+ORDER = [b["name"] for b in CONTRACT + EXTRA]
 REQUIRED = [b["name"] for b in CONTRACT if b["required"]]
 FINGER_BONES = [b["name"] for b in CONTRACT if b["finger"]]
 
@@ -217,7 +226,7 @@ def builtin_maps() -> dict:
     arp_limbs.update(_fingers({f: "c_" + ("pinky" if f == "Little" else f.lower()) for f in FINGERS}))
     bones = {"Root": ["c_traj", "root"], "Hips": ["root.x"], "Spine": ["spine_01.x"],
              "Chest": ["spine_02.x"], "UpperChest": ["spine_03.x"], "Neck": ["neck.x", "neck_01.x"],
-             "Head": ["head.x"]}
+             "Head": ["head.x"], "Jaw": ["c_jawbone.x", "jawbone.x"]}
     bones.update(_sided(arp_limbs, "l", "r", lambda s, w: f"{s}.{w}"))
     maps["arp"] = {"name": "arp", "bones": bones}
 
@@ -557,11 +566,12 @@ def evaluate(skel: dict, spec: str = "auto", require: str = "unity", min_fingers
     extra = [n for n in names if n not in rev]
     extra_bones = [n for n in extra if not end_like.search(n)]
     human = [{"humanName": BY_NAME[c]["unity"], "boneName": s} for c, s in
-             sorted(mapped.items(), key=lambda kv: [b["name"] for b in CONTRACT].index(kv[0]))
+             sorted(mapped.items(), key=lambda kv: ORDER.index(kv[0]))
              if BY_NAME[c]["unity"]]
     ok = all(g["pass"] is True for g in gates)
     return {"schema": "gate/1", "op": "map", "pass": ok, "ok": ok, "preset": role_map["name"], "require": require,
-            "mapped": len(mapped), "contract_bones": len(CONTRACT),
+            "mapped": len([c for c in mapped if c not in EXTRA_NAMES]), "contract_bones": len(CONTRACT),
+            "extra_roles": sorted(c for c in mapped if c in EXTRA_NAMES),
             "missing_required": missing_req,
             "missing_optional": [b["name"] for b in CONTRACT if b["name"] not in mapped and not b["required"]],
             "fingers_mapped": len(fingers),
@@ -977,6 +987,25 @@ def selftest() -> int:
     check("names-only skeleton is read", evaluate(normalise_skeleton(
         [{"name": b["name"], "parent": b["parent"]} for b in contract["bones"]]), "contract")["ok"])
     check("all contract names unique", len(cbones) == len(CONTRACT))
+
+    # the Jaw: an extra role, mapped when present, never part of the contract gate or the count
+    ren = {c: v[0] for c, v in BUILTIN["arp"]["bones"].items()}
+    arp = _renamed(contract, ren)
+    head = next(b for b in arp["bones"] if b["name"] == "head.x")
+    jaw = {"name": "c_jawbone.x", "parent": "head.x", "deform": True,
+           "head": [0, -0.02, head["head"][2] + 0.02], "tail": [0, -0.08, head["head"][2]]}
+    with_jaw = {**arp, "bones": arp["bones"] + [jaw]}
+    rj = evaluate(normalise_skeleton(with_jaw), "arp", "contract", 30)
+    r0 = evaluate(normalise_skeleton(arp), "arp", "contract", 30)
+    check("arp: c_jawbone.x maps Jaw, outside the contract count; human gets Jaw; without it nothing changes",
+          rj["ok"] and rj["retarget_map"].get("Jaw") == "c_jawbone.x" and rj["mapped"] == len(CONTRACT)
+          and rj["extra_roles"] == ["Jaw"] and {"humanName": "Jaw", "boneName": "c_jawbone.x"} in rj["human"]
+          and r0["ok"] and "Jaw" not in r0["retarget_map"] and r0["extra_roles"] == []
+          and "Jaw" not in rj["missing_optional"] + r0["missing_optional"],
+          [rj["mapped"], rj.get("extra_roles"), [g for g in rj["gates"] if not g["pass"]]])
+    jaw_bad = dict(jaw, parent="spine_01.x")
+    rb = evaluate(normalise_skeleton({**arp, "bones": arp["bones"] + [jaw_bad]}), "arp", "contract", 30)
+    check("a Jaw under the spine breaks parent_chain", not gate_of(rb, "parent_chain")["pass"])
 
     failed = [c for c in checks if not c["pass"]]
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks),

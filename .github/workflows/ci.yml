@@ -47,6 +47,7 @@ jobs:
               'blender-retarget/scripts/motion_metrics.py': ['numpy'],
               'blender-retarget/scripts/clip_metrics.py': ['numpy'],
               'character-autorig/scripts/arp_markers.py': ['numpy'],
+              'character-autorig/scripts/arp_smart.py': [],
               'character-autorig/scripts/autorig.py': [],
               'character-autorig/scripts/deform_gate.py': ['numpy'],
               'character-autorig/scripts/mesh_check.py': ['numpy'],

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """arp_markers.py — joint markers for Auto-Rig Pro (and the contract skeleton) measured from the mesh.
 
-No Smart detection, no AI files, no open 3D view: the mesh is cut into horizontal slices (the
-cross sections of mesh_check.py) and every marker is read from them, or placed by a stated body
-proportion where the mesh shows no feature. Two front/side pictures with the markers drawn on the
-body go to a person before any rig is built.
+No open 3D view: the mesh is cut into horizontal slices (the cross sections of mesh_check.py) and
+every marker is read from them, or placed by a stated body proportion where the mesh shows no
+feature. `--smart` adds Auto-Rig Pro's own AI result (arp_smart.py, autorig-smart/1) on top: it
+checks the body, gives the fingers the slices could not part, and gives the face. Two front/side
+pictures with the markers drawn on the body go to a person before any rig is built.
 
 usage (in Blender, headless):
     blender -b scene.blend -P arp_markers.py -- --mesh Runner --out markers.json --preview-dir previews/
@@ -13,6 +14,7 @@ usage (host Python, numpy only; no pictures):
     python3 arp_markers.py runner.glb [--up y|z] --out markers.json
 options: [--spine-bones 3] [--fingers auto|fixed] [--adjust ADJUST.json] [--arm-angle 30,60]
          [--arm-ratios 0.42,0.75] [--no-window-gate] [--symmetry-max 0.02] [--mitten]
+         [--smart NAME.smart.json] [--smart-tol 0.03]
 self-tests:
     python3 arp_markers.py --selftest                       (tube body, numpy only)
     blender -b --factory-startup -P arp_markers.py -- --selftest   (metaball runner, pictures)
@@ -49,8 +51,41 @@ Both sides are measured apart, compared (asymmetry), and averaged into one mirro
 An adjusted side marker (a .L or .R name) leaves the symmetry gate: a person placed it and its
 mirror, so its measured difference is reported in asymmetry_accepted instead of gated.
 
+`--smart FILE` (an autorig-smart/1 result in the same frame; a file whose body markers sit over
+0.10 H from the slice markers on median is another mesh or frame: nothing is taken from it, smart.rejected
+is true and a note says why, and the markers are the slices' alone):
+  body        stays measured. Each AI body marker is paired with its slice landmark (root pelvis,
+              thigh hip, knee knee, foot ankle, shoulder shoulder, elbow elbow, hand wrist, hand_tip
+              hand_tip, neck neck_base, chin chin, head_tip head_top) in smart_agreement: distance
+              and height difference as fractions of H, `agrees` within --smart-tol (0.03 H). A
+              near miss, a landmark outside its window by at most --smart-tol x H whose AI twin
+              lies inside that window (the same H and ground), passes markers.windows, the gate
+              then carrying confirmed_by "auto-rig-pro-ai", the AI heights in `ai` and
+              `outside_by`; the measured heights stay its value. One further out fails whatever
+              the AI says. The two methods put a joint at different depths (the AI shoulder on the
+              deltoid, the slice one at the armpit), so the window, not their distance, is checked.
+  fingers     when the slices give `fixed` and the AI found fingers (smart.fingers and smart.go
+              passed): Go!'s hand_ref, thumb1-3_ref, <f>1_base_ref and <f>1-3_ref (.l, mirrored by
+              the pipeline) replace those in arp_refs; the wrist and every finger joint landmark
+              follow (method "ai"), so contract_bones and hand_frames do too. A finger the AI did
+              not fit (the add-on's four-finger hand has no index) keeps the fixed shape.
+              fingers {mode "ai", count, names, slices {mode, reason}}. An adjusted wrist or finger
+              joint keeps the person's position.
+  face        when smart.facial and smart.go passed: every facial and ear reference goes into
+              arp_refs, .r included (Go! projects each side of the face on its own, so its two
+              sides differ by up to a few centimetres), and `facial` is true; the pipeline turns
+              the face (and the ears) on before placing them.
+  ref_rolls   {ref bone: roll} for every reference taken from Go!: radians, Blender's edit-bone
+              roll in world axes (Go!'s rig has no rotation; a file whose rig_matrix_world rotates
+              is refused). The pipeline writes these as they are (a mirrored .r twin gets the
+              mirrored roll) instead of turning them with the hand.
+A smart file whose run failed (no body markers, smart.go failed) is reported in `smart` and the
+slice markers carry on alone; a malformed one (not autorig-smart/1, a coordinate that is not
+three numbers) is refused (exit 1).
+
 Output (schema "autorig-markers/1"): landmarks {name: [x, y, z]} (.L/.R), methods, height,
 ground_z, arm_angle_deg, asymmetry_m, asymmetry_accepted, fingers {mode, reason?}, hand_frames {.L: {x, y, z}},
+facial (bool), ref_rolls {ref bone: roll}, with --smart also smart {file, used, notes} and smart_agreement,
 arp_refs {ref bone: {head, tail}} for the .x and .l bones of Auto-Rig Pro's human preset (the
 blender-retarget brt_arp `pipeline` op mirrors .l to .r), arp_spine_count (spine bones + 1, the
 add-on counts its root), contract_bones (a blender-character-rig bcr_armature spec with contract
@@ -68,7 +103,8 @@ Gates (each failing one makes exit 2):
   markers.windows     each height inside its window: ankle 0.02-0.13, knee 0.22-0.36, hip
                       0.42-0.60, shoulder 0.72-0.88, neck 0.78-0.93. Outside means proportions
                       this route was not made for (a chibi, a giant head): take the hand-built
-                      route. --no-window-gate reports without gating.
+                      route. --no-window-gate reports without gating. With --smart, a landmark
+                      out by at most --smart-tol whose AI twin is inside passes (confirmed_by).
   markers.symmetry    largest left/right difference of a marker <= --symmetry-max (0.02) x H,
                       over the markers not adjusted (see --adjust).
   markers.arm_angle   the upper arm (shoulder -> elbow) below horizontal, inside --arm-angle
@@ -303,7 +339,10 @@ def hand_frame(V, wrist, tip, s):
     if sel.sum() >= 12:
         q = perp[sel] - perp[sel].mean(0)
         _, _, vt = np.linalg.svd(q, full_matrices=True)
-        z = _unit(vt[2] - (vt[2] @ x) * x)
+        # q has nothing along x, so the least singular vector is x itself: the palm normal is the
+        # thinner of the two axes across the hand
+        across = [vt[i] - (vt[i] @ x) * x for i in (2, 1, 0)]
+        z = _unit(next(c for c in across if np.linalg.norm(c) > 0.5))
     else:
         z = _unit(np.array([0, 0, 1.0]) - x[2] * x)
     if z @ np.array([0.5 * s, 0, 1.0]) < 0:
@@ -585,9 +624,174 @@ def gate(name, value, limit, ok):
     return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
 
 
+# ------------------------------------------------------------------------------ Auto-Rig Pro's AI (--smart)
+
+SMART_SCHEMA = "autorig-smart/1"
+CONFIRMED_BY = "auto-rig-pro-ai"
+# AI body marker -> the slice landmark it is compared with
+SMART_PAIRS = {"root": "pelvis", "neck": "neck_base", "chin": "chin", "head_tip": "head_top",
+               **{f"{a}.{s}": f"{b}.{s}" for s in ("L", "R") for a, b in
+                  (("thigh", "hip"), ("knee", "knee"), ("foot", "ankle"), ("shoulder", "shoulder"),
+                   ("elbow", "elbow"), ("hand", "wrist"), ("hand_tip", "hand_tip"))}}
+# window landmark -> the AI marker held to the same window
+SMART_WINDOW = {"ankle": "foot.L", "knee": "knee.L", "hip": "thigh.L", "shoulder": "shoulder.L", "neck": "neck"}
+SMART_FRAME_MAX = 0.10      # median AI-to-slice distance (x H) beyond which the file is another mesh or frame
+ARP_FINGERS = ("thumb", "index", "middle", "ring", "pinky")
+CONTRACT_FINGER = dict(zip(ARP_FINGERS, FINGERS))
+_BODY_REF = ("root", "spine", "neck", "head", "shoulder", "arm", "forearm", "hand", "thigh", "leg", "foot", "toes")
+
+
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _xyz(v, where: str) -> np.ndarray:
+    if not (isinstance(v, (list, tuple)) and len(v) == 3 and all(_number(c) for c in v)):
+        raise Refused(f"smart file: {where} is not three numbers")
+    return np.array(v, dtype=float)
+
+
+def _ref_group(name: str) -> str:
+    if name.startswith(ARP_FINGERS):
+        return "finger"
+    if name.startswith("ear_"):
+        return "ear"
+    return "body" if name.split("_ref")[0].rstrip("0123456789_").startswith(_BODY_REF) else "facial"
+
+
+def read_smart(path) -> dict:
+    """An autorig-smart/1 file, checked: body markers and refs as arrays, the gates as {name: passed}."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise Refused(f"smart file unreadable: {exc}") from exc
+    schema = data.get("schema") if isinstance(data, dict) else type(data).__name__
+    if schema != SMART_SCHEMA:
+        raise Refused(f"smart file: schema {schema!r}, not {SMART_SCHEMA}")
+    body, refs, fingers = (data.get(k) or {} for k in ("body_markers", "refs", "fingers"))
+    if not all(isinstance(x, dict) for x in (body, refs, fingers)):
+        raise Refused("smart file: body_markers, refs and fingers must be objects")
+    out_refs = {}
+    for name, r in refs.items():
+        if not isinstance(r, dict) or not _number(r.get("roll")):
+            raise Refused(f"smart file: refs.{name} needs head, tail and a numeric roll")
+        out_refs[name] = {"head": _xyz(r.get("head"), f"refs.{name}.head"),
+                          "tail": _xyz(r.get("tail"), f"refs.{name}.tail"), "roll": float(r["roll"]),
+                          "group": r.get("group") if r.get("group") in ("body", "finger", "facial", "ear")
+                          else _ref_group(name)}
+    if out_refs:
+        mw = data.get("rig_matrix_world")
+        if not (isinstance(mw, list) and len(mw) == 4 and all(isinstance(row, list) and len(row) == 4 and
+                                                              all(_number(c) for c in row) for row in mw)):
+            raise Refused("smart file: refs without a 4x4 rig_matrix_world to check their rolls against")
+        m3 = np.array(mw, dtype=float)[:3, :3]
+        scale = np.linalg.norm(m3, axis=0)
+        if scale.min() < 1e-9 or not np.allclose(m3 / scale, np.eye(3), atol=1e-4):
+            raise Refused("smart file: Go!'s rig object is rotated, so its rolls are not in world axes")
+    gates = {g.get("name"): g.get("pass") is True for g in data.get("gates") or [] if isinstance(g, dict)}
+    count = fingers.get("count")
+    return {"body": {k: _xyz(v, f"body_markers.{k}") for k, v in body.items()}, "refs": out_refs,
+            "gates": gates, "count": int(count) if _number(count) else 0,
+            "names": [n for n in fingers.get("names") or [] if n in ARP_FINGERS], "pass": data.get("pass") is True}
+
+
+def smart_agreement(lm: dict, H: float, z0: float, smart: dict, tol: float) -> dict:
+    """Per slice landmark with an AI twin: distance and height difference in H, both heights."""
+    rows = {}
+    for ai, name in SMART_PAIRS.items():
+        if ai in smart["body"] and name in lm:
+            a, b = smart["body"][ai], np.asarray(lm[name], dtype=float)
+            d = float(np.linalg.norm(a - b)) / H
+            rows[name] = {"ai": ai, "distance_h": round(d, 4), "dz_h": round(float(a[2] - b[2]) / H, 4),
+                          "ai_h": round(float(a[2] - z0) / H, 4), "slice_h": round(float(b[2] - z0) / H, 4),
+                          "agrees": d <= tol}
+    return rows
+
+
+def _merge_fingers(V, m: dict, smart: dict, adjusted: set) -> tuple[dict, str | None]:
+    """Go!'s hand and finger references onto the landmarks; {ref: smart ref} taken, or a reason."""
+    refs, lm, how = smart["refs"], m["landmarks"], m["methods"]
+    present = [f for f in ARP_FINGERS if all(f"{f}{j}_ref.l" in refs for j in (1, 2, 3))
+               and (f == "thumb" or f"{f}1_base_ref.l" in refs)]
+    if "thumb" not in present or "hand_ref.l" not in refs:
+        return {}, "Go! placed no thumb or hand reference"
+    take = {}
+    if not {"wrist.L", "wrist.R"} & adjusted:
+        w = refs["hand_ref.l"]["head"]
+        lm["wrist.L"], lm["wrist.R"] = w.copy(), mirror(w)
+        how["wrist.L"] = how["wrist.R"] = "ai"
+        take["hand_ref.l"] = refs["hand_ref.l"]
+    for s, side in ((1, ".L"), (-1, ".R")):
+        m["frames"][side] = hand_frame(V, lm["wrist" + side], lm["hand_tip" + side], s)
+    for s, side in ((1, ".L"), (-1, ".R")):     # the fingers the AI does not give: the fixed shape again
+        for f, pts in fixed_hand(lm["wrist" + side], m["frames"][side]).items():
+            if f.lower() in (CONTRACT_FINGER[a].lower() for a in present):
+                continue
+            for j, p in enumerate(pts):
+                if f"{f.lower()}{j}{side}" not in adjusted:
+                    lm[f"{f.lower()}{j}{side}"] = p
+    for a in present:
+        low = CONTRACT_FINGER[a].lower()
+        if any(f"{low}{j}{side}" in adjusted for j in range(4) for side in (".L", ".R")):
+            continue
+        r1, r2, r3 = (refs[f"{a}{j}_ref.l"] for j in (1, 2, 3))
+        for j, p in enumerate((r1["head"], r1["tail"], r2["tail"], r3["tail"])):
+            lm[f"{low}{j}.L"], lm[f"{low}{j}.R"] = p.copy(), mirror(p)
+            how[f"{low}{j}.L"] = how[f"{low}{j}.R"] = "ai"
+        for j in (1, 2, 3):
+            take[f"{a}{j}_ref.l"] = refs[f"{a}{j}_ref.l"]
+        if a != "thumb":
+            take[f"{a}1_base_ref.l"] = refs[f"{a}1_base_ref.l"]
+    return take, None
+
+
+def merge_smart(V, m: dict, smart: dict, opts: dict, adjusted: set) -> tuple[dict, dict]:
+    """(the Go! references taken {name: ref}, the `smart` record). Body markers are only compared."""
+    H, z0, g = m["height"], m["ground_z"], smart["gates"]
+    rows = smart_agreement(m["landmarks"], H, z0, smart, opts.get("smart_tol", 0.03))
+    record = {"file": str(opts.get("smart_file")), "pass": smart["pass"], "gates": g, "agreement": rows,
+              "used": {"window": False, "fingers": False, "facial": False}, "notes": []}
+    median = float(np.median([r["distance_h"] for r in rows.values()])) if rows else 0.0
+    if median > SMART_FRAME_MAX:          # another mesh or frame: nothing taken, the slices alone
+        record["rejected"] = True
+        record["notes"].append(f"its body markers sit {median:.3f} H from the slice markers on median (over "
+                               f"{SMART_FRAME_MAX} H): another mesh, or another frame; nothing taken")
+        return {}, record
+    take = {}
+    go = g.get("smart.go") is True and bool(smart["refs"])
+    if not rows:
+        record["notes"].append("no AI body markers: the window gate is the slices' alone")
+    if not go:
+        record["notes"].append("smart.go did not pass: no references taken from Go!")
+    elif m["fingers"]["mode"] != "fixed":
+        record["notes"].append(f"the slices found the fingers ({m['fingers']['mode']}): kept")
+    elif g.get("smart.fingers") is not True or smart["count"] < 1:
+        record["notes"].append("smart.fingers did not pass: the fixed hand stays")
+    else:
+        got, why = _merge_fingers(V, m, smart, adjusted)
+        if why:
+            record["notes"].append(why + ": the fixed hand stays")
+        else:
+            take.update(got)
+            names = [a for a in ARP_FINGERS if f"{a}1_ref.l" in got]
+            m["fingers"] = {"mode": "ai", "count": smart["count"], "names": names, "slices": m["fingers"]}
+            record["used"]["fingers"] = True
+            if len(names) < len(FINGERS):
+                record["notes"].append(f"the AI fitted {names}: the other fingers keep the fixed shape")
+    if go and g.get("smart.facial") is True:
+        face = {n: r for n, r in smart["refs"].items() if r["group"] in ("facial", "ear")}
+        if face:
+            take.update(face)
+            record["used"]["facial"] = True
+    elif go and "smart.facial" in g:
+        record["notes"].append("smart.facial did not pass: no face")
+    return take, record
+
+
 def build_report(V, F, opts) -> dict:
     m = measure(V, F, opts)
     lm, H, z0 = m["landmarks"], m["height"], m["ground_z"]
+    smart = opts.get("smart")
     for name, xyz in (opts.get("adjust") or {}).items():
         if name not in lm:
             raise Refused(f"--adjust names {name!r}, which is not a marker")
@@ -598,29 +802,49 @@ def build_report(V, F, opts) -> dict:
             if twin not in (opts.get("adjust") or {}):
                 lm[twin] = mirror(lm[name])
                 m["methods"][twin] = "adjusted"
+    taken, record = ({}, None) if smart is None else \
+        merge_smart(V, m, smart, opts, {n for n in (opts.get("adjust") or {})})
     upper = lm["elbow.L"] - lm["shoulder.L"]
     arm_angle = math.degrees(math.atan2(-upper[2], math.hypot(upper[0], upper[1])))
     samples, _ = M.surface_samples(V, F, 20000)
     refs = arp_refs(m, opts["spine_bones"])
+    for name, ref in taken.items():
+        refs[name] = {"head": ref["head"], "tail": ref["tail"]}
+    rolls = {name: round(float(ref["roll"]), 5) for name, ref in sorted(taken.items())}
     spec = contract_bones(m, opts["spine_bones"], samples, mitten=opts.get("mitten", False))
-    out_window = {}
+    out_window, ai_window, outside_by = {}, {}, {}
     for name, (lo, hi) in WINDOWS.items():
         h = (float(lm[name + ".L"][2] if name + ".L" in lm else lm[name][2]) - z0) / H
         if not lo <= h <= hi:
             out_window[name] = round(h, 3)
+            outside_by[name] = round(max(lo - h, h - hi), 4)
+            twin = smart["body"].get(SMART_WINDOW[name]) if smart and not record.get("rejected") else None
+            if twin is not None:
+                ai_window[name] = round(float(twin[2] - z0) / H, 3)
+    # the AI confirms a near miss only: each landmark out by at most --smart-tol, its AI twin inside
+    near = opts.get("smart_tol", 0.03)
+    confirmed = bool(out_window) and all(n in ai_window and WINDOWS[n][0] <= ai_window[n] <= WINDOWS[n][1]
+                                         and outside_by[n] <= near for n in out_window)
     adjusted = {n[:-2] for n in (opts.get("adjust") or {}) if n.endswith((".L", ".R"))}
     accepted = {k: v for k, v in m["asymmetry"].items() if k in adjusted}
     asym = max((v for k, v in m["asymmetry"].items() if k not in adjusted), default=0.0)
     a_lo, a_hi = opts["arm_angle"]
-    gates = [gate("markers.windows", out_window, {k: list(v) for k, v in WINDOWS.items()},
-                  not out_window or opts["no_window_gate"]),
+    windows = gate("markers.windows", out_window, {k: list(v) for k, v in WINDOWS.items()},
+                   not out_window or opts["no_window_gate"] or confirmed)
+    if ai_window:
+        windows.update(ai=ai_window, outside_by=outside_by, near_miss_max=near)
+    if confirmed:
+        windows["confirmed_by"] = CONFIRMED_BY
+        if record is not None:
+            record["used"]["window"] = True
+    gates = [windows,
              gate("markers.symmetry", round(asym, 4), round(opts["symmetry_max"] * H, 4),
                   asym <= opts["symmetry_max"] * H),
              gate("markers.arm_angle", round(arm_angle, 2), [a_lo, a_hi], a_lo <= arm_angle <= a_hi)]
 
     def r(p):
         return [round(float(x), 5) for x in p]
-    return {
+    report = {
         "schema": "autorig-markers/1", "tool": "arp_markers", "space": "world", "up": "+Z", "forward": "-Y",
         "height": round(H, 5), "ground_z": round(z0, 5), "midline_x": round(m["midline_x"], 5),
         "crotch_h": m["crotch_h"], "arm_angle_deg": round(arm_angle, 2),
@@ -632,10 +856,15 @@ def build_report(V, F, opts) -> dict:
                         for side, f in m["frames"].items()},
         "arp_spine_count": opts["spine_bones"] + 1,
         "arp_refs": {k: {"head": r(v["head"]), "tail": r(v["tail"])} for k, v in refs.items()},
+        "ref_rolls": rolls, "facial": bool(record and record["used"]["facial"]),
         "contract_bones": {"mirror": True, "bones": spec},
         "notes": m["notes"], "gates": gates, "pass": all(g["pass"] is True for g in gates),
         "ok": all(g["pass"] is True for g in gates),
     }
+    if record is not None:
+        report["smart_agreement"] = {"tolerance_h": opts.get("smart_tol", 0.03), "landmarks": record.pop("agreement")}
+        report["smart"] = record
+    return report
 
 
 # ------------------------------------------------------------------------------ CLI
@@ -671,6 +900,8 @@ def parser():
     p.add_argument("--symmetry-max", type=float, default=0.02)
     p.add_argument("--no-window-gate", action="store_true")
     p.add_argument("--mitten", action="store_true", help="contract_bones: finger bones do not deform")
+    p.add_argument("--smart", help="an arp_smart.py result (autorig-smart/1) to check and complete the markers")
+    p.add_argument("--smart-tol", type=float, default=0.03, help="x H: smart_agreement's agrees, and how far out of its window the AI may confirm a landmark")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -682,7 +913,8 @@ def _opts(args) -> dict:
     return {"spine_bones": args.spine_bones, "fingers": args.fingers, "adjust": adjust,
             "arm_angle": args.arm_angle, "arm_ratios": args.arm_ratios,
             "symmetry_max": args.symmetry_max, "no_window_gate": args.no_window_gate,
-            "mitten": args.mitten}
+            "mitten": args.mitten, "smart": read_smart(args.smart) if args.smart else None,
+            "smart_file": args.smart, "smart_tol": args.smart_tol}
 
 
 CHAINS = [("pelvis", "spine1"), ("spine1", "spine2"), ("spine2", "spine3"), ("spine3", "neck_base"),
@@ -769,6 +1001,148 @@ def _hand_points(fingers_apart: bool):
     v, f = M.assemble(pieces)
     pts, _ = M.surface_samples(v, f, 6000)
     return pts
+
+
+def _smart_doc(rep: dict, shoulder_z=None, go=True, facial=True, shift=0.0, four=False) -> dict:
+    """A synthetic autorig-smart/1 result built on a markers report: the AI markers 1 cm above the
+    slice ones, Go!'s finger references a hand of its own, three facial references and an ear."""
+    lm = rep["landmarks"]
+    body = {ai: [lm[sl][0] + shift, lm[sl][1], lm[sl][2] + 0.01] for ai, sl in SMART_PAIRS.items()}
+    if shoulder_z is not None:
+        for side in ("L", "R"):
+            body[f"shoulder.{side}"][2] = shoulder_z
+    w = np.array(lm["wrist.L"]) + [0.0, 0.0, 0.02]
+    x = _unit(np.array(lm["hand_tip.L"]) - w)
+    y = _unit(np.cross(x, [0.0, 1.0, 0.0]))
+    refs = {"root_ref.x": ([0, 0, 0.9], [0, 0, 1.0], 0.0), "hand_ref.l": (w, w + 0.06 * x, 0.61)}
+    for k, (a, lane) in enumerate((("thumb", -0.03), ("index", -0.015), ("middle", 0.0), ("ring", 0.015),
+                                   ("pinky", 0.03))):
+        base = w + 0.07 * x + lane * y
+        if a != "thumb":
+            refs[f"{a}1_base_ref.l"] = (w + 0.01 * x + lane * y, base, 0.4)
+        for j in (1, 2, 3):
+            refs[f"{a}{j}_ref.l"] = (base + 0.025 * (j - 1) * x, base + 0.025 * j * x, -2.9 if a == "thumb" else 0.9 + k)
+    head = np.array(lm["head_top"])
+    refs["jaw_ref.x"] = (head - [0, 0.0, 0.2], head - [0, 0.06, 0.25], 0.0)
+    refs["eyelid_top_ref.l"] = (head + [0.04, -0.07, -0.12], head + [0.04, -0.12, -0.11], 3.14159)
+    refs["eyelid_top_ref.r"] = (head + [-0.04, -0.07, -0.12], head + [-0.04, -0.12, -0.11], -3.14159)
+    refs["ear_01_ref.l"] = (head + [0.08, 0, -0.15], head + [0.1, 0, -0.12], 1.0)
+    if four:                    # the add-on's four-finger hand: thumb, middle, ring, pinky
+        refs = {n: v for n, v in refs.items() if not n.startswith("index")}
+    def num(v):
+        return [round(float(c), 5) for c in v]
+    gates = [{"name": "smart.fingers", "value": 5, "pass": True}, {"name": "smart.go", "value": go, "pass": go},
+             {"name": "smart.facial", "value": 48, "pass": facial}]
+    return {"schema": SMART_SCHEMA, "tool": "arp_smart", "height": rep["height"],
+            "body_markers": {k: num(v) for k, v in body.items()},
+            "fingers": {"count": 4 if four else 5, "names": [f for f in ARP_FINGERS if not (four and f == "index")]},
+            "rig_matrix_world": [[0.95, 0, 0, 0], [0, 0.95, 0, 0], [0, 0, 0.95, 0], [0, 0, 0, 1]],
+            "refs": {n: {"head": num(h), "tail": num(t), "roll": r, "group": _ref_group(n)} for n, (h, t, r) in refs.items()},
+            "gates": gates, "pass": go and facial}
+
+
+def selftest_smart(ok, v, f, opts, rep) -> None:
+    """--smart: the window confirmed or not, the fingers and the face merged, bad files refused."""
+    def win(r):
+        return next(g for g in r["gates"] if g["name"] == "markers.windows")
+    sh, H, z0 = rep["landmarks"]["shoulder.L"], rep["height"], rep["ground_z"]
+    near_z = z0 + (WINDOWS["shoulder"][0] - 0.014) * H          # 0.014 H below the window: a near miss
+    low = dict(opts, adjust={"shoulder.L": [sh[0], sh[1], near_z]})
+    good = read_smart_doc(_smart_doc(rep))
+    r1 = build_report(v, f, dict(low, smart=good, smart_file="s.json"))
+    ok("smart: shoulder 0.014 H out of window, the AI's inside -> passes, confirmed_by",
+       win(r1)["pass"] and win(r1).get("confirmed_by") == CONFIRMED_BY and win(r1)["value"].get("shoulder")
+       and r1["smart"]["used"]["window"] and win(r1)["outside_by"]["shoulder"] <= 0.03)
+    far = build_report(v, f, dict(opts, adjust={"shoulder.L": [sh[0], sh[1], z0 + 0.588 * H]}, smart=good))
+    ok("smart: shoulder 0.13 H out of window, the AI's inside -> still fails (a near miss only)",
+       not win(far)["pass"] and "confirmed_by" not in win(far) and not far["smart"]["used"]["window"]
+       and win(far)["ai"]["shoulder"] > WINDOWS["shoulder"][0])
+    tight = build_report(v, f, dict(low, smart=good, smart_tol=0.01))
+    ok("smart: --smart-tol 0.01 makes the 0.014 H miss fail", not win(tight)["pass"])
+    ok("smart: agreement per landmark, 1 cm apart agrees",
+       r1["smart_agreement"]["landmarks"]["hip.L"]["agrees"] and r1["smart_agreement"]["landmarks"]["hip.L"]["ai"] == "thigh.L")
+    bad_sh = read_smart_doc(_smart_doc(rep, shoulder_z=1.0))
+    r2 = build_report(v, f, dict(low, smart=bad_sh))
+    ok("smart: the AI's shoulder out of window too -> fails, no confirmed_by",
+       not win(r2)["pass"] and "confirmed_by" not in win(r2) and not r2["pass"])
+    ok("smart: fingers fixed -> Go!'s fingers, mode ai, count 5", r1["fingers"]["mode"] == "ai"
+       and r1["fingers"]["count"] == 5 and r1["fingers"]["slices"]["mode"] == "fixed")
+    doc = _smart_doc(rep)
+    ref = doc["refs"]["index1_ref.l"]
+    ok("smart: index1_ref.l, base and thumb from Go!, rolls in ref_rolls",
+       r1["arp_refs"]["index1_ref.l"]["head"] == ref["head"] and "index1_base_ref.l" in r1["ref_rolls"]
+       and r1["ref_rolls"]["thumb1_ref.l"] == -2.9 and r1["ref_rolls"]["hand_ref.l"] == 0.61)
+    lm1 = r1["landmarks"]
+    ok("smart: finger landmarks and the wrist follow, .R mirrored, method ai",
+       lm1["index0.L"] == ref["head"] and lm1["index0.R"] == [-ref["head"][0], ref["head"][1], ref["head"][2]]
+       and r1["methods"]["wrist.L"] == "ai" and lm1["wrist.L"] == doc["refs"]["hand_ref.l"]["head"])
+    spec = {b["name"]: b for b in r1["contract_bones"]["bones"]}
+    ok("smart: contract Index1.L on Go!'s index", spec["Index1.L"]["head"] == ref["head"])
+    ok("smart: facial refs carried, both sides as Go! put them, ear too, facial true",
+       r1["facial"] is True and {"jaw_ref.x", "eyelid_top_ref.l", "eyelid_top_ref.r", "ear_01_ref.l"} <= set(r1["arp_refs"])
+       and r1["ref_rolls"]["eyelid_top_ref.r"] == -3.14159 and "thumb1_ref.r" not in r1["arp_refs"])
+    ok("smart: Go!'s body refs not taken (body stays measured)",
+       r1["arp_refs"]["root_ref.x"]["head"] == rep["arp_refs"]["root_ref.x"]["head"] and "root_ref.x" not in r1["ref_rolls"])
+    r3 = build_report(v, f, dict(opts, smart=read_smart_doc(_smart_doc(rep, facial=False))))
+    ok("smart: smart.facial failed -> no face, fingers still taken",
+       r3["facial"] is False and "jaw_ref.x" not in r3["arp_refs"] and r3["fingers"]["mode"] == "ai")
+    r4 = build_report(v, f, dict(opts, smart=read_smart_doc(_smart_doc(rep, go=False, facial=False))))
+    ok("smart: Go! failed -> slices alone, noted, exit 0 verdict",
+       r4["fingers"]["mode"] == "fixed" and not r4["ref_rolls"] and r4["pass"] and r4["smart"]["notes"])
+    r5 = build_report(v, f, dict(opts, smart=read_smart_doc(_smart_doc(rep, four=True))))
+    ok("smart: four fingers -> no index from Go!, the index keeps the fixed shape, noted",
+       r5["fingers"]["mode"] == "ai" and r5["fingers"]["names"] == ["thumb", "middle", "ring", "pinky"]
+       and r5["methods"]["index0.L"] == "fixed" and r5["methods"]["middle0.L"] == "ai"
+       and "index1_ref.l" not in r5["ref_rolls"] and any("fixed shape" in n for n in r5["smart"]["notes"]))
+    ok("no smart: facial false, ref_rolls empty", rep["facial"] is False and rep["ref_rolls"] == {}
+       and "smart" not in rep)
+    r6 = build_report(v, f, dict(opts, smart=read_smart_doc(_smart_doc(rep, shift=0.4))))
+    ok("smart: markers 0.4 m off -> nothing taken (another frame), noted, the slices alone",
+       r6["smart"].get("rejected") is True and not any(r6["smart"]["used"].values())
+       and r6["fingers"]["mode"] == rep["fingers"]["mode"] and r6["facial"] is False and not r6["ref_rolls"]
+       and "confirmed_by" not in r6["gates"][0] and any("another frame" in n for n in r6["smart"]["notes"]))
+    malformed = []
+    d = _smart_doc(rep)
+    d["schema"] = "autorig-smart/0"
+    malformed.append(d)
+    d = _smart_doc(rep)
+    d["refs"]["jaw_ref.x"]["head"] = [0, 1]
+    malformed.append(d)
+    d = _smart_doc(rep)
+    d["refs"]["jaw_ref.x"]["roll"] = "flat"
+    malformed.append(d)
+    d = _smart_doc(rep)
+    d["rig_matrix_world"] = [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+    malformed.append(d)
+    with tempfile.TemporaryDirectory() as tmp:
+        body = Path(tmp) / "body.obj"
+        M.write_obj(body, v, f)
+        codes = []
+        for i, doc in enumerate(malformed + ["not json"]):
+            path = Path(tmp) / f"bad{i}.json"
+            path.write_text(doc if isinstance(doc, str) else json.dumps(doc), encoding="utf-8")
+            codes.append(run_host(parser().parse_args([str(body), "--smart", str(path)]))[0])
+        ok("cli --smart: schema, coordinate, roll, rotated rig, not JSON -> exit 1 each", codes == [1] * 5)
+        path, adj = Path(tmp) / "good.json", Path(tmp) / "adj.json"
+        path.write_text(json.dumps(_smart_doc(rep)), encoding="utf-8")
+        adj.write_text(json.dumps({"shoulder.L": [sh[0], sh[1], near_z]}), encoding="utf-8")
+        code, rr = run_host(parser().parse_args([str(body), "--smart", str(path), "--adjust", str(adj)]))
+        failed_gates = [g["name"] for g in rr.get("gates", []) if not g["pass"]]
+        ok("cli --smart: the near-miss shoulder confirmed (only the arm angle it bends fails)",
+           code == 2 and failed_gates == ["markers.arm_angle"] and rr["smart"]["used"]["window"])
+        code, rr = run_host(parser().parse_args([str(body), "--smart", str(path), "--adjust", str(adj),
+                                                 "--smart-tol", "0.01"]))
+        ok("cli --smart-tol 0.01: the same shoulder fails markers.windows",
+           code == 2 and not rr["gates"][0]["pass"] and not rr["smart"]["used"]["window"])
+        code, rr = run_host(parser().parse_args([str(body), "--smart", str(path)]))
+        ok("cli --smart: exit 0, fingers ai, facial", code == 0 and rr["fingers"]["mode"] == "ai" and rr["facial"])
+
+
+def read_smart_doc(doc: dict) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "smart.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return read_smart(path)
 
 
 def selftest_host() -> tuple[int, list, int]:
@@ -861,6 +1235,12 @@ def selftest_host() -> tuple[int, list, int]:
         ok("little shorter than middle", tips["Little"][0] < tips["Middle"][0])
     found, reason = detect_fingers(_hand_points(False), np.zeros(3), frame)
     ok("mitten: not detected, reason given", found is None and "four" in reason)
+    hz, hx = np.array(rep["hand_frames"][".L"]["z"]), np.array(rep["hand_frames"][".L"]["x"])
+    ok("hand frame: the palm normal is a unit vector across the hand", abs(np.linalg.norm(hz) - 1) < 1e-3
+       and abs(hz @ hx) < 1e-3)
+    fan = [np.array(lm[f"{n}0.L"]) for n in ("index", "little")]
+    ok("fixed hand: index and little knuckles apart", np.linalg.norm(fan[0] - fan[1]) > 0.01)
+    selftest_smart(ok, v, f, opts, rep)
     # files through the CLI
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "body.obj"

@@ -2,12 +2,14 @@
 
 > Part of the `character-autorig` skill. The op lives in `blender-retarget` → `scripts/brt_arp.py`
 > (its docstring has every parameter); `blender-retarget` → `reference/arp-route.md` covers the
-> add-on's other ops: probe, Smart markers, retargeting clips onto its controls. The `export` op
+> add-on's other ops: probe, Smart markers, retargeting clips onto its controls; the AI step that
+> runs before the markers is `reference/arp-ai.md`. The `export` op
 > (below) writes a bound rig again after a weight repair.
 
 `brt_arp.run({"op": "pipeline", ...})` takes a normalised mesh and an `arp_markers.py` result and
 leaves an Auto-Rig Pro rig bound to the mesh, a Unity FBX, and the FBX's skeleton as JSON for the
-contract check. It never runs Smart detection and needs no window.
+contract check. It needs no window: the AI ran before, in stage `smart`, and reaches the pipeline
+only through the markers file's `arp_refs`, `ref_rolls` and `facial`.
 
 ```python
 import sys; sys.path[:0] = ["<skills>/blender-retarget/scripts"]
@@ -21,10 +23,10 @@ r = brt_arp.run({"op": "pipeline", "mesh": "Runner", "markers": "rig/runner.mark
 - **Probe.** `brt_arp.run({"op": "probe"})` lists the operators the installed add-on registers;
   the pipeline needs `arp.append_arp`, `arp.show_limb_params`, `arp.match_to_rig`,
   `arp.bind_to_rig` and `arp.arp_export_fbx_panel`, and refuses with `operator_missing` naming any
-  that is absent.
+  that is absent; markers with ear references need `arp.add_limb` too.
 - **The Blender version.** The add-on lists support up to Blender 5.1. On a newer Blender, run
   `blender -b --python <skill>/scripts/tests/test_arp_pipeline.py` (no `--factory-startup`) once:
-  it builds a procedural runner and runs every step below; it must end `13/13 passed`. If a step
+  it builds a procedural runner and runs every step below; it must end `16/16 passed`. If a step
   fails, rig in Blender 5.1 with the same scripts, or take the hand-built route.
 - **Save first, work on a copy.** A failure before the bind removes the rig it appended; after the
   bind the mesh keeps its vertex groups and Armature modifier.
@@ -39,11 +41,11 @@ r = brt_arp.run({"op": "pipeline", "mesh": "Runner", "markers": "rig/runner.mark
 | 1 | Refusals, changing nothing: mesh missing or already carrying an Armature modifier (`already_bound`); scale or rotation not applied (`transform_not_applied`); markers without `arp_refs` or one of root, neck, head, shoulder, arm, forearm, hand, thigh, leg, foot, toes (`markers_invalid`); no `fbx` path (`export_path_missing`); a rig of that name exists (`rig_exists`); a bind or export setting the add-on lacks | `arp.precondition` |
 | 2 | Append the human preset (`arp.append_arp`), rename it `<mesh>Rig` (or `armature`) | `arp.rig_appended` |
 | 3 | Spine Count through the add-on's limb options on `root_ref.x`, when the preset's differs | `arp.spine_bones` == Count − 1 |
-| 4 | Each reference bone's head and tail from `arp_refs`, world → rig space; a `.l` bone without its `.r` twin is mirrored. A bone keeps the preset's roll direction; hand and finger bones turn it with the hand (preset hand frame → the measured one), so palm-in hands get palm-in fingers | `arp.refs_placed`: every name exists on the preset, each end within 1e-4 m |
+| 4 | With `facial` true, the face turned on at the head limb (`arp.show_limb_params`: eyes when eye references are placed, no teeth, tongue or eye targets, the set Go! makes), and with ear references the ears added (`arp.add_limb`); a face bone the markers do not place is named in `warnings`. Each reference bone's head and tail from `arp_refs`, world → rig space; a `.l` bone without its `.r` twin is mirrored. A bone in `ref_rolls` takes that roll as is (its `.r` twin the mirror); any other keeps the preset's roll direction, and hand and finger bones turn it with the hand (preset hand frame → the measured one), so palm-in hands get palm-in fingers | `arp.face_added` (with a face or ears); `arp.refs_placed`: every name exists on the rig, the face's included, each end within 1e-4 m, each given roll within 0.1° |
 | 5 | Match to Rig | `arp.bone_count` > 0 |
 | 6 | Bind, Voxelized, resolution 7, the other settings as `bind` (scene settings set for the call, put back) | |
 | 7 | Every vertex limited to `max_influences` (4) deform weights and normalised over deform bones | `arp.vertices_without_group` == 0 |
-| 8 | Export with the add-on's FBX exporter: engine Unity, rig type Humanoid, the master trajectory exported, Units ×100 as the add-on's default (scene settings set for the call, put back) | `arp.export_written` |
+| 8 | Export with the add-on's FBX exporter: engine Unity, rig type Humanoid, the master trajectory exported, Units ×100 as the add-on's default, and for a rig with a face its Full Facial on (otherwise the exporter folds the secondary face weights onto `head.x` and the jaw, over 4 influences) (scene settings set for the call, put back) | `arp.export_written` |
 | 9 | Import the FBX again, read its skeleton and skin, take the import back | `arp.export_armatures` == 1, `arp.export_unweighted` == 0, `arp.export_max_influences` ≤ 4 |
 | 10 | Write `<fbx>.skeleton.json` (or `skeleton_out`) | — |
 
@@ -75,7 +77,11 @@ Names under engine Unity are the add-on's own, not its *Rename for UE* names; th
 | Toes.L | `toes_01.l` | Foot.L | `foot.l` |
 
 The twist bones (`arm_twist.l`, `forearm_twist.l`, `thigh_twist.l`, `leg_twist.l`) sit inside the
-chains: the contract check reports them as extra and walks past them.
+chains: the contract check reports them as extra and walks past them. `forearm_stretch.l` ends at
+the twist bone, short of the wrist, so `deform_gate` sizes a joint's patch joint to joint, not by
+bone length. A rig with a face exports the face bones too (the runner: 123 bones instead of 84),
+with the jaw as `c_jawbone.x`, which the `arp` preset maps to the extra role `Jaw`; `autorig.py`
+then adds the `jaw_open` pose.
 
 **Deform in the skeleton JSON comes from the weights.** Blender's FBX importer marks every bone it
 reads as deforming, `c_traj` included, which would fail the contract's "Root non-deform". The

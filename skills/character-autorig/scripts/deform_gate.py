@@ -9,7 +9,7 @@ usage (Blender, headless):
     blender -b scene.blend -P deform_gate.py -- --armature RunnerRig --mesh Runner [options]
     blender -b -P deform_gate.py -- --fbx runner_arp.fbx --map arp_map_report.json [options]
     blender -b --factory-startup -P deform_gate.py -- --selftest
-options: [--map REPORT_OR_ROLE_MAP.json] [--poses all|arms_up,deep_squat,...] [--steps 2]
+options: [--map REPORT_OR_ROLE_MAP.json] [--poses all|arms_up,deep_squat,...|all,jaw_open] [--steps 2]
          [--volume-max 0.35] [--intersect-p95 0.08] [--out REPORT.json] [--render DIR]
 
 Bones are named by the humanoid contract (`unity-rigged-character` -> humanoid-contract.md).
@@ -29,6 +29,11 @@ the rest skeleton so they fit any arm angle and any hand orientation:
                on the left, mirrored on the right
   leg_raise    the left thigh 90 degrees forward, knee straight
   elbow_120    both forearms 120 degrees toward the front
+  jaw_open     (only when named: not part of `all`) the Jaw 20 degrees down, for a rig with a face;
+               Jaw is a role the map must name (a role map's "Jaw", or a contract_map report's
+               retarget_map). The self-intersection gate covers it; the volume gate does not (a
+               jaw's patch wraps no joint), and without a mapped Jaw it is skipped, which fails
+               deform.poses since it was named. `--poses all,jaw_open` adds it to the six.
 Each pose is sampled at --steps evenly spaced fractions ending at the full pose (default 2: half, full).
 
 Measures, on the outward-facing skin only. An inward-facing inner shell, back to back with the
@@ -39,7 +44,8 @@ ray (its normal and six directions 70 degrees around it) leaves the mesh lines a
 The skin sees out, folds included, and a single skin has no sheet behind it, so both keep every
 triangle. The report gives outward_triangles and inward_triangles.
   volume loss  per rotated body joint (fingers excluded): the skin triangles within half the shorter
-               adjoining bone of the joint at rest, and the volume they wrap, as the sum of the cones
+               adjoining span of the joint at rest (joint to joint: a split twist/stretch bone counts
+               its whole limb), and the volume they wrap, as the sum of the cones
                from their vertex centroid, (a - c) . ((b - c) x (d - c)) / 6. loss = 1 - posed / rest.
                A flattened elbow or a candy-wrapper waist loses it; a rigid turn keeps it. A joint
                whose patch does not wrap around it (signed volume under half the unsigned one at
@@ -61,6 +67,7 @@ Gates (each failing one makes exit 2):
   deform.self_intersection_p95    p95 over every sample of the new-intersection ratio <= --intersect-p95 (0.08)
   deform.poses                    every requested pose was applied; with --poses all the fist may be
                                   skipped on a rig without finger bones, named in --poses it may not
+                                  (nor may a named jaw_open)
   deform.joints_measured          every hinge joint a requested pose bends (LowerArm in elbow_120,
                                   LowerLeg in deep_squat) was measured by the volume gate in at
                                   least one pose; its value lists the ones never measured. A hinge
@@ -93,6 +100,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")
+NAMED_ONLY = ("jaw_open",)       # run when named in --poses, never as part of `all`
 BODY = ("Hips", "Spine", "Chest", "UpperArm.L", "UpperArm.R", "LowerArm.L", "LowerArm.R",
         "UpperLeg.L", "UpperLeg.R", "LowerLeg.L", "LowerLeg.R")
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Little")
@@ -101,6 +109,11 @@ FINGERS = ("Thumb", "Index", "Middle", "Ring", "Little")
 GATED = ("LowerArm", "LowerLeg", "Spine", "Chest", "UpperChest", "Hand", "Foot")
 # hinge joints the volume gate must reach whenever a requested pose bends them
 HINGES = ("LowerArm", "LowerLeg")
+CENTRE = ("Root", "Hips", "Spine", "Chest", "UpperChest", "Neck", "Head")
+# the next joint down each chain: a bone's span ends there
+CHAIN = {"Hips": "Spine", "Spine": "Chest", "Chest": "UpperChest", "UpperChest": "Neck", "Neck": "Head",
+         "Shoulder": "UpperArm", "UpperArm": "LowerArm", "LowerArm": "Hand", "UpperLeg": "LowerLeg",
+         "LowerLeg": "Foot", "Foot": "Toes"}
 FWD = np.array([0.0, -1.0, 0.0])
 UP = np.array([0.0, 0.0, 1.0])
 
@@ -171,6 +184,19 @@ class Rig:
     def length(self, c):
         return float(np.linalg.norm(self.tail[c] - self.head[c]))
 
+    def span(self, c):
+        """Joint to joint: from this bone's head to the head of the next contract bone down the
+        chain (LowerArm to Hand), else its own length. An exporter that splits a limb into twist
+        and stretch bones maps the contract bone to one part, shorter than the limb."""
+        base, _, side = c.partition(".")
+        child = CHAIN.get(base)
+        child = f"{child}.{side}" if child and side and child not in CENTRE else child
+        if child in self.head:
+            d = float(np.linalg.norm(self.head[child] - self.head[c]))
+            if d > 1e-6:
+                return d
+        return self.length(c)
+
     def has(self, *names):
         return all(n in self.name for n in names)
 
@@ -212,6 +238,8 @@ def pose_rotations(rig: Rig, pose: str) -> list[tuple[str, np.ndarray, float]]:
     elif pose == "elbow_120":
         for s in ("L", "R"):
             out.append((f"LowerArm.{s}", _toward(rig.d(f"LowerArm.{s}"), FWD), 120))
+    elif pose == "jaw_open" and rig.has("Jaw"):
+        out.append(("Jaw", _toward(rig.d("Jaw"), -UP), 20))
     return out
 
 
@@ -375,15 +403,15 @@ def outward(v_rest, tri, wall: float = 0.01, spread: float = 70.0, ids=None, rou
 
 
 def joint_regions(rig: Rig, v_rest, tri, rotated) -> tuple[dict, dict]:
-    """Per rotated body bone, the triangles within half the shorter adjoining bone of its head,
-    when they wrap around the joint (signed cone volume >= half the unsigned one at rest)."""
+    """Per rotated body bone, the triangles within half the shorter adjoining span (joint to joint) of
+    its head, when they wrap around the joint (signed cone volume >= half the unsigned one at rest)."""
     regions, skipped = {}, {}
     for contract in rotated:
-        if any(contract.startswith(f) for f in FINGERS):
+        if any(contract.startswith(f) for f in FINGERS) or contract == "Jaw":
             continue
         bone = rig.obj.data.bones[rig.name[contract]]
         parent = next((c for c, n in rig.name.items() if bone.parent is not None and n == bone.parent.name), None)
-        lengths = [rig.length(contract)] + ([rig.length(parent)] if parent else [])
+        lengths = [rig.span(contract)] + ([rig.span(parent)] if parent else [])
         near = np.linalg.norm(v_rest - rig.head[contract], axis=1) <= 0.5 * min(lengths)
         sel = np.nonzero(near[tri].all(axis=1))[0]
         if len(sel) < 8:
@@ -455,8 +483,9 @@ def gates_of(result: dict, poses, args) -> list:
     top = max(ratios, default=(0.0, None))
     result["volume_loss_max"] = {"value": round(worst[0], 4), "pose": worst[1], "joint": worst[2]}
     result["self_intersection"] = {"p95": round(p95, 4), "max": round(top[0], 4), "pose": top[1]}
-    # fist may be skipped on a rig without fingers when every pose is asked for, not when named
-    skipped = [p for p, d in result["poses"].items() if d.get("skipped") and (p != "fist" or args.poses != "all")]
+    # fist may be skipped on a rig without fingers when it came with `all`, not when named
+    named = [t.strip() for t in args.poses.split(",")]
+    skipped = [p for p, d in result["poses"].items() if d.get("skipped") and (p != "fist" or "fist" in named)]
     hinges, measured = set(), set()
     for data in result["poses"].values():
         hinges.update(c for c in data.get("bent", []) if c.split(".")[0] in HINGES)
@@ -540,10 +569,15 @@ def _run(args) -> tuple[int, dict]:
     if lacking:
         return 1, {"tool": "deform_gate", "error": f"body bones not found on {rig_obj.name!r}: {lacking} "
                                                    "(pass --map)", "mapped": sorted(rig.name)}
-    poses = POSES if args.poses == "all" else tuple(p.strip() for p in args.poses.split(","))
-    unknown = [p for p in poses if p not in POSES]
+    poses = []
+    for p in (t.strip() for t in args.poses.split(",")):
+        for q in (POSES if p == "all" else (p,)):
+            if q not in poses:
+                poses.append(q)
+    poses = tuple(poses)
+    unknown = [p for p in poses if p not in POSES + NAMED_ONLY]
     if unknown:
-        return 1, {"tool": "deform_gate", "error": f"unknown poses {unknown}; known {list(POSES)}"}
+        return 1, {"tool": "deform_gate", "error": f"unknown poses {unknown}; known {list(POSES + NAMED_ONLY)}"}
     saved = {pb.name: (pb.rotation_mode, tuple(pb.rotation_quaternion), tuple(pb.rotation_euler),
                        tuple(pb.location), tuple(pb.scale)) for pb in rig_obj.pose.bones}
     action = rig_obj.animation_data.action if rig_obj.animation_data else None
@@ -877,6 +911,19 @@ def selftest() -> tuple[int, dict]:
                                              "--poses", "all", "--steps", "1"]))
         ok("fist skipped under --poses all: deform.poses passes", next(g for g in rep["gates"]
                                                                        if g["name"] == "deform.poses")["pass"])
+        code, rep = run(parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name, "--map", bad,
+                                             "--poses", "jaw_open", "--steps", "1"]))
+        ok("jaw_open named on a rig without a Jaw: skipped, deform.poses fails, exit 2", code == 2 and
+           rep["poses"]["jaw_open"].get("skipped") and
+           not next(g for g in rep["gates"] if g["name"] == "deform.poses")["pass"])
+        with open(bad, "w", encoding="utf-8") as handle:
+            json.dump({"bones": {"LowerArm.L": "forearm_l", "Jaw": "Head"}}, handle)
+        code, rep = run(parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name, "--map", bad,
+                                             "--poses", "all,jaw_open", "--steps", "1"]))
+        ok("all,jaw_open with a mapped Jaw (the head, by role map): seven poses, jaw_open applied",
+           list(rep.get("poses", {}))[-1:] == ["jaw_open"] and len(rep["poses"]) == 7
+           and rep["poses"]["jaw_open"]["bent"] == ["Jaw"] and "Jaw" not in
+           rep["poses"]["jaw_open"]["samples"][0]["volume_loss"])
     return (0 if not failed else 1), {"selftest": "pass" if not failed else "fail", "checks": checks,
                                       "failed": failed, "gate_values": notes}
 

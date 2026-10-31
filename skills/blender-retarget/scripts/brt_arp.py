@@ -35,7 +35,10 @@ it needs is missing.
 probe     reads only. addon_present, module, version (bl_info, or the
           blender_manifest.toml beside the module), ai_files (an AI folder named
           in the add-on's preferences, or its extension user folder, holds an
-          `inference` folder; the path itself is never reported), ai_version, and
+          `inference` folder; the path itself is never reported), ai_version (a
+          version file, or info.dat's `version=`), ai_ready (every `inference*`
+          program there may be run by this user; read only: no permission, quarantine
+          flag or signature is changed), and
           `operators` {"arp.match_to_rig": bool, ...}. A name the add-on
           registers under another prefix counts as found; `operator_idnames`
           says where, `operator_properties` lists what each one declares.
@@ -121,8 +124,10 @@ retarget  `clips`: [{"name", "fbx", "map"?, "frame_start"?, "frame_end"?, "align
           rewrites the clip results as JSON after each clip. Gates
           arp.retarget_clips (bakes that left an action with a slot and curves),
           arp.metadata_clips (metadata written), each == the clips run.
-pipeline  one call from a prepared mesh to a skeleton JSON, no Smart and no window
-          (`blender -b` works: the 3D view comes from the file's own screens). `mesh`, `markers`
+pipeline  one call from a prepared mesh to a skeleton JSON, no window (`blender -b` works: the
+          3D view comes from the file's own screens). The add-on's AI (Smart) is not run here: it
+          needs a window, and character-autorig's arp_smart.py runs it beforehand; its finger and
+          face references reach this op through the markers. `mesh`, `markers`
           (an arp_markers.py result from the character-autorig skill, or its path), `fbx` (the
           file the export writes); optional `armature` (default "<mesh>Rig"; an existing
           object of that name refuses with rig_exists), `preset` ("human"), `spine_count`
@@ -132,19 +137,35 @@ pipeline  one call from a prepared mesh to a skeleton JSON, no Smart and no wind
           default for Unity), `skeleton_out` (default <fbx>.skeleton.json). Refuses, changing
           nothing, a mesh with an Armature modifier (already_bound), one whose scale or
           rotation is not applied (transform_not_applied), markers without arp_refs or a
-          required reference bone (markers_invalid), and an exporter scene setting the add-on
-          lacks (export_setting_missing). Steps: append the preset (arp.append_arp); set the
-          spine Count through arp.show_limb_params on root_ref.x when it differs; write each
+          required reference bone, a `ref_rolls` entry that is not a number for a bone arp_refs
+          places, or a `facial` that is not a boolean (markers_invalid), an exporter scene setting the add-on
+          lacks (export_setting_missing), markers with `facial` true when arp.show_limb_params
+          declares no facial, facial_eye_l/r, facial_teeth, facial_tongue, eye_spec or
+          load_settings_when_exec (operator_property_missing), and ear references without
+          arp.add_limb (operator_missing). Steps: append the preset (arp.append_arp); set the
+          spine Count through arp.show_limb_params on root_ref.x when it differs; with `facial`
+          true turn the face on at head_ref.x (arp.show_limb_params limb_type head, facial,
+          eyes when an eye_offset or eyelid reference is placed, no teeth, tongue or eye targets:
+          the set the add-on's Go! makes), and with ear_* references add the ears
+          (arp.add_limb limbs_presets ears); a face bone the markers do not place is named in
+          `warnings`; write each
           reference bone's head and tail from arp_refs (world -> rig space; a .l bone without
-          its .r twin is mirrored), keeping the preset's roll direction, turned with the hand
+          its .r twin is mirrored). A bone in `ref_rolls` (radians, Blender's edit-bone roll in
+          world axes, as Go! leaves them) gets that roll, its mirrored .r twin the mirrored one;
+          every other bone keeps the preset's roll direction, turned with the hand
           for hand and finger bones; Match to Rig; bind as `bind` does; limit every vertex to
           `max_influences` deform weights and normalise (Unity keeps 4 by default); export
           with the add-on's FBX exporter for Unity, humanoid, the master trajectory c_traj as
-          the root bone (scene settings set for the call and put back); import the file again,
+          the root bone, and with a face its Full Facial on (otherwise the exporter moves the
+          secondary face bones' weights onto head.x and the jaw after the limit, one weight too
+          many) (scene settings set for the call and put back); import the file again,
           write its skeleton (skeleton/1, armature space in metres, Z up; `deform` is true for a
           bone some vertex is weighted to, since the FBX importer marks every bone deform) and
           take the import back. Gates arp.rig_appended, arp.spine_bones (== Count - 1),
-          arp.refs_placed (every name exists on the preset, each end within 1e-4 m),
+          arp.face_added (with `facial` or ears: the limb added reference bones),
+          arp.refs_placed (every name exists on the rig, the face's included, each end within
+          1e-4 m, each given roll within 0.1 degrees; `refs` reports rolls_given and
+          worst_roll_miss_deg),
           arp.bone_count, arp.vertices_without_group, arp.export_written,
           arp.export_armatures (1), arp.export_unweighted (0), arp.export_max_influences
           (<= max_influences). A failed gate before the bind stops the call and removes the rig
@@ -157,7 +178,7 @@ export    the pipeline's export and read-back again, for a rig it bound whose we
           name or a list; default every mesh whose Armature modifier targets the rig),
           `max_influences` (4), `limit_influences` (True: limit and normalise again, as a
           transfer can add a fifth weight), `units_x100` (True), `skeleton_out`. The same
-          scene settings (Unity, humanoid, c_traj root), the same skeleton/1 file and the same
+          scene settings (Unity, humanoid, c_traj root, Full Facial for a rig with a face), the same skeleton/1 file and the same
           record licence as `pipeline`. Refuses export_path_missing, not_bound (no mesh holds a
           deform weight of the rig), export_setting_missing and no_view3d_area, changing
           nothing. Gates arp.vertices_without_group, arp.export_written, arp.export_armatures,
@@ -187,11 +208,11 @@ from mathutils import Matrix, Vector
 import brt_common as C
 
 _NAME = "auto_rig_pro"
-OPERATORS = ("arp.go_detect", "arp.match_to_rig", "arp.bind_to_rig", "arp.retarget",
+OPERATORS = ("id.go_detect", "arp.match_to_rig", "arp.bind_to_rig", "arp.retarget",
              "arp.freeze_armature", "arp.build_bones_list", "arp.redefine_rest_pose",
              "arp.copy_bone_rest", "arp.save_pose_rest", "arp.import_config_preset",
              "arp.import_config", "arp.append_arp", "arp.show_limb_params",
-             "arp.arp_export_fbx_panel")
+             "arp.arp_export_fbx_panel", "arp.add_limb")
 _REMAP = ("arp.freeze_armature", "arp.build_bones_list", "arp.redefine_rest_pose",
           "arp.copy_bone_rest", "arp.save_pose_rest", "arp.retarget")
 # keyword arguments retarget hands each operator; checked against its RNA before any change
@@ -297,17 +318,31 @@ def _listdir(folder: str) -> list[str]:
 
 
 def _first_line(folder: str) -> str | None:
-    """The first line of a version file in `folder`, if there is one."""
+    """The first line of a version file in `folder` (or the `version=` line of an info.dat)."""
     for file in _listdir(folder):
-        if file.lower().startswith("version") and os.path.isfile(os.path.join(folder, file)):
+        low = file.lower()
+        if (low.startswith("version") or low == "info.dat") and os.path.isfile(os.path.join(folder, file)):
             with contextlib.suppress(OSError, UnicodeDecodeError):
                 with open(os.path.join(folder, file), encoding="utf-8") as handle:
-                    return handle.readline().strip()[:64] or None
+                    line = handle.readline().strip()
+                if low != "info.dat":
+                    return line[:64] or None
+                if line.lower().startswith("version="):
+                    return line.split("=", 1)[1].strip()[:64] or None
     return None
 
 
-def _ai_files(module: str) -> tuple[bool, str | None]:
-    """(an AI `inference` folder exists, its version string). Paths stay internal."""
+def _ai_ready(root: str) -> bool:
+    """Every inference program in root/inference may be run by this user. Read only: no
+    permission, quarantine flag or signature is changed here."""
+    folder = os.path.join(root, "inference")
+    programs = [os.path.join(folder, n) for n in _listdir(folder)
+                if n.lower().startswith("inference") and os.path.isfile(os.path.join(folder, n))]
+    return bool(programs) and all(os.access(p, os.X_OK) for p in programs)
+
+
+def _ai_files(module: str) -> tuple[bool, str | None, bool]:
+    """(an AI `inference` folder exists, its version string, its programs executable). Paths stay internal."""
     addon = bpy.context.preferences.addons.get(module)
     prefs = getattr(addon, "preferences", None)
     folders, version = [], None
@@ -331,22 +366,22 @@ def _ai_files(module: str) -> tuple[bool, str | None]:
         roots = [folder] + [os.path.join(folder, d) for d in _listdir(folder)]
         root = next((r for r in roots if os.path.isdir(os.path.join(r, "inference"))), None)
         if root is not None:
-            return True, version or _first_line(root)
-    return False, None
+            return True, version or _first_line(root), _ai_ready(root)
+    return False, None, False
 
 
 def _probe() -> dict:
     found = _addon_modules()
     module = found[0] if found else None
     info = {"addon_present": module is not None, "module": module, "version": None,
-            "ai_files": False, "ai_version": None}
+            "ai_files": False, "ai_version": None, "ai_ready": False}
     if module is None:
         import addon_utils
         installed = [m.__name__ for m in addon_utils.modules(refresh=False) if _NAME in m.__name__.lower()]
         info["installed_not_enabled"] = installed[0] if installed else None
     else:
         info["version"] = _version(module)
-        info["ai_files"], info["ai_version"] = _ai_files(module)
+        info["ai_files"], info["ai_version"], info["ai_ready"] = _ai_files(module)
         if len(found) > 1:
             info["modules_found"] = found
     idnames = _resolve(module)
@@ -1331,6 +1366,19 @@ _REQUIRED_REFS = ("root_ref.x", "neck_ref.x", "head_ref.x", "shoulder_ref.l", "a
 # scene settings of the add-on's exporter: Unity, humanoid, the master trajectory as the root bone
 _EXPORT_SCENE = {"arp_engine_type": 'UNITY', "arp_export_rig_type": 'HUMANOID', "arp_ge_master_traj": True}
 _LICENCE = {"source": "auto-rig-pro", "territory": "worldwide"}
+# the face on the head limb (arp.show_limb_params), the set Go! makes: no teeth, tongue or eye targets
+_FACIAL = {"limb_type": "head", "facial": True, "facial_teeth": False, "facial_tongue": False,
+           "eye_spec": False, "load_settings_when_exec": False}
+_ROLL_TOL_DEG = 0.1
+# the exporter's Full Facial: on for a rig with a face, or it moves the secondary face bones' weights
+# onto head.x and the jaw after the influence limit, and a vertex can leave with one weight too many
+_FULL_FACIAL = {"arp_full_facial": True}
+_FACE_DEFORM = ("jawbone", "c_jawbone", "c_lips_", "c_eyebrow", "c_eyelid", "c_eye_offset", "c_nose_",
+                "c_cheek_", "c_chin_")
+
+
+def _has_face(rig) -> bool:
+    return any(b.name.startswith(_FACE_DEFORM) for b in rig.data.bones)
 
 
 def _mirror_name(name: str) -> str:
@@ -1352,6 +1400,15 @@ def _load_markers(value) -> tuple[dict | None, str | None]:
     missing = [k for k in _REQUIRED_REFS if k not in value["arp_refs"]]
     if bad or missing:
         return None, f"arp_refs malformed {bad} or missing {missing}"
+    rolls = value.get("ref_rolls") or {}
+    if not isinstance(rolls, dict):
+        return None, "ref_rolls must be {ref bone: roll}"
+    odd = sorted(k for k, v in rolls.items() if k not in value["arp_refs"] or isinstance(v, bool)
+                 or not isinstance(v, (int, float)) or not math.isfinite(v))
+    if odd:
+        return None, f"ref_rolls {odd}: not a number, or a bone arp_refs does not place"
+    if not isinstance(value.get("facial", False), bool):
+        return None, "facial must be true or false"
     return value, None
 
 
@@ -1359,23 +1416,43 @@ def _spine_refs(rig) -> list[str]:
     return sorted(b.name for b in rig.data.bones if b.name.startswith("spine_") and b.name.endswith("_ref.x"))
 
 
-def _set_spine(rig, count: int, override: dict, idname: str) -> None:
-    """Auto-Rig Pro's spine Count (its root counts: 4 = root + three spine bones)."""
+def _limb_params(rig, bone: str, override: dict, idname: str, **kwargs) -> None:
+    """The add-on's Limb Options on the limb of reference bone `bone`, with checked keywords."""
+    unknown = sorted(set(kwargs) - set(_op_props(idname)))
+    if unknown:
+        raise ValueError(f"{idname} declares no {unknown}")
     _select_only([rig], rig)
     bpy.ops.object.mode_set(mode='EDIT')
     try:
         bones = rig.data.edit_bones
         for eb in bones:
             eb.select = eb.select_head = eb.select_tail = False
-        root = bones["root_ref.x"]
-        root.select = root.select_head = root.select_tail = True
-        bones.active = root
-        with bpy.context.temp_override(selected_editable_bones=[root], active_bone=root, **override):
-            result = _op(idname)('EXEC_DEFAULT', limb_type="spine", spine_count=count)
+        eb = bones[bone]
+        eb.select = eb.select_head = eb.select_tail = True
+        bones.active = eb
+        with bpy.context.temp_override(selected_editable_bones=[eb], active_bone=eb, **override):
+            result = _op(idname)('EXEC_DEFAULT', **kwargs)
         if 'FINISHED' not in result:
             raise RuntimeError(f"{idname} returned {sorted(result)}")
     finally:
         _object_mode()
+
+
+def _set_spine(rig, count: int, override: dict, idname: str) -> None:
+    """Auto-Rig Pro's spine Count (its root counts: 4 = root + three spine bones)."""
+    _limb_params(rig, "root_ref.x", override, idname, limb_type="spine", spine_count=count)
+
+
+def _facial_options(refs: dict) -> dict:
+    """show_limb_params keywords turning the face on at the head: eyes when the markers place eye
+    references; no teeth, tongue or eye-target bones (the set Go! makes)."""
+    eyes = any(n.startswith(("eye_offset_ref", "eyelid_")) for n in refs)
+    return dict(_FACIAL, facial_eye_l=eyes, facial_eye_r=eyes)
+
+
+def _ref_names(refs: dict) -> set:
+    """The bones arp_refs places, the mirrored .r twins included."""
+    return set(refs) | {_mirror_name(n) for n in refs if n.endswith(".l")}
 
 
 def _hand_turn(rig_space: Matrix, refs: dict, frames: dict, old: dict):
@@ -1395,30 +1472,40 @@ def _hand_turn(rig_space: Matrix, refs: dict, frames: dict, old: dict):
     return n @ p.transposed()
 
 
-def _place_refs(rig, refs: dict, frames: dict) -> dict:
+def _place_refs(rig, refs: dict, frames: dict, rolls: dict | None = None) -> dict:
     """Write each ref bone's head and tail (world -> rig space), .l mirrored to .r.
 
-    A bone keeps the preset's roll direction (align_roll to its old Z); hand and finger bones
-    turn that Z with the hand, so a palm-in hand gets palm-in finger rolls. Returns
-    {placed, missing, worst_miss_m}.
+    A bone in `rolls` ({name: roll}, Blender's edit-bone roll in world axes) gets that roll, its
+    mirrored .r twin the mirrored one. Any other bone keeps the preset's roll direction (align_roll
+    to its old Z); hand and finger bones turn that Z with the hand, so a palm-in hand gets palm-in
+    finger rolls. Returns {placed, missing, worst_miss_m, rolls_given, worst_roll_miss_deg}.
     """
     inv = rig.matrix_world.inverted()
-    wanted = {}
+    to_rig = inv.to_3x3()
+    mirror = Matrix.Scale(-1, 3, Vector((1, 0, 0)))
+    wanted, z_given = {}, {}
     for name, ends in refs.items():
         head, tail = Vector(ends["head"]), Vector(ends["tail"])
         wanted[name] = (inv @ head, inv @ tail)
+        z = None
+        if name in (rolls or {}) and (tail - head).length > 1e-9:
+            z = bpy.types.Bone.MatrixFromAxisRoll((tail - head).normalized(), float(rolls[name])).col[2]
+            z_given[name] = to_rig @ z
         if name.endswith(".l") and _mirror_name(name) not in refs:
             wanted[_mirror_name(name)] = (inv @ Vector((-head.x, head.y, head.z)),
                                           inv @ Vector((-tail.x, tail.y, tail.z)))
+            if z is not None:
+                z_given[_mirror_name(name)] = to_rig @ (mirror @ z)
     _select_only([rig], rig)
-    bpy.ops.object.mode_set(mode='EDIT')
+    # the preset edits with X-mirror on: a .r roll written after its .l twin would overwrite the .l one
+    mirror_x, rig.data.use_mirror_x = rig.data.use_mirror_x, False
     missing, worst = [], 0.0
     try:
+        bpy.ops.object.mode_set(mode='EDIT')
         bones = rig.data.edit_bones
         old = {n: (bones[n].head.copy(), bones[n].tail.copy(), bones[n].z_axis.copy())
                for n in wanted if n in bones}
         turn = _hand_turn(inv, refs, frames, old)
-        mirror = Matrix.Scale(-1, 3, Vector((1, 0, 0)))
         # parents first, so a connected child's head lands where its parent's tail was put
         order = sorted((n for n in wanted if n in bones), key=lambda n: len(bones[n].parent_recursive))
         for name in order:
@@ -1427,17 +1514,24 @@ def _place_refs(rig, refs: dict, frames: dict) -> dict:
             head, tail = wanted[name]
             eb.head, eb.tail = head, tail
             stem = name.split("_", 1)[0].rstrip("0123456789")
-            if turn is not None and stem in ("hand", "thumb", "index", "middle", "ring", "pinky"):
+            if name in z_given:            # a roll given (Go!'s): written as it is, not turned
+                z_old = z_given[name]
+            elif turn is not None and stem in ("hand", "thumb", "index", "middle", "ring", "pinky"):
                 z_new = turn @ (mirror @ z_old) if name.endswith(".r") else turn @ z_old
                 z_old = mirror @ z_new if name.endswith(".r") else z_new
             eb.align_roll(z_old)
         missing = sorted(n for n in wanted if n not in bones)
+        worst_roll = 0.0
         for name in order:
             eb = bones[name]
             worst = max(worst, (eb.head - wanted[name][0]).length, (eb.tail - wanted[name][1]).length)
+            if name in z_given:
+                worst_roll = max(worst_roll, math.degrees(eb.z_axis.angle(z_given[name].normalized(), 0.0)))
     finally:
         _object_mode()
-    return {"placed": len(wanted) - len(missing), "missing": missing, "worst_miss_m": worst}
+        rig.data.use_mirror_x = mirror_x
+    return {"placed": len(wanted) - len(missing), "missing": missing, "worst_miss_m": worst,
+            "rolls_given": len(z_given), "worst_roll_miss_deg": round(worst_roll, 4)}
 
 
 def _weighted(rig, meshes) -> tuple[set, dict]:
@@ -1610,6 +1704,8 @@ def _export(params: dict, info: dict) -> dict:
                        f"no mesh holds weights for a deform bone of {rig.name!r}: bind it first (op pipeline)")
     scene = bpy.context.scene
     export = dict(_EXPORT_SCENE, arp_units_x100=bool(params.get("units_x100", True)))
+    if _has_face(rig):
+        export.update(_FULL_FACIAL)
     _, missing = _scene_settings(scene, export)
     if missing:
         return _refuse(params, info, "export_setting_missing",
@@ -1661,6 +1757,8 @@ def _pipeline(params: dict, info: dict, tracker: C.Tracker) -> dict:
                        "apply them first (the contract wants scale 1)")
     scene = bpy.context.scene
     export = dict(_EXPORT_SCENE, arp_units_x100=bool(params.get("units_x100", True)))
+    if markers.get("facial") is True:
+        export.update(_FULL_FACIAL)
     _, missing = _scene_settings(scene, export)
     if missing:
         return _refuse(params, info, "export_setting_missing",
@@ -1675,6 +1773,18 @@ def _pipeline(params: dict, info: dict, tracker: C.Tracker) -> dict:
         return _refuse(params, info, "no_view3d_area", "the pipeline needs " + _NO_VIEW)
     spine_count = int(params.get("spine_count") or markers.get("arp_spine_count") or 4)
     ids = info["operator_idnames"]
+    refs = markers["arp_refs"]
+    facial, ears = markers.get("facial") is True, any(n.startswith("ear_") for n in refs)
+    if facial:
+        lacking = sorted(set(_facial_options(refs)) - set(_op_props(ids["arp.show_limb_params"])))
+        if lacking:
+            return _refuse(params, info, "operator_property_missing",
+                           f"{ids['arp.show_limb_params']} declares no {lacking}: the installed add-on cannot "
+                           "turn the face on this way. Nothing was changed.")
+    if ears and not info["operators"].get("arp.add_limb"):
+        return _refuse(params, info, "operator_missing",
+                       f"the markers place ear references and the installed add-on (version {info['version']}) "
+                       "registers no arp.add_limb. Nothing was changed.")
     gates, out, warnings = [], {"op": "pipeline", "armature": rig_name, "mesh": mesh.name}, []
     state = C.save_state(scene, [mesh])
     before = set(bpy.data.objects)
@@ -1698,11 +1808,31 @@ def _pipeline(params: dict, info: dict, tracker: C.Tracker) -> dict:
             _set_spine(rig, spine_count, override, ids["arp.show_limb_params"])
         spines = len(_spine_refs(rig))
         gates.append(C.gate("arp.spine_bones", spines, spine_count - 1, spines == spine_count - 1))
-        placed = _place_refs(rig, markers["arp_refs"], markers.get("hand_frames") or {})
+        if facial or ears:
+            have = {b.name for b in rig.data.bones}
+            try:
+                if facial:
+                    _limb_params(rig, "head_ref.x", override, ids["arp.show_limb_params"], **_facial_options(refs))
+                if ears:
+                    _select_only([rig], rig)
+                    _call(ids["arp.add_limb"], override, limbs_presets="ears")
+                    _object_mode()
+            except (RuntimeError, ValueError) as exc:
+                gates.append(C.gate("arp.face_added", str(exc), "> 0 reference bones added", False))
+                return stop("face")
+            added = sorted(n for n in {b.name for b in rig.data.bones} - have if "_ref" in n)
+            out["face_refs_added"] = len(added)
+            gates.append(C.gate("arp.face_added", len(added), "> 0 reference bones added", bool(added)))
+            unplaced = sorted(set(added) - _ref_names(refs))
+            if unplaced:
+                warnings.append(f"the face added {unplaced}, which the markers do not place: they stay "
+                                "where the preset puts them and still take weights")
+        placed = _place_refs(rig, refs, markers.get("hand_frames") or {}, markers.get("ref_rolls") or {})
         out["refs"] = placed
-        ok = not placed["missing"] and placed["worst_miss_m"] <= 1e-4
+        ok = not placed["missing"] and placed["worst_miss_m"] <= 1e-4 and \
+            placed["worst_roll_miss_deg"] <= _ROLL_TOL_DEG
         gates.append(C.gate("arp.refs_placed", placed["missing"] or placed["worst_miss_m"],
-                            "all, <= 1e-4 m", ok))
+                            f"all, <= 1e-4 m, given rolls within {_ROLL_TOL_DEG} deg", ok))
         if not all(g["pass"] for g in gates):
             return stop("refs")
         _select_only([rig], rig)
