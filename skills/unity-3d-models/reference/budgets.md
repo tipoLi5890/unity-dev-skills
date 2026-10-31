@@ -75,6 +75,22 @@ at import (`unity-rigged-character`). A low rung that reads well static can stil
 the joints; the game mesh (stage S5) decides between regenerating and retopology —
 `blender-character-rig` → `reference/game-mesh.md`.
 
+## A character in parts
+
+A character in tier `three` (`game-character-pipeline` → `reference/start-gate.md` §5) is three
+meshes, body, head and hair, and the class's row still budgets the whole character. Each part's
+`budget_share` in the parts plan is a **fraction of the row**, never a count of its own: by
+default body 0.6, head 0.25, hair 0.15. The parts tools check only that the shares sum to at most
+1.0; a share says how the row divides when the ship-track game mesh is built. Each part keeps its
+own texture, at most the row's `target_tex_px` on a side, which is where the face's texel density
+comes from.
+
+- **Preview and showcase**: one material per part, so `max_materials` must allow 3 (the rig mesh
+  carries two, the hair one).
+- **Ship**: the parts merge into one skinned mesh with one atlas before S6, rigged once, as every
+  mesh is (not built yet; until then a ship-track character in parts keeps its three materials and the row
+  must allow them).
+
 ## The two tables
 
 Each sits under a heading of exactly that name in `ART_DIRECTION.md`, inside `## 3D`

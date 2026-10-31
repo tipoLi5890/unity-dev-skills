@@ -44,6 +44,8 @@ jobs:
           python3 - <<'PY'
           import importlib.util, os, subprocess, sys
           SCRIPTS = {   # path: modules it imports before parsing its arguments
+              'blender-character-rig/scripts/assemble_parts.py': [],
+              'blender-character-rig/scripts/part_math.py': [],
               'blender-retarget/scripts/motion_metrics.py': ['numpy'],
               'blender-retarget/scripts/clip_metrics.py': ['numpy'],
               'character-autorig/scripts/arp_markers.py': ['numpy'],
@@ -60,6 +62,7 @@ jobs:
               'codex-visual/scripts/pick_key.py': ['numpy', 'PIL'],
               'codex-visual/scripts/sheet_to_frames.py': ['PIL'],
               'comfyui-asset-generation/scripts/layout_map.py': ['numpy', 'PIL'],
+              'comfyui-asset-generation/scripts/part_views.py': [],
               'humanoid-motion/scripts/contact_bake.py': ['numpy'],
               'humanoid-motion/scripts/twocam/detect.py': ['numpy'],
               'humanoid-motion/scripts/twocam/exam.py': ['numpy'],

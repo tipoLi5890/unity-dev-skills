@@ -73,6 +73,17 @@ clip, while a clip converted from another skeleton is its own record with `depen
 packs. A change to the fit (a new canonical scale) is a new revision of the character, and
 `stale` then names everything measured on the old one.
 
+**A character in parts** (`game-character-pipeline` → `reference/start-gate.md` §5) links each
+piece to the anchor, so `stale` reaches only what a change touched. Each generated part (the head
+GLB, its painted copy) has the anchor mesh as `parent` and `depends-on` it. The parts plan
+(`<c>.parts.json`, kind `other`) is rewritten by the part tools as they run, so its file carries
+`mutable: true` and no part links to it. The assembly (`<c>_rig.glb` first, then `<c>_hair.glb`,
+`<c>_parts.glb`, its gate report), recorded once the part tools have finished, `depends-on` the
+anchor, the plan and every part; the rig `depends-on` the assembly. A new anchor makes the parts
+and the assembly stale (and the plan is made again from it). A regenerated or repainted part makes
+only the assembly stale, not the anchor or another part; once the assembly is recorded again,
+`stale` lists the rig after it. No new link kind is needed.
+
 **Git LFS is a budget, per character and per clip set.** Measured in a tennis game against a
 1 GB free tier: about 9 MB per character (a 1.6 MB FBX with two LOD levels, three 1024 base
 textures and a normal map), 105 MB for 75 purchased clips, 104 MB more for the pack's second

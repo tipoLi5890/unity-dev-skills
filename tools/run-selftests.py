@@ -9,7 +9,8 @@ selftest cannot be left out by accident.
 
 Dependencies: stdlib, numpy, pillow, scipy, cv2 and torch must import in this interpreter;
 ffmpeg must be on PATH; bpy rows run inside Blender, and only when --blender PATH is given
-(`blender -b --factory-startup -P SCRIPT -- ARGS`).
+(`blender -b --factory-startup --python-exit-code 1 -P SCRIPT -- ARGS`: without that flag Blender
+exits 0 after an uncaught Python error, and a crashed selftest would pass).
 
   python3 tools/run-selftests.py                          # every row this machine can run
   python3 tools/run-selftests.py --only codex-visual      # rows whose path contains this
@@ -37,6 +38,8 @@ SELFTESTS = [
     ('art-asset-registry/scripts/registry.py', ['selftest'], ['stdlib']),
     ('art-asset-registry/scripts/registry_adopt.py', ['selftest'], ['stdlib']),
     ('art-asset-registry/scripts/registry_ingest.py', ['selftest'], ['stdlib']),
+    ('blender-character-rig/scripts/assemble_parts.py', ['--selftest'], ['bpy', 'numpy']),
+    ('blender-character-rig/scripts/part_math.py', ['--selftest'], ['numpy', 'pillow']),
     ('blender-retarget/scripts/bakeoff_report.py', ['selftest'], ['stdlib']),
     ('blender-retarget/scripts/clip_metrics.py', ['selftest'], ['numpy']),
     ('blender-retarget/scripts/motion_metrics.py', ['--selftest'], ['numpy']),
@@ -61,6 +64,7 @@ SELFTESTS = [
     ('comfyui-asset-generation/scripts/camera_gate.py', ['selftest'], ['numpy', 'pillow']),
     ('comfyui-asset-generation/scripts/graph_diff.py', ['--selftest'], ['stdlib']),
     ('comfyui-asset-generation/scripts/layout_map.py', ['selftest'], ['numpy', 'pillow']),
+    ('comfyui-asset-generation/scripts/part_views.py', ['--selftest'], ['numpy', 'pillow', 'scipy']),
     ('humanoid-motion/scripts/bvh_io.py', ['--selftest'], ['numpy']),
     ('humanoid-motion/scripts/contact_bake.py', ['--selftest'], ['numpy']),
     ('humanoid-motion/scripts/contact_bake.py', ['--selftest-blender'], ['bpy', 'numpy']),
@@ -183,7 +187,7 @@ def main() -> int:
             print(f'SKIP (missing dep: {", ".join(missing)}) {label}')
             continue
         if 'bpy' in deps:
-            cmd = [a.blender, '-b', '--factory-startup', '-P', str(script), '--', *argv]
+            cmd = [a.blender, '-b', '--factory-startup', '--python-exit-code', '1', '-P', str(script), '--', *argv]
         else:
             cmd = [sys.executable, str(script), *argv]
         ran += 1

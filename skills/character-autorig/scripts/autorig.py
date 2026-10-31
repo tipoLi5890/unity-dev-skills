@@ -2,14 +2,14 @@
 """autorig.py — character-autorig's stages for one character in one command, on Windows, macOS or Linux.
 
 usage (in this order; `all` runs them one after another):
-    autorig.py prep     OUT GLB [--name NAME] [--height 1.75]      -> OUT/NAME.glb, OUT/NAME.blend
+    autorig.py prep     OUT GLB [--name NAME] [--height 1.75] [--hair HAIR.glb] -> OUT/NAME.glb, OUT/NAME.blend
     autorig.py check    OUT [--name NAME]                           -> rig/NAME.mesh.json
     autorig.py smart    OUT [--name NAME] [--facial] [--fingers 5|4] -> rig/NAME.smart.json, rig/NAME_smart.blend
     autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] -> rig/NAME.markers.json, rig/markers/
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
-    autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json
+    autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json [rig/NAME.bind.json]
     autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
-    autorig.py secondary OUT [--name NAME] [--no-render] [--secondary-markers FILE] -> secondary/
+    autorig.py secondary OUT [--name NAME] [--no-render] [--secondary-markers FILE] [--hair-chains] -> secondary/
     autorig.py all      OUT GLB [any of the options above] [--no-secondary]
     autorig.py --selftest
 Every stage takes --blender PATH (env BLENDER, default blender on PATH, else the usual install folder),
@@ -34,7 +34,15 @@ brt_arp export), NAME.secondary.json (secondary/1) and NAME.secondary.gate.json;
 deform_gate.py again on that export (secondary/NAME.contract.json, NAME.deform.json), which deform_gate reads as
 without the chains: the summary's `secondary` block puts both volume readings side by side. A body with nothing
 loose writes an empty chain list and adds no bone; the two re-checks are skipped and the files to take on stay.
-A deform stage that failed skips it.
+A deform stage that failed skips it. A separate hair object (parts_bind's) stays rigid on Head unless
+--hair-chains, which passes the same flag down: spikes found on the hair object get chains weighted on it.
+
+parts_bind (a character in parts, blender-character-rig assemble_parts.py): prep and all take --hair, the
+assembly's <c>_hair.glb, copied to OUT/NAME_hair.glb (prep without --hair removes an earlier copy); whenever
+that file is there, the contract stage ends with `assemble_parts.py bind OUT --hair OUT/NAME_hair.glb --rig-glb
+OUT/NAME.glb --name NAME --report rig/NAME.bind.json` (no --factory-startup), which binds the hair rigidly to the
+contract's Head bone in rig/NAME_arp.blend and exports the FBX again, so the first deform gate, every repair
+and the spring chains already have the hair. A bind that fails a gate stops the run (exit 2) before deform.
 
 smart never stops `all`: without the add-on or its AI files it is skipped (no exit change); a smart that fails
 (a gate, an error, a timeout) makes the run's exit 2, and the markers take what passed from its report (a face
@@ -53,7 +61,7 @@ automated: the failure message names them (reference/arp-pipeline.md).
 
 Blender runs headless except smart (the AI reads pictures of the 3D view; --python-exit-code 1 closes its window
 on a script error, and it is killed after its timeout plus margins); prep, markers and deform with
---factory-startup, smart, arp and repair without it (Auto-Rig Pro is an add-on). Commands are argument lists
+--factory-startup, smart, arp, parts_bind, repair and secondary without it (Auto-Rig Pro is an add-on). Commands are argument lists
 (no shell, no inline Python), so a Windows path passes as is; the
 Blender-side work of prep, arp and repair runs this file inside Blender (`-P autorig.py -- _inside ...`).
 Children run with PYTHONIOENCODING=utf-8. Prints one JSON summary (each step's exit code, seconds, log, report,
@@ -85,6 +93,7 @@ MAC_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 WIN_BLENDER_GLOB = r"C:\Program Files\Blender Foundation\Blender*\blender.exe"
 STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform", "secondary")
 STOP_ON_GATE = {"check", "markers", "arp", "deform"}   # a later stage cannot use what these failed to make
+STOP_STEPS = {"parts_bind"}     # a failed bind leaves the FBX without the hair: deform would gate the wrong file
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 DEFORM_POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")   # deform_gate.POSES
 SMART_KILL = 600 + 60 + 120       # arp_smart's --timeout, its watchdog's margin, then the window is killed
@@ -162,7 +171,8 @@ class Ctx:
                   "skeleton": o / "export" / f"{n}.skeleton.json", "contract": o / "rig" / f"{n}.contract.json",
                   "deform": o / "rig" / f"{n}.deform.json", "poses": o / "rig" / "poses", "logs": o / "logs",
                   "repair": o / "repair", "smart": o / "rig" / f"{n}.smart.json",
-                  "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json"}
+                  "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json",
+                  "hair": o / f"{n}_hair.glb", "bind": o / "rig" / f"{n}.bind.json"}
         sec = o / "secondary"
         self.f.update({"sec_dir": sec, "sec_blend": sec / f"{n}_sec.blend", "sec_fbx": sec / f"{n}.fbx",
                        "sec_skeleton": sec / f"{n}.skeleton.json", "sec_json": sec / f"{n}.secondary.json",
@@ -325,6 +335,8 @@ def plan(c: Ctx, stage: str, a) -> list:
             raise Refused("prep needs the GLB")
         if not c.dry and not c.glb.exists():
             raise Refused(f"missing {c.glb}")
+        if a.hair and not c.dry and not Path(a.hair).exists():
+            raise Refused(f"missing --hair {a.hair}")
         return [step("prep", blender_cmd(c, SELF, "_inside", "prep", "--glb", f["glb"], "--name", c.name,
                                          "--height", a.height, "--save", f["blend"], "--report", f["prep"]),
                      f["prep"], logs / "prep.log", kind="inner")]
@@ -359,9 +371,15 @@ def plan(c: Ctx, stage: str, a) -> list:
     if stage == "contract":
         need(c, f["skeleton"], "arp")
         fingers = [] if fingers_fixed(c) else ["--min-fingers", a.min_fingers]
-        return [step("contract", py_cmd(c, CONTRACT_MAP, "map", f["skeleton"], "--map", "arp", "--require", "contract",
-                                        *fingers, "--out", f["contract"]), f["contract"], logs / "contract.log",
-                     kind="python")]
+        steps = [step("contract", py_cmd(c, CONTRACT_MAP, "map", f["skeleton"], "--map", "arp", "--require",
+                                         "contract", *fingers, "--out", f["contract"]), f["contract"],
+                      logs / "contract.log", kind="python")]
+        if f["hair"].exists() or (c.dry and getattr(a, "hair", None)):   # a character in parts: hair on Head
+            steps.append(step("parts_bind", blender_cmd(c, BCR / "assemble_parts.py", "bind", c.out, "--hair",
+                                                        f["hair"], "--rig-glb", f["glb"], "--name", c.name,
+                                                        "--report", f["bind"], factory=False),
+                              f["bind"], logs / "parts_bind.log"))
+        return steps
     if stage == "deform":
         need(c, f["fbx"], "arp"); need(c, f["contract"], "contract")
         return [deform_step(c, "deform", f["fbx"], f["deform"], None if a.no_render else f["poses"], logs)]
@@ -371,7 +389,7 @@ def plan(c: Ctx, stage: str, a) -> list:
         blend, _ = take_on(c)
         need(c, blend, "arp"); need(c, f["contract"], "contract")
         extra = (["--markers", Path(os.path.abspath(a.secondary_markers))] if a.secondary_markers else []) + \
-            ([] if a.no_render else ["--render", f["sec_pics"]])
+            (["--hair-chains"] if a.hair_chains else []) + ([] if a.no_render else ["--render", f["sec_pics"]])
         fingers = [] if fingers_fixed(c) else ["--min-fingers", a.min_fingers]
         return [step("secondary", blender_cmd(c, HERE / "secondary_chains.py", "--mesh", c.name, "--map", f["contract"],
                                               "--save", f["sec_blend"], "--fbx", f["sec_fbx"], "--out", f["sec_json"],
@@ -619,6 +637,7 @@ def parser() -> Parser:
         if s in ("prep", "all"):
             p.add_argument("glb")
             p.add_argument("--height", type=float, default=1.75, help="metres (default 1.75)")
+            p.add_argument("--hair", help="a character in parts: the assembly's <c>_hair.glb, bound after contract")
         if s in ("markers", "deform", "secondary", "all"):
             p.add_argument("--no-render", action="store_true", help="no marker pictures, no pose renders")
         if s in ("smart", "markers", "all"):
@@ -632,6 +651,7 @@ def parser() -> Parser:
             p.add_argument("--no-repair", action="store_true")
         if s in ("secondary", "all"):
             p.add_argument("--secondary-markers", help="manual chains for secondary_chains.py --markers")
+            p.add_argument("--hair-chains", action="store_true", help="spring chains on the separate hair object")
         if s == "all":
             p.add_argument("--no-secondary", action="store_true", help="no spring chains")
     return ap
@@ -641,7 +661,7 @@ def parse(argv) -> argparse.Namespace:
     a = parser().parse_args(argv)
     for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
                  ("no_smart", False), ("facial", False), ("fingers", 5), ("no_secondary", False),
-                 ("secondary_markers", None)):
+                 ("secondary_markers", None), ("hair", None), ("hair_chains", False)):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -675,9 +695,16 @@ def main(argv=None, osname=None, env=None) -> int:
         return 0
     c.out.mkdir(parents=True, exist_ok=True)
     done, rc, repair, smart_rc = [], 0, None, 0    # smart's exit is kept apart: it never stops a later stage
+    stop = False
     try:
         if "prep" in stages and c.glb and c.glb != c.f["glb"]:
             shutil.copyfile(c.glb, c.f["glb"])
+        if "prep" in stages:      # the hair copy follows the prepped GLB: a whole mesh leaves none behind
+            hair = Path(os.path.abspath(a.hair)) if a.hair else None
+            if hair is not None and hair != c.f["hair"]:
+                shutil.copyfile(hair, c.f["hair"])
+            elif hair is None and c.f["hair"].exists():
+                c.f["hair"].unlink()
         if a.no_smart:
             c.smart = "skipped"
         for s in stages:
@@ -702,7 +729,10 @@ def main(argv=None, osname=None, env=None) -> int:
                     rc = 1
                     break
                 rc = max(rc, code)
-            if rc == 1 or (rc == 2 and s in STOP_ON_GATE):
+                if code == 2 and st["name"] in STOP_STEPS:
+                    stop = True
+                    break
+            if rc == 1 or stop or (rc == 2 and s in STOP_ON_GATE):
                 break
     except Refused as exc:
         out.update({"steps": done, "ok": False, "exit_code": 1, "error": f"refused: {exc}"})
@@ -829,8 +859,9 @@ def _in_repair(a):
     import brt_weights
     markers = json.loads(Path(a.markers).read_text(encoding="utf-8"))
     rmap = json.loads(Path(a.contract).read_text(encoding="utf-8")).get("retarget_map") or {}
-    bound = [(o, m.object) for o in bpy.data.objects if o.type == 'MESH' for m in o.modifiers
-             if m.type == 'ARMATURE' and m.object is not None and m.object.type == 'ARMATURE']
+    hair = lambda o: o.get("parts_hair") or o.name.split(".")[0] == "Hair"     # parts_bind's: rigid on Head
+    bound = [(o, m.object) for o in bpy.data.objects if o.type == 'MESH' and not hair(o)
+             for m in o.modifiers if m.type == 'ARMATURE' and m.object is not None and m.object.type == 'ARMATURE']
     if not bound:
         return {"ok": False, "error": "no mesh is bound to an armature in this file"}, 1
     mesh, rig = max(bound, key=lambda t: len(t[0].data.vertices))
@@ -903,6 +934,8 @@ elif script == "inside_arp":
     fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
 elif script == "inside_repair":
     touch(opt("--fbx")); touch(opt("--save"))
+elif script == "assemble_parts.py":
+    touch(opt("--report"), json.dumps(rep))
 elif script == "secondary_chains.py":
     n = int(os.environ.get("FAKE_CHAINS", "2"))
     rep.update(chains=[{"name": f"c{i}"} for i in range(n)], detect={"found": {"hood": ["hood"][:n]}})
@@ -997,6 +1030,21 @@ def selftest() -> int:
                       os.path.join("secondary", "Runner_Courier.contract.json"))
                   and "--factory-startup" in steps["secondary_deform"])
             check(f"{osname}: the name is the GLB stem made safe", r.get("name") == "Runner_Courier")
+            code_h, rh, _ = go(["all", str(out), str(glb), "--hair", str(glb), "--hair-chains", "--threads", "4",
+                                "--dry-run"], osname, {"BLENDER": bl})
+            sh_ = {s_["name"]: s_["cmd"] for s_ in rh.get("steps", [])}
+            pb = sh_.get("parts_bind", [])
+            check(f"{osname}: with --hair, parts_bind sits between contract and deform: assemble_parts.py bind OUT, "
+                  "the prepped GLB as --rig-glb, OUT/NAME_hair.glb, a report, no --factory-startup; without it there "
+                  "is none; --hair-chains reaches secondary_chains.py",
+                  code_h == 0 and list(sh_) == order[:7] + ["parts_bind"] + order[7:] and "parts_bind" not in steps
+                  and pb[pb.index("--") + 1] == "bind" and pb[pb.index("--") + 2] == str(out)
+                  and "--factory-startup" not in pb and script_of(pb) == "assemble_parts.py"
+                  and pb[pb.index("--rig-glb") + 1] == str(Path(out) / "Runner_Courier.glb")
+                  and pb[pb.index("--hair") + 1] == str(Path(out) / "Runner_Courier_hair.glb")
+                  and pb[pb.index("--report") + 1].endswith(os.path.join("rig", "Runner_Courier.bind.json"))
+                  and "--hair-chains" in sh_["secondary"] and "--hair-chains" not in steps["secondary"],
+                  steps=list(sh_))
             bls = [steps[k] for k in ("prep", "smart_probe", "markers", "arp", "deform")] + \
                 [s["cmd"] for s in r["repair_example"]]
             sm = steps["smart"]
@@ -1162,6 +1210,7 @@ def selftest() -> int:
             ran = [json.loads(x)["script"] for x in trace.read_text().splitlines() if x.strip()]
             return code, r, err, ran
 
+        clean0 = {"a0": ["LowerArm.R", 0.2, 0.04]}
         chain = ["inside_prep", "mesh_check.py", "arp_smart_probe", "arp_smart.py", "arp_markers.py", "inside_arp",
                  "contract_map.py", "deform_gate.py"]
         SEC = ["secondary_chains.py", "contract_map.py", "deform_gate.py"]
@@ -1209,6 +1258,28 @@ def selftest() -> int:
         code, r, err, ran = real(["deform", str(run_dir), "--name", "Runner"], FAKE_DEFORM={"a0": ["Spine", 0.4, 0.04]})
         check("deform alone: a spine loss is not repaired, exit 2, said why",
               code == 2 and r["repair"]["result"] == "not_applicable" and ran == ["deform_gate.py"])
+        hair = td / "src" / "runner_hair.glb"
+        hair.write_text("h")
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart", "--hair", str(hair)],
+                                 FAKE_DEFORM=clean0)
+        base = [x for x in chain if not x.startswith("arp_smart")]
+        check("all --hair: the hair copied to OUT/NAME_hair.glb, parts_bind after the contract and before the first "
+              "deform gate, then the chains; exit 0",
+              code == 0 and ran == base[:-1] + ["assemble_parts.py", "deform_gate.py"] + SEC
+              and (run_dir / "Runner_hair.glb").read_text() == "h"
+              and [s_["name"] for s_ in r["steps"]][4:7] == ["contract", "parts_bind", "deform"], ran=ran, code=code)
+        code, r, err, ran = real(["contract", str(run_dir), "--name", "Runner"])
+        check("contract on its own binds again while OUT/NAME_hair.glb is there", ran == ["contract_map.py",
+                                                                                         "assemble_parts.py"], ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart", "--hair", str(hair)],
+                                 {"assemble_parts.py": 2}, FAKE_DEFORM=clean0)
+        check("a bind that fails a gate stops before deform (the FBX has no hair), exit 2",
+              code == 2 and ran == base[:-1] + ["assemble_parts.py"] and "secondary" not in r, ran=ran, code=code)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"], FAKE_DEFORM=clean0)
+        check("all without --hair removes an earlier hair copy: no parts_bind, exit 0",
+              code == 0 and "assemble_parts.py" not in ran and not (run_dir / "Runner_hair.glb").exists(), ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--hair", str(td / "no.glb")])
+        check("--hair naming no file is refused before anything runs, exit 1", code == 1 and ran == [], ran=ran)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"mesh_check.py": 2})
         check("all: a mesh check failure stops before the rig, exit 2", code == 2 and ran == chain[:2])
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"inside_arp": 1})

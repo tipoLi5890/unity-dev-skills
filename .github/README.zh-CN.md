@@ -146,6 +146,19 @@ claude plugin install unity-dev@unity-dev
 
 绑骨步骤为背包、兜帽、头发、外套下摆和短裤加上骨链，并把每条的硬度和身体的位置写进 `<name>.secondary.json`。在 Unity 里一条命令就把它们变成弹簧骨，在任何帧率下都保持长度、不穿进身体。
 
+### 近看也经得住的脸
+
+<div align="center">
+<img src="media/parts.jpg" alt="同一个快递跑者的两个版本左右并排，各有一张全身正面和一张脸部特写。左边是整个身体一次图生 3D：脸部糊成一片，头发是一大块。右边是同一个身体，头部单独生成、头发拆开：眼睛、鼻子、嘴巴和耳朵更清楚，发束更细" width="800">
+<p><sub>左：整个身体一次生成。右：同一个身体，头部单独生成。</sub></p>
+</div>
+
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`blender-character-rig`](../skills/blender-character-rig/SKILL.md) →
+[`character-autorig`](../skills/character-autorig/SKILL.md)
+
+脸部重要的角色，头部会按概念图以自己的比例重绘，作为独立部件生成，再装回全身网格上，比例仍以全身为准。头发拆成第三个网格，脖子的接缝藏进衣领并对齐肤色，绑骨步骤再把头发绑到头上。
+
 ## 工作原理
 
 ```mermaid

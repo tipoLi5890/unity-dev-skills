@@ -299,3 +299,24 @@ proportions: §9's short-limbed mascot with ears and a tail is a Blender-route c
 
 Then hand off: conversion to `comfyui-asset-generation`; cleanup, upload and export to
 `unity-rigged-character`, its Mixamo route.
+
+## 11. Part sheets
+
+A character in parts (tier `three`, `game-character-pipeline` → `reference/start-gate.md` §5)
+needs no extra drawing at S1. The head's four views are made from S2's clean views: cropped round
+the head, redrawn and gated by `comfyui-asset-generation` → `reference/image-to-3d-parts.md`.
+What a head part view must show, and what any drawn part sheet must follow:
+
+- **True four views of the part alone**, FRONT, LEFT, BACK, RIGHT at one scale (§5, §6), the part
+  filling the frame: the whole generation is spent on it.
+- **A long neck with a flat bottom.** The neck reaches well below the chin and ends in a straight
+  horizontal cut, so the part's neck hides under the body's collar or hood. A short or ragged neck
+  leaves a hole at the seam.
+- **The same design as the body sheet**: colours, hairline and silhouette match, since the part is
+  registered onto the whole-body mesh and checked against it.
+- **No face on the back view.** The back of a head is hair and nape only; a model asked for "the same
+  head" draws a face there, so the back view gets a prompt of its own.
+
+**The hand sheet (tier `fine`, reserved) is drawn, never cropped.** A crop of the body sheet gives
+fingers too small and too close to separate. Draw one open hand: true four views, fingers spread
+apart, the palm drawn where the view sees it.

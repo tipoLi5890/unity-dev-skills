@@ -1,6 +1,6 @@
 # G0 — the start gate in full
 
-`SKILL.md` lists the three answers; this file holds what each one decides and what follows from
+`SKILL.md` lists the four answers; this file holds what each one decides and what follows from
 it. A person gives the answers, and they are written down (the brief, or the ledger's `note`)
 before the first image is generated.
 
@@ -71,3 +71,48 @@ character and decides to pay for a better mesh.
    defect (S10 names the layer), not a reason to re-make the clip.
 6. **The ledger.** `stale` names every record downstream of the old mesh; the new rig, the FBX and
    the Unity screenshot are recorded and approved again.
+
+## 5. The parts tier
+
+How far S3 goes, chosen by the quality target; not another flow. The tier is written in the
+character's parts plan (`ArtDirection/parts/<c>/<c>.parts.json`, schema `parts/1`:
+`comfyui-asset-generation` → `reference/image-to-3d-parts.md`).
+
+| Tier | Parts | For | Costs beyond the anchor |
+|---|---|---|---|
+| `whole` | the anchor, one mesh | the demo, a preview, a character seen small | nothing: no plan file, every stage as it is |
+| `three` | body (the anchor, its head cut off), head, hair (split from the head job) | showcase and ship; a face the camera comes close to | the plan, four redrawn head views, one background-removal job, **one** head job and its paint loop: e.g. 6–10 minutes of GPU time |
+| `fine` (reserved) | `three` plus hands, eyeballs, accessories | hand and face close-ups | e.g. 5–7 more jobs |
+| `custom` | a person's own list | reserved | the tools refuse it, as they refuse `fine` |
+
+**What `three` gains.** The head gets a whole generation to itself: ears, eyelids and lips form
+that the anchor's head never has, and the face is clearly sharper. Hair becomes its own mesh, and
+the head its own texture, so the face's texel density rises by the region ratio. **What it does
+not:** hands. A crop of the body views does not give separable fingers; hands come with `fine`,
+from a drawn hand sheet (`codex-visual` → `reference/image-to-3d-input.md` §11).
+
+**The anchor is always generated first.** S3 makes the whole body as today, and S3b paints it;
+the parts are registered onto it and replace its regions, and S3c gates the assembled silhouette
+and head height against it. The proportions therefore stay the anchor's, and so do the contract's
+joint positions and every clip made for the demo.
+
+**What changes downstream.**
+
+- The rig mesh is `<c>_rig.glb`, body and head with both materials. S6 runs
+  `character-autorig` `autorig.py all OUT <c>_rig.glb --hair <c>_hair.glb`: after the contract it
+  binds the hair rigidly to the Head bone (`parts_bind`), so the deformation gate, every repair and
+  the spring chains already have it. The hair stays rigid on Head unless `--hair-chains` asks for
+  spikes on it.
+- The markers measure the rig mesh, which has no hair: the height is the skull top, and spiky
+  hair no longer lifts the shoulders and hips.
+- When the hair split fails its gates, the hair stays joined to the head and the run stops; a
+  **person** may accept that, and the hair is then back in the rig mesh and in the height.
+- The seam hides under a collar or hood by default; a raised hood or a helmet over the head is
+  refused in this tier.
+- On the ship track the parts keep one material each (`unity-3d-models` → `reference/budgets.md`,
+  A character in parts); one skinned mesh with one atlas comes with `fine`.
+
+**From `whole` to `three` later.** The approved anchor stays: make the plan from it, the head
+views and job, S3b on the head, then re-enter at S3c and S6 (a new rig on the same contract).
+The clips carry over as on the upgrade track (§4, step 5); S9's prop and drift checks, S11 and S12
+run again, and the ledger's `stale` lists what the new rig replaces.

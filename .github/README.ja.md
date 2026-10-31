@@ -142,6 +142,19 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 
 リグの工程でバッグ、フード、髪、上着の裾、ショートパンツにボーンチェーンを加え、それぞれの硬さと体の位置を `<name>.secondary.json` に書き出します。Unity ではコマンド一つでスプリングボーンになり、どのフレームレートでも長さを保ち、体にめり込みません。
 
+### 寄っても崩れない顔
+
+<div align="center">
+<img src="media/parts.jpg" alt="同じ配達ランナーを二つ左右に並べ、それぞれ全身の正面と顔のアップを示したもの。左は全身を一回の画像から 3D で作ったもの：顔はぼやけ、髪は一つの重い塊。右は同じ体に頭だけ別に生成し、髪を切り分けたもの：目、鼻、口、耳がくっきりし、髪の束も細い" width="800">
+<p><sub>左：全身を一回で生成。右：同じ体に、頭だけ別に生成。</sub></p>
+</div>
+
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`blender-character-rig`](../skills/blender-character-rig/SKILL.md) →
+[`character-autorig`](../skills/character-autorig/SKILL.md)
+
+顔が大事なキャラクターでは、頭をコンセプトから頭の大きさで描き直して別の部品として生成し、全身のメッシュに戻すので、比率は全身のままです。髪は三つ目のメッシュとして切り分け、首の継ぎ目は襟の中に隠して肌の色を合わせ、リグの工程で髪を頭に結び付けます。
+
 ## 仕組み
 
 ```mermaid

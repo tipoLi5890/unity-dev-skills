@@ -1,7 +1,13 @@
 # The routes — body × rigging tool × clip source
 
 Chosen once at G0, before S1, because the route decides the art. Every route ends with clips that
-already play on the character's skeleton: Unity never retargets across skeletons.
+already play on the character's skeleton: **Unity never retargets across skeletons.** Clips reach it
+made on the contract (`humanoid-motion`), retarget-baked in Blender (`blender-retarget`), or played
+unchanged on a pack skeleton fitted to the mesh (the fit route).
+
+The parts tier (`reference/start-gate.md` §5) is not a route. A character in parts is rigged from
+the assembled `<c>_rig.glb` (body and head) on the default row, `autorig.py all --hair <c>_hair.glb`,
+which binds the hair to the Head bone after the contract and exports through Auto-Rig Pro.
 
 | The body | Rigging (S6, always local) | Clips (S7–S9) | S1 draws |
 |---|---|---|---|
@@ -39,7 +45,7 @@ already play on the character's skeleton: Unity never retargets across skeletons
 ## Exit codes differ between tools
 
 `mesh_check.py`, `arp_markers.py`, `deform_gate.py`, `contract_map.py`, `motion_metrics.py`,
-`clip_metrics.py`, `contact_bake.py`, `autorig.py` and `twocam.py` exit 0 pass, 2 a gate failed,
+`clip_metrics.py`, `contact_bake.py`, `autorig.py`, `twocam.py` and `assemble_parts.py` exit 0 pass, 2 a gate failed,
 1 refused input or a usage error. `rig_gate.py` exits 0 pass, 1 a gate failed, 2 refused. A stage runner reads
 each tool's own table; it never treats every non-zero exit alike.
 

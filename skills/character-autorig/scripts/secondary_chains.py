@@ -14,7 +14,8 @@ usage (Blender, headless; not --factory-startup when it exports, the exporter is
     blender -b RIG.blend -P secondary_chains.py -- --mesh Runner [--armature RunnerRig] \
         [--map arp|ROLE_MAP.json|CONTRACT_REPORT.json] [--kinds auto|hood,bag,hem,shorts_hem,hair] \
         [--require KINDS] [--markers MARKERS.json] [--save OUT.blend] [--fbx OUT.fbx] \
-        [--out OUT.secondary.json] [--report GATE.json] [--render DIR] [--detect-only]
+        [--out OUT.secondary.json] [--report GATE.json] [--render DIR] [--detect-only] \
+        [--hair-mesh auto|NAME|none] [--hair-chains]
     blender -b --factory-startup -P secondary_chains.py -- --selftest [--render DIR]
 
 --armature defaults to the armature the mesh's Armature modifier uses. --kinds auto (default) looks
@@ -47,6 +48,11 @@ with the body height H; any of them replaced by a marker chain, reference/second
               than 0.04 H
   strap       not detected: fixed at both ends, a free-tip spring is the wrong tool. A marker chain
               of kind strap gets one stiff bone whose share peaks mid-span (a sag).
+A separate hair object (--hair-mesh, default auto: the mesh assemble_parts.py bind leaves, marked
+parts_hair and named Hair, bound to the rig): the body is not searched for hair, and the hair stays
+rigid on Head unless --hair-chains runs the hair kind on that object (the head centre from the
+body's head skin and the hair together, thresholds from the body's H; weights on the hair object
+only). A spike too small to give each bone 50 vertices is left rigid (detect.dropped_small).
 
 Weights: inside a region a chain's share ramps from 0 at its root to s_max along it, feathered at
 the region border and blended between neighbouring chains of a ring; the share is taken from the
@@ -312,6 +318,7 @@ class Body:
         zmin, zmax = co[:, 2].min(), co[:, 2].max()
         self.H = float(zmax - zmin)
         self.zmin = float(zmin)
+        self.around = None     # a separate hair mesh: the body's head skin under it (detect_hair's centre)
         self.families = self._families()
         fam_w = np.stack([W[:, [self.col[b] for b in bones]].sum(1) for bones in self.families.values()], 1)
         keys = list(self.families)
@@ -674,7 +681,7 @@ def detect_hair(body, taken, max_chains=6):
     head = body.in_parts(("Head",)) & ~taken
     if head.sum() < 200:
         return [], {"hair": "no head skin"}
-    p = co[head]
+    p = co[head] if body.around is None else np.vstack([co[head], body.around])   # hair object: skull too
     c = (p.min(0) + p.max(0)) / 2
     face = unit(np.array([0, -1.0, -0.6]))
     v = co - c
@@ -787,6 +794,11 @@ def detect_all(body, kinds, markers=None, required=()):
         if ch["region"].sum() < 20:
             info.setdefault("dropped_empty", []).append(ch["name"])
             return False
+        if ch["kind"] == "hair" and not ch.get("marker"):     # a spike too small for 50 per bone stays rigid
+            live = ch["share"].sum(1) >= 0.002
+            if min(int(((ch["share"][:, j] > 1e-4) & live).sum()) for j in range(ch["share"].shape[1])) < 50:
+                info.setdefault("dropped_small", []).append(ch["name"])
+                return False
         taken[ch["region"]] = True
         chains.append(ch)
         return True
@@ -1022,46 +1034,56 @@ def write_weights(me, W, cols, body):
     deform_n = len(body.names)
     changed = np.where((np.abs(W[:, :deform_n] - old) > 0).any(1) | (W[:, deform_n:] > 0).any(1))[0]
     groups = {}
-    for j, name in enumerate(cols):
-        g = me.vertex_groups.get(name) or me.vertex_groups.new(name=name)
-        groups[j] = g
+
+    def group(j):     # made only when a weight needs it: a rigid hair object gets no empty groups
+        if j not in groups:
+            groups[j] = me.vertex_groups.get(cols[j]) or me.vertex_groups.new(name=cols[j])
+        return groups[j]
     for i in changed:
         i = int(i)
         for j in range(len(cols)):
             w = float(W[i, j])
             if w > 0:
-                groups[j].add([i], w, 'REPLACE')
+                group(j).add([i], w, 'REPLACE')
             elif j < deform_n and old[i, j] > 0:
-                groups[j].remove([i])
+                group(j).remove([i])
     return len(changed)
 
 
-def pose_leak(rig, me, chains, angle=25.0):
-    """Turn each chain's bones and measure how far skin outside its region moves."""
+def pose_leak(rig, meshes, chains, angle=25.0):
+    """Turn each chain's bones and measure how far skin outside its region moves: on the mesh the
+    chain is weighted on (`meshes[chain["on"]]`) outside its region, on every other mesh anywhere."""
     dg = bpy.context.evaluated_depsgraph_get()
 
-    def positions():
-        dg.update()
+    def positions(me):
         ev = me.evaluated_get(dg)
         m = ev.to_mesh()
         a = np.empty(len(m.vertices) * 3, np.float32)
         m.vertices.foreach_get("co", a)
         ev.to_mesh_clear()
         return a.reshape(-1, 3).astype(np.float64)
-    rest = positions()
+    dg.update()
+    rest = {t: positions(me) for t, me in meshes.items()}
     out = {}
     for ch in chains:
         pbs = [rig.pose.bones[b] for b in ch["bones"][:-1]]
         for pb in pbs:
             pb.rotation_mode = 'QUATERNION'
             pb.rotation_quaternion = Quaternion((1, 0, 0), math.radians(angle))
-        moved = np.linalg.norm(positions() - rest, axis=1)
+        dg.update()
+        worst, inside = 0.0, 0.0
+        for t, me in meshes.items():
+            moved = np.linalg.norm(positions(me) - rest[t], axis=1)
+            own = ch.get("on", "body") == t
+            outside = ~ch["region"] if own else np.ones(len(moved), bool)
+            if outside.any():
+                worst = max(worst, float(moved[outside].max()))
+            if own and ch["region"].any():
+                inside = float(moved[ch["region"]].max())
         for pb in pbs:
             pb.rotation_quaternion = (1, 0, 0, 0)
-        outside = ~ch["region"]
-        out[ch["name"]] = {"outside_max": float(moved[outside].max()) if outside.any() else 0.0,
-                           "inside_max": float(moved[ch["region"]].max())}
-    positions()
+        out[ch["name"]] = {"outside_max": worst, "inside_max": inside}
+    dg.update()
     return out
 
 
@@ -1075,7 +1097,9 @@ def export_fbx(rig, fbx):
     return brt_arp.run({"op": "export", "armature": rig.name, "fbx": fbx, "acknowledge_destructive": True})
 
 
-def reimport_check(fbx, chains, body, W_new, cols):
+def reimport_check(fbx, chains, sources):
+    """sources: {tag: (body, weights, cols)}; each re-imported mesh is read against the source nearest it
+    (the body, or a separate hair), and a cc_ weight on a mesh its chain is not on counts as outside."""
     before = set(bpy.data.objects)
     bpy.ops.import_scene.fbx(filepath=fbx)
     objs = [o for o in bpy.data.objects if o not in before]
@@ -1093,30 +1117,34 @@ def reimport_check(fbx, chains, body, W_new, cols):
                     wrong_parent.append([b, bones[b], prev])
                 prev = b
         cc = [b for ch in chains for b in ch["bones"][:-1]]
-        col = {b: cols.index(b) for b in cc}
         outside, mismatch, counted = 0, 0.0, {b: 0 for b in cc}
         unmatched = 0
-        region_of = {b: ch["region"] for ch in chains for b in ch["bones"][:-1]}
+        chain_of = {b: ch for ch in chains for b in ch["bones"][:-1]}
         for m in meshes:
             n = len(m.data.vertices)
             co = np.empty(n * 3, np.float32)
             m.data.vertices.foreach_get("co", co)
             mw = np.array(m.matrix_world)
             co = co.reshape(-1, 3) @ mw[:3, :3].T + mw[:3, 3]
-            idx, dist = nearest_index(body.co, co)
+            probe = co[:: max(1, n // 500)]
+            tag = min(sources, key=lambda t: float(np.median(nearest_dist(sources[t][0].co, probe))))
+            src, W_new, cols = sources[tag]
+            idx, dist = nearest_index(src.co, co)
             gi = {g.index: g.name for g in m.vertex_groups}
             for v in m.data.vertices:
                 for g in v.groups:
                     name = gi.get(g.group)
-                    if name in col and g.weight > 1e-4:
+                    if name in chain_of and g.weight > 1e-4:
                         k = idx[v.index]
                         if dist[v.index] > 1e-3:
                             unmatched += 1
                             continue
                         counted[name] += 1
-                        if not region_of[name][k]:
+                        ch = chain_of[name]
+                        if ch.get("on", "body") != tag or not ch["region"][k]:
                             outside += 1
-                        mismatch = max(mismatch, abs(g.weight - W_new[k, col[name]]))
+                            continue
+                        mismatch = max(mismatch, abs(g.weight - W_new[k, cols.index(name)]))
         return {"bones": len(bones), "missing": missing, "wrong_parent": wrong_parent, "outside_region": outside,
                 "weight_mismatch_max": round(float(mismatch), 5), "unmatched": unmatched, "weighted": counted}
     finally:
@@ -1240,7 +1268,7 @@ PALETTE = [(0.95, 0.35, 0.1), (0.1, 0.55, 0.95), (0.95, 0.8, 0.1), (0.6, 0.2, 0.
            (0.95, 0.2, 0.55), (0.3, 0.85, 0.9), (0.85, 0.5, 0.95), (0.55, 0.75, 0.15), (1.0, 0.6, 0.6)]
 
 
-def render_set(out_dir, prefix, me, chains, views, mode, W=None, cols=None, size=900, focus=None):
+def render_set(out_dir, prefix, me, chains, views, mode, W=None, cols=None, size=900, focus=None, keep=None):
     """Workbench renders: mode 'texture' (the mesh's own material), 'regions' (vertex colours per
     chain, brighter = more share) with the chain bones drawn as rods over the mesh."""
     scene = bpy.context.scene
@@ -1248,7 +1276,7 @@ def render_set(out_dir, prefix, me, chains, views, mode, W=None, cols=None, size
     saved = (render.engine, render.resolution_x, render.resolution_y, render.filepath, scene.camera,
              shading.light, shading.color_type, render.film_transparent)
     added, attr = [], None
-    hidden = [o for o in scene.objects if o.type == 'MESH' and o != me and not o.hide_render]
+    hidden = [o for o in scene.objects if o.type == 'MESH' and o != me and o != keep and not o.hide_render]
     for o in hidden:
         o.hide_render = True
     paths = {}
@@ -1420,6 +1448,28 @@ def kind_list(text, what):
     return kinds
 
 
+def find_hair(a, me, rig):
+    """The separate hair bound to the same rig: --hair-mesh NAME, or (auto) the one object
+    assemble_parts.py bind leaves (marked `parts_hair`, named `Hair`); --hair-mesh none ignores it."""
+    if a.hair_mesh == "none":
+        if a.hair_chains:
+            raise Refused("--hair-chains with --hair-mesh none: no hair object to chain")
+        return None
+    bound = lambda o: o.type == 'MESH' and o != me and any(m.type == 'ARMATURE' and m.object == rig
+                                                          for m in o.modifiers)
+    if a.hair_mesh not in (None, "auto"):
+        o = bpy.data.objects.get(a.hair_mesh)
+        if o is None or not bound(o):
+            raise Refused(f"--hair-mesh {a.hair_mesh!r}: no mesh of that name bound to {rig.name!r}")
+        return o
+    found = [o for o in bpy.data.objects if bound(o) and (o.get("parts_hair") or o.name.split(".")[0] == "Hair")]
+    if len(found) > 1:
+        raise Refused(f"{len(found)} hair objects bound to {rig.name!r}: pass --hair-mesh NAME")
+    if a.hair_chains and not found:
+        raise Refused("--hair-chains needs a separate hair object bound to the rig (assemble_parts.py bind)")
+    return found[0] if found else None
+
+
 def run(a) -> tuple[dict, int]:
     me = bpy.data.objects.get(a.mesh or "")
     if me is None or me.type != 'MESH':
@@ -1446,26 +1496,57 @@ def run(a) -> tuple[dict, int]:
                                                 for m in markers.get("chains", [])):
         raise Refused("--markers: {\"chains\": [{\"kind\", \"name\", \"joints\": [[x, y, z], >= 2]}], \"skip\": []}")
     kinds, required = kind_list(a.kinds, "--kinds"), kind_list(a.require, "--require")
-    chains, info, missing = detect_all(body, kinds, markers, required)
+    hair_obj = find_hair(a, me, rig)
+    hair_body, hchains = None, []
+    if hair_obj is None:
+        chains, info, missing = detect_all(body, kinds, markers, required)
+    else:   # a separate hair (assemble_parts bind): the body has none; spikes, if asked, go on the hair object
+        split = lambda keep: dict(markers, chains=[m for m in markers.get("chains", []) if keep(m["kind"])])
+        chains, info, missing = detect_all(body, [k for k in kinds if k != "hair"], split(lambda k: k != "hair"),
+                                           [k for k in required if k != "hair"])
+        hair_body = read_body(rig, hair_obj, roles)
+        hair_body.H, hair_body.zmin = body.H, body.zmin      # every threshold scales with the body's height
+        hair_body.around = body.co[body.in_parts(("Head",))]
+        hk = ["hair"] if a.hair_chains and "hair" in kinds else []
+        hchains, hinfo, _ = detect_all(hair_body, hk, split(lambda k: k == "hair"))
+        for ch in hchains:
+            ch["on"] = "hair"
+        if "hair" in required and not hchains:
+            missing.append("hair")
+        info.setdefault("found", {})["hair"] = (hinfo.get("found") or {}).get("hair", [])
+        info["hair_object"] = {"name": hair_obj.name, "vertices": len(hair_obj.data.vertices),
+                               "mode": "chains" if hchains else f"rigid on {body.bone('Head')}",
+                               "detect": {k: v for k, v in hinfo.items() if k != "found"}}
+    for ch in chains:
+        ch["on"] = "body"
+    allc = chains + hchains
     gates = [gate("secondary.chains_placed", missing, [], not missing)]
     report = {"schema": "gate/1", "tool": TOOL, "armature": rig.name, "mesh": me.name, "height": round(body.H, 4),
               "detect": info,
               "chains": [{"name": c["name"], "kind": c["kind"], "parent": c["parent_bone"], "bones": c["bones"],
                           "joints": [r6(j) for j in c["joints"]], "region_vertices": int(c["region"].sum()),
-                          "marker": bool(c.get("marker"))} for c in chains]}
+                          "mesh": hair_obj.name if c["on"] == "hair" else me.name,
+                          "marker": bool(c.get("marker"))} for c in allc]}
+    if hair_obj is not None:
+        report["hair_mesh"] = hair_obj.name
     pics = {}
     if a.render:
         os.makedirs(a.render, exist_ok=True)
-        pics["before"] = render_set(a.render, "before_", me, [], ("side", "back", "threeq"), "texture")
+        pics["before"] = render_set(a.render, "before_", me, [], ("side", "back", "threeq"), "texture", keep=hair_obj)
+    W, cols, extra, wstats = apply_shares(body, chains)
+    if hair_body is not None:
+        Wh, colsh, _, wstats_h = apply_shares(hair_body, hchains)
+        wstats = dict(wstats, **{k: v for k, v in wstats_h.items() if k != "_limit"}, _limit_hair=wstats_h["_limit"])
     if a.detect_only:
-        W, cols, extra, wstats = apply_shares(body, chains)
         if a.render:
             pics["regions"] = render_set(a.render, "regions_", me, chains, ("side", "back", "front"), "regions",
                                          W=W, cols=cols)
+            if hchains:
+                pics["hair_regions"] = render_set(a.render, "hair_regions_", hair_obj, hchains,
+                                                  ("side", "back", "front"), "regions", W=Wh, cols=colsh)
         report.update(gates=gates, weights=wstats, renders=pics)
         return finish(report, gates)
-    W, cols, extra, wstats = apply_shares(body, chains)
-    if not chains:      # nothing loose: no bone, no export; the rig and its FBX stay as they were
+    if not allc:      # nothing loose: no bone, no export; the rig and its FBX stay as they were
         spec = secondary_json(os.path.splitext(os.path.basename(a.fbx or a.save or me.name))[0], [], {}, {},
                               {"H": body.H, "weighted": {}})
         if a.out:
@@ -1476,31 +1557,38 @@ def run(a) -> tuple[dict, int]:
         return finish(report, gates)
     lo, hi = body.co.min(0), body.co.max(0)
     upper = [[lo[0] * 0.55, lo[1], body.zmin + 0.3 * body.H], [hi[0] * 0.55, hi[1], hi[2]]]
-    add_bones(rig, chains, body.H)
-    write_weights(me, W, cols, body)
-    # read back what Blender holds and gate it
-    Wb = read_weights(me, cols)
-    deform_n = len(body.names)
-    any_region = np.zeros(len(body.co), bool)
-    for c in chains:
-        any_region |= c["region"]
-    nnz = (Wb > 1e-6).sum(1)
-    sums = Wb.sum(1)
-    outside_diff = float(np.abs(Wb[~any_region, :deform_n] - body.W[~any_region]).max()) if (~any_region).any() else 0.0
-    outside_chain = float(Wb[~any_region, deform_n:].max()) if (~any_region).any() and Wb.shape[1] > deform_n else 0.0
-    per_bone = {b: int((Wb[:, cols.index(b)] > 1e-4).sum()) for c in chains for b in c["bones"][:-1]}
-    tips = [c["bones"][-1] for c in chains]
-    tip_w = [t for t in tips if me.vertex_groups.get(t) is not None]
+    add_bones(rig, allc, body.H)
+    parts = [("body", me, body, chains, W, cols)]
+    if hchains:      # a rigid hair is left as it is: no group added, nothing rewritten
+        parts.append(("hair", hair_obj, hair_body, hchains, Wh, colsh))
+    nnz_max, sum_err, unchanged, per_bone, tip_w, Wread = 0, 0.0, 0.0, {}, [], {}
+    for tag, obj, b_, cs, W_, cols_ in parts:
+        write_weights(obj, W_, cols_, b_)
+        # read back what Blender holds and gate it
+        Wb_ = Wread[tag] = read_weights(obj, cols_)
+        deform_n = len(b_.names)
+        any_region = np.zeros(len(b_.co), bool)
+        for c in cs:
+            any_region |= c["region"]
+        nnz = (Wb_ > 1e-6).sum(1)
+        sums = Wb_.sum(1)
+        outside = ~any_region
+        if outside.any():
+            unchanged = max(unchanged, float(np.abs(Wb_[outside, :deform_n] - b_.W[outside]).max()),
+                            float(Wb_[outside, deform_n:].max()) if Wb_.shape[1] > deform_n else 0.0)
+        nnz_max = max(nnz_max, int(nnz.max()))
+        sum_err = max(sum_err, float(np.abs(sums[nnz > 0] - 1).max()) if (nnz > 0).any() else 0.0)
+        per_bone.update({b: int((Wb_[:, cols_.index(b)] > 1e-4).sum()) for c in cs for b in c["bones"][:-1]})
+        tip_w += [f"{obj.name}:{c['bones'][-1]}" for c in allc if obj.vertex_groups.get(c["bones"][-1]) is not None]
+    Wb = Wread["body"]
     low = {b: n for b, n in per_bone.items() if n < 50}
     gates += [gate("secondary.weighted_vertices", low or min(per_bone.values(), default=0), ">= 50 per chain bone",
                    not low and per_bone),
-              gate("secondary.max_influences", int(nnz.max()), 4, nnz.max() <= 4),
-              gate("secondary.weight_sum", round(float(np.abs(sums[nnz > 0] - 1).max()), 6), 1e-4,
-                   np.abs(sums[nnz > 0] - 1).max() <= 1e-4),
-              gate("secondary.body_weights_unchanged", round(max(outside_diff, outside_chain), 7), 0,
-                   outside_diff == 0 and outside_chain == 0),
+              gate("secondary.max_influences", nnz_max, 4, nnz_max <= 4),
+              gate("secondary.weight_sum", round(sum_err, 6), 1e-4, sum_err <= 1e-4),
+              gate("secondary.body_weights_unchanged", round(unchanged, 7), 0, unchanged == 0),
               gate("secondary.tip_unweighted", tip_w, [], not tip_w)]
-    leak = pose_leak(rig, me, chains)
+    leak = pose_leak(rig, {"body": me, **({"hair": hair_obj} if hair_obj is not None else {})}, allc)
     worst = max((v["outside_max"] for v in leak.values()), default=0.0)
     gates.append(gate("secondary.leak", round(worst, 6), 0.001, worst <= 0.001))
     report.update(weights=dict(wstats, per_bone=per_bone), leak={k: {kk: round(vv, 5) for kk, vv in v.items()}
@@ -1510,14 +1598,18 @@ def run(a) -> tuple[dict, int]:
                                      W=Wb, cols=cols)
         pics["regions_close"] = render_set(a.render, "regions_close_", me, chains, ("side", "back", "threeq"),
                                            "regions", W=Wb, cols=cols, focus=upper)
+        if hchains:
+            pics["hair_regions"] = render_set(a.render, "hair_regions_", hair_obj, hchains, ("side", "back", "front"),
+                                              "regions", W=Wread["hair"], cols=colsh)
         pics["before_close"] = render_set(a.render, "before_close_", me, [], ("side", "threeq"), "texture",
-                                          focus=upper)
-        pose_swing(rig, chains)
+                                          focus=upper, keep=hair_obj)
+        pose_swing(rig, allc)
         bpy.context.view_layer.update()
-        pics["after_swing"] = render_set(a.render, "swing_", me, chains, ("side", "back", "threeq"), "texture")
-        pics["after_swing_close"] = render_set(a.render, "swing_close_", me, chains, ("side", "threeq"), "texture",
-                                               focus=upper)
-        clear_pose(rig, chains)
+        pics["after_swing"] = render_set(a.render, "swing_", me, allc, ("side", "back", "threeq"), "texture",
+                                         keep=hair_obj)
+        pics["after_swing_close"] = render_set(a.render, "swing_close_", me, allc, ("side", "threeq"), "texture",
+                                               focus=upper, keep=hair_obj)
+        clear_pose(rig, allc)
         bpy.context.view_layer.update()
     if a.save:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(a.save), copy=True)
@@ -1535,7 +1627,10 @@ def run(a) -> tuple[dict, int]:
             sk = json.load(open(sk_path, encoding="utf-8"))
             heads = {b["name"]: b["head"] for b in sk["bones"]}
             report["skeleton"] = sk_path
-        chk = reimport_check(fbx, chains, body, Wb, cols)
+        sources = {"body": (body, Wb, cols)}
+        if hair_body is not None:
+            sources["hair"] = (hair_body, Wread.get("hair", hair_body.W), colsh if hchains else list(hair_body.names))
+        chk = reimport_check(fbx, allc, sources)
         report["reimport"] = chk
         gates.append(gate("secondary.export_bones", {"missing": chk["missing"], "wrong_parent": chk["wrong_parent"]},
                           "all present, parents kept", not chk["missing"] and not chk["wrong_parent"]))
@@ -1544,12 +1639,15 @@ def run(a) -> tuple[dict, int]:
                                                        "unmatched": chk["unmatched"]},
                           {"outside_region": 0, "weight_mismatch_max": 0.01},
                           chk["outside_region"] == 0 and chk["weight_mismatch_max"] <= 0.01))
-    cols_d, pen, inside = size_colliders(body, chains, heads)
+    cols_d, pen, inside = size_colliders(body, allc, heads)
     gates.append(gate("secondary.rest_penetration", inside, 0, inside == 0))
     report["colliders"] = {"shrunk": pen["shrunk"], "dropped": pen["dropped"],
                            "radii": {k: round(v["radius"], 4) for k, v in cols_d.items()}}
-    weighted = {c["name"]: int((Wb[:, [cols.index(b) for b in c["bones"][:-1]]].sum(1) > 1e-4).sum()) for c in chains}
-    spec = secondary_json(os.path.splitext(os.path.basename(a.fbx or a.save or me.name))[0], chains, cols_d, heads,
+    weighted = {}
+    for tag, _, _, cs, _, cols_ in parts:
+        weighted.update({c["name"]: int((Wread[tag][:, [cols_.index(b) for b in c["bones"][:-1]]].sum(1) > 1e-4).sum())
+                         for c in cs})
+    spec = secondary_json(os.path.splitext(os.path.basename(a.fbx or a.save or me.name))[0], allc, cols_d, heads,
                           {"H": body.H, "weighted": weighted})
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:
@@ -1589,6 +1687,8 @@ def parser():
     p.add_argument("--report")
     p.add_argument("--render")
     p.add_argument("--detect-only", action="store_true")
+    p.add_argument("--hair-mesh", help="auto (default: the parts_hair object), a mesh name, or none")
+    p.add_argument("--hair-chains", action="store_true", help="spike chains on the separate hair object")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -1657,9 +1757,11 @@ def _tube(bm, x, y, z0, z1, r, segs=40, rings=None):
         bmesh.ops.subdivide_edges(bm, edges=side, cuts=rings - 1, use_grid_fill=True)
 
 
-def build_shell():
+def build_shell(hair_apart=False):
     """A torso tube with a jacket hem lip, a box bag on the back, shorts tubes over thinner legs, a head
-    sphere with five elongated spikes; each vertex bound to its two nearest bones."""
+    sphere with five elongated spikes; each vertex bound to its two nearest bones. hair_apart: the spikes
+    are their own object `Hair` (marked parts_hair, bound rigidly to head.x), as assemble_parts.py bind
+    leaves a character in parts."""
     import bmesh
     _clear()
     bm = bmesh.new()
@@ -1680,10 +1782,11 @@ def build_shell():
     bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if e.verts[0].co.y > 0.14 and e.verts[1].co.y > 0.14],
                               cuts=10, use_grid_fill=True)
     bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=24, radius=0.1, matrix=Matrix.Translation((0, 0, 1.62)))
+    bh = bmesh.new() if hair_apart else bm
     for d in ((0, 0, 1), (0, 0.8, 0.6), (0.8, 0.2, 0.55), (-0.8, 0.2, 0.55), (0, -0.6, 0.8)):
         d = Vector(d).normalized()
         rot = Vector((0, 0, 1)).rotation_difference(d).to_matrix().to_4x4()
-        bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=14, radius=1, matrix=Matrix.Translation(
+        bmesh.ops.create_uvsphere(bh, u_segments=24, v_segments=14, radius=1, matrix=Matrix.Translation(
             Vector((0, 0, 1.62)) + d * 0.11) @ rot @ Matrix.Diagonal((0.025, 0.025, 0.06, 1)))
     me = bpy.data.meshes.new("Shell")
     bm.to_mesh(me)
@@ -1714,6 +1817,16 @@ def build_shell():
             groups[ib].add([i], 1 - wa, 'REPLACE')
     obj.modifiers.new("Armature", 'ARMATURE').object = rig
     obj.parent = rig
+    if hair_apart:
+        hm = bpy.data.meshes.new("Hair")
+        bh.to_mesh(hm)
+        bh.free()
+        hair = bpy.data.objects.new("Hair", hm)
+        bpy.context.scene.collection.objects.link(hair)
+        hair.vertex_groups.new(name="head.x").add(list(range(len(hm.vertices))), 1.0, 'REPLACE')
+        hair.modifiers.new("Armature", 'ARMATURE').object = rig
+        hair.parent = rig
+        hair["parts_hair"] = True
     return rig, obj
 
 
@@ -1825,6 +1938,42 @@ def selftest(a):
     except Refused:
         again = 1
     checks["a rig that already has cc_ bones is refused, exit 1"] = again == 1
+    # 6 a character in parts: the spikes are a separate hair object bound rigidly to Head
+    rig, obj = build_shell(hair_apart=True)
+    hair = bpy.data.objects["Hair"]
+    rep, code = run(args("--mesh", obj.name))
+    found = rep["detect"].get("found", {})
+    hair_groups = sorted(g.name for g in hair.vertex_groups)
+    checks["hair apart: found and left rigid on Head (no hair chain, nothing on the body's smooth skull, its "
+           "groups untouched); the body's bag, hem and shorts as before, exit 0"] = (
+        code == 0 and rep.get("hair_mesh") == "Hair" and found.get("hair") == []
+        and rep["detect"]["hair_object"]["mode"] == "rigid on head.x" and hair_groups == ["head.x"]
+        and len(found.get("bag", [])) == 1 and len(found.get("hem", [])) >= 4 and len(found.get("shorts_hem", [])) == 6
+        and not any(b.name.startswith("cc_hair") for b in rig.data.bones))
+    rig, obj = build_shell(hair_apart=True)
+    hair = bpy.data.objects["Hair"]
+    out = os.path.join(tmp, "Parts.secondary.json")
+    rep, code = run(args("--mesh", obj.name, "--hair-chains", "--kinds", "hair", "--require", "hair", "--out", out))
+    hc = [c for c in rep.get("chains", []) if c["kind"] == "hair"]
+    hb = [b for c in hc for b in c["bones"][:-1]]
+    hw = {b: (hair.vertex_groups.get(b) is not None) for b in hb}
+    sums = read_weights(hair, [g.name for g in hair.vertex_groups]).sum(1)
+    spec = json.load(open(out, encoding="utf-8")) if os.path.exists(out) else {}
+    checks["hair apart, --hair-chains: >= 3 spike chains weighted on the hair object only (the body gets no "
+           "cc_hair group), its weights sum to 1, every gate green incl. leak, exit 0"] = (
+        code == 0 and len(hc) >= 3 and all(c["mesh"] == "Hair" for c in hc) and hb and all(hw.values())
+        and not any(obj.vertex_groups.get(b) is not None for b in hb)
+        and float(np.abs(sums - 1).max()) < 1e-4 and all(g["pass"] for g in rep["gates"])
+        and [c["kind"] for c in spec.get("chains", [])].count("hair") == len(hc))
+    rig, obj = build_shell(hair_apart=True)
+    rep, code = run(args("--mesh", obj.name, "--require", "hair", "--detect-only"))
+    placed = next(g for g in rep["gates"] if g["name"] == "secondary.chains_placed")
+    try:
+        refused = run(args("--mesh", obj.name, "--hair-chains", "--hair-mesh", "none", "--detect-only"))[1]
+    except Refused:
+        refused = 1
+    checks["hair apart: --require hair without --hair-chains fails chains_placed (exit 2); --hair-chains with "
+           "--hair-mesh none is refused (exit 1)"] = code == 2 and placed["value"] == ["hair"] and refused == 1
     ok = all(bool(v) for v in checks.values())
     return {"schema": "gate/1", "tool": TOOL, "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
             "gates": [{"name": f"selftest: {k}", "value": bool(v), "limit": True, "pass": bool(v)}

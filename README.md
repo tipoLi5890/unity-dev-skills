@@ -159,6 +159,21 @@ The rig step adds bone chains for the bag, hood, hair, jacket hem and shorts, an
 each is and where the body is to `<name>.secondary.json`. In Unity one command turns them into
 spring bones that keep their length and stay out of the body at any frame rate.
 
+### A face that holds up close
+
+<div align="center">
+<img src=".github/media/parts.jpg" alt="The same courier runner twice, side by side, each as a full-body front view and a face close-up. Left, the whole body from one image-to-3D job: the face is soft and smeared and the hair is one heavy lump. Right, the same body with the head generated on its own and the hair split off: sharper eyes, nose, mouth and ears, and finer hair spikes" width="800">
+<p><sub>Left: the whole body from one job. Right: the same body with its head made on its own.</sub></p>
+</div>
+
+[`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`blender-character-rig`](skills/blender-character-rig/SKILL.md) →
+[`character-autorig`](skills/character-autorig/SKILL.md)
+
+When the face matters, the head is redrawn from the concept at its own scale, generated as a part of its
+own and put back on the whole-body mesh, which keeps the proportions. The hair becomes a third mesh, the
+neck seam is hidden in the collar and matched in colour, and the rig step binds the hair to the head.
+
 ## How it works
 
 ```mermaid

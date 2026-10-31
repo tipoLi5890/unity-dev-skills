@@ -84,7 +84,8 @@ JSON summary (each step's exit code, seconds, log, report and failed gates), exi
 
 ```bash
 python3 scripts/autorig.py all out/runner Runner.glb --name Runner [--height 1.75] [--threads 4] \
-  [--no-smart] [--facial] [--fingers 5] [--no-render] [--no-repair] [--no-secondary] [--dry-run]
+  [--no-smart] [--facial] [--fingers 5] [--no-render] [--no-repair] [--no-secondary] [--dry-run] \
+  [--hair Runner_hair.glb [--hair-chains]]
 # or one stage: prep | check | smart | markers | arp | contract | deform | secondary
 python3 scripts/autorig.py --selftest
 ```
@@ -94,7 +95,8 @@ found). A failed `smart` never stops `all` (exit 2): the markers fall back to sl
 deformation gate fails on elbow or knee volume loss alone, it runs the weight transfer from
 `reference/arp-pipeline.md` on a copy (`repair/aN/`) and gates again; the limits never change.
 Then the spring chains go on the rig to take on (`secondary/`: its FBX, `NAME.secondary.json`, the
-contract and deformation gates again, which read the same as without the chains). The summary
+contract and deformation gates again, which read the same as without the chains). A character in
+parts (`--hair`) has its hair bound to Head after the contract (`parts_bind`). The summary
 lists every attempt and the files to take on. Each stage by hand: `reference/arp-pipeline.md` →
 "The stages by hand".
 

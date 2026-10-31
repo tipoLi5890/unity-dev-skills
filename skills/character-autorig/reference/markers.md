@@ -34,7 +34,7 @@ midline when its X range contains it: that is the torso (or the head) at that he
 | crotch | the lowest cut above 0.2 H from which one part crosses the midline in every cut up to 0.6 H | `crotch_h` |
 | hip | crotch + 0.02 H; X and Y from the leg part just below the crotch | measured |
 | ankle | both legs' areas summed; the lowest cut in 0.03–0.13 H within 5 % of the least there (where the foot's flare ends); each leg's centroid at that height | measured |
-| knee | both legs' widths summed; a local narrowing 40–65 % of the way from ankle to hip, at least 3 % narrower than both sides; else 52 % of the way | measured / proportion |
+| knee | per leg, on sections across the hip → ankle line (below); else 52 % of the way from ankle to hip | measured / proportion |
 | toe_tip, heel, ball | the foot's vertices below the ankle: front-most, rearmost, and 70 % of the way from heel to toe; the ball and toe at 35 % of the ankle's height, the heel at 25 % | measured |
 | shoulder | the arm part's centroids below the armpit (the longest run of cuts with a part wholly outside the torso) lie on the arm's axis; the shoulder is the axis point half the arm's radius outside the torso's edge at the armpit cut | measured |
 | hand_tip | the arm vertex farthest along the axis, projected onto the axis | measured |
@@ -45,6 +45,28 @@ midline when its X range contains it: that is the torso (or the head) at that he
 | head_top | the highest vertex, at the mid-depth of the head | measured |
 | neck_base | the higher of the shoulders and neck − 0.03 H | measured |
 | pelvis, spine1…3 | on the midline at hip height, then the pelvis → neck_base line split evenly; Y at 55 % of the torso cut's depth (a little toward the back) | measured / proportion |
+
+**The knee on the leg's own sections.** Horizontal cuts at fractions of H put the knee wherever
+the narrowest slice happens to fall: a change of H (hair, a hat) moves it, and on a slanted leg a
+shorts hem or a flat stretch of shin can win. So each leg is cut across the hip → ankle line
+instead, every 1 % of its length from 5 % to 80 %, and each section is the convex hull of the loop
+around that line (edges joined by position, so seams do not split it); its girth is the hull's
+perimeter. Two cues are read, in this order:
+
+| Cue | What it looks like | Where the knee goes |
+|---|---|---|
+| kneecap | a bulge 40–70 % of the way up, at least 10 % above the shin below and 2 % above the leg just over it, reaching at least 1.5 × as far forward as back | its peak |
+| valley | a narrowing 35–70 % of the way up, at least 3 % narrower than both sides (the calf below, the thigh above) | its lowest point |
+
+Both use a parabola through the three sections around the extreme, so the knee is not held to
+the 1 % grid. A calf swells at the back, so it is never a kneecap; a thigh swells all round. A
+**hem or a cuff** is a girth step of 10 % or more between neighbouring sections. Each side of a
+cue is compared only up to the nearest step. A narrowing from 6 % below a step to 2 % above it is
+the hem's (the pinch under a hem), and so is the dip above a bulge when it sits in that range:
+neither is used. With no cue
+(a straight tube, a hem over a straight leg) the knee is placed at 52 % (proportion). The notes
+say which cue each side took (`L knee: valley at 0.492 of ankle -> hip`). The knee's X and Y are the
+section's centre.
 
 **Both sides are measured apart.** Each sided marker is found on +X and on −X, the right one
 mirrored and compared (`asymmetry_m`), and the two averaged into one mirrored pair. Gate

@@ -27,6 +27,17 @@ stage; `autorig.py secondary OUT` runs it alone; `--secondary-markers FILE` pass
 A body with nothing loose gets an empty chain list, no bone and no new export: the files to take
 on stay the rig's own.
 
+**A separate hair object** (a character in parts: `autorig.py all --hair`, whose `parts_bind` step
+leaves an object `Hair`, marked `parts_hair`, bound rigidly to Head). The body is then never
+searched for hair: its head is a bald scalp. By default the hair stays rigid on Head, and the gate
+report's `detect.hair_object` says so. `--hair-chains` (on `autorig.py` too) runs the hair kind on
+that object instead: the head centre comes from the body's head skin and the hair together, the
+thresholds from the body's height, and the spikes' chains are weighted on the hair object only (Head
+gives the share). A spike too small to give each bone 50 vertices is left rigid
+(`detect.dropped_small`). Each gate covers both meshes: a chain's weight on the other mesh counts
+as a leak, and the export check matches each re-imported mesh to its source. `--hair-mesh NAME`
+names another object; `--hair-mesh none` ignores it.
+
 ## Kinds and defaults
 
 Parameters per 1/60 s (stiffness, drag), gravity as a multiple of world gravity, the particle
@@ -97,5 +108,6 @@ spring runtime handles both (`reference/secondary-motion.md`, the animated pose)
 (jacket with a hem lip, a back bag, shorts over thinner legs, a head with spikes) and the smooth
 body, and checks: every kind but the hood found, every gate green, each shorts hem testing both
 thighs, `--require hood` failing, a strap marker's mid-span share, an empty chain list on the
-smooth body, and a rig that already has chains refused. Its secondary/1 and gate/1 samples go to
+smooth body, a rig that already has chains refused, and the spikes as a separate hair object: rigid
+by default, chained on that object with `--hair-chains`, `--require hair` failing without it. Its secondary/1 and gate/1 samples go to
 `tools/check-contracts.py`.

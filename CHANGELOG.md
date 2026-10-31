@@ -2,6 +2,78 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.40.0
+
+A character in parts. Image-to-3D spends one job on the whole body, so the face comes out soft and
+the hair as one lump. A character whose face the camera comes close to can now take tier `three`:
+the whole-body mesh stays the anchor that fixes the proportions, the head is redrawn from the
+concept at its own scale and generated as a job of its own, its hair is split off as a third mesh,
+and the three are assembled, gated against the anchor and rigged as one character. Tier `whole`
+(the demo) is unchanged. The knee marker no longer lands on a shorts hem, and the head's neck
+takes the anchor's skin colour at the seam.
+
+- **The parts plan, `parts/1`** (`schemas/parts-1.json`). `blender-character-rig` →
+  `part_math.py plan` measures the anchor (neck band, collar, seam heights, head height), fits it
+  onto the four clean views (one scale, an offset per view, the silhouette IoU) and writes each
+  generated part's crop boxes and keep masks; the hood in front of or behind the neck is removed by
+  geometry, never by colour. The plan pins the anchor by hash, and each writer rewrites only its
+  own keys. `fine` (hands, eyes, accessories) and `custom` are reserved names the tools refuse.
+- **`comfyui-asset-generation` → `part_views.py`.** `views` crops the part from the clean views,
+  paints the neck the hood hid as a shaded cylinder, redraws each view sharp with Qwen-Image-Edit
+  2511 and Lightning (the guide as both pictures, a prompt of its own for the back of the head),
+  gates it (`part.redraw_iou`, `redraw_colour`, `neck_reach`, `neck_width`, `sharpness`, the next
+  seed on a failure), removes the background and writes the four views and sheet;
+  `generate` runs one Pixal3D multi-view job per part, never `Large` on a part with hair.
+  `reference/image-to-3d-parts.md`.
+- **`blender-character-rig` → `assemble_parts.py assemble`.** Registers the head onto the anchor
+  (trimmed similarity ICP from the crop's scale), splits the hair off by colour and by height above
+  a scalp-radius map, cuts the anchor's head away above the neck and seams the two: `overlap` under
+  a collar (the head's neck centred on the anchor's and tucked inside its stump), `bridge` without
+  one. The head's neck then takes the anchor's skin at the seam: both meshes sampled through their
+  UVs on a grid around the neck, the difference added to the head's base colour up to the chin and
+  faded out before the face, a second material (a scarf) left alone. Gates `part.register.*`,
+  `hair.*`, `head.top_closed`, `part.cut.collar_kept`, `seam.centre`, `seam.tuck`, `seam.hidden`,
+  `seam.colour`, `part.coverage.*`, `assembly.silhouette.*` and `assembly.head_extent_ratio`; a
+  hair split that fails both tries keeps the hair on the head and exits 2 unless a person accepts
+  it. Writes `<c>_rig.glb` (body and head), `<c>_hair.glb`, `<c>_parts.glb`, the gate report and
+  `compare.png`, `compare_head.png` and `neck.png` for a person. `reference/part-assembly.md`.
+- **`character-autorig` → `autorig.py all --hair`.** The hair GLB is copied beside the prepped
+  mesh; after the contract, a `parts_bind` step (`assemble_parts.py bind`) binds it rigidly to the
+  contract's Head bone and exports the FBX again, so the first deformation gate, every repair and
+  the spring chains already have it (gates `parts.transform_residual`, `parts.hair_bound`; a failed
+  bind stops the run before deform). The hair takes the rig's own copy of the head material when the
+  images match, so the FBX embeds each texture once. The rig mesh has no hair, so the markers'
+  height is the skull top. `secondary_chains.py` finds the separate hair object, never searches the bald scalp for
+  hair, and keeps the hair rigid on Head unless `--hair-chains` puts spike chains on that object
+  only; `deform_gate.py` gates the mesh weighted to the most bones, not a large hair.
+- **The knee marker.** `arp_markers.py` cut the legs at fixed fractions of H, so a change of H or a
+  shorts hem moved the knee (on the parts runner it sat on the hem and `deform.joints_measured`
+  failed both knees). Each leg is now cut across its own hip → ankle line every 1 % of its length,
+  read by girth: a kneecap bulge (further forward than back) at its peak, else the narrowing
+  between calf and thigh at its lowest point; a girth step of 10 % or more is a hem and the pinch
+  under it is ignored; else 52 % as before. On the rig exam's nine bodies the knee's median error
+  drops from 0.025 to 0.0005 H and long_limbs passes truly; the accepted runner's knee moves
+  0.006 H. `reference/markers.md`, `failures.md`.
+- **`game-character-pipeline`.** G0 asks a fourth question, the parts tier (`whole`, `three`,
+  `fine` reserved); S3 makes the anchor, then the parts; a new S3c assembles them; S6 runs
+  `all --hair`. `reference/start-gate.md` §5 says what `three` gains and costs and how a `whole`
+  character moves up later. `art-asset-registry`'s workflow links each part to the anchor so a
+  repainted part makes only the assembly stale; `unity-3d-models`' budgets give a character in
+  parts three materials until the parts merge into one mesh.
+- **On the courier runner** (anchor plus one head job): register scale ratio 0.967, RMS 0.022,
+  2.6°; one hair piece; `seam.hidden` 1.0; `seam.colour` 25.98 → 1.77 ΔE; whole-body silhouette
+  IoU 0.98–0.99. `autorig.py all --hair`: the knee at 0.507 m on the narrowing (0.520–0.534 m on
+  the hem before) and `deform.joints_measured` empty. From slices alone the deformation gate passes
+  first time (volume loss 0.330, self-intersection p95 0.047); with the Auto-Rig Pro AI, two runs
+  in three pass after one elbow repair (0.149–0.157, 0.069–0.070), and in the third the AI's
+  fingers came out a few millimetres apart and the fist kept p95 over 0.08 after both repairs. The
+  FBX holds body and hair (25 MB, not 35 MB with the head's textures twice); 12 body chains, the
+  hair rigid on Head. The README shows the runner whole and in parts (`parts.jpg`).
+- **CI.** `part_math.py`, `part_views.py` and `assemble_parts.py` have `--selftest` rows (the last
+  under `--blender`) and exit 1 on a usage error; `check-contracts.py` validates `parts/1` samples
+  and the doc example; Blender rows run with `--python-exit-code 1`, so a selftest that crashes no
+  longer reads as a pass.
+
 ## 0.39.0
 
 Secondary motion, free: the hood, back bag, jacket hem, shorts hems and hair spikes of a fused

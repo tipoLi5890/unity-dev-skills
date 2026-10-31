@@ -21,15 +21,20 @@ self-tests:
 
 The mesh must be prepared the way `blender-character-rig` -> import-and-survey.md says: +Z up,
 facing -Y (its left on +X), soles on the ground, scale applied. Every height below is a fraction of
-H (top minus sole); every position is in world metres.
+H (top minus sole) unless it says "of the way" (ankle -> hip); every position is in world metres.
 
 How each marker is found (methods are reported per marker: measured, proportion, adjusted):
   crotch      the lowest slice above 0.2 H from which one part crosses the midline up to 0.6 H.
   hip         crotch + 0.02 H; X and Y from the leg part just below the crotch.
   ankle       the lowest slice between 0.03 and 0.13 H whose leg area is within 5 % of the least
               there (where the foot's flare ends); both legs' areas summed, one height for both.
-  knee        a local narrowing of both legs' summed width 40-65 % of the way from ankle to hip, at
-              least 3 % narrower than both sides; else 52 % of the way (proportion).
+  knee        per leg, on sections across the hip -> ankle line (every 1 % of its length; girth is
+              the section's hull perimeter): a kneecap bulge 40-70 % of the way up (>= 10 % over
+              the shin, >= 2 % over the leg above, 1.5 x further forward than back) at its peak;
+              else the narrowing between calf and thigh 35-70 % of the way up (>= 3 % narrower than
+              both sides) at its lowest point; a narrowing at a hem (a girth step >= 10 % between
+              neighbouring sections) is not used; else 52 % of the way (proportion). The notes
+              name the cue per side.
   ball, toe_tip, heel   the foot's vertices below the ankle: the front-most point is the toe tip,
               the rearmost the heel, the ball 70 % of the way from heel to toe.
   shoulder    the arm part's centroids below the armpit lie on the arm's axis; the shoulder is that
@@ -196,27 +201,209 @@ def leg_rows(prof, s, crotch_h):
     return [(c, p) for c, p in rows if p is not None]
 
 
-def leg_heights(prof, crotch_h) -> tuple[float, float, str]:
-    """(ankle h, knee h, knee method) from both legs together, so both sides share one height."""
+def ankle_height(prof, crotch_h) -> float:
+    """The ankle's h from both legs together, so both sides share one height."""
     rows = {s: {c["h"]: p for c, p in leg_rows(prof, s, crotch_h)} for s in (1, -1)}
     hs = sorted(set(rows[1]) & set(rows[-1]))
     if len(hs) < 10:
         raise Refused("no leg parts below the crotch to measure (run mesh_check first)")
     area = [rows[1][h]["area"] + rows[-1][h]["area"] for h in hs]
-    width = [np.ptp(rows[1][h]["x"]) + np.ptp(rows[-1][h]["x"]) for h in hs]
     band = [i for i, h in enumerate(hs) if 0.03 <= h <= 0.13]
     least = min(area[i] for i in band)
-    ankle_h = hs[next(i for i in band if area[i] <= 1.05 * least)]   # the lowest within 5 %
-    hip_h = crotch_h + 0.02
-    lo_h, hi_h = ankle_h + 0.40 * (hip_h - ankle_h), ankle_h + 0.65 * (hip_h - ankle_h)
-    harr = np.array(hs)
-    k = _first_narrowing(width, int(np.searchsorted(harr, lo_h)), int(np.searchsorted(harr, hi_h)), 0.03)
-    if k is None:
-        return ankle_h, hs[int(np.argmin(np.abs(harr - (ankle_h + 0.52 * (hip_h - ankle_h)))))], "proportion"
-    return ankle_h, hs[k], "measured"
+    return hs[next(i for i in band if area[i] <= 1.05 * least)]   # the lowest within 5 %
 
 
-def measure_side(V, prof, s, crotch_h, heights, arm_ratios, notes):
+# The knee is read on sections across the leg, perpendicular to the hip -> ankle line, so a slanted
+# leg reads as it is and a change of H (hair, a hat) does not move it. Stations are fractions of
+# that line (0 the ankle, 1 the hip).
+LEG_STATIONS = np.round(np.arange(0.05, 0.805, 0.01), 3)
+KNEE_BAND = (0.40, 0.70)     # a kneecap bulge's peak lies here
+VALLEY_BAND = (0.35, 0.70)   # a narrowing's lowest point lies here
+SWELL_MIN = 0.10             # a kneecap rises at least this much above the shin below it
+DIP_MIN = 0.02               # ... and the leg narrows at least this much above it
+VALLEY_MIN = 0.03            # a narrowing is at least this much narrower than both sides
+HEM_JUMP = 0.10              # girth change from one station to the next that reads as a hem or a cuff
+HEM_CLEAR = (0.02, 0.06)     # a narrowing up to 0.02 above or 0.06 below a hem is the hem's, not the knee
+FRONT_SHARE = 1.5            # a kneecap reaches this many times further forward than back
+SPAN = 0.25                  # how far either side a bulge or a narrowing is compared
+KNEE_PROPORTION = 0.52       # where neither cue is found
+
+
+def _cross2(o, a, b):
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def _hull(P):
+    """Convex hull (counter-clockwise) of 2D points."""
+    P = np.unique(P, axis=0)
+    if len(P) < 3:
+        return P
+    P = P[np.lexsort((P[:, 1], P[:, 0]))]
+
+    def half(pts):
+        h = []
+        for p in pts:
+            while len(h) >= 2 and _cross2(h[-2], h[-1], p) <= 0:
+                h.pop()
+            h.append(p)
+        return h
+    return np.array(half(P)[:-1] + half(P[::-1])[:-1])
+
+
+def _inside(h, p) -> bool:
+    return len(h) >= 3 and all(_cross2(h[i], h[(i + 1) % len(h)], p) >= 0 for i in range(len(h)))
+
+
+def _loops(tri, z):
+    """The cut of triangles (k, 3, 3, already in the leg frame) by the plane Z = z, as loops of 2D
+    points: segments joined where they share a mesh edge (keys are the edges' vertex pairs)."""
+    pos, keys = tri
+    d = pos[:, :, 2] - z
+    d = np.where(np.abs(d) < 1e-12, 1e-12, d)
+    cross = (d.min(axis=1) < 0) & (d.max(axis=1) > 0)
+    if not cross.any():
+        return []
+    p, d, k = pos[cross], d[cross], keys[cross]
+    a, b = [0, 1, 2], [1, 2, 0]
+    hit = (d[:, a] < 0) != (d[:, b] < 0)                  # exactly two edges per crossing triangle
+    t = (d[:, a] / np.where(hit, d[:, a] - d[:, b], 1.0))[..., None]
+    pts = (p[:, a, :2] + t * (p[:, b, :2] - p[:, a, :2]))[hit].reshape(-1, 2, 2)
+    ek = k[hit].reshape(-1, 2)
+    parent = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for e0, e1 in ek:
+        parent[find(int(e0))] = find(int(e1))
+    groups = {}
+    for i, e0 in enumerate(ek[:, 0]):
+        groups.setdefault(find(int(e0)), []).append(i)
+    return [pts[idx].reshape(-1, 2) for idx in groups.values()]
+
+
+def _leg_frame(hip, ankle):
+    """Rows x (outward, along world X), y (toward the back) and z (ankle -> hip)."""
+    z = _unit(hip - ankle)
+    x = _unit(np.array([1.0, 0, 0]) - z[0] * z)
+    return np.array([x, np.cross(z, x), z])
+
+
+def leg_sections(V, F, hip, ankle, stations=LEG_STATIONS):
+    """Per station: {t, girth, front, back, centre (world)} of the leg's own cross section (the
+    largest loop around the hip -> ankle line, its convex hull), or None where it has none."""
+    R = _leg_frame(hip, ankle)
+    L = float(np.linalg.norm(hip - ankle))
+    Vl = (V - ankle) @ R.T
+    near = np.hypot(Vl[:, 0], Vl[:, 1]) < 0.6 * L
+    keep = near[F].any(axis=1)
+    # split normals and UV seams duplicate vertices: join edges by position, not by index
+    _, weld = np.unique(np.round(V / (1e-6 * L)), axis=0, return_inverse=True)
+    weld = weld.reshape(-1)
+    f, fw = F[keep], weld[F[keep]]
+    n = len(V)
+    a, b = fw[:, [0, 1, 2]], fw[:, [1, 2, 0]]
+    tri = (Vl[f], np.minimum(a, b) * n + np.maximum(a, b))
+    out = []
+    for t in stations:
+        best = None
+        for P in _loops(tri, t * L):
+            h = _hull(P)
+            if len(h) >= 3 and _inside(h, (0.0, 0.0)):
+                area = 0.5 * abs(float(h[:, 0] @ np.roll(h[:, 1], -1) - h[:, 1] @ np.roll(h[:, 0], -1)))
+                if best is None or area > best[0]:
+                    best = (area, h)
+        if best is None:
+            out.append(None)
+            continue
+        h = best[1]
+        nxt = np.roll(h, -1, axis=0)
+        cr = h[:, 0] * nxt[:, 1] - nxt[:, 0] * h[:, 1]
+        c = ((h + nxt) * cr[:, None]).sum(axis=0) / (3 * cr.sum()) if abs(cr.sum()) > 1e-12 else h.mean(axis=0)
+        out.append({"t": float(t), "girth": float(np.linalg.norm(nxt - h, axis=1).sum()),
+                    "front": float(h[:, 1].min()), "back": float(h[:, 1].max()),
+                    "centre": ankle + R.T @ np.array([c[0], c[1], t * L])})
+    return out
+
+
+def _vertex(t, g, i, sign):
+    """Sub-station position of an extremum at i (parabola through i-1, i, i+1)."""
+    if 0 < i < len(g) - 1:
+        den = g[i - 1] - 2 * g[i] + g[i + 1]
+        if sign * den > 0:
+            return float(t[i] + 0.5 * (g[i - 1] - g[i + 1]) / den * (t[i + 1] - t[i]))
+    return float(t[i])
+
+
+def _until(idx, g, top):
+    """The leading run of idx whose girth stays at or below top (a bulge's own flank)."""
+    out = []
+    for j in idx:
+        if g[j] > top:
+            break
+        out.append(j)
+    return out
+
+
+def knee_on_leg(V, F, hip, ankle):
+    """(t along ankle -> hip, cue) of the knee, or (None, why). Two cues, in this order:
+    kneecap  a bulge rising >= SWELL_MIN above the shin below and narrowing >= DIP_MIN above it
+             (not a pinch under a hem), its rise FRONT_SHARE x more in front than at the back
+             (a calf swells at the back, a thigh all round): its peak.
+    valley   the narrowing between the calf and the thigh, >= VALLEY_MIN narrower than both sides,
+             not at a hem (a girth step >= HEM_JUMP between neighbouring stations): its lowest point.
+    Where a hem cuts a side short, that side is compared only up to the hem."""
+    rows = [r for r in leg_sections(V, F, hip, ankle) if r is not None]
+    if len(rows) < 20:
+        return None, "too few leg sections along the hip -> ankle line"
+    t = np.array([r["t"] for r in rows])
+    g = np.array([r["girth"] for r in rows])
+    front, back = np.array([r["front"] for r in rows]), np.array([r["back"] for r in rows])
+    jump = np.abs(np.diff(g)) / np.minimum(g[:-1], g[1:]) >= HEM_JUMP
+    hems = [(t[i] + t[i + 1]) / 2 for i in np.nonzero(jump)[0]]
+
+    def side(i, sgn):
+        """Indices on one side of i within SPAN, stopping at a hem."""
+        idx = []
+        j = i + sgn
+        while 0 <= j < len(t) and abs(t[j] - t[i]) <= SPAN:
+            if jump[min(j, j - sgn)]:
+                break
+            idx.append(j)
+            j += sgn
+        return idx
+    caps, valleys = [], []
+    for i in range(1, len(t) - 1):
+        lo_i, hi_i = side(i, -1), side(i, 1)
+        if not lo_i or not hi_i:
+            continue
+        win = g[max(0, i - 3):i + 4]
+        if KNEE_BAND[0] <= t[i] <= KNEE_BAND[1] and g[i] >= win.max() and g[i - 1] < g[i]:
+            lo_c = _until(lo_i, g, g[i])
+            hi_c = _until(hi_i, g, g[i])
+            fl, fr = lo_c[int(np.argmin(g[lo_c]))], hi_c[int(np.argmin(g[hi_c]))]
+            rise, dip = g[i] / g[fl] - 1, g[i] / g[fr] - 1
+            k = (t[i] - t[fl]) / (t[fr] - t[fl])
+            fe = max(0.0, front[fl] + k * (front[fr] - front[fl]) - front[i])
+            be = max(0.0, back[i] - (back[fl] + k * (back[fr] - back[fl])))
+            hem_dip = any(-HEM_CLEAR[0] <= h - t[fr] <= HEM_CLEAR[1] for h in hems)
+            if rise >= SWELL_MIN and dip >= DIP_MIN and fe >= FRONT_SHARE * be and not hem_dip:
+                caps.append((min(rise, dip), _vertex(t, g, i, -1)))
+        if VALLEY_BAND[0] <= t[i] <= VALLEY_BAND[1] and g[i] <= win.min() and g[i - 1] > g[i]:
+            depth = min(g[lo_i].max(), g[hi_i].max()) / g[i] - 1
+            at_hem = any(-HEM_CLEAR[0] <= h - t[i] <= HEM_CLEAR[1] for h in hems)
+            if depth >= VALLEY_MIN and not at_hem:
+                valleys.append((depth, _vertex(t, g, i, 1)))
+    if caps:
+        return max(caps)[1], "kneecap"
+    if valleys:
+        return max(valleys)[1], "valley"
+    return None, "no kneecap and no narrowing between calf and thigh" + (" (a hem there)" if hems else "")
+
+
+def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes):
     """One side's markers (s = +1 left, -1 right) with their methods."""
     H, mid, z0 = prof["height"], prof["midline_x"], float(V[:, 2].min())
     cuts = prof["cuts"]
@@ -228,11 +415,19 @@ def measure_side(V, prof, s, crotch_h, heights, arm_ratios, notes):
     c, p = below[-1]
     hip_h = crotch_h + 0.02
     out["hip"], how["hip"] = np.array([p["cx"], p["cy"], z0 + hip_h * H]), "measured"
-    ankle_h, knee_h, knee_how = heights
     c, p = at[ankle_h]
     out["ankle"], how["ankle"] = np.array([p["cx"], p["cy"], c["z"]]), "measured"
-    c, p = at[knee_h]
-    out["knee"], how["knee"] = np.array([p["cx"], p["cy"], c["z"]]), knee_how
+    kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"])
+    tag = "L" if s > 0 else "R"
+    if kt is None:
+        kt = KNEE_PROPORTION
+        notes.append(f"{tag} knee: {cue}; placed at {KNEE_PROPORTION:.2f} of ankle -> hip")
+        how["knee"] = "proportion"
+    else:
+        notes.append(f"{tag} knee: {cue} at {kt:.3f} of ankle -> hip")
+        how["knee"] = "measured"
+    sec = leg_sections(V, F, out["hip"], out["ankle"], [kt])[0]
+    out["knee"] = sec["centre"] if sec is not None else out["ankle"] + kt * (out["hip"] - out["ankle"])
     # foot: vertices below the ankle, near this leg
     ax = out["ankle"]
     foot = V[(V[:, 2] < ax[2]) & (np.abs(V[:, 0] - ax[0]) < 0.08 * H)]
@@ -404,9 +599,9 @@ def measure(V, F, opts) -> dict:
     if crotch_h is None:
         raise Refused("no crotch: the legs never part (run mesh_check)")
     sides = {}
-    heights = leg_heights(prof, crotch_h)
+    ankle_h = ankle_height(prof, crotch_h)
     for s in (1, -1):
-        sides[s] = measure_side(V, prof, s, crotch_h, heights, opts["arm_ratios"], notes)
+        sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, opts["arm_ratios"], notes)
     lm, how, asym = {}, {}, {}
     for name in SIDED:
         pl, pr = sides[1][0][name], sides[-1][0][name]
@@ -1145,6 +1340,75 @@ def read_smart_doc(doc: dict) -> dict:
         return read_smart(path)
 
 
+def _lathe(x, knots, n=24):
+    """A closed vertical leg at X = x: knots [(z, outer, front, back)] give the half-width across
+    (X) and the reach in front (-Y) and behind (+Y), joined linearly; a ring every 5 mm."""
+    k = np.array(knots, float)
+    zs = np.arange(k[0, 0], k[-1, 0] + 1e-9, 0.005)
+    ang = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    rings = []
+    for z in zs:
+        rx, rf, rb = (np.interp(z, k[:, 0], k[:, i]) for i in (1, 2, 3))
+        sy = np.sin(ang)
+        rings.append(np.c_[x + rx * np.cos(ang), np.where(sy < 0, rf, rb) * sy, np.full(n, z)])
+    v = np.vstack(rings + [np.array([[x, 0, zs[0]], [x, 0, zs[-1]]])])
+    faces, m = [], len(zs)
+    for i in range(m - 1):
+        for j in range(n):
+            p, q = i * n + j, i * n + (j + 1) % n
+            faces += [[p, q, q + n], [p, q + n, p + n]]
+    for j in range(n):
+        faces += [[m * n, (j + 1) % n, j], [m * n + 1, (m - 1) * n + j, (m - 1) * n + (j + 1) % n]]
+    return v, np.array(faces)
+
+
+def _leg_body(knots, hat=0.0):
+    """The tube body (mesh_check.body) with both legs replaced by _lathe legs; `hat` raises the top."""
+    s45 = math.sqrt(0.5)
+    parts = [((0, 0, 0.86), (0, 0, 1.42), dict(r=0.15, rx=0.15, ry=0.10)),
+             ((0, 0, 1.40), (0, 0, 1.52), dict(r=0.05)),
+             ((0, -0.01, 1.50), (0, -0.01, 1.70 + hat), dict(r=0.10))]
+    for side in (1, -1):
+        a = np.array([side * 0.17, 0, 1.38])
+        parts.append((a, a + 0.62 * np.array([side * s45, 0, -s45]), dict(r=0.045)))
+        parts.append(((side * 0.11, 0.05, 0.04), (side * 0.11, -0.14, 0.04), dict(r=0.04)))
+    pieces = [M.tube(a, b, **kw) for a, b, kw in parts]
+    pieces += [_lathe(side * 0.11, knots) for side in (1, -1)]
+    return M.assemble(pieces)
+
+
+# legs, z then half-width, front, back (m): a calf swelling at the back, the knee's narrowing at
+# 0.48, a thigh, and shorts whose hem (a step at 0.60) has a pinch just under it narrower still
+CALF_HEM = [(0.05, 0.035, 0.035, 0.035), (0.12, 0.034, 0.034, 0.034), (0.33, 0.050, 0.042, 0.068),
+            (0.48, 0.042, 0.040, 0.042), (0.56, 0.052, 0.050, 0.052), (0.585, 0.038, 0.036, 0.038),
+            (0.597, 0.040, 0.040, 0.040), (0.60, 0.085, 0.085, 0.085), (0.95, 0.085, 0.085, 0.085)]
+# a straight shin and a kneecap swelling in front at 0.49 under a thigh tube
+KNEECAP = [(0.05, 0.036, 0.036, 0.036), (0.40, 0.042, 0.042, 0.042), (0.49, 0.050, 0.062, 0.046),
+           (0.58, 0.046, 0.046, 0.046), (0.66, 0.050, 0.050, 0.050), (0.95, 0.070, 0.070, 0.070)]
+
+
+def selftest_knee(ok, opts) -> None:
+    """The knee on the leg's own sections: a hem above it, a change of H, a kneecap."""
+    lower_hem = [(z - 0.03 if z >= 0.56 else z, *r) for z, *r in CALF_HEM]
+    for name, knots, want, hat in (("calf and hem", CALF_HEM, 0.48, 0.0),
+                                   ("calf and hem, taller H", CALF_HEM, 0.48, 0.12),
+                                   ("calf and a lower hem", lower_hem, 0.48, 0.0),
+                                   ("kneecap", KNEECAP, 0.49, 0.0)):
+        v, f = _leg_body(knots, hat)
+        rep = build_report(v, f, dict(opts, no_window_gate=True))
+        k = rep["landmarks"]["knee.L"]
+        ok(f"knee, {name}: measured within 1 cm of {want}", rep["methods"]["knee.L"] == "measured"
+           and abs(k[2] - want) < 0.01)
+        cue = "kneecap" if knots is KNEECAP else "valley"
+        ok(f"knee, {name}: read as {cue}", any(n.startswith(f"L knee: {cue}") for n in rep["notes"]))
+    # the hem alone, over a straight leg: no knee to find, and the hem is not taken for one
+    v, f = _leg_body([(0.05, 0.04, 0.04, 0.04), (0.597, 0.045, 0.045, 0.045), (0.60, 0.085, 0.085, 0.085),
+                      (0.95, 0.085, 0.085, 0.085)])
+    rep = build_report(v, f, dict(opts, no_window_gate=True))
+    ok("knee, a hem over a straight leg: proportion", rep["methods"]["knee.L"] == "proportion"
+       and rep["landmarks"]["knee.L"][2] < 0.56)
+
+
 def selftest_host() -> tuple[int, list, int]:
     checks, failed = 0, []
 
@@ -1241,6 +1505,7 @@ def selftest_host() -> tuple[int, list, int]:
     fan = [np.array(lm[f"{n}0.L"]) for n in ("index", "little")]
     ok("fixed hand: index and little knuckles apart", np.linalg.norm(fan[0] - fan[1]) > 0.01)
     selftest_smart(ok, v, f, opts, rep)
+    selftest_knee(ok, opts)
     # files through the CLI
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "body.obj"

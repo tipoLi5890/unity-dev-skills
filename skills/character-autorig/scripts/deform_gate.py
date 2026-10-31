@@ -624,7 +624,11 @@ def _run(args) -> tuple[int, dict]:
         meshes = [mesh]
     if not meshes:
         return 1, {"tool": "deform_gate", "error": "no mesh is skinned to the armature"}
-    mesh = max(meshes, key=lambda o: len(o.data.vertices))
+    # the body: the mesh weighted to the most bones, then the largest (a part's hair rides Head, with at
+    # most its own spike chains; an exporter may write an empty group per bone, so only weights count)
+    def bones_weighted(o):
+        return len({g.group for v in o.data.vertices for g in v.groups if g.weight > 1e-4})
+    mesh = max(meshes, key=lambda o: (bones_weighted(o), len(o.data.vertices)))
     rig = Rig(rig_obj, mapping)
     lacking = [b for b in BODY if b not in rig.name]
     if lacking:

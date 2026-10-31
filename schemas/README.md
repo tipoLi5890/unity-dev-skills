@@ -13,6 +13,7 @@ misread the file. Adding an optional key does not need a new version.
 |---|---|---|---|
 | A frame set's `frames.json` | [`frames-1.json`](frames-1.json) | `codex-visual` `sheet_to_frames.py`, `breathe.py`; `sprite-from-video` `video_loop.py` | `audit_frames.py`, `audit_pixel.py`, `frames_to_anim.py`, `registry_ingest.py`, `unity-2d-sprites` `FramesJsonImporter`, `SheetToAnimationClip`, `SpriteFramesAudit` |
 | A gate script's report | [`gate-1.json`](gate-1.json) | `rig_gate`, `deform_gate`, `mesh_check`, `motion_metrics`, `clip_metrics`, `contact_bake`, `twocam/solve`, the Blender ops (`blender_common` / `bcommon` `report()`), `contract_map map`, `inspect_glb`, `audit_3d_source`, `camera_gate` | `autorig.py`, `twocam.py`, `registry_ingest.py`, `contact_sheet.py --require`, `bakeoff_report.py` |
+| A character's parts plan `<c>.parts.json` | [`parts-1.json`](parts-1.json) | `blender-character-rig` `part_math.py plan`; `comfyui-asset-generation` `part_views.py` (its own keys) | `part_views.py`, `assemble_parts.py` |
 | One line of a journey's `timeline.jsonl` | [`timeline-1.json`](timeline-1.json) | `unity-play-harness` `JourneyRecorder.cs` (samples from `GameProbe.ToJson`) | `journey_report.py`, `jump_report.py`, `camera_jitter.py` |
 | A rigged character's `<name>.secondary.json` | [`secondary-1.json`](secondary-1.json) | `character-autorig` `secondary_chains.py` | `unity-rigged-character` `SecondarySpec`, `SecondaryMotionSetup` |
 
@@ -81,6 +82,22 @@ misread the file. Adding an optional key does not need a new version.
 - Positions are checks, not the source: `joints`, `parent_head` and a sphere's `center` are in
   the skeleton/1 frame (metres, +Z up, facing −Y). A capsule is two bone origins and a radius.
 - `chains: []` is valid: the body has nothing loose, and the rig was left unchanged.
+
+## parts/1
+
+- **The anchor comes first.** `anchor` (required unless the tier is `whole`) is the whole-body mesh
+  every part is registered onto; `glb_sha256` pins it, and a reader refuses a plan whose anchor file
+  no longer matches. Geometry is in the anchor GLB's own frame (glTF: +Y up, front = the multi-view
+  front); paths are relative to the plan.
+- **Each writer owns its keys.** `part_math.py plan` writes `anchor` (with `painted_glb` when given
+  `--painted`), `region_box`, the `seam` heights and `views.boxes`; `part_views.py` writes `views.dir`, `views.sheet`, `views.colours` and
+  `generated`; a person edits `tier`, `preset`, `seam.mode`, `prompt_hint`, `budget_share` and
+  `split.delta`. A writer rewrites only its own keys.
+- **Rules the tools check** (exit 1): exactly one `source: anchor`; the tier's region set (`three`
+  = body, head, hair); a split's `from` names a generated part; no `Large` on a part that carries
+  hair; budget shares sum to at most 1. `fine` and `custom`, and the regions beyond body, head and
+  hair, are reserved: the tools refuse them.
+- `budget_share` is a fraction of the class's `3D budgets` row, never a triangle count.
 
 ## Migration (one release)
 

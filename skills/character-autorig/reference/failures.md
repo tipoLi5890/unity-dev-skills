@@ -12,6 +12,8 @@ measures and its limit: `reference/gates.md`.
 | `smart.*` (stage 2) | never blocks: the markers take what passed, slices for the rest. Its own fixes (AI files, eyes, shading, a second rig) are in `reference/arp-ai.md` |
 | `markers.symmetry` | the pose is not symmetric (one arm higher, a turned foot): regenerate, or `--adjust` each marker it names and accept the mirror (`asymmetry_accepted`) |
 | a marker looks off in the pictures | `--adjust` with that marker's position (`reference/markers.md`), run again, look again |
+| the knee sits on a hem, a boot top or a knee pad in the pictures | the notes name the knee's cue. A hem only shows as a step when the girth jumps 10 % within 1 % of the leg; a softer cuff can still read as the narrowing. `--adjust` both knees to the crease (`reference/markers.md`, the knee) |
+| `deform.joints_measured` names LowerLeg on legs in shorts | the knee marker may sit near the hem: check it in the pictures and move it to the crease (`--adjust`) before touching the mesh |
 | `arp.spine_bones` | the rig holds a different number of spine bones than Count − 1 asked for: run `scripts/tests/test_arp_pipeline.py` on this Blender and add-on before trusting the rig |
 | `arp.refs_placed` | the markers name a reference bone the preset lacks, or a roll from `ref_rolls` did not hold; regenerate the markers file |
 | `arp.face_added` | the add-on added no face or ear bones on the head: read `probe`'s operator properties for this version, or rig without the face (markers without `--smart`, or `smart` without `--facial`) |

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/parts-1.json",
+  "title": "parts/1 — a character's parts plan",
+  "description": "Which parts a character is built from: the anchor (the whole-body mesh, always generated first) and the parts generated or split and registered onto it. Geometry is in the anchor GLB's own frame (glTF: +Y up, front = the multi-view front). Paths are relative to the plan file. part_math.py plan writes the anchor measurements, boxes and seam heights; part_views.py writes views.dir, views.sheet, views.colours and generated; a person edits tier, preset, seam.mode, prompt_hint, budget_share and split.delta. Rules the schema cannot say (one anchor, the tier's region set, no Large on a part that carries hair, budget shares summing to at most 1, the anchor hash) are checked by the tools.",
+  "type": "object",
+  "required": ["schema", "character", "tier", "parts"],
+  "properties": {
+    "schema": {"const": "parts/1"},
+    "character": {"$ref": "#/$defs/name"},
+    "tier": {"enum": ["whole", "three", "fine", "custom"], "description": "whole = the demo, no parts; three = body, head, hair; fine and custom are reserved names, refused by the tools"},
+    "anchor": {
+      "type": "object",
+      "required": ["glb", "glb_sha256", "frame", "head_height", "neck"],
+      "properties": {
+        "glb": {"type": "string", "minLength": 1},
+        "painted_glb": {
+     "type": "string",
+     "description": "the anchor repainted by mesh-texture-paint (part_math.py plan --painted); the assembly takes it over glb"
+    },
+    "glb_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "a plan whose anchor no longer matches is refused: run plan again"},
+        "frame": {
+          "type": "object",
+          "required": ["units_per_px", "offset_px"],
+          "properties": {
+            "units_per_px": {"type": "number", "exclusiveMinimum": 0},
+            "offset_px": {"$ref": "#/$defs/per_view", "description": "the pixel the anchor origin projects to, per view"},
+            "iou": {"$ref": "#/$defs/per_view"}
+          }
+        },
+        "bbox_min": {"$ref": "#/$defs/vec3"},
+        "bbox_max": {"$ref": "#/$defs/vec3"},
+        "head_height": {"type": "number", "exclusiveMinimum": 0},
+        "neck": {
+          "type": "object",
+          "required": ["band", "axis_xz", "radius", "collar"],
+          "properties": {
+            "band": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+            "axis_xz": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+            "radius": {"type": "number", "exclusiveMinimum": 0},
+            "collar": {"type": "boolean"},
+            "collar_top": {"type": ["number", "null"]}
+          }
+        }
+      }
+    },
+    "parts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/part"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"tier": {"not": {"const": "whole"}}}}, "then": {"required": ["anchor"]}}
+  ],
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[a-z0-9_-]+$"},
+    "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+    "per_view": {
+      "type": "object",
+      "properties": {"front": {}, "left": {}, "back": {}, "right": {}},
+      "additionalProperties": false
+    },
+    "box": {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4},
+    "part": {
+      "type": "object",
+      "required": ["name", "source", "region"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "source": {"enum": ["anchor", "generate", "split"]},
+        "region": {"enum": ["body", "head", "hair", "hand.L", "hand.R", "eyes", "accessory"]},
+        "from": {"$ref": "#/$defs/name", "description": "source: split only, a part whose source is generate"},
+        "preset": {"enum": ["Small", "Medium", "Compact", "Large", "Template", "Showcase"]},
+        "prompt_hint": {"type": "string"},
+        "budget_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "a fraction of the class's 3D budgets row, never a triangle count"},
+        "region_box": {
+          "type": "object",
+          "properties": {"y_min": {"type": "number"}, "y_max": {"type": "number"}}
+        },
+        "seam": {
+          "type": "object",
+          "properties": {
+            "mode": {"enum": ["overlap", "bridge", "none"], "description": "none is for fine add-ons (accessories)"},
+            "cut_y": {"type": "number"},
+            "part_bottom_y": {"type": "number"},
+            "margin_frac": {"type": "number", "minimum": 0}
+          }
+        },
+        "views": {
+          "type": "object",
+          "properties": {
+            "source": {"enum": ["clean-views", "sheet"], "description": "clean-views = crops of the S2 views; sheet = a drawn part sheet (reserved)"},
+            "sheet": {"type": "string"},
+            "dir": {"type": "string"},
+            "box_side_px": {"type": "integer", "minimum": 8},
+            "boxes": {
+              "type": "object",
+              "properties": {"front": {"$ref": "#/$defs/box"}, "left": {"$ref": "#/$defs/box"},
+                             "back": {"$ref": "#/$defs/box"}, "right": {"$ref": "#/$defs/box"}},
+              "additionalProperties": false
+            },
+            "keep": {"$ref": "#/$defs/per_view"},
+            "colours": {
+              "type": ["object", "null"],
+              "properties": {"hair": {"$ref": "#/$defs/hex"}, "skin": {"$ref": "#/$defs/hex"}}
+            }
+          }
+        },
+        "generated": {
+          "type": "object",
+          "properties": {"glb": {"type": "string"}, "painted": {"type": "string", "description": "the part repainted by mesh-texture-paint; absent, the assembly takes paint/<part>/<stem>_painted.glb when it exists"}}
+        },
+        "split": {
+          "type": "object",
+          "properties": {"method": {"enum": ["scalp-radius"]}, "delta": {"type": "number", "exclusiveMinimum": 0}}
+        },
+        "attach": {
+          "type": "object",
+          "description": "reserved for tier fine",
+          "required": ["mode"],
+          "properties": {"mode": {"enum": ["replace", "add"]}, "bone": {"type": "string"}}
+        }
+      },
+      "allOf": [
+        {"if": {"properties": {"source": {"const": "split"}}, "required": ["source"]}, "then": {"required": ["from"]}},
+        {"if": {"properties": {"source": {"const": "generate"}}, "required": ["source"]}, "then": {"required": ["preset"]}}
+      ]
+    },
+    "hex": {"type": "string", "pattern": "^#[0-9a-f]{6}$"}
+  }
+}

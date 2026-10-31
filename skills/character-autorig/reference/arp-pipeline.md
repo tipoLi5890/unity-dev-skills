@@ -206,6 +206,9 @@ PY
 )"
 python3 <skills>/unity-rigged-character/scripts/contract_map.py map export/Runner.skeleton.json \
   --map arp --require contract --min-fingers 30 --out rig/runner.contract.json
+# a character in parts (Runner_hair.glb beside Runner.glb): bind the hair to Head before the deformation gate
+blender -b -P <skills>/blender-character-rig/scripts/assemble_parts.py -- bind . --hair Runner_hair.glb \
+  --rig-glb Runner.glb --name Runner --report rig/Runner.bind.json
 blender -b -P scripts/deform_gate.py -- --fbx export/Runner.fbx --map rig/runner.contract.json \
   --render rig/poses/ --out rig/runner.deform.json
 # fingers.mode "fixed" (a mitten): add --poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120
