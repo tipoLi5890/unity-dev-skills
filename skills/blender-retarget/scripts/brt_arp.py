@@ -1457,6 +1457,51 @@ def _weighted(rig, meshes) -> tuple[set, dict]:
     return used, stats
 
 
+_IMAGE_EXT = {"PNG": ".png", "JPEG": ".jpg", "TARGA": ".tga", "TARGA_RAW": ".tga", "BMP": ".bmp",
+              "TIFF": ".tif", "OPEN_EXR": ".exr", "HDR": ".hdr", "WEBP": ".webp"}
+
+
+def _material_images(meshes: list) -> list:
+    """The images the meshes' node materials use, once each."""
+    found = []
+    for obj in meshes:
+        for slot in obj.material_slots:
+            tree = slot.material.node_tree if slot.material and slot.material.use_nodes else None
+            for node in tree.nodes if tree else ():
+                image = getattr(node, "image", None)
+                if image is not None and image not in found:
+                    found.append(image)
+    return found
+
+
+def _name_packed_images(meshes: list) -> list:
+    """Give each packed image the meshes use a file name of its own for the export; returns (image, old
+    path) pairs to put back. An image packed from a .glb has no path, and the FBX exporter embeds one
+    picture per path, so every such texture would read back as the first (the base colour in the
+    normal slot)."""
+    images = _material_images(meshes)
+    taken = {os.path.basename(i.filepath_raw).lower() for i in images
+             if i.packed_file is None and i.filepath_raw}
+    changed = []
+    for image in images:
+        if image.packed_file is None:
+            continue
+        name = os.path.basename(image.filepath_raw) if image.filepath_raw else ""
+        if name and os.path.splitext(name)[1] and name.lower() not in taken:
+            taken.add(name.lower())
+            continue
+        stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in image.name) or "texture"
+        ext = _IMAGE_EXT.get(image.file_format, ".png")
+        new, k = stem + ext, 1
+        while new.lower() in taken:
+            k += 1
+            new = f"{stem}_{k}{ext}"
+        taken.add(new.lower())
+        changed.append((image, image.filepath_raw))
+        image.filepath_raw = "//" + new
+    return changed
+
+
 def _reimport(fbx: str) -> tuple[dict | None, dict, str | None]:
     """Import the FBX, read its skeleton and skin, take the import back. (skeleton, stats, error)."""
     sub = C.Tracker()
@@ -1495,14 +1540,18 @@ def _export_and_read(params: dict, ids: dict, override: dict, scene, export: dic
     `export` set for the call and put back), import the file again, write its skeleton and take
     the import back. Appends the export gates to `gates` and the results to `out`."""
     previous, _ = _scene_settings(scene, export)
+    renamed = []
     try:
         for name, value in export.items():
             setattr(scene, name, value)
         if os.path.exists(fbx):
             os.remove(fbx)
+        renamed = _name_packed_images(meshes)
         _select_only([rig, *meshes], rig)
         _call(ids["arp.arp_export_fbx_panel"], override, filepath=fbx)
     finally:
+        for image, path in renamed:
+            image.filepath_raw = path
         for name, value in previous.items():
             with contextlib.suppress(AttributeError, TypeError, ValueError):
                 setattr(scene, name, value)

@@ -3,14 +3,17 @@
     Blender --background --factory-startup --python tests/test_arp_export.py [-- <scratch dir>]
 
 Needs no Auto-Rig Pro: the test registers a stand-in `arp.arp_export_fbx_panel` that writes the
-selection with Blender's own FBX exporter and records the add-on's scene settings it saw, and those
-scene properties. A small rig skins a cube with five weights on some vertices. Prints `PASS <name>`
+selection with Blender's own FBX exporter and records the add-on's scene settings and the image
+paths it saw, and those scene properties. A small rig skins a cube with five weights on some vertices. Prints `PASS <name>`
 or `FAIL <name>: <why>` per case and exits 1 when any case fails. Covers: export writes the file
 with the pipeline's settings (Unity, humanoid, master trajectory, units x100) set during the call
 and put back after, limits every vertex to 4 deform weights, writes the skeleton of the re-imported
 file and carries the auto-rig-pro licence on the record; without the limit five weights fail
 arp.export_max_influences; a rig no mesh is weighted to refuses not_bound; no `fbx` refuses
-export_path_missing; a missing armature refuses object_missing.
+export_path_missing; a missing armature refuses object_missing; two packed textures with no path (as a
+.glb import leaves them) reach the exporter with a file name each (the add-on's own FBX exporter embeds
+one picture per path and, unlike Blender's, names no pathless image), read back as two pictures, and
+get their empty paths back after.
 """
 import json
 import os
@@ -29,6 +32,7 @@ TMP = argv[0] if argv else tempfile.mkdtemp(prefix="brt_arp_export_")
 os.makedirs(TMP, exist_ok=True)
 RESULTS: list[bool] = []
 SEEN: list = []
+PATHS: list = []
 SETTINGS = ("arp_engine_type", "arp_export_rig_type", "arp_ge_master_traj", "arp_units_x100")
 
 
@@ -49,8 +53,9 @@ class ARP_OT_arp_export_fbx_panel(bpy.types.Operator):
 
     def execute(self, context):
         SEEN.append({k: getattr(context.scene, k) for k in SETTINGS})
+        PATHS.append({i.name: i.filepath_raw for i in bpy.data.images})
         bpy.ops.export_scene.fbx(filepath=self.filepath, use_selection=True, add_leaf_bones=False,
-                                 object_types={'ARMATURE', 'MESH'})
+                                 object_types={'ARMATURE', 'MESH'}, path_mode='COPY', embed_textures=True)
         return {'FINISHED'}
 
 
@@ -134,6 +139,40 @@ def case_not_bound_refuses():
     assert not os.path.exists(os.path.join(TMP, "none.fbx")) and not SEEN
 
 
+def case_packed_textures_keep_apart():
+    _, mesh = scene()
+    mat = bpy.data.materials.new("RunnerMat")
+    mat.use_nodes = True
+    tree = mat.node_tree
+    bsdf = next(n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED')
+    images = []
+    for name, colour in (("Image_0", (1.0, 0.0, 0.0, 1.0)), ("Image_2", (0.0, 0.0, 1.0, 1.0))):
+        image = bpy.data.images.new(name, 8, 8)
+        image.pixels[:] = colour * 64
+        image.pack()
+        image.filepath_raw = ""
+        images.append(image)
+    base = tree.nodes.new("ShaderNodeTexImage")
+    base.image = images[0]
+    tree.links.new(base.outputs["Color"], bsdf.inputs["Base Color"])
+    normal_tex = tree.nodes.new("ShaderNodeTexImage")
+    normal_tex.image = images[1]
+    normal = tree.nodes.new("ShaderNodeNormalMap")
+    tree.links.new(normal_tex.outputs["Color"], normal.inputs["Color"])
+    tree.links.new(normal.outputs["Normal"], bsdf.inputs["Normal"])
+    mesh.data.materials.append(mat)
+    fbx = os.path.join(TMP, "textured.fbx")
+    out = export(fbx=fbx)
+    assert out["ok"], [g for g in out["gates"] if not g["pass"]] or out.get("reason")
+    seen = [PATHS[-1].get(i.name, "") for i in images]
+    assert all(os.path.splitext(s)[1] for s in seen) and len(set(seen)) == 2, f"paths at export: {seen}"
+    assert [i.filepath_raw for i in images] == ["", ""], "image paths not put back"
+    before = set(bpy.data.images)
+    bpy.ops.import_scene.fbx(filepath=fbx)
+    read = sorted(tuple(round(c, 2) for c in i.pixels[:3]) for i in bpy.data.images if i not in before)
+    assert read == [(0.0, 0.0, 1.0), (1.0, 0.0, 0.0)], read
+
+
 def case_refusals():
     scene()
     out = export()
@@ -147,7 +186,8 @@ register()
 for name, fn in (("export_with_pipeline_settings", case_export_ok),
                  ("five_weights_fail_without_limit", case_not_limited_fails),
                  ("unbound_rig_refuses", case_not_bound_refuses),
-                 ("missing_path_and_rig_refuse", case_refusals)):
+                 ("missing_path_and_rig_refuse", case_refusals),
+                 ("packed_textures_read_back_apart", case_packed_textures_keep_apart)):
     check(name, fn)
 
 print(f"{sum(RESULTS)}/{len(RESULTS)} passed", flush=True)

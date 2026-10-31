@@ -16,7 +16,7 @@
 
 <p><b>English</b> · <a href=".github/README.zh-TW.md">繁體中文</a> · <a href=".github/README.zh-CN.md">简体中文</a> · <a href=".github/README.ja.md">日本語</a></p>
 
-<img src=".github/media/hero.jpg" alt="Two rows, each one character through four skills. Top, 2D: a character still, the same character keyed onto transparency, a strip of its run loop, and the sprite running in a Unity scene. Bottom, 3D: a concept drawing, its generated 3D mesh, the rig's joint markers, and the rigged character in an extreme pose" width="100%">
+<img src=".github/media/hero.jpg" alt="Two rows, each one character through four skills. Top, 2D: a character still, the same character keyed onto transparency, a strip of its run loop, and the sprite running in a Unity scene. Bottom, 3D: a concept drawing of another courier, its generated 3D mesh repainted from that drawing, the rig's joint markers, and the rigged character in two extreme poses" width="100%">
 
 </div>
 

@@ -2,6 +2,24 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.36.2
+
+The rigged-character example now follows the courier from the texture example, through its
+repainted mesh, and an Auto-Rig Pro export keeps every texture of an image-to-3D mesh.
+
+- **`blender-retarget` → `brt_arp.py` export.** An image packed from a .glb has no file path, and
+  Auto-Rig Pro's own FBX exporter embeds one picture per path and, unlike Blender's, names no
+  pathless image. Every texture of an image-to-3D mesh then read back as the first one: the base
+  colour sat in the normal slot, in Blender and in Unity. The export now gives each packed image a
+  file name of its own for the call and puts the empty path back after.
+  `tests/test_arp_export.py` checks the names the exporter sees and that two packed textures read
+  back apart.
+- **README.** "From one drawing to a moving, rigged character" is redone with the teal courier
+  from the texture example: its mesh repainted by `mesh-texture-paint`, rigged by
+  `character-autorig`, filmed by MiniMax H3 from two cameras, and solved onto its own skeleton by
+  `humanoid-motion` with a reader warm-started from the earlier runner's. The banner's 3D row shows
+  the same courier: concept, painted mesh, rig and deform check. The three translations follow.
+
 ## 0.36.1
 
 CI is green again. No skill method, threshold or manifest description changes.
