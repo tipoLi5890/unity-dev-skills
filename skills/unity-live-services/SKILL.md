@@ -2,7 +2,7 @@
 name: unity-live-services
 description: >-
   START HERE for any backend, online or monetisation request: accounts, cloud data, multiplayer, voice, purchases, ads or a third-party API.
-  Routes to the API skill and owns the discipline around it.
+  Routes to the API skill.
 ---
 
 # unity-live-services — the parts that are not an API call

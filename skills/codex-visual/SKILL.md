@@ -27,7 +27,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 | A transparent PNG; "a fringed cut-out"; which key colour | `reference/codex-runtime.md` §5 |
 | "Off-centre", "one is smaller"; a crosshair template | `reference/geometry-gate.md` |
 | "The assets don't match / the style drifted" | PHASE 4 |
-| A source image for image-to-3D | `reference/image-to-3d-input.md` |
+| A source image for image-to-3D; the views a generated mesh's texture is repainted from | `reference/image-to-3d-input.md`; repaint: `mesh-texture-paint` |
 | A review sheet (8-view QA, clips, before/after), gated on checks | `reference/review-sheets.md` |
 | Read a screenshot; compare two images | `reference/codex-runtime.md` §7 |
 | Any `codex exec` image work by hand (bare `codex` hangs; exit 0 proves nothing) | Step 0; `reference/codex-runtime.md` §1–4 |
@@ -180,8 +180,8 @@ loop from one still: `breathe.py`. Every step: `reference/animation-route.md`.
   animation: `unity-2d-sprites`. This skill stops at a normalised PNG, or at the frames,
   `frames.json` and a GIF/APNG/WebP preview — **Unity plays none of those three formats**.
 - **3D meshes** — this skill draws the source image (`reference/image-to-3d-input.md`); conversion:
-  `comfyui-asset-generation`; import: `unity-3d-models`; a character's route:
-  `game-character-pipeline`.
+  `comfyui-asset-generation`; its texture repainted from these views: `mesh-texture-paint`;
+  import: `unity-3d-models`; a character's route: `game-character-pipeline`.
 - **Audio and video**, a real moving-camera clip included — music, SFX and MiniMax H3 video through
   a self-hosted ComfyUI: `comfyui-asset-generation`; a still → a transparent loop from a video:
   `sprite-from-video`.

@@ -261,7 +261,10 @@ start, in `game-character-pipeline`; in short: a standard humanoid with Auto-Rig
 is rigged and gets its clips in `blender-retarget`; a custom body (short limbs, ears, a tail) is
 rigged in `blender-character-rig`; Mixamo through `unity-rigged-character` is an optional route.
 The preview track rigs the generated mesh as it is; the ship track makes the game mesh first and
-rigs once. These facts go with it either way:
+rigs once. When the generated texture is dull, blotchy or off the design, repaint it before either
+route: `mesh-texture-paint` keeps the mesh, UVs, normal and occlusion maps and replaces only the
+base colour, painted view by view from the same concept views on this server (the generated
+texture stays as its prior where no view reaches). These facts go with it either way:
 
 - The file is already at the face target the graph was given, with normal map and occlusion
   baked from the dense mesh onto the decimated one. Simplifying it afterwards with gltf-transform

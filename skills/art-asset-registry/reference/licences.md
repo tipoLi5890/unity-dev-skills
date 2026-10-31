@@ -68,6 +68,12 @@ run `check`, and put the line back.
 | `phone-footage` | footage the team shot itself, of performers who agreed to it | `"worldwide"` |
 | `auto-rig-pro` | a rig or weights made with Auto-Rig Pro | `"worldwide"` |
 | `hy-motion` | HY-Motion text-to-motion | `{"excludes": ["EU", "UK", "KR"]}` |
+| `qwen-image-edit-2511` | a texture repainted by `mesh-texture-paint` with Qwen-Image-Edit-2511 and its Lightning LoRA on local weights, both Apache-2.0 | `"worldwide"` |
+
+Not shippable, so never a `licence.source` on an approved asset: Qwen Image 2.1 is released for
+research and evaluation only (non-commercial), and nvdiffrast is non-commercial; `mesh-texture-paint`
+uses neither. A repainted texture also carries the licence of the mesh it was painted onto: link it
+`depends-on` the generated GLB.
 
 Before a source here is relied on for a shipped asset, confirm its current licence text still says
 the same; if it changed, record the new `territory` on a new revision and run `check`. A source

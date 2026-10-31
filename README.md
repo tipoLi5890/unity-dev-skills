@@ -4,7 +4,7 @@
 
 <p><b>Unity 6 skills that make Claude Code and Codex work like a careful Unity developer — and prove each step.</b></p>
 
-<p><i>60 skills from the first idea to a build on a real phone.</i></p>
+<p><i>61 skills from the first idea to a build on a real phone.</i></p>
 
 <p>
 <a href=".claude-plugin/plugin.json"><img alt="version" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -51,7 +51,7 @@ manifests, so they cannot come to say anything different.
   NumPy and Pillow for the ones that read images or audio.
 - **Optional, for the asset and character pipeline only:** Blender, in a version your Auto-Rig Pro
   release supports (`character-autorig` explains); Auto-Rig Pro under your own licence; a
-  self-hosted ComfyUI on a GPU machine; the `codex` CLI for 2D art.
+  self-hosted ComfyUI on a GPU machine; the `codex` CLI for 2D art; SciPy for `mesh-texture-paint`.
 - **Optional, for video:** ffmpeg, for anything that writes one (previews, reels, sprites from video).
 - **Optional, for devices:** a Mac with Xcode 15 or newer for iOS; the Android SDK for Android.
 
@@ -96,6 +96,27 @@ any code is written.
 [`unity-2d-sprites`](skills/unity-2d-sprites/SKILL.md) →
 [`unity-2d-controller`](skills/unity-2d-controller/SKILL.md)
 
+### From a dull generated texture to one that matches the concept
+
+<div align="center">
+<img src=".github/media/texture.gif" alt="A turntable in four columns: the runner with the texture image-to-3D baked, the same runner repainted, then the courier backpack baked and repainted. The repainted versions have brighter, cleaner colours and sharper details: the face, the gloves, the straps and their stitching" width="800">
+<p><sub>Same meshes, same UVs. In each pair, left is the texture image-to-3D baked; right is the texture repainted from the concept art.</sub></p>
+</div>
+
+<div align="center">
+<img src=".github/media/texture-steps.jpg" alt="Five panels of one camera: the concept art from behind, the untextured mesh, the render handed to the model (painted views in colour, the rest shown with the baked texture as a prior), the model's repaint, and the mesh after the repaint is projected into its texture" width="800">
+<p><sub>One step of the loop: render what is painted so far, have a local edit model repaint that view against the concept art, gate it, project it into the UV texture, then pick the next camera.</sub></p>
+</div>
+
+[`codex-visual`](skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md)
+
+Image-to-3D gets the shape right and the colours muddy. This keeps the mesh, its UVs and its baked
+normal and occlusion maps, and repaints only the base colour, one camera at a time, on your own
+ComfyUI. Every view is checked against the render before it touches the texture (outline, collage,
+colour drift, a washed-out background), and a close-up pass on the head sharpens the face.
+
 ### From one drawing to a moving, rigged character
 
 <div align="center">
@@ -105,6 +126,7 @@ any code is written.
 
 [`codex-visual`](skills/codex-visual/SKILL.md) →
 [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md) →
 [`character-autorig`](skills/character-autorig/SKILL.md) →
 [`humanoid-motion`](skills/humanoid-motion/SKILL.md) →
 [`unity-rigged-character`](skills/unity-rigged-character/SKILL.md)
@@ -252,6 +274,7 @@ flowchart LR
 | [`game-character-pipeline`](skills/game-character-pipeline/SKILL.md) | **Start here** for a rigged character from an image: stages S0–S13, each gated |
 | [`codex-visual`](skills/codex-visual/SKILL.md) | 2D art through the `codex` image model, kept on-style by one art bible |
 | [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video and 3D models from your own ComfyUI, one job each |
+| [`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md) | A generated 3D model's dull texture repainted from the concept art, view by view, mesh and UVs kept |
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
 | [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |

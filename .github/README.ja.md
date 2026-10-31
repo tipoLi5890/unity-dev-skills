@@ -4,7 +4,7 @@
 
 <p><b>Claude Code と Codex に慎重な Unity 開発者のように仕事をさせ、その一歩一歩を証明させる Unity 6 の skill 集。</b></p>
 
-<p><i>最初のアイデアから、スマートフォンの実機で動くビルドまで。60 の skill。</i></p>
+<p><i>最初のアイデアから、スマートフォンの実機で動くビルドまで。61 の skill。</i></p>
 
 <p>
 <a href="../.claude-plugin/plugin.json"><img alt="バージョン" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -46,7 +46,7 @@ claude plugin install unity-dev@unity-dev
 ### 必要なもの
 
 - **必須**：Claude Code または Codex、Unity 6 のプロジェクト、スクリプト用の Python 3.10 以降（画像や音声を読むスクリプトには NumPy と Pillow も）。
-- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、ご自身のライセンスで使う Auto-Rig Pro、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI。
+- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、ご自身のライセンスで使う Auto-Rig Pro、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI、`mesh-texture-paint` 用の SciPy。
 - **任意**（動画）：動画を書き出すもの（プレビュー、リール、動画からのスプライト）には ffmpeg。
 - **任意**（デバイス）：iOS には Xcode 15 以降を入れた Mac、Android には Android SDK。
 
@@ -89,6 +89,26 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 [`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) →
 [`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md)
 
+### くすんだ生成テクスチャから、コンセプト通りのテクスチャへ
+
+<div align="center">
+<img src="media/texture.gif" alt="四列のターンテーブル：画像から 3D で焼いたテクスチャのランナー、塗り直した同じランナー、続いて焼いたテクスチャと塗り直したクーリエのリュック。塗り直した方は色が明るく澄み、顔、グローブ、ストラップと縫い目などの細部もはっきりしている" width="800">
+<p><sub>同じメッシュ、同じ UV。各組の左が画像から 3D で焼いたテクスチャ、右がコンセプト画から塗り直したテクスチャ。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/texture-steps.jpg" alt="一つのカメラの五コマ：背面のコンセプト画、テクスチャのないメッシュ、モデルに渡すレンダー（塗った部分は色付き、残りは焼いたテクスチャを事前情報として表示）、モデルが塗り直した結果、テクスチャに投影したあとのメッシュ" width="800">
+<p><sub>ループの一歩：ここまで塗った状態をレンダーし、ローカルの画像編集モデルがコンセプト画に合わせてその視点を塗り直し、ゲートを通ったものを UV テクスチャに投影して、次のカメラを選ぶ。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md)
+
+画像から 3D は形はよくても色が濁る。ここではメッシュ、UV、焼いた法線と AO マップはそのままに、
+ベースカラーだけを自分の ComfyUI でカメラ一つずつ塗り直す。各視点はテクスチャに書き込む前にレンダーと
+照合し（輪郭、複数体のコラージュ、色ずれ、白っぽい背景）、頭部は寄りのパスで顔をくっきりさせる。
+
 ### 一枚の絵から、動くリグ付きキャラクターへ
 
 <div align="center">
@@ -98,6 +118,7 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 
 [`codex-visual`](../skills/codex-visual/SKILL.md) →
 [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) →
 [`character-autorig`](../skills/character-autorig/SKILL.md) →
 [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) →
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
@@ -234,6 +255,7 @@ flowchart LR
 | [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 画像からリグ付きキャラクターを作るなら**まずここから**。S0–S13 の各工程に、それぞれゲート |
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | `codex` の画像モデルで作る 2D アート。一冊のアートバイブルでスタイルを保つ |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 自前の ComfyUI で作る音楽、効果音、動画、3D モデル。それぞれ一つのジョブで |
+| [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 生成した 3D モデルのくすんだテクスチャを、コンセプトアートから一視点ずつ塗り直す。メッシュと UV はそのまま |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | キャラクターの静止画一枚を、生成した動画を通して透過スプライトのループにする |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` が合わないときに Blender で手作りするリグ。FBX は再インポートで証明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 既製のクリップを自分の Blender のリグへ。足滑り、ジッター、ポップでゲート |

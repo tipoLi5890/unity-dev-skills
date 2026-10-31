@@ -15,3 +15,4 @@ humanoid-motion/scripts/contact_bake.py -> blender-retarget/scripts/motion_metri
 humanoid-motion/scripts/twocam/film.py -> comfyui-asset-generation/scripts/comfy_asset_client.py | submits the image-to-video job through the ComfyUI client and its workflow template
 humanoid-motion/scripts/twocam/solve.py -> blender-retarget/scripts/motion_metrics.py | imports the pop test for the despike step
 humanoid-motion/scripts/twocam/twocam.py -> blender-retarget/scripts/motion_metrics.py | runs motion_metrics on the solved and baked samples
+mesh-texture-paint/scripts/qwen_paint.py -> comfyui-asset-generation/scripts/comfy_asset_client.py | submits each view's paint job (the Qwen image-edit graph) through the ComfyUI client and downloads its output

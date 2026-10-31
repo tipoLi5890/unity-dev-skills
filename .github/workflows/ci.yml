@@ -19,14 +19,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install pyyaml numpy pillow
+      - run: pip install pyyaml numpy pillow scipy
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Lint skills
         run: python3 tools/lint-skills.py
 
       # Every shipped script's selftest that this runner can run (stdlib, numpy, Pillow,
-      # ffmpeg). Rows needing Blender, torch or OpenCV print SKIP; run those locally.
+      # SciPy, ffmpeg). Rows needing Blender, torch or OpenCV print SKIP; run those locally.
       - name: Script selftests
         run: python3 tools/run-selftests.py
 
@@ -66,6 +66,9 @@ jobs:
               'humanoid-motion/scripts/twocam/solve.py': ['numpy'],
               'humanoid-motion/scripts/twocam/train.py': ['numpy'],
               'humanoid-motion/scripts/twocam/twocam.py': [],
+              'mesh-texture-paint/scripts/mvtex.py': ['numpy', 'PIL', 'scipy'],
+              'mesh-texture-paint/scripts/paint_loop.py': ['numpy', 'PIL', 'scipy'],
+              'mesh-texture-paint/scripts/qwen_paint.py': [],
               'sprite-from-video/scripts/video_canvas.py': ['numpy', 'PIL'],
               'sprite-from-video/scripts/video_frames.py': ['numpy', 'PIL'],
               'sprite-from-video/scripts/video_loop.py': ['numpy', 'PIL'],

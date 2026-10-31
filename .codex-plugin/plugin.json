@@ -1,7 +1,7 @@
 {
   "name": "unity-dev",
-  "version": "0.35.0",
-  "description": "Unity 6 game development: sixty load-by-situation skills from an empty project to a verified build. Start here: unity-gameplay for gameplay, unity-game-ui for UI, game-character-pipeline for a rigged character from an image, unity-live-services for backend, online and monetisation.",
+  "version": "0.36.0",
+  "description": "Unity 6 game development: sixty-one load-by-situation skills from an empty project to a verified build. Start here: unity-gameplay for gameplay, unity-game-ui for UI, game-character-pipeline for a rigged character from an image, unity-live-services for backend, online and monetisation.",
   "author": {
     "name": "Li, ching yu",
     "email": "tipo5890Li@gmail.com"

@@ -2,6 +2,114 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.36.0
+
+Sixty-one skills. Image-to-3D gives a good shape and a dull, blotchy, guessed texture: the multi-view
+mesh is darker and less saturated than the art it came from, and its unseen sides are invented. A
+new skill, `mesh-texture-paint`, keeps the mesh, its UVs and its normal and occlusion maps, and
+repaints only the base colour from the concept art. It renders the mesh from one camera, has a
+local image-edit model paint that view guided by the concept art, registers the painted image to
+the render's silhouette, gates it, projects the painted pixels into the UV texture, picks the next
+camera, and repeats. The finished GLB is the original with only its base-colour image replaced.
+The same route serves a character and a prop (the courier backpack, the parcel bag, a cone); a thin
+prop works too, with a looser silhouette around its holes. The scripts depend only on Python 3,
+numpy, Pillow and SciPy, each has a `--selftest` that needs no network, and a usage error exits 1.
+
+**The route**
+
+- **Inputs.** The image-to-3D GLB from `comfyui-asset-generation` (Pixal3D multi-view, run after
+  `four_view_background_removal_api.json`: without it the mesh grows black slabs), the four concept
+  views `front`, `left`, `back`, `right` on black, and the turnaround sheet they were split from
+  (`codex-visual`: a three-quarter image, then a 4:1 sheet, then `turnaround_to_views.py`). Yaw 0
+  looks down +Z at the front; yaw 90 sees `left.png`, the model's own left.
+- **The paint call** (`qwen_paint.py`). Qwen-Image-Edit-2511 int8 with the 4-step Lightning LoRA
+  on a self-hosted ComfyUI, submitted through `comfyui-asset-generation`'s client. Exactly two
+  images: picture 1 is the guide render at 1024×1024, whose layout is kept, and picture 2 is one
+  reference. A third image leaves the guide almost unpainted. The latent is the encoded guide;
+  ModelSamplingAuraFlow 3.1, CFGNorm 1, the multi-reference latent method `index_timestep_zero`,
+  4 steps at cfg 1, euler/simple. Twenty steps without Lightning come back ghostly, and a denoise
+  below 1 returns the guide unchanged.
+- **The guide** (`mvtex.py`, `paint_loop.py`). The first view is the front: a plain clay render on
+  `#00FF00`, with the whole sheet as reference. Every later view is a context render: what is
+  painted so far in colour, and the unpainted surface shown as a prior, the GLB's own texture
+  brightness-matched to the painted texels with one gain and offset for all channels (`--prior
+  self`; with no texture in the GLB, the nearest painted colour). Specks under 400 px take the
+  nearest painted colour. The prompt asks for a repaint that matches picture 2, keeping what is
+  already well painted, and ends with "Draw only this one <subject>, no other views or copies."
+- **Reference fallback.** The sheet first; on a failed try, the single concept view nearest the
+  camera's yaw. A sheet can make the model paint a collage of several figures; a single view can
+  make it copy that view's facing.
+- **Cameras.** Perspective, fov 20, the conditioning Pixal3D's multi-view model saw. Eight anchors
+  at pitch 0 (yaw 0, 45, 315, 90, 270, 135, 225, 180), then next-best-view over 128 Fibonacci
+  directions: pitch within −40..50 (a steeper view comes back drawn at eye level), at least 20°
+  from every used camera, at least 5% of the visible surface unpainted, zoomed onto the unpainted
+  region but never tighter than 25% of the largest extent. A thin mesh (smallest extent under 15%
+  of the largest) is never zoomed: a zoomed crop of one comes back unrecognisable. A character adds
+  three head close-ups (yaw 0, 40, 320) repainted from the front view, which win the refine test
+  through their zoom weight and give a sharp face. The loop stops at 0.97 of the seeable surface,
+  16 views or 3 rejections in a row, then runs the detail passes; `--resume` continues from
+  `state.npz`.
+
+**The gates, per try** (up to 3 tries per view, seeds and references alternating)
+
+- Silhouette IoU at least 0.90 after a similarity alignment search (±3% scale, ±16 px shift).
+- Outline distance p90 at most 24 px at 1024 (a collage scores 70 and up).
+- At least 0.3 of the unpainted pixels painted.
+- Already-painted pixels: at most 8% change brightness by more than 60 levels, and at most 6% go
+  from dark to light (dark hair turning silver).
+- Background at most 40 from the key: a washed-out key comes with a washed-out figure.
+- Pixels within 6 px of an outline disagreement (a strap that moved) are neither projected nor
+  counted in the drift tests. When the concept art has no key-green hue, green bled in from the
+  background is clamped (G ≤ max(R, B) + 8) before projection.
+
+**Projection.** A per-texel depth test (eps 0.004 × the bounding-box diagonal) and a 75° facing cut,
+which also drops the inner shell of a double-shell image-to-3D mesh. Weight = view weight × cos⁴ ×
+edge falloff (0 within 2 px of a silhouette or depth edge, 1 from 8 px); a zoomed camera's view
+weight is min(3, full radius ÷ zoom radius). A painted texel takes a new view only when that view's
+weight beats its best earlier one by 1.5×. Before blending, a per-channel gain and offset from robust
+quantiles over the texels both views cover matches the colours, skipped as implausible outside gain
+0.85–1.18 or offset 25. Texels no view reaches keep the matched prior; the gutter is filled by a
+distance-transform push. A run writes `basecolor.png`, `<glb-stem>_painted.glb`, `coverage.png`,
+`turntable.png`, `report.json` and `views/` (each guide, output and aligned image).
+
+**Tried and rejected for the unpainted surface.** Flat grey and clay grey read as grey material
+(dark hair turned silver). Magenta, as some multi-view texturing add-ons use it, bleeds into purple
+hair and socks. A nearest-colour fill spreads wrong colours (a side pocket's orange onto the back of
+the shorts). A per-channel prior match turns neutral greys olive. The one-gain prior is what is left.
+
+**Licences.** Qwen-Image-Edit-2511 and its Lightning LoRA are Apache-2.0. Qwen Image 2.1 is research
+and evaluation only, and nvdiffrast is non-commercial: the skill uses neither, and rasterises in
+numpy. No code is ported; the method borrows ideas only.
+
+**Integration**
+
+- `game-character-pipeline`: a new stage **S3b, repaint texture**, between S3 (generate) and S4
+  (normalise), when S3's texture is below the target; its exit is the painted GLB with mesh and UVs
+  unchanged and its turntable accepted by a person. A request row points a dull generated texture
+  there, "nine skills" is now ten, and `reference/upstream-changes.md` says what a new repaint sends
+  back through (S4's file, S5's rebake on the ship track, S11, S12) and what stands (rig, clips).
+- `comfyui-asset-generation`: the Scope and `reference/image-to-3d.md`'s hand-off say the
+  image-to-3D texture is a prior to repaint here; `reference/server-inventory.md` lists the
+  image-edit family's four files and that it is a separate model family from 3D.
+- `codex-visual`: the request table and Scope point the concept views and sheet at the repaint;
+  `reference/image-to-3d-input.md` §5 says to keep them after the mesh is made.
+- `unity-3d-models`: a request row for a dull generated texture.
+- `art-asset-registry` → `reference/licences.md`: the `qwen-image-edit-2511` source (`worldwide`),
+  the two non-shippable models named, and a repainted texture linked `depends-on` its GLB.
+- `tools/run-selftests.py` gains a `scipy` dependency tag and the three rows; CI installs SciPy and
+  probes the three scripts for exit 1 on a bad flag; `tools/cross-skill-deps.txt` declares
+  `qwen_paint.py` → `comfy_asset_client.py`.
+- The skill listing stays inside its budget: the `unity-live-services` and
+  `game-character-pipeline` descriptions are shorter, their main use case first and unchanged.
+- Two routing evals, `art-texture-repaint` (the runner) and `art-texture-repaint-prop` (the courier
+  backpack), route a dull generated texture here rather than to `comfyui-asset-generation` or
+  `codex-visual`.
+- README and its three translations: sixty-one skills, the new row with the AI asset skills, and the
+  skill in the rigged-character chain; SciPy among the optional requirements; and a "See it work"
+  section, from a dull generated texture to one that matches the concept: a turntable of the
+  runner and the courier backpack, baked texture beside repainted, and one loop step in five
+  panels.
+
 ## 0.35.0
 
 Sixty skills. This release is about data contracts: the files one skill writes and another reads.

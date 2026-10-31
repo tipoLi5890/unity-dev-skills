@@ -89,6 +89,9 @@ with the Codex host — display name, one-line summary, and the
   `character-autorig` (Auto-Rig Pro onto the humanoid contract; a custom body in
   `blender-character-rig`), its clips from `humanoid-motion` or `blender-retarget`, in the order
   `game-character-pipeline` sets.
+- **Repainting a generated mesh's texture** — the image-to-3D texture is a guess, kept as the
+  prior; the base colour is repainted view by view from the concept art with a Qwen image-edit
+  model on this server: `mesh-texture-paint`. This skill generates the mesh.
 - **What a class of asset may cost** — the generation preset ladder and the `3D budgets` row:
   `unity-3d-models`. This skill generates the presets it compares.
 - **A video turned into a 3D humanoid clip** — a two-camera H3 video solved onto the rig:
@@ -104,7 +107,7 @@ with the Codex host — display name, one-line summary, and the
 - **Installing or reconfiguring ComfyUI, models or ports**: left to the user, on request only.
 
 Related: `game-character-pipeline` (the stage order S0–S13), `codex-visual` (source images, the
-review sheet composer), `unity-3d-models`, `blender-retarget`, `blender-character-rig`,
+review sheet composer), `mesh-texture-paint` (the texture repainted), `unity-3d-models`, `blender-retarget`, `blender-character-rig`,
 `art-asset-registry` (the ledger the client's `record` feeds).
 
 ## Boundaries

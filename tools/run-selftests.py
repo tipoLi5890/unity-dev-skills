@@ -7,7 +7,7 @@ failure; a row that runs passes on exit 0 and fails on anything else (or a timeo
 script under skills/ that defines a selftest but has no row fails the run too, so a new
 selftest cannot be left out by accident.
 
-Dependencies: stdlib, numpy, pillow, cv2 and torch must import in this interpreter;
+Dependencies: stdlib, numpy, pillow, scipy, cv2 and torch must import in this interpreter;
 ffmpeg must be on PATH; bpy rows run inside Blender, and only when --blender PATH is given
 (`blender -b --factory-startup -P SCRIPT -- ARGS`).
 
@@ -74,6 +74,9 @@ SELFTESTS = [
     ('humanoid-motion/scripts/twocam/solve.py', ['--selftest'], ['numpy', 'torch']),
     ('humanoid-motion/scripts/twocam/train.py', ['--selftest'], ['numpy', 'cv2', 'torch']),
     ('humanoid-motion/scripts/twocam/twocam.py', ['--selftest'], ['numpy']),
+    ('mesh-texture-paint/scripts/mvtex.py', ['--selftest'], ['numpy', 'pillow', 'scipy']),
+    ('mesh-texture-paint/scripts/paint_loop.py', ['--selftest'], ['numpy', 'pillow', 'scipy']),
+    ('mesh-texture-paint/scripts/qwen_paint.py', ['--selftest'], ['stdlib']),
     ('sprite-from-video/scripts/video_canvas.py', ['--selftest'], ['numpy', 'pillow']),
     ('sprite-from-video/scripts/video_frames.py', ['--selftest'], ['numpy', 'pillow', 'ffmpeg']),
     ('sprite-from-video/scripts/video_loop.py', ['--selftest'], ['numpy', 'pillow']),
@@ -92,7 +95,7 @@ SELFTESTS = [
     ('unity-rigged-character/scripts/contract_map.py', ['selftest'], ['numpy']),
 ]
 
-MODULES = {'numpy': 'numpy', 'pillow': 'PIL', 'cv2': 'cv2', 'torch': 'torch'}
+MODULES = {'numpy': 'numpy', 'pillow': 'PIL', 'scipy': 'scipy', 'cv2': 'cv2', 'torch': 'torch'}
 HAS_SELFTEST = re.compile(r'^def (?:selftest|cmd_selftest|selftest_host)\(', re.M)
 
 

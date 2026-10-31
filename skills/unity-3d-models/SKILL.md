@@ -21,6 +21,7 @@ record in the project's ledger. What differs is the route there.
 | A character's game mesh: regenerate at the preset, or retopology and a rebake, before rigging | `blender-character-rig` → `reference/game-mesh.md` |
 | Checking a folder of imported models against its class | `reference/model-audit.md` |
 | Generate the mesh on a self-hosted ComfyUI at the class's preset, so no decimation pass is needed | skill `comfyui-asset-generation` |
+| A generated mesh's texture is dull, blotchy or off the concept art; repaint it, mesh and UVs kept | skill `mesh-texture-paint` |
 | Lighter levels will not decimate (spikes, a floor far above the target), a hidden inner body, a prop in shards, blotchy normals | `reference/import-and-decimate.md` (three faults) |
 | A level vanished on one quality tier; the importer made a LODGroup nobody asked for | `reference/asset-classes.md` (LOD names) |
 | "Shows in Scene, invisible in Game"; culling masks; layers | `reference/culling-and-layers.md` |

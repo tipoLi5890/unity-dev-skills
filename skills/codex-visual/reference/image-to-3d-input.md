@@ -75,6 +75,10 @@ sides one width, the largest side about 0.91 of the frame:
 "$PY" <skill>/scripts/audit_3d_source.py --views views/crate      # exit 1 → regenerate the sheet
 ```
 
+Keep the sheet and the four views after the mesh is made: `mesh-texture-paint` repaints the
+generated mesh's texture from them (the sheet as its first reference, the view nearest each camera
+as the fallback). A character and a prop use the same files; only the prompt templates differ.
+
 ## 6. Left and right
 
 `left.png` is the view **from the object's left side**: in it the object's front points to the

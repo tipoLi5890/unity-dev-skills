@@ -1,6 +1,6 @@
 # Example ComfyUI inventory
 
-An example: one server's saved workflows and installed H3 and 3D files. It is a routing
+An example: one server's saved workflows and installed H3, 3D and image-edit files. It is a routing
 hint, not a substitute for live validation — verify every name with
 `GET /object_info` before use.
 
@@ -48,6 +48,19 @@ I2V share FL2VA; R2V and multi-frame reference share REF2VA.
 Both 3D workflows are official templates built from core nodes, and the API
 templates in this skill keep their node ids. The three diffusion models share
 the encoder and both VAEs and schedule as one family.
+
+## Image edit components
+
+The image-edit family `mesh-texture-paint` paints each view with (Qwen-Image-Edit-2511 and its
+4-step Lightning LoRA, both Apache-2.0). It is a separate model family from H3 and 3D: free the
+3D models before the first paint job.
+
+| Role | Folder | Installed filename |
+|---|---|---|
+| Qwen-Image-Edit-2511 diffusion model | `diffusion_models` | `qwen_image_edit_2511_int8_convrot.safetensors` |
+| Text encoder | `text_encoders` | `qwen_2.5_vl_7b_fp8_scaled.safetensors` |
+| VAE | `vae` | `qwen_image_vae.safetensors` |
+| Lightning LoRA, 4 steps | `loras` | `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` |
 
 Before every first job in a session, verify these choices through the relevant
 `/object_info/{class}` endpoints. A renamed, moved, or removed file invalidates

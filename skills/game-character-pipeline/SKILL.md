@@ -1,14 +1,13 @@
 ---
 name: game-character-pipeline
 description: >-
-  START HERE for a rigged game character made from an image or turnaround: the
-  stage order from views to an approved character in Unity, each stage's owner
-  and its gate.
+  START HERE for a rigged game character made from an image or turnaround:
+  stage order from views to Unity, each stage's owner and gate.
 ---
 
 # game-character-pipeline — one character, image to Unity, in order
 
-A rigged character crosses nine skills. Each owns its stages and their method; this skill owns
+A rigged character crosses ten skills. Each owns its stages and their method; this skill owns
 only the order, the gate between two stages, and what each stage leaves on disk for the next.
 It ships no scripts and copies no method: every row points at the file that does the work.
 
@@ -21,6 +20,7 @@ It ships no scripts and copies no method: every row points at the file that does
 | Which route: rig locally onto the humanoid contract, or fit the mesh to one clip pack's skeleton | G0 step 2; `reference/routes.md` |
 | Preview, ship or upgrade track (a cloud mesh after the demo, chosen by a person) | G0 step 3 |
 | Which skill owns a stage, what it enters with and leaves on disk, its gate | [the stages](#the-stages), S0–S13 |
+| The generated texture is dull, blotchy or off the concept art | S3b, `mesh-texture-paint` |
 | Something upstream changed; a worked example (the Runner with a Mallet) | `reference/upstream-changes.md` |
 | A 2D character, a prop, moving the character in the game | [Scope](#scope--what-this-skill-does-not-do) |
 
@@ -75,6 +75,7 @@ the named image and said yes. Every artefact is recorded in the ledger as it is 
 | S1 | Four views | `codex-visual` | G0 answered; `ART_DIRECTION.md` locked | the three-quarter image approved by a **person**, then FRONT, LEFT, BACK, RIGHT at one scale, true sides, empty hands, limbs clear of the body; the prop its own sheet; `audit_3d_source.py --views` passes | `codex-visual` → `reference/image-to-3d-input.md` (§9) |
 | S2 | Background removal | `comfyui-asset-generation` | the approved views | per view an RGBA cut-out, a mask preview, a black composite; polarity checked on the first view; thin parts survived; upload names unique | `comfyui-asset-generation` → `reference/image-to-3d.md` (Background removal for four views) |
 | S3 | Generate, locally | `comfyui-asset-generation` | the black composites; the graph diffed against the official template | the local Pixal3D multi-view GLB, `inspect_glb.py --json-out` green, its 8-view sheet accepted by a **person**. One change per run, never an identical resend; "adopt the usable baseline and record its limits" is a valid exit. Upgrade track: a paid cloud mesh from the same views, recorded with its licence | `comfyui-asset-generation` → `reference/image-to-3d-tuning.md`; `codex-visual` → `reference/review-sheets.md` |
+| S3b | Repaint texture, when S3's texture is below the target | `mesh-texture-paint` | the S3 GLB; S1's four views and turnaround sheet | the base colour repainted view by view, each view gated; `<stem>_painted.glb` with mesh, UVs, normal and AO unchanged, its turntable accepted by a **person**; texels no view reached keep S3's texture | `mesh-texture-paint` |
 | S4 | Normalise | `blender-character-rig` | a green GLB | one object at its height, Z up, facing −Y, soles on Z 0, scale applied; the weld check read; an Auto-Rig Pro rig imports with `weld_distance: None`. Leaves `ArtDirection/sources/Runner.blend` | `blender-character-rig` → `reference/import-and-survey.md` |
 | S5 | Game mesh — ship track | `blender-character-rig` | a `calibrated` budget row; the S4 file | regenerated at the row's preset (back through S2–S4's gates), or retopology, UVs and a rebake from the showcase; budget, silhouette, UV, bake and joint gates; a **person** approves the side-by-side. Leaves `Runner_game.blend` and its maps | `blender-character-rig` → `reference/game-mesh.md` |
 | S6 | Rig, locally | `character-autorig`; fallback `blender-character-rig` | the mesh to rig (ship: `Runner_game.blend`); **`mesh_check.py` exit 0** — fused limbs or a same-facing double layer go back to S1 or S3, never into a rig; a back-to-back inner shell (Pixal3D's fixed artefact) is reported and kept | markers' two pictures accepted by a **person**; `brt_arp` `pipeline` gates; `contract_map.py --require contract` exit 0; `deform_gate.py` exit 0 and its renders looked at by a **person**; weight sum 1 | `character-autorig` → `reference/arp-pipeline.md`; `character-autorig` → `reference/gates.md`; `character-autorig` → `reference/hand-built-route.md` |

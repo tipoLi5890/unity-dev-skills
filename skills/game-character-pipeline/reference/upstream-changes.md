@@ -9,6 +9,7 @@ Read with the stage table in `SKILL.md`; the ledger's `stale` names the downstre
 | The budget row, after the rig exists | S5, then **S6 again**: nothing taken on the old vertices carries over |
 | The views or the design | S1, and every stage after it |
 | The generation graph or a preset | S3; a drift from the official template is put back before any tuning |
+| The repaint: its views, prompts or reference | S3b; the mesh and UVs do not change, so the rig and clips stand: the new base colour replaces the texture in S4's file (and goes through S5's rebake on the ship track), then S11 and S12 |
 | One clip's source, map or rest frame | S8 for that clip, then S9's checks, then S11 |
 | A weight repair or a prop grip | S9, then S11 and S12 |
 | The upgrade track: a cloud mesh | S4, `mesh_check`, S5 on the ship track, S6; clips carry over, S9's prop and drift checks again |
@@ -22,7 +23,8 @@ Read with the stage table in `SKILL.md`; the ledger's `stale` names the downstre
    and the leap over the gate from two-camera takes. The Mallet is its own `hero-prop` asset,
    attached at S9.
 2. **S1 → S5.** Views approved; the `character` ladder under the game camera, a person picks a
-   rung; a green local GLB, `Runner_game.blend` at the preset.
+   rung; a green local GLB, its texture repainted from the views at S3b, `Runner_game.blend` at the
+   preset.
 3. **S6 → S12.** `mesh_check` exit 0; `RunnerRig` from markers a person accepted, the contract
    gate and the six poses passing; the jog and the leap solved onto the rig, baked and gated; the
    first four files read back, then a throwaway Unity project; a person approves. S13 records every file with its licence.

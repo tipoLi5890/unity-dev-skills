@@ -16,7 +16,7 @@ claude plugin validate .                # manifest shape
 ```
 
 Run them from the repository root. CI runs them on Python 3.10 and 3.12 with numpy, Pillow,
-jsonschema and ffmpeg installed. Rows that need Blender, torch or OpenCV are skipped there: run them locally
+SciPy, jsonschema and ffmpeg installed. Rows that need Blender, torch or OpenCV are skipped there: run them locally
 before a release, Blender ones with `python3 tools/run-selftests.py --blender /path/to/blender`.
 Before a release, also compile the shipped C# in a scratch Unity project with
 `tools/unity-compile-check.sh` (one Editor at a time).

@@ -4,7 +4,7 @@
 
 <p><b>让 Claude Code 和 Codex 像一位严谨的 Unity 开发者那样工作，并且每一步都拿出证据的 Unity 6 skills。</b></p>
 
-<p><i>60 个 skill，从最初的想法一直到真机上的构建。</i></p>
+<p><i>61 个 skill，从最初的想法一直到真机上的构建。</i></p>
 
 <p>
 <a href="../.claude-plugin/plugin.json"><img alt="版本" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FtipoLi5890%2Funity-dev-skills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=blue"></a>
@@ -49,7 +49,7 @@ claude plugin install unity-dev@unity-dev
 - **必需**：Claude Code 或 Codex；一个 Unity 6 项目；运行脚本需要 Python 3.10 或更高版本，读取图像或音频的脚本还需要
   NumPy 和 Pillow。
 - **可选，仅用于资源与角色管线**：Blender，版本要在你所用的 Auto-Rig Pro 版本支持范围内（`character-autorig` 里有说明）；你自己持有许可的
-  Auto-Rig Pro；部署在 GPU 机器上的自建 ComfyUI；用于 2D 美术的 `codex` CLI。
+  Auto-Rig Pro；部署在 GPU 机器上的自建 ComfyUI；用于 2D 美术的 `codex` CLI；`mesh-texture-paint` 需要的 SciPy。
 - **可选，用于视频**：ffmpeg，凡是要输出视频的功能都需要它（预览、集锦短片、由视频生成的 sprite）。
 - **可选，用于设备**：iOS 需要一台装有 Xcode 15 或更高版本的 Mac；Android 需要 Android SDK。
 
@@ -92,6 +92,26 @@ claude plugin install unity-dev@unity-dev
 [`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) →
 [`unity-2d-controller`](../skills/unity-2d-controller/SKILL.md)
 
+### 从灰暗的生成贴图，到与概念图一致的贴图
+
+<div align="center">
+<img src="media/texture.gif" alt="四栏转台：图生 3D 烘出贴图的跑者、重新上色后的同一个跑者，接着是烘出贴图与重新上色的快递背包。重新上色的版本颜色更亮更干净，脸、手套、背带和缝线等细节也更清楚" width="800">
+<p><sub>同样的网格、同样的 UV。每组左边是图生 3D 烘出的贴图，右边是按概念图重新上色的贴图。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/texture-steps.jpg" alt="同一个机位的五格：背面概念图、未贴图的网格、交给模型的渲染图（已上色的部分显示颜色，其余用烘出的贴图作先验）、模型重画的结果，以及投影回贴图后的网格" width="800">
+<p><sub>循环中的一步：渲染当前已上色的样子，让本地图像编辑模型按概念图重画这个视角，通过闸门后投影回 UV 贴图，再挑下一个机位。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md)
+
+图生 3D 的形状做得好，颜色却浑浊。这里保留网格、UV 和烘好的法线与 AO 贴图，只在你自己的 ComfyUI 上
+一个机位一个机位地重画 base color。每个视角写进贴图前都要和渲染图比对（轮廓、多人拼贴、颜色漂移、
+背景发白），头部另有近拍，让脸更清楚。
+
 ### 从一张画稿到一个会动、绑好骨架的角色
 
 <div align="center">
@@ -101,6 +121,7 @@ claude plugin install unity-dev@unity-dev
 
 [`codex-visual`](../skills/codex-visual/SKILL.md) →
 [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) →
 [`character-autorig`](../skills/character-autorig/SKILL.md) →
 [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) →
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
@@ -239,6 +260,7 @@ flowchart LR
 | [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 用一张图做绑骨角色，**从这里开始**：S0–S13 各阶段，每一阶段都有闸门 |
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | 通过 `codex` 图像模型出 2D 美术，用一份美术圣经保持风格统一 |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音乐、音效、视频和 3D 模型，每种各一个任务 |
+| [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 依照概念图逐个视角重绘生成 3D 模型暗淡的贴图，网格和 UV 保持不变 |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 通过一段生成的视频，把一张角色静态图变成透明的 sprite 循环 |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` 不适用时在 Blender 里手工绑骨，导出的 FBX 用重新导入来验证 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把现成的动作 clip 套到你的 Blender 骨架上，按脚滑、抖动和跳变把关 |
