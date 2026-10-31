@@ -10,19 +10,25 @@ where a foot would sink below its rest height, as a real motion keeps its feet o
 the score's joint groups follow the humanoid contract (upstream's wolf groups are kept for upstream names); new:
 `fk` (the rig's joints for a motion, in numpy, the same forward kinematics as solve.py), `det` (a perfect reader:
 the true joints projected into both views, with optional noise and an optional different motion for the side view,
-so the solve and its gates are tested without a trained reader), --selftest.
+so the solve and its gates are tested without a trained reader), `make --strike-frame` (a planted hand whip: the
+arm swings up and back in five frames, scaled to a peak hand acceleration, for the fit's acceleration term), the
+score's worst joint and frame (`max_cm`, `--max-worst-cm`), --selftest.
 
 usage:
     exam.py make RIG_INFO.json MOTION.json [--seed 0] [--frames 120] [--fps 24]   random smooth motion in the limits
+            [--strike-frame F] [--strike-px 200] [--strike-side R]               ... plus a hand whip peaking at F
     exam.py fk RIG_INFO.json MOTION.json JOINTS.json                              joints per frame (names, joints, fps)
     exam.py det RIG_INFO.json JOINTS.json DET.npz [--noise-px 0] [--seed 0] [--side-joints OTHER.json]
                                                                                   a perfect reader's det.npz
     exam.py video RIG_INFO.json RENDER_DIR OUT.mp4 [--fps 24]                     front/ + side/ renders -> one video
-    exam.py score TRUTH_JOINTS.json SOLVED.json [--max-mean-cm 1.0]               per-joint error in centimetres
+    exam.py score TRUTH_JOINTS.json SOLVED.json [--max-mean-cm 1.0] [--max-worst-cm CM]
+                                                                                  per-joint error in centimetres
     exam.py --selftest
 TRUTH_JOINTS.json is apply_motion.py's joints.json (Blender's own joint positions) or `fk`'s output; SOLVED.json is
 solve.py's motion.json (its "joints"). Prints one JSON object. Exit codes: 0 done (score: mean error within
---max-mean-cm), 2 the score's gate failed, 1 refused input or a failed selftest.
+--max-mean-cm, and the worst joint on the worst frame within --max-worst-cm when given), 2 a score gate failed,
+1 refused input or a failed selftest. A strike exam is judged by --max-worst-cm (3 cm): a whip the fit smooths
+away is five frames of one hand, which the mean over the clip barely shows.
 """
 from __future__ import annotations
 
@@ -125,6 +131,53 @@ def make_motion(info, seed=0, T=120, fps=24) -> dict:
     return out
 
 
+STRIKE_PX = 200.0   # px/frame^2 at 768 px: the planted whip's peak hand acceleration (a fast punch reads 100-200)
+STRIKE_HALF = 2     # frames each side of the peak: up and back in five frames
+
+
+def contract_bone(info, name):
+    """Index of the bone the contract calls `name` (rig_info twocam.contract_names maps a rig's own names)."""
+    cn = (info.get("twocam") or {}).get("contract_names") or {}
+    names = [cn.get(b["name"], b["name"]) for b in info["bones"]]
+    return names.index(name)
+
+
+def plant_strike(info, motion, frame, side="R", peak_px=STRIKE_PX) -> dict:
+    """Add a hand whip to `motion`: UpperArm swings forward and up and the elbow bends, along a raised cosine over
+    frame +- STRIKE_HALF, scaled (inside the limits) until the hand's peak acceleration is `peak_px` px/frame^2.
+    Returns a new motion with a "strike" block; the frames outside the whip are unchanged."""
+    L = Layout.from_rig_info(info)
+    eul0 = np.asarray(motion["euler"], float)
+    T = len(eul0)
+    if not STRIKE_HALF + 1 <= frame <= T - STRIKE_HALF - 2:
+        raise ValueError(f"--strike-frame {frame} must leave {STRIKE_HALF + 1} frames each side (clip has {T})")
+    ua, la = contract_bone(info, f"UpperArm.{side}"), contract_bone(info, f"LowerArm.{side}")
+    hand = [k["name"] for k in info["keypoints"]].index(f"Hand.{side}")
+    lim = np.radians(np.array([b["limits_deg"] for b in info["bones"]], float))
+    t = np.arange(T) - frame
+    bump = np.where(np.abs(t) <= STRIKE_HALF, 0.5 * (1 + np.cos(np.pi * t / STRIKE_HALF)), 0.0)
+    C = limit_frames(info)
+
+    def with_amp(a):
+        e = eul0.copy()
+        e[:, ua, 0] = np.clip(e[:, ua, 0] - a * bump, lim[ua, 0, 0], lim[ua, 0, 1])          # X -: forward and up
+        e[:, la, 0] = np.clip(e[:, la, 0] - 0.5 * a * bump, lim[la, 0, 0], lim[la, 0, 1])    # X -: the elbow bends
+        m = dict(motion, euler=e.round(5).tolist())
+        if C is not None:
+            m["local_quat"] = mat_to_quat(C[None] @ euler_xyz(e.round(5)) @ np.swapaxes(C, -1, -2)[None]).round(8).tolist()
+        h = fk_joints(info, m)[:, hand]
+        return m, float(np.linalg.norm(h[2:] - 2 * h[1:-1] + h[:-2], axis=-1).max() / L.M_PER_PX)
+
+    lo, hi = 0.0, math.radians(170)
+    for _ in range(40):   # the peak grows with the swing; bisect the swing for the target
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if with_amp(mid)[1] < peak_px else (lo, mid)
+    m, got = with_amp(0.5 * (lo + hi))
+    m["strike"] = {"frame": int(frame), "side": side, "frames": [int(frame - STRIKE_HALF), int(frame + STRIKE_HALF)],
+                   "swing_deg": round(math.degrees(0.5 * (lo + hi)), 1), "peak_hand_acc_px": round(got, 1)}
+    return m
+
+
 def fk_joints(info, motion) -> np.ndarray:
     """(T, J, 3) joints in metres: pose = parent pose x rest offset x rotation, as solve.Rig.forward."""
     bones = info["bones"]
@@ -208,7 +261,9 @@ def score(a: dict, b: dict) -> dict:
         raise ValueError(f"truth has {A.shape[1]} joints, the solve {B.shape[1]}")
     T = min(len(A), len(B))
     e = np.linalg.norm(A[:T] - B[:T], axis=-1) * 100
-    out = {"mean_cm": float(e.mean()), "median_cm": float(np.median(e)), "p95_cm": float(np.percentile(e, 95))}
+    t, j = np.unravel_index(int(np.argmax(e)), e.shape)
+    out = {"mean_cm": float(e.mean()), "median_cm": float(np.median(e)), "p95_cm": float(np.percentile(e, 95)),
+           "max_cm": float(e[t, j]), "max_at": {"frame": int(t), "joint": names[j]}}
     humanoid = any(n.endswith((".L", ".R")) for n in names)
     for g, keys in (GROUPS if humanoid else UPSTREAM_GROUPS).items():
         if humanoid:
@@ -271,6 +326,23 @@ def selftest() -> int:
     names = [k["name"] for k in info["keypoints"]]
     sc = score({"names": names, "joints": J.tolist()}, {"joints": (J + [0.005, 0, 0]).tolist()})
     check("score: a 5 mm shift reads 0.5 cm", abs(sc["mean_cm"] - 0.5) < 1e-6 and "feet_cm" in sc)
+    sm = make_motion(info, seed=7, T=48)
+    st = plant_strike(info, sm, 24)
+    se, s0 = np.asarray(st["euler"]), np.asarray(sm["euler"])
+    moved = np.where(np.abs(se - s0).max((1, 2)) > 0)[0].tolist()
+    check("strike: the hand peaks at --strike-px, only the whip's frames move, inside the limits",
+          abs(st["strike"]["peak_hand_acc_px"] - STRIKE_PX) < 2 and moved == [23, 24, 25]
+          and np.all(se[:, 1:] >= lim[None, 1:, :, 0] - 1e-4) and np.all(se[:, 1:] <= lim[None, 1:, :, 1] + 1e-4)
+          and np.allclose(quat_to_mat(np.asarray(st["local_quat"])), C[None] @ euler_xyz(se) @ np.swapaxes(C, -1, -2)[None],
+                          atol=1e-6))
+    try:
+        plant_strike(info, sm, 1)
+        check("strike: a frame too near the clip's end is refused", False)
+    except ValueError:
+        check("strike: a frame too near the clip's end is refused", True)
+    sc = score({"names": names, "joints": J.tolist()}, {"joints": np.where(np.arange(30)[:, None, None] == 12,
+                                                                            J + [0.04, 0, 0], J).tolist()})
+    check("score: max_cm finds the worst frame", abs(sc["max_cm"] - 4.0) < 1e-6 and sc["max_at"]["frame"] == 12)
     with tempfile.TemporaryDirectory() as td:
         td = pathlib.Path(td)
         (td / "t.json").write_text(json.dumps({"names": names, "joints": J.tolist()}))
@@ -281,6 +353,9 @@ def selftest() -> int:
         contract_sample("exam", "score_fails", rep)
         check("score gate passes under its limit, exit 0",
               main(["score", str(td / "t.json"), str(td / "s.json"), "--max-mean-cm", "2.5"], True) == 0)
+        check("--max-worst-cm gates the worst joint, exit 2",
+              main(["score", str(td / "t.json"), str(td / "s.json"), "--max-mean-cm", "2.5", "--max-worst-cm", "1.5"],
+                   True) == 2)
         (td / "s.json").write_text(json.dumps({"joints": J[:, :5].tolist()}))
         check("score refuses a joint-count mismatch, exit 1", main(["score", str(td / "t.json"), str(td / "s.json")], True) == 1)
     ok = all(c["pass"] for c in checks)
@@ -306,6 +381,9 @@ def main(argv=None, quiet=False) -> int:
     p = sub.add_parser("make"); p.add_argument("rig_info"); p.add_argument("out")
     p.add_argument("--seed", type=int, default=0); p.add_argument("--frames", type=int, default=120)
     p.add_argument("--fps", type=float, default=24)
+    p.add_argument("--strike-frame", type=int, help="plant a hand whip peaking at this frame")
+    p.add_argument("--strike-px", type=float, default=STRIKE_PX, help="its peak hand acceleration, px/frame^2")
+    p.add_argument("--strike-side", choices=["L", "R"], default="R")
     p = sub.add_parser("fk"); p.add_argument("rig_info"); p.add_argument("motion"); p.add_argument("out")
     p = sub.add_parser("det"); p.add_argument("rig_info"); p.add_argument("joints"); p.add_argument("out")
     p.add_argument("--noise-px", type=float, default=0.0); p.add_argument("--seed", type=int, default=0)
@@ -314,22 +392,33 @@ def main(argv=None, quiet=False) -> int:
     p.add_argument("--fps", type=float, default=24)
     p = sub.add_parser("score"); p.add_argument("truth"); p.add_argument("solved")
     p.add_argument("--max-mean-cm", type=float, default=1.0)
+    p.add_argument("--max-worst-cm", type=float, help="also gate the worst joint on the worst frame (strike exams: 3)")
     a = ap.parse_args(argv)
     emit = (lambda d: None) if quiet else (lambda d: print(json.dumps(d)))
     try:
         if a.cmd == "score":
             r = score(json.loads(pathlib.Path(a.truth).read_text()), json.loads(pathlib.Path(a.solved).read_text()))
-            ok = r["mean_cm"] <= a.max_mean_cm
-            r.update({"tool": "exam.py", "op": "score", "gates": [{"name": "exam.mean_cm", "value": round(r["mean_cm"], 3),
-                                                                     "limit": a.max_mean_cm, "pass": bool(ok)}],
-                      "schema": "gate/1", "pass": bool(ok), "ok": bool(ok)})
+            gates = [{"name": "exam.mean_cm", "value": round(r["mean_cm"], 3), "limit": a.max_mean_cm,
+                      "pass": bool(r["mean_cm"] <= a.max_mean_cm)}]
+            if a.max_worst_cm is not None:
+                gates.append({"name": "exam.max_cm", "value": round(r["max_cm"], 3), "limit": a.max_worst_cm,
+                              "pass": bool(r["max_cm"] <= a.max_worst_cm)})
+            ok = all(g["pass"] for g in gates)
+            r.update({"tool": "exam.py", "op": "score", "gates": gates, "schema": "gate/1", "pass": bool(ok), "ok": bool(ok)})
             emit(r)
             return 0 if ok else 2
         info = json.loads(pathlib.Path(a.rig_info).read_text())
         if a.cmd == "make":
             m = make_motion(info, a.seed, a.frames, a.fps)
+            if a.strike_frame is not None:
+                m = plant_strike(info, m, a.strike_frame, a.strike_side, a.strike_px)
             pathlib.Path(a.out).write_text(json.dumps(m))
-            emit({"tool": "exam.py", "op": "make", "out": a.out, "frames": a.frames, "ok": True})
+            out = {"tool": "exam.py", "op": "make", "out": a.out, "frames": a.frames, "ok": True}
+            if "strike" in m:
+                out["strike"] = m["strike"]
+                if m["strike"]["peak_hand_acc_px"] < 0.95 * a.strike_px:
+                    out["warnings"] = [f"the arm's limits stop the whip at {m['strike']['peak_hand_acc_px']} px/frame^2"]
+            emit(out)
         elif a.cmd == "fk":
             m = json.loads(pathlib.Path(a.motion).read_text())
             J = fk_joints(info, m)

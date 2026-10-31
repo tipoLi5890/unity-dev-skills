@@ -9,9 +9,11 @@ painted texels), which the model repaints to match the reference. The output is 
 the render silhouette, gated (silhouette IoU, outline distance, painted share, brightness drift,
 dark-to-light share, background deviation) and its painted pixels are projected into the UV
 texture. Anchor cameras go first, then the camera that sees the most unpainted surface
-(zoomed onto it unless the mesh is thin), until coverage, the view budget or three rejections
-in a row stop the loop; optional detail passes follow. Up to --tries seeds per camera, the
-reference alternating between the sheet and the nearest concept view.
+(zoomed onto it unless the mesh is thin or, for objects, the view is steep), until coverage,
+the view budget, three rejections in a row or three next-best views in a row with nothing
+unpainted stop the loop; optional detail passes follow.
+Up to --tries seeds per camera, the reference alternating between the sheet and the nearest
+concept view.
 
 Writes <out>/basecolor.png, <out>/<glb-stem>_painted.glb (the input GLB with only the base
 colour image replaced), <out>/coverage.png, <out>/turntable.png, <out>/report.json,
@@ -131,12 +133,15 @@ def build_parser() -> argparse.ArgumentParser:
                          "material, magenta bleeds into purple")
     ap.add_argument("--anchors", default="0:0,45:0,315:0,90:0,270:0,135:0,225:0,180:0",
                     help="yaw:pitch cameras painted first, in order")
-    ap.add_argument("--max-views", type=int, default=16)
+    ap.add_argument("--max-views", type=int, default=None,
+                    help="cameras tried, rejections included (default: 20 for a character, 16 for an object)")
     ap.add_argument("--pitch-range", type=float, nargs=2, default=(-40.0, 50.0),
                     help="cameras stay in this pitch band: steeper views come back as eye-level drawings")
     ap.add_argument("--target", type=float, default=0.97, help="stop at this share of the seeable surface")
     ap.add_argument("--min-gain", type=float, default=0.003, help="skip a camera that adds less than this")
     ap.add_argument("--no-zoom", action="store_true")
+    ap.add_argument("--zoom-max-pitch", type=float, default=None,
+                    help="no zoom on cameras steeper than this (default: 30 for an object, none for a character)")
     ap.add_argument("--no-nbv", action="store_true", help="paint the anchors only")
     ap.add_argument("--min-iou", type=float, default=0.90)
     ap.add_argument("--max-edge", type=float, default=24.0, help="outline distance p90 (px at 1024) to accept a view")
@@ -170,6 +175,16 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def kind_defaults(a):
+    """Defaults that depend on --kind: a character has more surface worth a camera (20 views);
+    a steep zoomed crop of an object comes back as an eye-level drawing (no zoom past 30 degrees)."""
+    if a.max_views is None:
+        a.max_views = 20 if a.kind == "character" else 16
+    if a.zoom_max_pitch is None and a.kind == "object":
+        a.zoom_max_pitch = 30.0
+    return a
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv in (["--selftest"], ["selftest"]):
@@ -178,6 +193,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
+    kind_defaults(a)
     if not a.glb.is_file():
         ap.error(f"GLB not found: {a.glb}")
     if not a.concept.is_dir():
@@ -245,21 +261,26 @@ def main(argv=None) -> int:
             stale += 1
     t_start = time.time()
     main_done = False
+    stop = None
+    skips = 0  # views in a row skipped with nothing unpainted
     fatal = None
     while True:
         plan = None
-        if not main_done and (acc.views >= a.max_views or acc.coverage() >= a.target or stale >= 3):
-            main_done = True
+        if not main_done:
+            stop = ("target" if acc.coverage() >= a.target else "max_views" if acc.views >= a.max_views
+                    else "rejections" if stale >= 3 else "nothing_unpainted" if skips >= 3 else None)
+            main_done = stop is not None
         while not main_done and plan is None and anchors:
             yw, pt = anchors.pop(0)
             if (yw, pt) not in used:
                 plan = {"yaw": yw, "pitch": pt, "radius": radius, "target": None, "source": "anchor"}
         if not main_done and plan is None and a.no_nbv:
-            main_done = True
+            main_done, stop = True, "anchors_done"
         if not main_done and plan is None:
-            nb = M.next_best_view(acc, radius, a.fill, used, pitch=(lo_p, hi_p), zoom=not a.no_zoom)
+            nb = M.next_best_view(acc, radius, a.fill, used, pitch=(lo_p, hi_p), zoom=not a.no_zoom,
+                                  zoom_max_pitch=a.zoom_max_pitch, render_size=a.size)
             if nb is None or nb["gain"] < a.min_gain:
-                main_done = True
+                main_done, stop = True, "no_view" if nb is None else "min_gain"
             else:
                 plan = {**nb, "source": "nbv"}
         if plan is None:
@@ -277,10 +298,12 @@ def main(argv=None) -> int:
         name = f"v{len(log):02d}_y{int(plan['yaw']) % 360:03d}_p{int(round(plan['pitch'])):+03d}" + ("z" if plan.get("target") else "")
         rec = {"name": name, **{k: plan[k] for k in ("yaw", "pitch", "source")}, "zoom": bool(plan.get("target")),
                "unpainted_share": round(share_unp, 3)}
-        if share_unp < 0.02 and not detail:
+        if share_unp < M.SKIP_SHARE and not detail:
             rec["status"] = "skipped: nothing unpainted in view"
             log.append(rec)
+            skips += plan["source"] == "nbv"   # an anchor seen already painted is not a re-pick
             continue
+        skips = 0
         guide = out / "views" / f"{name}_guide.png"
         Image.fromarray(img).save(guide)
         zoomed = bool(plan.get("target"))
@@ -350,6 +373,7 @@ def main(argv=None) -> int:
             Image.fromarray(warped).save(out / "views" / f"{name}_aligned.png")
         if fatal:
             log.append(rec)
+            stop = "fatal"
             (out / "report.json").write_text(json.dumps({"views": log}, indent=1))
             break
         if best is None:
@@ -390,11 +414,16 @@ def main(argv=None) -> int:
         rows.insert(0, np.asarray(M.glb_image(str(a.compare))))
         labels.insert(0, "comparison texture")
     turntable(mesh, radius, a.fill, rows, labels, out / "turntable.png")
-    rep = {"coverage_seeable": round(acc.coverage(), 4), "seam_delta": round(acc.seam_delta(), 2),
-           "views_used": sum(v.get("status") == "used" for v in log), "minutes": round((time.time() - t_start) / 60, 1),
+    rep = {"coverage_seeable": round(acc.coverage(), 4),
+           "coverage_screen": round(acc.screen_coverage(radius, a.fill), 4),
+           "seam_delta": round(acc.seam_delta(), 2),
+           "views_used": sum(v.get("status") == "used" for v in log),
+           "rejected": sum(v.get("status") in ("rejected", "failed: no output") for v in log),
+           "stop": stop, "minutes": round((time.time() - t_start) / 60, 1),
            "settings": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()}, "views": log}
     (out / "report.json").write_text(json.dumps(rep, indent=1))
-    print(json.dumps({k: rep[k] for k in ("coverage_seeable", "seam_delta", "views_used", "minutes")}))
+    print(json.dumps({k: rep[k] for k in ("coverage_seeable", "coverage_screen", "seam_delta", "views_used",
+                                          "rejected", "stop", "minutes")}))
     return 3 if fatal else 0
 
 
@@ -445,7 +474,13 @@ def selftest() -> int:
             rep = json.loads((out / "report.json").read_text())
             used = [v for v in rep["views"] if v.get("status") == "used"]
             covs = [v["coverage"] for v in used if "coverage" in v]
-            checks["report_keys"] = all(k in rep for k in ("coverage_seeable", "seam_delta", "views_used", "views"))
+            checks["report_keys"] = all(k in rep for k in ("coverage_seeable", "coverage_screen", "seam_delta",
+                                                           "views_used", "rejected", "stop", "views"))
+            checks["coverage_screen"] = 0.0 < rep["coverage_screen"] <= 1.0
+            ch = kind_defaults(build_parser().parse_args(["x.glb", "--concept", "c", "--out", "o"]))
+            ob = kind_defaults(build_parser().parse_args(["x.glb", "--concept", "c", "--out", "o", "--kind", "object"]))
+            checks["kind_defaults"] = (ch.max_views == 20 and ch.zoom_max_pitch is None
+                                       and ob.max_views == 16 and ob.zoom_max_pitch == 30.0)
             checks["coverage_rises"] = (len(covs) >= 3 and covs[-1] > covs[0]
                                         and all(b >= a - 1e-9 for a, b in zip(covs, covs[1:])))
             checks["nbv_and_detail_ran"] = ({"anchor", "nbv", "detail"}
@@ -487,6 +522,8 @@ def selftest() -> int:
                 code = main([str(bare)] + base[1:] + ["--out", str(td / "bare"), "--anchors", "0:0,90:0",
                                                       "--no-nbv"])
             checks["textureless_glb"] = bool(code == 0 and np.asarray(M.glb_image(td / "bare" / "bare_painted.glb")).std() > 0)
+            checks["stop_reason"] = (rep["stop"] == "max_views"
+                                     and json.loads((td / "bare" / "report.json").read_text())["stop"] == "anchors_done")
             junk = td / "junk.glb"
             junk.write_bytes(b"glTF" + b"\0" * 40)
             try:

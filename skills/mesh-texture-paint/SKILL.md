@@ -92,8 +92,8 @@ python3 "$S/paint_loop.py" out/runner_r01/runner.glb \
   --kind character --subject "courier runner" --detail head --server "$COMFYUI_SERVER_URL"
 ```
 
-A prop: `--kind object --subject "courier backpack"`, no `--detail`. A runner reaches about 0.88
-of its seeable surface in about 13 painted views plus three head passes; a prop about 0.7, its
+A prop: `--kind object --subject "courier backpack"`, no `--detail`. A runner reaches about 0.90
+of its seeable surface in about 16 painted views plus three head passes; a prop about 0.8, its
 underside staying on the prior. Thin props (a flat sign, a thin frame) paint without zoom and with
 a lower IoU around holes.
 

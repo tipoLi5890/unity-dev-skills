@@ -51,6 +51,8 @@ jobs:
               'character-autorig/scripts/autorig.py': [],
               'character-autorig/scripts/deform_gate.py': ['numpy'],
               'character-autorig/scripts/mesh_check.py': ['numpy'],
+              'character-autorig/scripts/rig_exam.py': ['numpy'],
+              'character-autorig/scripts/rig_exam_blender.py': [],
               'codex-visual/scripts/audit_pixel.py': ['numpy', 'PIL'],
               'codex-visual/scripts/breathe.py': ['numpy', 'PIL'],
               'codex-visual/scripts/key_unmix.py': ['numpy', 'PIL'],

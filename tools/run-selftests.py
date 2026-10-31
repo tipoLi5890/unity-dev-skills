@@ -46,6 +46,8 @@ SELFTESTS = [
     ('character-autorig/scripts/autorig.py', ['--selftest'], ['stdlib']),
     ('character-autorig/scripts/deform_gate.py', ['--selftest'], ['bpy', 'numpy']),
     ('character-autorig/scripts/mesh_check.py', ['--selftest'], ['numpy']),
+    ('character-autorig/scripts/rig_exam.py', ['--selftest'], ['numpy', 'pillow']),
+    ('character-autorig/scripts/rig_exam_blender.py', ['--selftest'], ['bpy', 'numpy']),
     ('codex-visual/scripts/audit_3d_source.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/audit_frames.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/breathe.py', ['--selftest'], ['numpy', 'pillow']),

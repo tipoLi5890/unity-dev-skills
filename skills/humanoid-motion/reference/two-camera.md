@@ -148,8 +148,14 @@ time-warps the front view onto the side view when that cuts the height gap by mo
 starts from an analytic IK pose aimed at the triangulated joints, with the root from a weighted Kabsch
 fit, and anneals a robust Cauchy reprojection loss from 40 px to 6 px over 1,500 Adam steps, plus
 joint acceleration (weight 0.005; `--acc-weight`), angular velocity, a pull to rest and the ground
-term. Raise `--acc-weight` when the joints jitter on a clean clip; lower it when a strike's hand lags
-the overlay.
+term. The acceleration term is robust per joint and frame: quadratic up to `--acc-delta-px` (10
+px/frame²), then Cauchy (δ² log(1 + a²/δ²)). Reading jitter sits under δ and is smoothed as before; a
+strike's hand (100-200 px/frame²) costs only a log, so the fit follows the punch instead of trading it
+for a smooth path the bounded reprojection loss lets through (`--acc-delta-px 0` is the old quadratic
+term, the default with `--compat-anymove`). Raise `--acc-weight` when the joints jitter on a clean
+clip. A whip that swings the arm well past 100° in two frames can still be missed with either term
+(neither the acceleration term, the velocity term nor more steps changes it); read the overlay at
+`limb_worst`.
 
 ## Gates
 
@@ -162,6 +168,8 @@ the overlay.
 | `detect.calibration`, `detect.mean_conf_*` | detect | 0.3 | ECC did not lock the clip onto `ref.png`; the reader is unsure |
 | `two_view_agreement` | solve, motion_metrics | >= 0.8 | the feet's heights do not correlate between the halves: the video model animated the views differently. Only frames where a foot reads at confidence >= 0.3 in both views count (`paw_agreement.frames_used`) |
 | `two_view_reprojection_p95_px` | solve, motion_metrics | <= 8 px x H / 768 | per frame, the median over joints of the front left-right and the side error, averaged over the views, p95 over frames |
+| `two_view_limb_reprojection_px` | solve | <= 32 px x H / 768 (`--limb-px`) | per frame, the worst hand or foot, each on the same axes averaged over the views that read it at confidence >= 0.3; the median of each 3-frame run, worst run. `frame` names it, `limb_worst` lists the five worst frames |
+| `exam.max_cm` | exam | `--max-worst-cm` (strike exam: 3 cm) | the worst joint on the worst frame is further from the truth |
 | `exam.mean_cm` | exam | 1 cm | the synthetic exam's mean joint error is above it |
 
 Every script prints one JSON object (Blender scripts one `TWOCAM_JSON` line) and exits 0 when every
@@ -203,7 +211,16 @@ reading noise on a short segment does not (the clavicle, Hips to Spine, Spine to
 HeadTop, Hand to HandTip, Toes to ToesTip). A gated pop left after that is the fit's: read the
 overlay at its frames; on a short segment of a clean overlay raise `--acc-weight`. Spikes under
 `pops_in_source` are judged on the overlay: keep them when the move should snap, reroll the seed
-when the video glitched.
+when the video glitched. A strike the fit keeps can fail the bake's `jitter_p95_mps2` and `pops`: the
+jitter's 0.1 s high-pass reads a three-frame punch as jitter, and the fingers ride the hand with no
+readings of their own, so their spike counts as the fit's. Compare the readings' jitter at those
+frames and read the overlay before raising `--acc-weight`, which flattens the punch again.
+
+The limb gate exists because the median over 37 joints cannot see one arm: a punch the fit smoothed
+away is a hand and two arm joints, off by 100 px for three to six frames, and the median stays at a
+few px. It is a run, not a p95 over frames, because three frames of a 124-frame clip sit above any
+p95. A hand the reader is unsure of (front confidence 0.3-0.5) reads 20-30 px off on a good fit;
+that is the floor under the limit.
 
 `two_view_reprojection` cannot see two views that disagree: the front view constrains only x, so any
 front and side pair reprojects well. Only `two_view_agreement`, which reads the feet, catches a
@@ -223,6 +240,12 @@ python3 solve.py det.npz rig/rig_info.json solved.json
 python3 exam.py score exam/joints.json solved.json                             # gate: mean <= 1 cm
 python3 exam.py video rig/rig_info.json exam exam.mp4                           # the same motion as a clip
 ```
+
+A strike exam checks the acceleration term: `exam.py make ... --strike-frame 60` plants a hand whip
+(the arm forward and up and back in five frames, scaled to `--strike-px`, 200 px/frame² at 768 px),
+and `exam.py score ... --max-worst-cm 3` gates the worst joint, since five frames of one hand barely
+move the mean. The robust term follows it; `solve.py --acc-delta-px 0` misses it by tens of cm and
+fails `two_view_limb_reprojection_px`.
 
 To see the agreement gate fail, film a second motion on the side view: `exam.py make` it with another
 seed, `exam.py fk` it to `other.json`, then `exam.py det ... --side-joints other.json`; `solve.py`

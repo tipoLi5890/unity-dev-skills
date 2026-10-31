@@ -34,6 +34,9 @@ from scipy.spatial import cKDTree
 
 KEY = np.array([0, 255, 0], np.uint8)
 MARK = np.array([255, 0, 255], np.uint8)  # unpainted surface in context renders
+THIN = 0.15        # a mesh whose smallest extent is under this share of its largest is thin
+SPECK_AREA = 400   # unpainted regions under this many pixels (at 1024) count as specks
+SKIP_SHARE = 0.02  # a view where less of the silhouette is unpainted is not worth a paint job
 
 
 # ----------------------------------------------------------------------------- GLB
@@ -93,6 +96,12 @@ class Mesh:
     @property
     def center(self):
         return (self.v.max(0) + self.v.min(0)) / 2
+
+    @property
+    def thin(self):
+        """A flat sign or a thin prop: zoomed crops come back unrecognisable, edges are most of it."""
+        e = self.v.max(0) - self.v.min(0)
+        return bool(e.min() < THIN * e.max())
 
 
 def load_glb(path) -> Mesh:
@@ -488,9 +497,14 @@ class Accumulator:
             self.seeable |= vis
 
     def add_view(self, cam: Camera, painted: np.ndarray, paint_mask: np.ndarray, view_weight=1.0,
-                 tri=None, dep=None, edge_lo=2.0, edge_hi=8.0, power=4.0, refine=1.5, match=True):
+                 tri=None, dep=None, edge_lo=2.0, edge_hi=8.0, power=4.0, refine=1.5, match=True,
+                 thin_edge=(0.5, 2.0)):
         """Back-project one painted view.
 
+        Edge falloff: weight 0 within edge_lo px of the silhouette or a depth step, 1 from edge_hi.
+        thin_edge (lo, hi) is a narrower ramp for texels no view has painted yet (all texels on a
+        thin mesh): a racket frame or a strap a few pixels wide would otherwise never take paint,
+        while painted texels keep the wide ramp so seams between views do not move. None turns it off.
         refine: a texel that is already painted only takes this view when the view's weight beats
         the best earlier weight by this factor (None blends every view). match: fit a per-channel
         gain/offset from this view's colours to the texture on texels both already cover, so a
@@ -504,9 +518,14 @@ class Accumulator:
         xi = np.clip(x.astype(int), 0, cam.width - 1)
         yi = np.clip(y.astype(int), 0, cam.height - 1)
         ok = vis & paint_mask[yi, xi]
-        we = np.clip((ed[yi, xi] - edge_lo) / (edge_hi - edge_lo), 0, 1)
-        w = np.where(ok, view_weight * np.clip(cos, 0, 1) ** power * we, 0.0)
+        e = ed[yi, xi]
+        we = np.clip((e - edge_lo) / (edge_hi - edge_lo), 0, 1)
         had = self.wsum > 0
+        if thin_edge is not None:
+            lo, hi = thin_edge
+            narrow = np.clip((e - lo) / (hi - lo), 0, 1)
+            we = narrow if self.mesh.thin else np.where(had, we, narrow)
+        w = np.where(ok, view_weight * np.clip(cos, 0, 1) ** power * we, 0.0)
         rep = {}
         if match:
             pair = np.nonzero(had & (w > 0) & (cos > 0.5))[0]
@@ -573,6 +592,23 @@ class Accumulator:
         s = self.seeable if self.seeable.any() else np.ones_like(painted)
         return float((painted & s).sum() / max(1, s.sum()))
 
+    def screen_coverage(self, radius, fill, yaws=(0, 45, 90, 135, 180, 225, 270, 315), pitch=10.0, size=512):
+        """Painted share of the rendered pixels, from the turntable's cameras.
+
+        Seeable coverage counts texels, so a big hidden inner face and a thin rim weigh by texel
+        count; this counts what a viewer sees on screen."""
+        pt = self.painted_texmask()
+        tot = hit = 0
+        for yw in yaws:
+            cam = Camera.orbit(self.mesh.center, radius, yw, pitch, size=size, fill=fill)
+            tri, _d, bar = render_buffers(self.mesh, cam)
+            m = tri >= 0
+            uv = (self.mesh.uv[self.mesh.f[tri[m]]] * bar[m][..., None]).sum(1)
+            pw = sample_bilinear(pt[..., None], uv[:, 0] * self.res, uv[:, 1] * self.res)[:, 0]
+            tot += int(m.sum())
+            hit += int((pw >= 0.5).sum())
+        return float(hit / max(1, tot))
+
     def prior_colors(self, image: np.ndarray):
         """Per-texel colours of another texture on the same UV layout (e.g. the mesh's own)."""
         iy, ix = np.nonzero(self.valid)
@@ -632,7 +668,7 @@ def fit_color_transfer(src, dst, min_pairs=2000, gain=(0.85, 1.18), max_offset=2
 
 
 def render_context(mesh: Mesh, cam: Camera, tex: np.ndarray, painted_tex: np.ndarray, mode="flat", grey=128,
-                   min_area=400):
+                   min_area=SPECK_AREA):
     """Render the current texture and mark the surface no view has painted yet.
 
     painted_tex: (res, res) float mask of painted texels (Accumulator.painted_texmask). Unpainted
@@ -753,29 +789,55 @@ def yaw_pitch_to_dir(yaw, pitch):
     return np.array([math.sin(yw) * math.cos(pt), math.sin(pt), math.cos(yw) * math.cos(pt)])
 
 
+def speck_free(hit, x, y, size, min_px):
+    """Texels of hit whose on-screen region (in a size x size render) spans at least min_px pixels."""
+    xi = np.clip(x[hit].astype(int), 0, size - 1)
+    yi = np.clip(y[hit].astype(int), 0, size - 1)
+    m = np.zeros((size, size), bool)
+    m[yi, xi] = True
+    m = ndimage.binary_closing(m, iterations=1) | m
+    lab, k = ndimage.label(m)
+    if not k:
+        return np.zeros_like(hit)
+    area = np.bincount(lab.ravel(), minlength=k + 1)
+    big = area >= min_px
+    big[0] = False
+    keep = np.zeros_like(hit)
+    keep[np.nonzero(hit)[0]] = big[lab[yi, xi]]
+    return keep
+
+
 def next_best_view(acc: "Accumulator", radius, fill, used, n=128, min_sep=20.0, pitch=(-60.0, 65.0),
-                   size=256, zoom=True, min_frame=0.25, min_view_share=0.05):
+                   size=256, zoom=True, min_frame=0.25, min_view_share=0.05, zoom_max_pitch=None,
+                   speck_area=SPECK_AREA, render_size=1024):
     """Pick the orbit direction that sees the most unpainted seeable surface (cos-weighted).
 
-    used: list of (yaw, pitch) already painted. Returns dict(yaw, pitch, gain, target, radius)
-    or None. With zoom, the camera frames the unpainted surface it sees (never tighter than
-    min_frame of the mesh's largest extent); target is None when the camera is not zoomed.
+    used: list of (yaw, pitch) already tried. Unpainted regions that would show as specks under
+    speck_area pixels in a render_size render do not count: the context render fills them with
+    the nearest painted colour, so a camera aimed at them finds nothing to paint. Returns
+    dict(yaw, pitch, gain, target, radius) or None. With zoom, the camera frames the unpainted
+    surface it sees (never tighter than min_frame of the mesh's largest extent); never on a thin
+    mesh, nor when |pitch| exceeds zoom_max_pitch; target is None when the camera is not zoomed.
     """
     need = acc.seeable & (acc.wsum <= 0)
     if not need.any():
         return None
     U = [yaw_pitch_to_dir(*u) for u in used]
     cosmin = math.cos(math.radians(min_sep))
+    min_px = max(1, int(round(speck_area * (size / render_size) ** 2)))
     best = None
     for d in fibonacci_dirs(n):
         yw, pt = dir_to_yaw_pitch(d)
         if not (pitch[0] <= pt <= pitch[1]) or any(float(d @ u) > cosmin for u in U):
             continue
         cam = Camera.orbit(acc.mesh.center, radius, yw, pt, size=size, fill=fill)
-        vis, cos, _, _ = acc.visibility(cam)
+        vis, cos, x, y = acc.visibility(cam)
         hit = vis & need
         if hit.sum() < min_view_share * max(1, vis.sum()):
             continue  # too little of what this camera sees is unpainted to be worth a paint job
+        hit = speck_free(hit, x, y, size, min_px)
+        if hit.sum() < min_view_share * max(1, vis.sum()):
+            continue  # what is left unpainted here is specks
         score = float((np.clip(cos[hit], 0, 1) ** 2).sum())
         if best is None or score > best[0]:
             best = (score, yw, pt, hit)
@@ -784,8 +846,8 @@ def next_best_view(acc: "Accumulator", radius, fill, used, n=128, min_sep=20.0, 
     score, yw, pt, hit = best
     out = {"yaw": round(yw, 1), "pitch": round(pt, 1), "gain": round(float(hit.sum() / max(1, acc.seeable.sum())), 4),
            "target": None, "radius": radius}
-    ext3 = acc.mesh.v.max(0) - acc.mesh.v.min(0)
-    if zoom and ext3.min() >= 0.15 * ext3.max():  # zoomed crops of thin meshes come back unrecognisable
+    steep = zoom_max_pitch is not None and abs(pt) > zoom_max_pitch
+    if zoom and not acc.mesh.thin and not steep:  # zoomed crops of thin meshes come back unrecognisable
         p = acc.pos[hit]
         lo, hi = np.percentile(p, 2, axis=0), np.percentile(p, 98, axis=0)
         ext = float(np.linalg.norm(hi - lo)) / 2
@@ -1008,6 +1070,60 @@ def selftest():
     nz = next_best_view(acc, 0.5, 0.9, [(0.0, 0.0)], n=64, size=128, zoom=False)
     ok = ok and nz is not None and nz["target"] is None and nz["radius"] == 0.5  # unzoomed: no target
     check("next_best_view", ok, {"view": None if nb is None else [nb["yaw"], nb["pitch"], nb["gain"]]})
+    sc = acc.screen_coverage(0.87, 0.9, size=128)
+    check("screen_coverage", 0.05 < sc < 0.5, {"value": round(sc, 3)})  # one face of four side views
+
+    # 6. edge ramp: unpainted texels take the narrow ramp (more of a face near its outline paints);
+    # painted texels keep the wide one, so a later view writes them exactly as before
+    def front_then(view_kw):
+        a = Accumulator(mesh, res)
+        a.add_view(front, img, m, **view_kw)
+        return a
+    wide, narrow = front_then({"thin_edge": None}), front_then({})
+    gain_new = int((narrow.wsum > 0).sum() - (wide.wsum > 0).sum())
+    turn = Camera.orbit(mesh.center, 0.87, 30, 0, size=256)
+    img_t, m_t = render_texture(mesh, turn, truth)
+    a1, a2 = front_then({}), front_then({})
+    a1.add_view(turn, img_t, m_t, match=False, refine=None)
+    a2.add_view(turn, img_t, m_t, match=False, refine=None, thin_edge=None)
+    had = narrow.wsum > 0
+    same_painted = np.allclose(a1.wsum[had], a2.wsum[had]) and np.allclose(a1.csum[had], a2.csum[had])
+    flat = Mesh(mesh.v * np.array([1.0, 1.0, 0.1]), mesh.uv, mesh.f)  # a thin slab: every texel narrow
+    check("edge_ramp", gain_new > 0 and same_painted and flat.thin and not mesh.thin,
+          {"new_texels_near_outline": gain_new})
+
+    # 7. zoom: a small unpainted patch on the top face draws a steep zoomed camera; with a pitch
+    # limit for zoom (objects) the same camera comes unzoomed
+    top = Accumulator(mesh, res)
+    top.mark_seeable([Camera.orbit(mesh.center, 0.87, yw, pt, size=128) for yw, pt in
+                      ((0, 0), (90, 0), (180, 0), (270, 0), (0, 70), (0, -70))])
+    top.wsum[:] = 1.0
+    hole = (top.nrm[:, 1] > 0.9) & (np.abs(top.pos[:, 0]) < 0.2) & (np.abs(top.pos[:, 2]) < 0.2)
+    top.wsum[hole] = 0.0
+    zfree = next_best_view(top, 0.87, 0.9, [], n=64, size=128, render_size=128)
+    zlim = next_best_view(top, 0.87, 0.9, [], n=64, size=128, render_size=128, zoom_max_pitch=30)
+    check("zoom_max_pitch", zfree is not None and zfree["target"] is not None and abs(zfree["pitch"]) > 30
+          and zlim is not None and zlim["target"] is None and zlim["pitch"] == zfree["pitch"],
+          {"view": None if zfree is None else [zfree["yaw"], zfree["pitch"]]})
+
+    # 8. specks: small scattered unpainted patches (under the speck area on screen) draw no camera;
+    # a whole unpainted face still does, and without the speck rule the patches would
+    sp = Accumulator(mesh, res)
+    sp.seeable = top.seeable.copy()
+    sp.wsum[:] = 1.0
+    u, v = np.abs(sp.nrm).argmax(1), sp.pos
+    a_ax, b_ax = (u + 1) % 3, (u + 2) % 3
+    pa, pb = v[np.arange(len(v)), a_ax], v[np.arange(len(v)), b_ax]
+    for ca in (-0.25, 0.25):
+        for cb in (-0.3, 0.0, 0.3):
+            sp.wsum[(np.abs(pa - ca) < 0.07) & (np.abs(pb - cb) < 0.07)] = 0.0
+    specks = next_best_view(sp, 0.87, 0.9, [], n=64, size=128, render_size=128)
+    raw = next_best_view(sp, 0.87, 0.9, [], n=64, size=128, render_size=128, speck_area=0)
+    sp.wsum[sp.nrm[:, 0] > 0.9] = 0.0  # the +X face unpainted
+    face = next_best_view(sp, 0.87, 0.9, [], n=64, size=128, render_size=128)
+    check("nbv_ignores_specks", specks is None and raw is not None and face is not None
+          and yaw_pitch_to_dir(face["yaw"], face["pitch"])[0] > 0.5,
+          {"unpainted_share": round(float((sp.wsum <= 0).mean()), 3)})
 
     passed = all(v if isinstance(v, bool) else v["pass"] for v in results.values())
     print(json.dumps({"checks": results, "seconds": round(time.time() - t0, 1), "pass": passed}))

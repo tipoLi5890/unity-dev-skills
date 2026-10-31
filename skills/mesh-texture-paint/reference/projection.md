@@ -41,6 +41,11 @@ w = view_weight × cos(angle)^4 × edge_falloff
 - **Edge falloff**: 0 within **2 px** of the silhouette or of a depth step inside it (a step over
   1 % of the diagonal, such as an arm in front of the body), rising linearly to 1 at **8 px**.
   Edge pixels are where the drawing and the render disagree most.
+- **Narrow ramp for unpainted texels**: a texel no view has painted yet uses **0.5 → 2 px**
+  instead. A racket frame, a strap or a string a few pixels wide on screen is all edge under the
+  wide ramp and would never take paint; with the narrow one it does, at a low weight that any
+  later head-on view replaces (§4). Painted texels keep the wide ramp, so the seams between views
+  stay where they were. On a **thin mesh** (§5) every texel uses the narrow ramp.
 - **View weight**: 1 for a full-frame camera; a zoomed camera gets `min(3, full radius / zoom
   radius)` — it puts more pixels on each texel and should win.
 
@@ -66,13 +71,19 @@ Fibonacci directions**:
 
 - inside the pitch band, at least **20°** from every used camera;
 - only directions where at least **5 %** of the visible surface is still unpainted;
-- scored by the sum of `cos²` over the unpainted seeable texels it sees; the best wins.
+- **specks do not count**: the unpainted texels a direction sees are drawn into its small render
+  and regions under the speck area (**400 px** at the paint size, scaled) are dropped — the
+  context render fills such specks with the nearest painted colour (`gates.md` §4), so a camera
+  aimed at them would find nothing to paint. The 5 % test is applied again after the drop;
+- scored by the sum of `cos²` over the remaining unpainted seeable texels; the best wins.
 
 The new camera **zooms** onto the unpainted region it sees (2–98 % percentile box of those texels),
 never tighter than **25 %** of the mesh's largest extent; a box over 70 % of the full radius stays
 unzoomed. Zoom is off on **thin meshes** — smallest extent under 15 % of the largest, such as a
 flat sign or a thin prop: the model does not recognise a zoomed crop of a thin shape and paints
-something else. `--no-zoom` turns zoom off everywhere.
+something else. For `--kind object` zoom is also off on **steep cameras**, pitch beyond **±30°**
+(`--zoom-max-pitch`): a zoomed crop from above or below comes back redrawn at eye level and fails
+the outline gate. `--no-zoom` turns zoom off everywhere.
 
 ## 6. Coverage and stopping
 
@@ -83,12 +94,21 @@ band, crevices and an inner shell are not seeable and do not count against it.
 The main loop stops at the first of:
 
 - coverage ≥ `--target 0.97`;
-- `--max-views 16` views tried (a rejected view counts);
+- `--max-views` views tried (a rejected view counts): **20** for a character, **16** for an object;
 - 3 rejected views in a row;
+- 3 next-best views in a row skipped with nothing unpainted;
 - the next-best view adds less than `--min-gain 0.003` of the seeable surface, or none is left.
 
-Then the detail passes run. A worked example: a courier runner reaches about 0.88 of its seeable
-surface in about 13 painted views; the courier backpack about 0.7, its underside and the inner
+`report.json` records which one as `stop` (`target`, `max_views`, `rejections`,
+`nothing_unpainted`, `min_gain`, `no_view`, `anchors_done`, or `fatal`), and gives
+**`coverage_screen`** beside `coverage_seeable`: the painted share of the rendered pixels from the
+turntable's eight cameras. Seeable coverage counts texels, so a large inner face and a thin rim
+weigh by texel count; the screen figure is what a viewer sees. Read both: a backpack whose
+seeable coverage stops near 0.8 can show over 0.95 of its pixels painted, while a racket's frame
+and strings keep both figures low.
+
+Then the detail passes run. A worked example: a courier runner reaches about 0.90 of its seeable
+surface in about 16 painted views; the courier backpack about 0.8, its underside and the inner
 faces of the straps staying on the prior.
 
 ## 7. Detail passes — the head

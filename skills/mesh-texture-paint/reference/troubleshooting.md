@@ -38,7 +38,7 @@ Read `report.json` and the view's three files in `views/` (`_guide.png`, `_s<see
 |---|---|---|
 | Side views rejected on IoU | a narrow side silhouette scores low IoU for a small shift | read `edge_p90`: under 24 means the drawing fits; `--min-iou 0.87` for that subject |
 | Low-angle or top-down views rejected | the model redraws steep views at eye level | keep `--pitch-range -40 50`; the bottom stays on the prior |
-| Zoomed views of a thin prop come back unrecognisable | a crop of a thin shape has no recognisable outline | zoom is automatic only when the smallest extent is at least 15 % of the largest; for a borderline prop pass `--no-zoom` |
+| Zoomed views of a thin prop come back unrecognisable | a crop of a thin shape has no recognisable outline | zoom is automatic only when the smallest extent is at least 15 % of the largest, and for objects only up to ±30° pitch; for a borderline prop pass `--no-zoom` |
 | A thin prop (strings, a frame with holes) fails IoU around the holes | holes too small for the 6 px band and the mask opening | `--min-iou 0.85`; keep `--max-edge` |
 | One camera keeps failing all tries | the model cannot read that view (a narrow edge-on side, a crevice) | it is logged `rejected` and the loop moves on; if it is an anchor, drop it from `--anchors` and let NBV find a nearby angle |
 | Inside of a double-shell mesh painted, or stays dark | the inner shell faces inward | the 75° facing cut excludes it; it keeps the prior and is not seeable |
@@ -47,8 +47,9 @@ Read `report.json` and the view's three files in `views/` (`_guide.png`, `_s<see
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Coverage stops early, well under the target | `--max-views` reached (rejections count), 3 rejections in a row, or the next view adds under `--min-gain 0.003` | read the last views' `status`; fix the rejecting gate, then `--resume` with `--max-views 20` |
-| Coverage stays near 0.7 on a prop | bottoms and inner faces are outside the pitch band or behind other surface | expected; they keep the matched prior. Check `coverage.png`: dark grey = seeable unpainted |
+| Coverage stops early, well under the target | `--max-views` reached (rejections count), 3 rejections in a row, 3 next-best views in a row with nothing unpainted, or the next view adds under `--min-gain 0.003` — `stop` in `report.json` says which | read the last views' `status`; fix the rejecting gate, then `--resume` with a larger `--max-views` |
+| Thin parts (a frame, strings, straps) stay on the prior | they are a few pixels wide on screen, all edge | unpainted texels already take a narrow 0.5–2 px edge ramp (`projection.md` §3); check `coverage_screen` and the turntable before adding views |
+| Coverage stays near 0.7–0.8 on a prop | bottoms and inner faces are outside the pitch band or behind other surface | expected; they keep the matched prior. Check `coverage.png`: dark grey = seeable unpainted |
 | The run stopped (network, server restart) | — | rerun the same command with `--resume`; `state.npz` and `report.json` carry the used cameras |
 | Exit 3, `no view was painted` or `paint server error` | no `--server` / `COMFYUI_SERVER_URL`, the server is down, or a model file name is wrong (`errors` in `report.json`) | fix the server or `--models`, then rerun; views that fail with no output count as rejections, so three stop the run |
 | `no prior texture found` | the GLB has no base-colour image | expected for a white mesh; context falls back to the nearest painted colour, and the painted GLB gets a new base-colour texture |

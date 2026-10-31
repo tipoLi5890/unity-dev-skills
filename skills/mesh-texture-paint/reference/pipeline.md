@@ -126,8 +126,8 @@ python3 "$MTP/paint_loop.py" out/backpack_r01/backpack.glb \
 ```
 
 `--server` falls back to `COMFYUI_SERVER_URL`, then the client's config. Each view prints one JSON
-line (`gates.md` §6). A runner takes about 13 painted views plus three head passes, a few minutes
-on a local server; a prop reaches about 0.7 of its seeable surface (`projection.md` §6).
+line (`gates.md` §6). A runner takes about 16 painted views plus three head passes, a few minutes
+on a local server; a prop reaches about 0.8 of its seeable surface (`projection.md` §6).
 
 Order of what happens per view: the camera (`projection.md` §1, §5) → the guide render (clay for
 the first view, context after — `painting.md` §5) → up to three paint tries (`painting.md` §1–3) →

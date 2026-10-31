@@ -17,6 +17,10 @@ Changes from upstream:
   creature.json, ground on fpaw/ftoe/hpaw/htoe, LEGS for --fix-swaps): the same fit as upstream.
 - The joint-acceleration weight is 0.005 for the humanoid (--acc-weight; upstream's 0.02 with --compat-anymove):
   upstream's weight trades a fast arm swing for a smoother, different arm pose.
+- The joint-acceleration term is robust per joint and frame: quadratic up to --acc-delta-px (10 px/frame^2), then
+  Cauchy (delta^2 log(1 + a^2 / delta^2)), so a strike's hand (100-200 px/frame^2) is no longer pulled back onto
+  a smooth path against the bounded reprojection loss; reading jitter (a few px/frame^2) is smoothed as before.
+  --acc-delta-px 0 is upstream's quadratic term (the default with --compat-anymove).
 - --device cpu|cuda|auto (upstream picked CUDA when present, as auto does). The fit runs in float64, which MPS does not have, so a
   Mac fits on the CPU.
 - The two-view agreement and the reprojection error per frame become gates (the same names and defaults as
@@ -33,8 +37,9 @@ Changes from upstream:
 
 usage:
     solve.py DET.npz RIG_INFO.json OUT_MOTION.json [--samples-out SAMPLES.json] [--no-align] [--fix-swaps]
-             [--iters 1500] [--acc-weight 0.005] [--device cpu|cuda|auto] [--agreement-min 0.8] [--reproj-p95-px 8]
-             [--no-despike] [--compat-anymove CREATURE.json] [--video CLIP.mp4] [--verbose]
+             [--iters 1500] [--acc-weight 0.005] [--acc-delta-px 10] [--device cpu|cuda|auto] [--agreement-min 0.8]
+             [--reproj-p95-px 8] [--limb-px 32] [--no-despike] [--compat-anymove CREATURE.json] [--video CLIP.mp4]
+             [--verbose]
     solve.py --selftest
 Before fitting, the side view's left and right limbs can be checked against the front view (--fix-swaps): a joint
 has the same height in both halves, so if swapping a pair in the side view makes the heights agree better, the
@@ -56,6 +61,10 @@ Gates (exit 2 when one fails):
                                 projections and the readings, on the axes the fit trusts (front: left-right; side:
                                 both), averaged over the two views; p95 over frames <= --reproj-p95-px x H / 768
                                 (8 px at 768). The per-view means are reported beside it (reproj_px).
+  two_view_limb_reprojection_px per frame, the worst of the hands and feet, each on the trusted axes averaged over
+                                the views that read it with confidence >= 0.3; the median of each 3-frame run, worst
+                                run <= --limb-px x H / 768 (32 px at 768); `frame` names the run's centre and
+                                limb_worst the five worst frames. A rig without Hand/Foot keypoints has no such gate.
 Exit codes: 0 every gate passed (or the selftest passed), 2 a gate failed, 1 refused input or an error.
 """
 from __future__ import annotations
@@ -81,6 +90,14 @@ AGREE_MIN_FRAMES = 8   # confident frames a foot needs before its correlation co
 # weight of the joint-acceleration term: upstream's 0.02 smooths a fast hand away (a strike's hand accelerates at
 # tens of m/s^2); the humanoid default keeps it. Raise it for jittery readings, lower it for fast strikes.
 ACC_UPSTREAM, ACC_HUMANOID = 0.02, 0.005
+# px/frame^2 at which the acceleration term turns from quadratic to Cauchy, per joint and frame: reading jitter sits
+# well under it, a strike's hand far over it (100-200), so a strike costs log(1 + a^2/delta^2), not a^2
+ACC_DELTA_PX = 10.0
+# the hands and feet, scored on their own: a one-arm miss is a few joints of 37 and hides under the all-joint median,
+# and a strike is a few frames of a clip, which hide under any p95 over frames; so the gate takes the worst run of
+# LIMB_RUN frames (its median: a one-frame reader slip passes, a miss over two frames of three does not)
+LIMB_JOINTS = ("Hand.L", "Hand.R", "Foot.L", "Foot.R")
+LIMB_PX, LIMB_RUN = 32.0, 3
 # upstream's wolf/dragon names, used only with --compat-anymove
 LEGACY_LEGS = {"F": ["scap", "shoulder", "elbow", "wrist", "fpaw", "ftoe"], "H": ["hip", "knee", "hock", "hpaw", "htoe"]}
 LEGACY_GROUND = ("fpaw", "ftoe", "hpaw", "htoe")
@@ -413,7 +430,7 @@ def ik_init(tri, root_aa, info, rig):
 
 
 def fit(d, info, spec: Spec, iters=1500, dev="cpu", log=False, front_height_weight=0.25, lr=(0.01, 0.03, 0.05),
-        sigma0=40.0, acc_weight=0.02):
+        sigma0=40.0, acc_weight=0.02, acc_delta_px=0.0):
     need_torch()
     L = spec.layout
     rig = Rig(info, dev)
@@ -451,7 +468,10 @@ def fit(d, info, spec: Spec, iters=1500, dev="cpu", log=False, front_height_weig
         rf = ((pf - f_obs) ** 2 * f_axis).sum(-1)
         rs = ((ps - s_obs) ** 2).sum(-1)
         data = (f_c * torch.log1p(rf / sigma ** 2)).sum() + (s_c * torch.log1p(rs / sigma ** 2)).sum()
-        acc = ((J[2:] - 2 * J[1:-1] + J[:-2]) ** 2).sum() / L.M_PER_PX ** 2 * acc_weight
+        a2 = ((J[2:] - 2 * J[1:-1] + J[:-2]) ** 2).sum(-1) / L.M_PER_PX ** 2   # per frame and joint, px^2/frame^4
+        if acc_delta_px > 0:   # the same as a2 below delta, log beyond it
+            a2 = acc_delta_px ** 2 * torch.log1p(a2 / acc_delta_px ** 2)
+        acc = a2.sum() * acc_weight
         vel = ((eul[1:] - eul[:-1]) ** 2).sum() * 2.0 + ((root[1:] - root[:-1]) ** 2).sum() * 2.0
         prior = (eul ** 2).sum() * 0.05
         if h0 is None:
@@ -627,10 +647,26 @@ def frame_reprojection(err) -> np.ndarray:
     return 0.5 * (np.median(err["front_x"], 1) + np.median(err["side"], 1))
 
 
-def gates_for(agreement, reproj, H, a, unread=None) -> list:
+def frame_limb_reprojection(err, d, names):
+    """Per frame: the worst of the hands and feet (LIMB_JOINTS), each joint's error on the axes the fit trusts
+    (front: left-right; side: both) averaged over the views that read it with confidence >= MIN_CONF; NaN on a
+    frame where no hand or foot is read confidently. Returns (per-frame px, per-frame joint name) or None."""
+    idx = [names.index(n) for n in LIMB_JOINTS if n in names]
+    if not idx:
+        return None
+    fm = (d["front_conf"][:, idx] >= MIN_CONF).astype(float)
+    sm = (d["side_conf"][:, idx] >= MIN_CONF).astype(float)
+    n = fm + sm
+    e = np.where(n > 0, (err["front_x"][:, idx] * fm + err["side"][:, idx] * sm) / np.maximum(n, 1), -1.0)
+    worst = e.max(1)
+    who = [names[idx[k]] for k in e.argmax(1)]
+    return np.where(worst >= 0, worst, np.nan), who
+
+
+def gates_for(agreement, reproj, H, a, unread=None, limb=None) -> list:
     """unread: the feet read confidently on too few frames when no agreement could be scored. The gate then
     fails (value None): a clip whose feet the readers lost is not a clip the agreement passed. --agreement-min
-    -1 or lower turns it off."""
+    -1 or lower turns it off. limb: frame_limb_reprojection's per-frame values (NaN frames are left out)."""
     out = []
     if agreement is not None:
         out.append({"name": "two_view_agreement", "value": round(agreement, 4), "limit": f">= {a.agreement_min}",
@@ -642,6 +678,23 @@ def gates_for(agreement, reproj, H, a, unread=None) -> list:
     lim = a.reproj_p95_px * H / REPROJ_REF_HEIGHT
     out.append({"name": "two_view_reprojection_p95_px", "value": round(p95, 3), "limit": f"<= {round(lim, 3)}",
                 "pass": bool(p95 <= lim)})
+    if limb is not None and np.isfinite(limb).any():
+        run = limb_runs(limb)
+        t = int(np.nanargmax(run))
+        lim = a.limb_px * H / REPROJ_REF_HEIGHT
+        out.append({"name": "two_view_limb_reprojection_px", "value": round(float(run[t]), 3),
+                    "limit": f"<= {round(lim, 3)}", "pass": bool(run[t] <= lim), "frame": t})
+    return out
+
+
+def limb_runs(limb, n=LIMB_RUN) -> np.ndarray:
+    """The median of each run of n frames centred on a frame (NaN frames left out; NaN where all are)."""
+    h = n // 2
+    out = np.full(len(limb), np.nan)
+    for t in range(len(limb)):
+        w = limb[max(0, t - h):t + h + 1]
+        if np.isfinite(w).any():
+            out[t] = float(np.nanmedian(w))
     return out
 
 
@@ -707,8 +760,8 @@ def solve(det: dict, info: dict, a, compat=None) -> dict:
     sync["before"] = {k: v for k, v in before.items() if k != "per_frame_gap_px"}
     sync["paw_agreement"] = paws
     sync["front_shift_frames"] = None if shift is None else shift.round(2).tolist()
-    acc = a.acc_weight if a.acc_weight is not None else (ACC_UPSTREAM if compat is not None else ACC_HUMANOID)
-    res = fit(d, info, spec, iters=a.iters, dev=a.device, log=a.verbose, acc_weight=acc)
+    acc, delta = acc_params(a, compat is not None)
+    res = fit(d, info, spec, iters=a.iters, dev=a.device, log=a.verbose, acc_weight=acc, acc_delta_px=delta)
     fps = float(det["fps"])
     readings = triangulate(d, spec.layout)  # the joints the readings alone give, for the pop reference
     despiked = []
@@ -716,6 +769,7 @@ def solve(det: dict, info: dict, a, compat=None) -> dict:
         res, despiked, w = despike(res, d, info, spec, readings, fps, a.device)
         warnings += w
     reproj = frame_reprojection(res["err"])
+    limb = frame_limb_reprojection(res["err"], d, names)
     agreement = paws["score"]
     unread = None
     if agreement is None:
@@ -733,7 +787,15 @@ def solve(det: dict, info: dict, a, compat=None) -> dict:
                                       "averaged over the views"}
     if agreement is not None:
         two_view["agreement"] = round(agreement, 4)
-    gates = gates_for(agreement, reproj, spec.layout.H, a, unread)
+    limb_worst = []
+    if limb is not None:
+        two_view["limb_reprojection_px"] = [None if not np.isfinite(v) else round(float(v), 3) for v in limb[0]]
+        top = [t for t in np.argsort(-np.nan_to_num(limb[0], nan=-1.0))[:5] if np.isfinite(limb[0][t])]
+        limb_worst = [{"frame": int(t), "joint": limb[1][t], "px": round(float(limb[0][t]), 1)} for t in top]
+        if not np.isfinite(limb[0]).any():
+            warnings.append("no hand or foot read with confidence >= 0.3 in either view: "
+                            "two_view_limb_reprojection_px is left out")
+    gates = gates_for(agreement, reproj, spec.layout.H, a, unread, None if limb is None else limb[0])
     motion = {"fps": fps, "bones": res["bones"], "trans": res["trans"].round(5).tolist(),
               "root_quat": to_quat(res["root_rotmat"]).round(6).tolist(), "euler": res["euler"].round(5).tolist(),
               "joints": res["joints"].round(4).tolist(), "joint_names": res["joint_names"],
@@ -748,9 +810,17 @@ def solve(det: dict, info: dict, a, compat=None) -> dict:
               "paw_agreement": paws, "sync_before": sync["before"],
               "sync_after": {k: v for k, v in sync.items() if k in ("mean_height_gap_px", "worst_frame_gap_px")},
               "align": align, "swaps": swapped, "reproj_px": {k: round(v, 3) for k, v in res["reproj_px"].items()},
-              "reproj_frame_p95_px": round(float(np.percentile(reproj, 95)), 3), "despiked": despiked,
+              "reproj_frame_p95_px": round(float(np.percentile(reproj, 95)), 3), "limb_worst": limb_worst,
+              "despiked": despiked,
               "gates": gates, "pass": ok, "ok": ok, "warnings": warnings}
     return {"motion": motion, "report": report, "readings": readings}
+
+
+def acc_params(a, compat: bool) -> tuple:
+    """(acc_weight, acc_delta_px): the flags, else the humanoid defaults, else upstream's with --compat-anymove."""
+    w = a.acc_weight if a.acc_weight is not None else (ACC_UPSTREAM if compat else ACC_HUMANOID)
+    dl = getattr(a, "acc_delta_px", None)
+    return w, dl if dl is not None else (0.0 if compat else ACC_DELTA_PX)
 
 
 def sha256(path) -> str | None:
@@ -775,10 +845,13 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--fix-swaps", action="store_true"); p.add_argument("--iters", type=int, default=1500)
     p.add_argument("--acc-weight", type=float, help=f"acceleration term weight (default {ACC_HUMANOID}; "
                    f"{ACC_UPSTREAM} with --compat-anymove)")
+    p.add_argument("--acc-delta-px", type=float, help=f"px/frame^2 where the acceleration term turns robust (default "
+                   f"{ACC_DELTA_PX}; 0: quadratic everywhere, as with --compat-anymove)")
     p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="cpu",
                    help="auto: CUDA when present, else the CPU")
     p.add_argument("--agreement-min", type=float, default=AGREEMENT_MIN)
     p.add_argument("--reproj-p95-px", type=float, default=REPROJ_P95_PX)
+    p.add_argument("--limb-px", type=float, default=LIMB_PX, help="hands and feet, worst 3-frame run, x H / 768")
     p.add_argument("--compat-anymove", metavar="CREATURE.json")
     p.add_argument("--video", help="the clip the readings came from: pinned as the record's input")
     p.add_argument("--clip", help="clip name for the samples file (default: the output's folder)")
@@ -833,8 +906,8 @@ def run(argv) -> int:
     # the solved clip inherits the video's licence through a parent / depends-on link when it is recorded
     report["record"] = {"tool": {"skill": "humanoid-motion", "script": "twocam/solve.py"},
                         "params": {"iters": a.iters, "align": not a.no_align, "fix_swaps": a.fix_swaps,
-                                   "acc_weight": a.acc_weight if a.acc_weight is not None else
-                                   (ACC_UPSTREAM if a.compat_anymove else ACC_HUMANOID),
+                                   "acc_weight": acc_params(a, bool(a.compat_anymove))[0],
+                                   "acc_delta_px": acc_params(a, bool(a.compat_anymove))[1],
                                    "compat_anymove": bool(a.compat_anymove), "despike": a.despike},
                         "inputs": inputs, "files": files,
                         "gates": [{"name": g["name"], "value": g["value"], "limit": g["limit"], "pass": g["pass"]}
@@ -963,6 +1036,33 @@ def selftest() -> int:
               n_rp.get("despiked") == [] and n_mrep["pops"]["count"] >= 1
               and any(g["name"] == "pops" and not g["pass"] for g in n_mrep["gates"]),
               pops=n_mrep.get("pops", {}).get("count"))
+        # a hand whip (200 px/frame^2, up and back in five frames): the robust acceleration term follows it; the
+        # quadratic term (--acc-delta-px 0) smooths it away, which only the limb gate sees
+        st = exam.plant_strike(info, exam.make_motion(info, seed=7, T=48, fps=24), 24)
+        sj = exam.fk_joints(info, st)
+        np.savez(td / "strike.npz", **exam.perfect_det(info, sj, fps=24, noise_px=0.3, seed=1))
+        strike = {}
+        for dl in ("10", "0"):
+            code = quiet([str(td / "strike.npz"), str(ri), str(td / f"st{dl}.json"), "--iters", "600", "--acc-delta-px", dl])
+            rp = json.loads(buf_last[0])
+            err = np.linalg.norm(np.asarray(json.loads((td / f"st{dl}.json").read_text())["joints"]) - sj, axis=-1)
+            strike[dl] = (code, float(err.max()), {g["name"]: g for g in rp["gates"]}, rp)
+        code, worst, g, rp = strike["10"]
+        check("a 200 px/frame^2 hand whip: followed (worst joint < 3 cm), the limb gate passes, exit 0",
+              code == 0 and worst < 0.03 and g["two_view_limb_reprojection_px"]["pass"]
+              and abs(st["strike"]["peak_hand_acc_px"] - exam.STRIKE_PX) < 2,
+              worst_cm=round(worst * 100, 2), limb_px=g["two_view_limb_reprojection_px"]["value"])
+        if code == 0:
+            contract_sample("solve", "strike", rp)
+        code, worst, g, rp = strike["0"]
+        check("the same whip on the quadratic term (--acc-delta-px 0): smoothed away, the median gate passes, "
+              "two_view_limb_reprojection_px fails at the whip, exit 2",
+              code == 2 and worst > 0.2 and g["two_view_reprojection_p95_px"]["pass"]
+              and not g["two_view_limb_reprojection_px"]["pass"] and 22 <= g["two_view_limb_reprojection_px"]["frame"] <= 26,
+              worst_cm=round(worst * 100, 1), limb_px=g["two_view_limb_reprojection_px"]["value"])
+        check("--compat-anymove keeps upstream's quadratic term; the humanoid default is robust",
+              acc_params(parser().parse_args(["d", "r", "o"]), True) == (ACC_UPSTREAM, 0.0)
+              and acc_params(parser().parse_args(["d", "r", "o"]), False) == (ACC_HUMANOID, ACC_DELTA_PX))
         # a desynced pair of views: the side view plays a different motion -> agreement fails
         other = exam.fk_joints(info, exam.make_motion(info, seed=11, T=48, fps=24))
         bad = exam.perfect_det(info, tj, fps=24, noise_px=0.3, seed=2, side_joints=other)

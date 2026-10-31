@@ -138,6 +138,12 @@ alone; look at that pose first.
 | `deform.joints_measured` names an elbow or knee | the patch around the joint has fewer than 8 outward triangles or does not wrap it: an opening, a decimated joint, flipped normals | look at the mesh there (`mesh_check.py`, a picture); fix the mesh, never drop the pose |
 | a whole limb moves with the wrong pose | weights on the wrong side's bone | rebind; check `markers.symmetry` and the sides gate of the contract |
 
+**What the gates miss.** `scripts/rig_exam.py faults` plants known defects in a good rig
+(`reference/rig-exam.md`). A 50/50 blend at an elbow or knee fails the volume gate, and so does a swapped knee
+(the contract's `sides`). These pass both gates: a whole limb weighted to the other side's bones (no pose bends
+the limb it pulls on), a rigid skin on a slim body, and a finger chain collapsed to a point. Read the renders
+for them. Run the exam's volume check before you change the patch or the limit.
+
 The selftest builds a metaball runner, a contract skeleton from its markers, and three skins:
 distance-based weights smoothed over the joints pass; nearest-bone-only weights fail the
 self-intersection gate; a 50/50 blend around the elbows fails the volume gate. A copy of the good

@@ -18,11 +18,12 @@ so every clip made for any contract character plays on it.
 |---|---|
 | "Auto-rig this character", "rig this character": the default route, one command | [The stages](#the-stages), `scripts/autorig.py` |
 | "Auto-Rig Pro without the UI": the `pipeline` op step by step (append, reference bones, Match, bind, Unity humanoid FBX), export settings, the read-back skeleton, refusals | `reference/arp-pipeline.md` |
-| Is the mesh riggable — "arms fused to the body", legs one tube, a double shell; what mesh_check and deform_gate measure, their limits | `reference/gates.md` |
+| Is the mesh riggable — "arms fused to the body", legs one tube, a double shell; what mesh_check and deform_gate measure | `reference/gates.md` |
+| "How good is the rig", scoring a change: known-joint bodies, planted faults | `reference/rig-exam.md` |
 | "Use Auto-Rig Pro's AI", gloved or closed fingers, face bones, hair pushing a marker out of its window: the `smart` stage, options, gates, fallbacks | `reference/arp-ai.md` |
 | "Markers are off": how each marker is found from slices, the windows, the front/side pictures for a person, `--adjust`, the output file | `reference/markers.md` |
 | "Elbow collapses when bent", "skin pokes through in a squat", or any failed gate | `reference/failures.md`; the elbow/knee weight repair in `reference/arp-pipeline.md` |
-| No add-on, or a chibi outside the marker windows: the hand-built fallback from the same markers | [Which route](#which-route); `reference/hand-built-route.md` |
+| No add-on, or a chibi outside the marker windows: the hand-built fallback from the markers | [Which route](#which-route); `reference/hand-built-route.md` |
 | Auto-Rig Pro's other ops (probe, retarget clips onto its controls) | `blender-retarget` → `reference/arp-route.md` |
 | The contract skeleton, role maps, Unity Avatar | `unity-rigged-character` → `reference/humanoid-contract.md` |
 

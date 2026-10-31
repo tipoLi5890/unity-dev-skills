@@ -2,6 +2,53 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.38.0
+
+Three measured gaps closed or charted. `character-autorig` gains an exam that scores the automatic
+rig against bodies whose joints are known and checks that its gates catch planted defects; the
+two-camera solve stops smoothing a punch away; and `mesh-texture-paint` paints thin parts and stops
+re-aiming at specks. The exam's first run on 0.37.0 exits 2, by design: it names what the gates miss.
+
+- **`character-autorig` → `rig_exam.py`, `rig_exam_blender.py`.** `build` makes a seeded cast of
+  nine metaball bodies around known skeletons (standard, chibi, heavy, thin, long_limbs, mitten,
+  spiky_hair, skirt, asym) with `exam/1` truth files; `run` puts each through `autorig.py all
+  --no-smart`; `faults` plants defects on a good rig (an elbow marker off the crease, swapped
+  knees, a collapsed index finger, a leg weighted to the other side, 50/50 blends at the elbows and
+  knees, a rigid skin, an unchanged control); `reference` adds a rig a person accepted; `score`
+  writes `exam.json` and a contact sheet (truth green, markers red) and exits 2 on a false pass or
+  a fault no gate failed. The joints' error is reported over H for the markers and for the
+  exported skeleton, with the volume check that the deform limit still separates good rigs from
+  blended ones. `--smart` records Auto-Rig Pro's AI as a second opinion only, never as truth, a
+  label or a limit. On 0.37.0: joint median 0.019 H; heavy (pelvis and hips low) and long_limbs
+  (a knee just over 0.04 H) pass falsely; a limb weighted to the other side, a collapsed finger
+  chain and, on a slim body, a rigid skin or a shifted elbow pass every gate; the 0.35 volume limit
+  still separates (the old per-bone patch would have failed most sound binds). `reference/rig-exam.md`;
+  `gates.md` lists what the gates miss and `failures.md` what to do on a mitten read as fingers and
+  on an exam that exits 2. No gate or limit changes.
+- **`humanoid-motion` → `twocam/solve.py`.** The acceleration term is robust per joint and frame:
+  quadratic up to `--acc-delta-px` (10 px/frame²), Cauchy beyond, so a strike's hand is followed
+  instead of traded for a smooth path; `--acc-delta-px 0` is the old term and the default with
+  `--compat-anymove`. New gate `two_view_limb_reprojection_px` (the worst hand or foot per frame,
+  on trusted axes and confident views, worst 3-frame median, `--limb-px` 32 × H/768), with
+  `limb_worst` in the report: the all-joint median cannot see one arm. On the courier runner's
+  uppercut the right arm is now up at frame 48 (limb gate 21 px; the old fit 104 px). The bake of
+  that clip now fails `blender-retarget`'s `jitter_p95_mps2` and one finger `pops`, which read the
+  punch as jitter (the readings alone exceed the jitter limit); `two-camera.md` says how to read
+  it. **`twocam/exam.py`** `make --strike-frame/--strike-px/--strike-side` plants a hand whip and
+  `score --max-worst-cm` gates the worst joint (`max_cm`, `max_at`). `motion.gif` is rebuilt from
+  the new solve.
+- **`mesh-texture-paint` → `mvtex.py`, `paint_loop.py`.** Texels no view has painted take a narrow
+  0.5–2 px edge ramp (every texel on a thin mesh), painted ones keep 2–8 px so seams stay; one
+  `Mesh.thin` test; next-best view drops unpainted regions under the speck area on screen and
+  re-applies its 5 % test; `--zoom-max-pitch` (30° for objects) keeps steep cameras unzoomed;
+  `--max-views` defaults to 20 for a character, 16 for an object; three next-best views in a row
+  with nothing unpainted end the loop; `report.json` adds `coverage_screen` (the painted share of
+  rendered pixels), `rejected` and `stop`. A racket's coverage rises about 0.05; a racket's
+  near-miss band, and a back view drawn as the front just under the drift limit, stay open
+  (`projection.md`, `gates.md`, `troubleshooting.md`).
+- **CI.** `rig_exam.py --selftest` (numpy, planted data) and both exam scripts' usage-error exit 1;
+  `rig_exam_blender.py --selftest` runs with `run-selftests.py --blender`.
+
 ## 0.37.0
 
 `character-autorig` can use Auto-Rig Pro's own AI for the markers: the body, each finger and the

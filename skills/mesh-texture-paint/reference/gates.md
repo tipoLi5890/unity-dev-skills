@@ -49,7 +49,7 @@ and count as drift.
 When the view passes: despill (`painting.md` §6) if the concept has no key-green, the colour match
 (`projection.md` §4), then the weighted back-projection. A view where under 2 % of the visible
 silhouette is unpainted is skipped before painting (`skipped: nothing unpainted in view`); detail
-passes are never skipped this way.
+passes are never skipped this way. Three next-best views in a row skipped this way end the main loop.
 
 ## 5. Tuning
 
@@ -74,8 +74,10 @@ reads. At the end it gains the totals:
 | Field | Meaning |
 |---|---|
 | `coverage_seeable` | painted share of the seeable surface (`projection.md` §6) |
+| `coverage_screen` | painted share of the rendered pixels from the turntable cameras |
 | `seam_delta` | mean colour step across neighbouring texels owned by different views |
-| `views_used` | views projected |
+| `views_used`, `rejected` | views projected; views rejected or failed |
+| `stop` | why the main loop ended (`projection.md` §6) |
 | `minutes` | wall time of this run |
 | `settings` | every flag as run |
 | `views[]` | one record per camera, in order |
