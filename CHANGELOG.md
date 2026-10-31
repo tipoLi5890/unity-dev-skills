@@ -2,6 +2,20 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.36.1
+
+CI is green again. No skill method, threshold or manifest description changes.
+
+- **`sprite-from-video` → `video_frames.py --selftest`.** The "leftover key at the edge" clip check
+  failed on CI since 0.34.0 put the ffmpeg selftests there, and passed on a developer machine. Its
+  synthetic leftover-field patch, `(0, 140, 0)`, sat about 96 from the painted key, which is exactly
+  `KEY_THRESHOLD`. An encoder that decodes the field one or two levels darker puts the patch inside
+  the hard cut, so the whole patch is keyed away, nothing touches the edge, and the run exits 0. The
+  patch is now `(0, 110, 0)`: the same key hue, about 125 from the painted key, so the check passes
+  whatever the field decodes to. The gate itself is unchanged.
+- The clip checks print their exit code, the painted key and the edge contact when they fail, so a
+  CI log shows why.
+
 ## 0.36.0
 
 Sixty-one skills. Image-to-3D gives a good shape and a dull, blotchy, guessed texture: the multi-view

@@ -844,7 +844,9 @@ def _scene(h=128, w=96, field=(2, 238, 3), dy=0, top_blob=False, speck=False, pa
     if speck:
         img[12:14, 80:82] = (250, 250, 250)       # a fleck far from the body
     if patch:
-        img[30:50, 0:8] = (0, 140, 0)             # leftover darker field at the left edge
+        # leftover darker field at the left edge: the key's hue, and well past KEY_THRESHOLD from the
+        # painted key (~125 vs 96) so the hard cut keeps it whatever the encoder does to the field
+        img[30:50, 0:8] = (0, 110, 0)
     return img
 
 
@@ -871,7 +873,8 @@ def selftest():
             checks.append(("clean clip passes", code == 0 and rep["frames"] == 8
                            and len(list((tmp / "good" / "keyed").glob("frame-*.png"))) == 8))
             checks.append(("probe fps and count", rep["probe"]["fps"] == 24 and rep["probe"]["nb_frames"] == 8))
-            checks.append(("painted key read off the declared one", abs(pk[1] - 238) <= 6 and rep["key"]["off_by"] > 10))
+            checks.append(("painted key read off the declared one", abs(pk[1] - 238) <= 6 and rep["key"]["off_by"] > 10,
+                           f"painted {pk}, off_by {rep.get('key', {}).get('off_by')}"))
             checks.append(("flatness reported", rep["flatness"]["border_std_max"] is not None
                            and rep["flatness"]["border_std_max"] < 4))
             checks.append(("speck dropped on frame 3", rep["rows"][3]["specks"] >= 1))
@@ -884,8 +887,9 @@ def selftest():
             code, rep = run(tmp / "arm.mp4", tmp / "arm", (0, 255, 0), "refuse")
             c = rep.get("edge", {}).get("contacts") or [{}]
             checks.append(("subject out of frame -> 3", code == 3 and c[0].get("subject", 0) > 0
-                           and "subject" in rep["error"] and (tmp / "arm" / "keyed.refused").is_dir()
-                           and not (tmp / "arm" / "keyed").exists()))
+                           and "subject" in rep.get("error", "") and (tmp / "arm" / "keyed.refused").is_dir()
+                           and not (tmp / "arm" / "keyed").exists(),
+                           f"exit {code}, painted {rep.get('key', {}).get('painted_rgb')}, contact {c[0]}"))
             code, _ = run(tmp / "arm.mp4", tmp / "arm2", (0, 255, 0), "subject-allowed")
             checks.append(("--allow-subject-edge-contact accepts it", code == 0))
 
@@ -893,7 +897,8 @@ def selftest():
             code, rep = run(tmp / "patch.mp4", tmp / "patch", (0, 255, 0), "subject-allowed")
             c = rep.get("edge", {}).get("contacts") or [{}]
             checks.append(("leftover key at the edge -> 3 residual", code == 3 and c[0].get("residual", 0) > 0
-                           and c[0].get("subject", 1) == 0 and "video_canvas.py" in rep["error"]))
+                           and c[0].get("subject", 1) == 0 and "video_canvas.py" in rep.get("error", ""),
+                           f"exit {code}, painted {rep.get('key', {}).get('painted_rgb')}, contact {c[0]}"))
             code, _ = run(tmp / "patch.mp4", tmp / "patch2", (0, 255, 0), "off")
             checks.append(("--allow-edge-contact accepts it", code == 0))
 
@@ -903,9 +908,9 @@ def selftest():
             checks.append(("not the key -> 2", code == 2 and "not the" in rep["error"]))
             code, rep = run(tmp / "missing.mp4", tmp / "x", (0, 255, 0), "refuse")
             checks.append(("missing clip -> 1", code == 1))
-    fails = [name for name, ok in checks if not ok]
-    for name, ok in checks:
-        print(f"{'ok  ' if ok else 'FAIL'} {name}")
+    fails = [c[0] for c in checks if not c[1]]
+    for name, ok, *detail in checks:
+        print(f"{'ok  ' if ok else 'FAIL'} {name}" + (f"  ({detail[0]})" if detail and not ok else ""))
     print(f"verdict {'FAIL' if fails else 'OK'}")
     return 1 if fails else 0
 
