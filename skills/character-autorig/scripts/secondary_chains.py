@@ -1197,7 +1197,7 @@ def size_colliders(body, chains, heads):
     """Radii from the skin around each collider (exported bone origins), then shrunk so no chain
     joint below its root starts inside a collider of its group."""
     cols, report = {}, {"shrunk": [], "dropped": []}
-    hair = [c for c in chains if c["kind"] == "hair"]
+    hair = [c for c in chains if c["kind"] == "hair" and "centre" in c]   # detected; a marker chain has no centre
     for name, shape, ra, rb, parts in COLLIDERS:
         a = body.bone(ra)
         b = body.bone(rb) if rb else None
@@ -1977,6 +1977,17 @@ def selftest(a):
     checks["the strap's share peaks mid-span and fades to zero at both fixed ends"] = (
         obj.vertex_groups.get("cc_strap1_01.x") is None and mid.size > 0 and ends.size > 0
         and mid.max() > 0.3 and ends.max() < 0.25 * mid.max())
+    # 3b a manual hair chain along the back spike: the full stage runs (colliders sized without a detected
+    # head centre) and the chain is there
+    rig, obj = build_shell()
+    mk = os.path.join(tmp, "pony.markers.json")
+    with open(mk, "w", encoding="utf-8") as f:
+        json.dump({"chains": [{"kind": "hair", "name": "pony", "region_radius": 0.05,
+                               "joints": [[0, 0.08, 1.68], [0, 0.108, 1.701], [0, 0.136, 1.722]]}]}, f)
+    rep, code = run(args("--mesh", obj.name, "--kinds", "none", "--markers", mk,
+                         "--out", os.path.join(tmp, "Pony.secondary.json")))
+    checks["a hair marker chain alone: the full stage runs, chain pony placed, exit 0"] = (
+        code == 0 and [c["name"] for c in rep.get("chains", [])] == ["pony"] and rep["chains"][0]["marker"])
     # 4 a smooth body with nothing loose: an empty chain list, every gate green
     body_obj, roles = build_plain(tmp)
     out = os.path.join(tmp, "Plain.secondary.json")

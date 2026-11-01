@@ -112,6 +112,7 @@
         "generated": {
           "type": "object",
           "properties": {"glb": {"type": "string"}, "painted": {"type": "string", "description": "the part repainted by mesh-texture-paint; absent, the assembly takes paint/<part>/<stem>_painted.glb when it exists"},
+                         "paint": {"type": "object", "description": "set when every paint try failed a gate: the part keeps its generated texture", "properties": {"status": {"enum": ["unpainted"]}, "reason": {"type": "string"}, "report": {"type": "string"}}},
                          "attempts": {"type": "array", "description": "a hand: each generation job (its GLB, the gate exit and the failed gates); a failed registration or finger gate runs the job again with every sampler seed moved", "items": {"type": "object"}}}
         },
         "split": {

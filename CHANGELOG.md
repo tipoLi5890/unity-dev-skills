@@ -2,6 +2,94 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.41.2
+
+A strengthening round. On the ship track the elbow no longer needs a repair: its marker follows
+the wrist the AI places. Weight that crosses the midline (a sole bound to the other foot) is now
+repaired. Hand paint can refuse a colour the concept never has. A shorts hem no longer shows
+inside its own thigh, and a red mouth is no longer split off as hair. An end-to-end run on a new
+character (a long-coated gatekeeper) turned up two script bugs and two missing runner flags; all
+four are fixed here.
+
+- **`character-autorig` → `arp_markers.py`: the elbow follows the wrist.** A proportion elbow
+  sits at 0.42 / 0.75 of shoulder → wrist, wherever the wrist lands: on a narrowing found by the
+  slices, or on the AI's wrist with `--smart`. An adjusted elbow stays where it was put. The AI
+  places the wrist where the hand leaves the forearm (about 0.67 of shoulder → hand tip). The elbow
+  used to stay at 0.42 of shoulder → hand tip, which made the forearm about a quarter short (limb
+  ratio 1.68–1.83), and the elbow gate measured that short span. The gate and its 0.35 limit are
+  unchanged. Results:
+  - The ship rig reused from the same AI output reads 0.305 at the elbow without a repair. Before,
+    it read 0.479 and needed a repair.
+  - Six whole-runner reruns read 0.305–0.312, all passing without a repair. Before, they read
+    0.36–0.44: four ran out of rungs and two passed after a repair.
+  - Fresh full runs: ship ×3 at 0.298–0.306 and whole ×3 at 0.305–0.308, all exit 0.
+  - On a proportion wrist the elbow lands where it did before, so the rig exam is unchanged.
+- **The repair ladder moves weight across the midline.** `deform_gate.py`'s
+  `skin.cross_side.{L,R}.bones` names the other side's bones that hold each side's skin, with their
+  summed weight. When `deform.cross_side_weight` fails, alone or together with a hinge volume loss,
+  `autorig.py` adds a cross-side move to the attempt. Past the gate's band from the midline (faded
+  in from half of it), each named bone's weight goes in full to its mirrored twin (`brt_weights`
+  transfer, share `reach`, so the bone keeps its own side's skin). If the gate still fails after
+  the move, the ladder stops for a rebind. Tested on two cases:
+  - On the 0.41.0 ship rig (the right sole on `foot.l`/`toes_01.l`): share 0.0144 with 336 vertices
+    held went to 0 / 0. Volume stayed at 0.278, and self-intersection p95 fell from 0.054 to 0.028.
+  - On the exam's planted `leg_smear`: 0.1436 / 1488 went to 0 / 0.
+  This replaces 0.41.1's "a repair never moves weight across the midline".
+- **`arp_markers.py --adjust`: the spine follows an adjusted pelvis.** The proportion spine points
+  now move with an adjusted `pelvis` or `neck_base`, each by its share of how far both ends moved.
+  Before, they stayed at the old proportions, so a raised pelvis turned `root_ref` upside down
+  while every gate passed. A spine point the person adjusts stays where it was put.
+- **`autorig.py`: `markers --adjust FILE` and `arp --resolution N`** (both also on `all`). These
+  pass through to `arp_markers.py --adjust` and to the bind's resolution (brt_arp), so both manual
+  rungs the ladder names can be run through the runner. Its message now names them.
+- **`secondary_chains.py`: a hand-placed `hair` chain no longer crashes.** The colliders took the
+  head centre from a hair chain that only detected chains have (`KeyError: 'centre'`). A marker
+  chain along a ponytail now runs the full stage.
+- **`mesh-texture-paint` → `paint_loop.py`: off-palette colours, measured and gateable.**
+  - **What it measures:** the share of the figure whose colour is more than 15 from every colour in
+    the concept views. The comparison is in Lab, with a and b scaled up in dark colours so a navy
+    is not "near black", after a 2 px opening. Each view records it as `off_palette`, and a try
+    over 1.5 % leaves `_offpal.png` with the flagged colours in magenta. `--seed` sets the first
+    seed.
+  - **Where it is a gate:** only when `--max-off-palette` is set. The parts route
+    (`hand_views.py --paint`, heads and hands) sets 0.03. On the earlier hand and head views,
+    clean views read 0–0.014 and navy or silver ones 0.05–0.52.
+  - **Why it is off by default:** an offline replay of earlier runs gave these readings:
+    - The accepted runner anchor's views: at most 0.007.
+    - The gatekeeper's two back views: 0.033 and 0.034, from the ponytail's sheen plus one real
+      teal smudge.
+    - Backpack and racket runs: 25–40 % of the views they used were over 0.03 (an olive flap, a
+      navy grip band).
+
+    The replay compares raw outputs, not the warped view the gate reads. No live run has measured
+    what the lost views cost in coverage.
+  - **Live hand runs with the gate:** the left hand's navy palm is gone, at coverage 0.68–0.70.
+    On the right hand the silver first view was correctly refused, but coverage fell from 0.77 to
+    0.29 on one seed, and on another seed every try was refused.
+  - **A part with no painted view:** it now keeps its generated texture, with a warning, and the
+    plan records `generated.paint {status "unpainted"}`. Before, the whole generate step stopped
+    with exit 3.
+- **`unity-rigged-character` → `SpringChain.Write`: written bones stay outside the colliders.**
+  A drawn bone follows a segment up to one substep old, while its colliders are already at this
+  frame's pose. Before drawing, a tip that would sit inside one of the chain's colliders is pushed
+  out, keeping its length. The particles are untouched. In the runner's Unity capture, shorts-hem
+  collisions fell from 18–103 per rate to 0 at 10–144 fps and jittered, and the front hem's sink
+  fell from 2.7 to 1.9 cm (its rest distance). A new EditMode test with a hem beside a swinging
+  thigh fails on the old code and passes now (13/13).
+- **`blender-character-rig` → `part_math.split_hair`: the face is never hair.** Faces within 35° of
+  the front and below 0.45 of chin → top stay on the head whatever their colour. On the runner, 83
+  mouth faces that had gone to the hair go to 0, and every hair gate stays green.
+- **Docs:** `image-to-3d.md` says views cut from a turnaround sheet are scaled up to 1024 by
+  `turnaround_to_views.py`, and that this is expected.
+- **On the courier runner, end to end.**
+  - `fine` exits 0 with the same deformation readings as 0.41.1: volume loss 0.296,
+    self-intersection p95 0.067, cross side 0 / 0, hinge blend 0.13. The hair splits at 49,621 faces
+    (50,298 before) with every hair gate green.
+  - The ship track exits 0 and passes the elbow gate first time at 0.304, with limb ratio 1.27.
+    In 0.41.1 it read 0.479, needed a repair, and had limb ratio 1.68.
+  - The rig exam reads the same as 0.41.1 on every body, on the reference and on every planted
+    fault: all 14 faults are caught and both controls pass.
+
 ## 0.41.1
 
 A strengthening round. Four defects the rig exam planted used to pass every gate; each now has a

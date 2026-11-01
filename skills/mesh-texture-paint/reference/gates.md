@@ -1,7 +1,7 @@
 # Gates — accepting or rejecting a painted view
 
 A painted view is evidence, not paint. Each try is registered to the render, measured, and either
-projected or thrown away. A camera gets `--tries 3` tries; seeds are `42 + 1000 × try + view
+projected or thrown away. A camera gets `--tries 3` tries; seeds are `--seed (42) + 1000 × try + view
 index`, and the reference alternates (`painting.md` §3). The first try that passes every gate is
 used; when none passes, the best by `(passed, iou_after × filled)` is saved as `_aligned.png` for
 inspection, the view is logged `rejected`, and it counts against `--max-views`. Three rejections
@@ -24,6 +24,7 @@ The output is key-masked against `#00FF00` before and after.
 | Brightness drift | `--max-drift 0.08` | share of already-painted pixels whose brightness changed by more than 60 levels | a view that repainted good areas in another palette or lighting |
 | Dark to light | `--max-lighten 0.06` | share of already-painted pixels darker than 70 in the guide that came back over 60 levels lighter | dark hair or fabric turned **silver** |
 | Background | `--max-bg-dev 40` | median max-channel distance of the background (12 px clear of the figure) from the key | a washed-out pale key — it comes with a washed-out figure |
+| Off palette | `--max-off-palette` (off: reported only; the parts route sets 0.03) | share of the figure (outside the disagreement band) whose colour is more than 15 from every concept colour, in Lab with a and b scaled up in dark colours, after a 2 px opening; the concept's colours are its figure pixels, the rarest 3 % dropped | a navy palm on a black glove, a silver or grey-streaked hand: colours no concept view has. Not a concept colour in the wrong place (a side panel's teal on the forearm). Off by default: hair sheen and small tints on whole characters and objects read off the flat concept; read `off_palette` and the pictures there |
 
 Notes on reading them:
 
@@ -92,7 +93,7 @@ Per view:
 | `prompt_mode` | `first`, `context` or `detail` |
 | `seed`, `ref`, `paint_s` | the try kept: its seed, `sheet` / `nearest` / `front`, seconds |
 | `iou_before`, `iou_after`, `scale`, `shift`, `edge_p90` | registration (§1) and the outline gate |
-| `filled`, `drift`, `lighten`, `bg_dev` | the other gates' values |
+| `filled`, `drift`, `lighten`, `bg_dev`, `off_palette` | the other gates' values; a try flagging over 1.5 % leaves `views/<name>_s<seed>_offpal.png` with the flagged colours in magenta, gated or not |
 | `match_gain`, `match_offset` or `match` | the colour match, or why it was skipped |
 | `texels`, `new_texels` | texels written; of those, newly painted |
 | `coverage`, `gain` | coverage after this view and what it added |

@@ -137,11 +137,17 @@ gates; no rung loosens a limit:
    `deform.self_intersection_p95` failed → amount 0.9; anything else ends the ladder with exit 2
    and every attempt listed. The bands come from the markers: the joint's marker height (both sides'
    mean), and for an elbow a mask from the shoulder marker's |x|, the offsets scaled with the height.
+   `deform.cross_side_weight` failing (alone or with that volume loss) is a rung too: the report's
+   `skin.cross_side` names the other side's bones holding each side's skin, and past its `band_m`
+   from the midline (faded in from half of it) each one's weight there goes in full to its mirrored
+   twin (`brt_weights` `transfer`, share `reach`, so its own side keeps it). A sole bound to the
+   other foot is that case. Still failing after the move: rebind.
 2. **A finer bind** (by hand). `pipeline` (or `bind`) again from the unrigged file with a higher
-   `resolution`, one step at a time: each step costs much more memory and time, and the top of the
-   range may not finish.
+   `resolution`, one step at a time (`autorig.py arp OUT --resolution 8`, then `contract` and `deform`):
+   each step costs much more memory and time, and the top of the range may not finish.
 3. **The marker** (by hand). Move it along the limb to the crease (`arp_markers.py --adjust` with
-   `elbow.L` or `knee.L`; the right side follows) and run `pipeline` again.
+   `elbow.L` or `knee.L`; the right side follows; `autorig.py markers OUT --adjust FILE`) and run
+   `pipeline` again.
 
 A loose sleeve hides the crease: the bind's blend then follows the cloth, not the arm, a finer
 voxel grid or a moved marker shifts it little, and the weight transfer is the fix that holds; that

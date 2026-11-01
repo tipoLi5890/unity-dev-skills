@@ -38,7 +38,7 @@ midline when its X range contains it: that is the torso (or the head) at that he
 | toe_tip, heel, ball | the foot's vertices below the ankle: front-most, rearmost, and 70 % of the way from heel to toe; the ball and toe at 35 % of the ankle's height, the heel at 25 % | measured |
 | shoulder | the arm part's centroids below the armpit (the longest run of cuts with a part wholly outside the torso) lie on the arm's axis; the shoulder is the axis point half the arm's radius outside the torso's edge at the armpit cut | measured |
 | hand_tip | the arm vertex farthest along the axis, projected onto the axis | measured |
-| elbow, wrist | 0.42 and 0.75 of shoulder → hand_tip (`--arm-ratios`); the wrist moves to a narrowing of the arm within 0.66–0.84 when one is at least 5 % narrower | proportion / measured |
+| elbow, wrist | 0.42 and 0.75 of shoulder → hand_tip (`--arm-ratios`); the wrist moves to a narrowing of the arm within 0.66–0.84 when one is at least 5 % narrower, and the elbow keeps 0.42 / 0.75 of shoulder → wrist (an AI wrist too), so the forearm keeps its length | proportion / measured |
 | neck | the narrowest central cut between the shoulders and 0.95 H | measured |
 | chin | the lowest cut above the neck whose front reaches a quarter of the way from the neck's front to the face's | measured |
 | head_base | neck + 35 % of the way to the chin (neck + 0.02 H without a chin) | measured |
@@ -121,7 +121,10 @@ so the index side faces −Y. `L` = |hand_tip − wrist|.
   forward and down to 0.62 L.
 - **`--smart`** with a `fixed` hand (a glove, fingers held together): the AI's hand and finger
   references replace the fixed shape in `arp_refs`, and the wrist and finger joints in `landmarks`
-  and `contract_bones` follow, with their rolls in `ref_rolls`; `fingers.mode` is `ai`. A finger
+  and `contract_bones` follow, with their rolls in `ref_rolls`; `fingers.mode` is `ai`. A proportion
+  elbow follows the AI wrist (0.42 / 0.75 of shoulder → wrist): the AI puts the wrist where the hand
+  leaves the forearm, short of the slices' 0.75, and an elbow left at 0.42 of shoulder → hand_tip
+  would shorten the forearm by about a quarter, and the elbow gate reads that short span. A finger
   the AI did not fit (the add-on's four-finger hand has no index) keeps the fixed shape.
 - `--mitten` keeps the 30 finger bones in `contract_bones` but makes them non-deforming, so a
   hand without finger geometry skins to `Hand` in the hand-built route. The contract still holds
@@ -148,7 +151,9 @@ What the person checks, in this order:
 A JSON object `{marker: [x, y, z]}` in world metres. Each value replaces the measured marker
 after measuring; a `.L` marker moves its `.R` twin to the mirror unless the twin is given too.
 Every derived output (`arp_refs`, `contract_bones`, the arm angle, the gates) is rebuilt from the
-adjusted markers, and `methods` says `adjusted`. An adjusted `.L` or `.R` marker leaves
+adjusted markers, and `methods` says `adjusted`. The proportion spine points (`spine1..n`) follow an
+adjusted `pelvis` or `neck_base`, each by its share of both ends' moves, so the root keeps pointing
+up; a spine point you adjust stays where you put it. An adjusted `.L` or `.R` marker leaves
 `markers.symmetry`: a person placed it and its mirror, so the measured difference moves to
 `asymmetry_accepted` (reported, not gated). To accept an asymmetric pose, adjust each marker that
 `asymmetry_m` names over the limit; the markers left alone are still gated.
@@ -158,7 +163,8 @@ adjusted markers, and `methods` says `adjusted`. An adjusted `.L` or `.R` marker
 ```
 
 Read the position off the side or front picture and the `landmarks` already in the output; move one
-marker at a time and look again.
+marker at a time and look again. Through the runner: `autorig.py markers OUT --adjust FILE` (or `all
+--adjust FILE`), then `arp`, `contract` and `deform` again.
 
 ## The output (`autorig-markers/1`)
 

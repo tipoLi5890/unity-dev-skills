@@ -92,8 +92,9 @@ python3 scripts/autorig.py --selftest
 
 It picks `--min-fingers` and the `fist` pose from the markers' `fingers.mode` (`ai` counts as
 found). A failed `smart` never stops `all` (exit 2): the markers fall back to slices. When the
-deformation gate fails on elbow or knee volume loss alone, it runs the weight transfer from
-`reference/arp-pipeline.md` on a copy (`repair/aN/`) and gates again; the limits never change.
+deformation gate fails on elbow or knee volume loss or cross-side weight alone, it runs the
+weight transfers from `reference/arp-pipeline.md` on a copy (`repair/aN/`) and gates again; the
+limits never change.
 Then the spring chains go on the rig to take on (`secondary/`: its FBX, `NAME.secondary.json`, the
 contract and deformation gates again, which read the same as without the chains). A character in
 parts has its hair (`--hair`) and eyeballs (`--eyes`) bound after the contract. The summary

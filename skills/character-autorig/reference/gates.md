@@ -146,7 +146,7 @@ alone; look at that pose first.
 | intersections in `deep_squat` | thighs crossing the belly or calves into thighs | hip markers too low or too far in; a soft belly touching the thighs is expected, so never loosen the limit for one character |
 | `deform.joints_measured` names an elbow or knee | the patch around the joint has fewer than 8 outward triangles or does not wrap it: an opening, a decimated joint, flipped normals | look at the mesh there (`mesh_check.py`, a picture); fix the mesh, never drop the pose |
 | a whole limb moves with the wrong pose | weights on the wrong side's bone | rebind; check `markers.symmetry` and the sides gate of the contract |
-| `deform.cross_side_weight` fails | a limb's skin holds weight on the other side's limb bones | rebind; a repair never moves weight across the midline |
+| `deform.cross_side_weight` fails | a limb's skin holds weight on the other side's limb bones | the repair ladder moves it to the mirrored bones past the band (`reference/arp-pipeline.md`); still failing: rebind |
 | `deform.hinge_blended` fails | a hard seam: no vertex at that elbow or knee shares the two bones | rebind, or smooth the weights over the joint |
 
 **Two readings of the bind at rest** (no pose is needed, so a defect no pose bends is still seen; both

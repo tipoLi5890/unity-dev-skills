@@ -93,7 +93,8 @@ Gates (each failing one makes exit 2):
 Report: {tool, armature, mesh, height, triangles, outward_triangles, inward_triangles, poses: {name: {samples: [{t, new_intersections, moved,
 ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the pose turns), skipped?}}, volume_loss_max {value, pose,
 joint}, ball_joint_loss_max,
-self_intersection {p95, max, pose}, skin {cross_side {band_m, L/R {share, vertices, held}}, hinge_blend {joint:
+self_intersection {p95, max, pose}, skin {cross_side {band_m, L/R {share, vertices, held, bones (the other side's
+bones holding weight there: their summed weight)}}, hinge_blend {joint:
 {blended, vertices}}}, renders?, gates [{name, value, limit, pass}], schema, pass, ok}: a gate/1
 report (schemas/gate-1.json); `ok`, pass's old name, equals it for one release. A refused input
 reports pass false, no gates, `refused` and `error`.
@@ -549,8 +550,11 @@ def skin_readings(rig: Rig, mesh, v_rest) -> dict:
     for s, o, on_side in (("L", "R", x * np.sign(lx) > band), ("R", "L", x * np.sign(lx) < -band)):
         same, opp = W[on_side][:, cols[s]].sum(axis=1), W[on_side][:, cols[o]].sum(axis=1)
         total = float((same + opp).sum())
+        held_by = W[on_side][:, cols[o]].sum(axis=0)
         cross[s] = {"share": round(float(opp.sum()) / total, 4) if total > 0 else 0.0,
-                    "vertices": int((opp > 0.05).sum()), "held": int((opp >= 0.5).sum())}
+                    "vertices": int((opp > 0.05).sum()), "held": int((opp >= 0.5).sum()),
+                    "bones": {names[cols[o][j]]: round(float(w), 3) for j, w in
+                              sorted(enumerate(held_by), key=lambda t: -t[1]) if w >= 0.01}}
     blend = {}
     for c in ("LowerArm.L", "LowerArm.R", "LowerLeg.L", "LowerLeg.R"):
         up = ("UpperArm." if c.startswith("LowerArm") else "UpperLeg.") + c[-1]
@@ -968,6 +972,10 @@ def selftest() -> tuple[int, dict]:
     gate = {g["name"]: g for g in rep.get("gates", [])}
     ok("half the left leg on the right leg's bones: exit 2, deform.cross_side_weight fails", code == 2 and
        not gate["deform.cross_side_weight"]["pass"] and rep["skin"]["cross_side"]["L"]["share"] > 0.1)
+    held_by = rep["skin"]["cross_side"]["L"].get("bones") or {}
+    ok("the leak names the right leg's bones that hold the left leg, heaviest first",
+       list(held_by)[:2] in (["UpperLeg.R", "LowerLeg.R"], ["LowerLeg.R", "UpperLeg.R"])
+       and all(b.endswith(".R") for b in held_by))
     ok("hard skin: a failed gate/1 report", rep.get("pass") is False and rep.get("ok") is False)
     contract_sample("deform_gate", "hard", rep)
     code, rep = results["blend"]

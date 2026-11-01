@@ -26,7 +26,8 @@ assemble, in order:
              anchor's head region above the collar). Gates part.register.scale_ratio |s/s0 - 1| <= 0.05,
              part.register.rms <= 0.03 of the region height, part.register.rotation_deg <= 6.
   split      hair = faces nearer the plan's hair colour than its skin colour, more than delta x part
-             height outside the scalp-radius map, above the chin (part_math.split_hair); delta from
+             height outside the scalp-radius map, above the chin and outside the face (front +-35 deg,
+             below 0.45 of chin to top: by geometry, so lips stay on the head) (part_math.split_hair); delta from
              the plan (0.03), then 0.05. Gates hair.islands_returned <= 0.10, hair.components 1..3,
              head.top_closed >= 0.95, hair.coverage >= 0.90. When both fail, Head keeps the hair
              (`degraded`), exit 2; --accept-joined-hair continues with exit 0 and the failed gates kept

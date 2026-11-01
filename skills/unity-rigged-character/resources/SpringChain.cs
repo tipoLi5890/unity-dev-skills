@@ -204,14 +204,26 @@ namespace UnityDev.SecondaryMotion
 
         /// <summary>Turns each bone, root to tip, so its child lies along the simulated segment.
         /// alpha (0..1) is how far the frame's time runs past the last substep: the segment is read
-        /// between the last two substeps, so a frame with no substep still moves.</summary>
-        internal void Write(float alpha)
+        /// between the last two substeps, so a frame with no substep still moves. That segment is up
+        /// to one substep old while the bone and the colliders (colA/colB/colR, this frame's ends) are
+        /// where the animation is now, so a child it would put inside a collider is pushed out
+        /// (its bone keeps its length); the particles are left as they are.</summary>
+        internal void Write(float alpha, float scale, Vector3[] colA, Vector3[] colB, float[] colR)
         {
+            float pr = radius * scale;
             for (int i = 0; i < bones.Length - 1; i++)
             {
                 Transform b = bones[i];
                 Vector3 now = bones[i + 1].position - b.position;
                 Vector3 want = Vector3.LerpUnclamped(_last[i + 1], _p[i + 1], alpha) - Vector3.LerpUnclamped(_last[i], _p[i], alpha);
+                float len = now.magnitude;
+                if (len > 1e-6f && want.sqrMagnitude > 1e-12f && _colliderIndex.Length > 0)
+                {
+                    Vector3 tip = b.position + want.normalized * len;
+                    for (int pass = 0; pass < 3 && Collide(ref tip, pr, colA, colB, colR, 0); pass++)
+                        tip = b.position + (tip - b.position).normalized * len;
+                    want = tip - b.position;
+                }
                 if (now.sqrMagnitude > 1e-12f && want.sqrMagnitude > 1e-12f)
                 {
                     Quaternion r = Quaternion.FromToRotation(now, want) * b.rotation;

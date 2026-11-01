@@ -219,7 +219,7 @@ namespace UnityDev.SecondaryMotion
                     chain.Step(h, (s + 1f) / steps, accel, rootDelta, scale, _colA, _colB, _colR, s * k);
                 }
                 if (steps > 0) chain.EndSubsteps();
-                chain.Write(alpha);
+                chain.Write(alpha, scale, _colA1, _colB1, _colR);
             }
             if (steps > 0)
             {

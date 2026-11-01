@@ -86,6 +86,9 @@ removing the spikes leaves no hole.
    filtered.
 3. Hair = faces nearer (CIELAB) the plan's `views.colours.hair` than its `skin`, more than
    delta × part height outside the map, above the chin. No luma threshold: hair is not always dark.
+   The face is never hair, by geometry: within 35° of the front around the head's centre and below
+   0.45 of the way from the chin to the top (lips and a mouth can read nearer a brown or red hair
+   colour than the skin and stand out of the map). `split.tries[].face_share` reports its area.
 4. Majority smoothing; pieces under 0.5 % of the hair go back to the head. `hair.components` counts
    the pieces holding ≥ 2 % (a few loose strands are hair; a split that shatters is not).
    Near the poles a row's bins are slivers, so a polar row takes its smallest radius everywhere

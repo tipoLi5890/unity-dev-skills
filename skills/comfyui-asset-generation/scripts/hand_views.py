@@ -39,7 +39,10 @@ Blender afterwards must weld first, or it tears the textured mesh open along its
 hand_parts.py gate (the registration and finger gates, blender-character-rig); on exit 2 the job runs again with every sampler
 seed moved (up to --hand-seeds jobs): a gate is never loosened. --paint then runs mesh-texture-paint's
 paint_loop.py on the passing GLB (--kind object, --prior '': the bake's own texture streaks and tints the
-context) into paint/<hand>/, so the glove keeps the concept's colour (the multi-view bake darkens it).
+context; --max-off-palette 0.03 for every part, head too) into paint/<hand>/, so the glove keeps the concept's
+colour (the multi-view bake darkens it) and a navy palm or a silver arm is refused.
+A part whose every paint try failed a gate keeps its generated texture (a warning, not a failure; the plan
+records generated.paint {status "unpainted", reason}).
 
 Exit codes are part_views.py's: 0 done; 1 usage or refused plan; 2 a gate failed after every seed; 3 a
 server or job failure.
@@ -60,6 +63,7 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 HAND_PARTS = SKILL.parent / "blender-character-rig" / "scripts" / "hand_parts.py"
 PAINT_LOOP = SKILL.parent / "mesh-texture-paint" / "scripts" / "paint_loop.py"
+MAX_OFF_PALETTE = 0.03   # paint_loop's palette gate, off by default there, on for the parts
 
 VIEWS = ("front", "left", "back", "right")
 TOWARD = {"front": (2, 1.0), "back": (2, -1.0), "left": (0, 1.0), "right": (0, -1.0)}   # axis, sign toward the camera
@@ -482,17 +486,27 @@ def paint_part(a, plan, part, base):
     hand = part["region"] in SIDE
     cmd = [sys.executable, str(PAINT_LOOP), str(glb), "--concept", str(vd), "--sheet", str(vd / "sheet.png"),
            "--out", str(root / "paint" / name), "--kind", "object" if hand else "character",
-           "--subject", f"{SIDE[part['region']]} hand and forearm" if hand else "character's head"]
+           "--subject", f"{SIDE[part['region']]} hand and forearm" if hand else "character's head",
+           "--max-off-palette", str(MAX_OFF_PALETTE)]
     if hand:     # the hand job's own bake streaks the forearm grey and tints the palm olive; shown as context the
         cmd += ["--prior", ""]       # model continues them and redraws steep views: the nearest painted colour
     if a.server or base:
         cmd += ["--server", a.server or base]
     P.wait_idle(base, a.wait_idle)
     r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode == 3 and "every try failed a gate" in r.stderr:
+        # the server answered and every paint was refused (a silver arm, a collage): the part keeps its
+        # generated texture (assemble_hands takes generated.glb) rather than a wrong one
+        print(f"{name}: no painted view passed the gates; the generated texture stays", file=sys.stderr)
+        part["generated"].pop("painted", None)
+        part["generated"]["paint"] = {"status": "unpainted", "reason": "every paint try failed a gate",
+                                      "report": f"paint/{name}/report.json"}
+        return 0
     if r.returncode != 0:
         raise P.JobFailed(f"paint_loop exit {r.returncode} on {name}: {r.stderr[-400:]}")
     stem = glb.stem
     part["generated"]["painted"] = f"paint/{name}/{stem}_painted.glb"
+    part["generated"].pop("paint", None)
     return 0
 
 
@@ -614,6 +628,22 @@ def selftest() -> int:
         gp = Path(td) / "a.glb"
         gp.write_bytes(blob)
         checks["glb_triangles"] = glb_triangles(gp) == 1000
+        # paint_part: the palette gate is passed; every try refused keeps the generated texture, recorded
+        import types
+        seen, real_run, real_wait = [], subprocess.run, P.wait_idle
+        pp = {"name": "hand_r", "region": next(iter(SIDE)), "views": {"dir": "views/hand_r"},
+              "generated": {"glb": "gen/hand_r.glb", "painted": "paint/hand_r/old_painted.glb"}}
+        args = types.SimpleNamespace(plan=Path(td) / "plan.json", server=None, wait_idle=0)
+        try:
+            P.wait_idle = lambda *_a, **_k: None
+            subprocess.run = lambda cmd, **_k: (seen.append(cmd) or types.SimpleNamespace(
+                returncode=3, stdout="", stderr="no view was painted: every try failed a gate (report.json, views/)"))
+            code = paint_part(args, {}, pp, "http://x") if PAINT_LOOP.is_file() else 0
+        finally:
+            subprocess.run, P.wait_idle = real_run, real_wait
+        checks["paint_part_gate_and_unpainted"] = not PAINT_LOOP.is_file() or (
+            code == 0 and seen and seen[0][seen[0].index("--max-off-palette") + 1] == str(MAX_OFF_PALETTE)
+            and "painted" not in pp["generated"] and pp["generated"]["paint"]["status"] == "unpainted")
         rep = P.report(gates, part="hand_r")
         P.contract_out("hand_views__views.gate.json", rep)
     checks = {k: bool(v) for k, v in checks.items()}

@@ -1,5 +1,6 @@
 // SecondaryMotionTests — EditMode tests for the spring-bone runtime: a chain hangs under gravity and
-// keeps its bone lengths, springs back without it, stays outside sphere and capsule colliders,
+// keeps its bone lengths, springs back without it, stays outside sphere and capsule colliders (its
+// written bones too, beside a fast-swinging one),
 // resets instead of exploding on a teleport, settles the same at 30, 144 and jittered frame
 // rates, moves on every frame at 144 Hz and at an uneven 60 Hz, respects its angle limit, returns unanimated bones to rest, survives a zero-length bone,
 // and the secondary/1 reader accepts the sample and an empty chain list and refuses broken files.
@@ -156,6 +157,46 @@ namespace UnityDev.SecondaryMotion.Tests
                     float d = SpringSolver.SurfaceDistance(chain.GetParticle(i), a, b, 0.08f);
                     Assert.GreaterOrEqual(d, chain.radius - 1e-3f, "frame " + f + " particle " + i);
                 }
+            }
+        }
+
+        [Test]
+        public void Written_bones_stay_outside_a_swinging_collider()
+        {
+            // A shorts hem hangs beside its own thigh: both move with the parent, which swings back
+            // and forth fast; gravity and the swing press the hem onto the thigh. The particles are
+            // pushed out each substep; the bones are written from a segment up to one substep old
+            // while the thigh is where the animation is now, and must not show inside it either.
+            foreach (float dt in new[] { 1f / 30f, 1f / 60f, 1f / 144f })
+            {
+                SecondaryMotionSystem system = Rig(1, new Vector3(0.05f, -1f, 0f), 0.06f, out SpringChain chain);
+                chain.radius = 0.016f;
+                chain.stiffness = 0.6f;
+                chain.maxAngle = 20f;
+                Transform parent = chain.bones[0].parent;
+                var a = new GameObject("thigh_a").transform;
+                a.SetParent(parent, false);
+                a.localPosition = new Vector3(-0.08f, 0.15f, 0f);
+                var b = new GameObject("thigh_b").transform;
+                b.SetParent(parent, false);
+                b.localPosition = new Vector3(-0.08f, -0.3f, 0f);
+                var col = a.gameObject.AddComponent<SpringCollider>();
+                col.shape = SpringCollider.Shape.Capsule;
+                col.endB = b;
+                col.radius = 0.062f;
+                system.Rebuild();
+                system.Simulate(0f);
+                float t = 0f;
+                for (int f = 0; f * dt < 2f; f++)
+                {
+                    t += dt;
+                    parent.localRotation = Quaternion.Euler(0f, 0f, -40f * Mathf.Sin(2f * Mathf.PI * 1.45f * t));
+                    system.Simulate(dt);
+                    col.GetWorld(1f, out Vector3 ca, out Vector3 cb, out float r);
+                    float d = SpringSolver.SurfaceDistance(chain.bones[1].position, ca, cb, r);
+                    Assert.GreaterOrEqual(d, chain.radius - 1e-3f, (1f / dt).ToString("0") + " fps frame " + f);
+                }
+                AssertFinite(chain);
             }
         }
 

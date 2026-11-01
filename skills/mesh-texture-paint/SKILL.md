@@ -20,6 +20,7 @@ result, project the painted pixels into the UV texture, pick the next camera, re
 | A collage of several small figures in one view | `reference/painting.md` §3; `reference/gates.md` §2 |
 | Dark hair or fabric came back silver or grey | `reference/painting.md` §5; `reference/troubleshooting.md` |
 | A purple or olive tint spreading | `reference/painting.md` §5 (rejected markers) |
+| A colour the concept never has (a navy palm, grey streaks on a glove) | `reference/gates.md` §2 (off palette, `--max-off-palette`) |
 | A green fringe on the edges | `reference/painting.md` §6 (despill) |
 | Side views rejected | `reference/troubleshooting.md` (Cameras); `reference/gates.md` §5 |
 | Low-angle or top-down views rejected | `reference/projection.md` §1 (pitch band) |

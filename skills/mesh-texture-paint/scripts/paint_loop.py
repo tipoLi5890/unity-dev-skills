@@ -7,8 +7,9 @@ turnaround sheet. Every later view is a context render: what is painted so far i
 unpainted surface showing a prior (by default the GLB's own texture, brightness-matched to the
 painted texels), which the model repaints to match the reference. The output is registered to
 the render silhouette, gated (silhouette IoU, outline distance, painted share, brightness drift,
-dark-to-light share, background deviation) and its painted pixels are projected into the UV
-texture. Anchor cameras go first, then the camera that sees the most unpainted surface
+dark-to-light share, background deviation; colours off the concept's palette when --max-off-palette
+is set, else only reported) and its painted
+pixels are projected into the UV texture. Anchor cameras go first, then the camera that sees the most unpainted surface
 (zoomed onto it unless the mesh is thin or, for objects, the view is steep; never within 35
 degrees of a next-best camera whose paint was rejected), until coverage,
 the view budget, three rejections in a row or three next-best views in a row with nothing
@@ -24,8 +25,8 @@ colour image replaced), <out>/coverage.png, <out>/turntable.png, <out>/report.js
   python3 paint_loop.py --selftest      the whole loop offline on a cube with a fake painter
 
 Exit codes: 0 done or selftest passed, 1 usage error (also a GLB whose base colour cannot be
-written, caught before any paint job), 2 selftest failed, 3 no view painted or the paint server
-unreachable / not configured (the run stops at the first such error; views painted before it are
+written, caught before any paint job), 2 selftest failed, 3 no view painted (stderr says when every try
+failed a gate) or the paint server unreachable / not configured (the run stops at the first such error; views painted before it are
 written out and --resume continues).
 """
 from __future__ import annotations
@@ -118,6 +119,9 @@ class UsageParser(argparse.ArgumentParser):
         self.exit(1, f"{self.prog}: error: {message}\n")
 
 
+OFFPAL_PICTURE = 0.015   # a try flagging more than this leaves views/<name>_s<seed>_offpal.png
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = UsageParser(prog="paint_loop.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("glb", type=Path, help="image-to-3D mesh with UVs (TEXCOORD_0) and a base-colour texture")
@@ -163,6 +167,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="reject a view whose background drifted this far from the key (washed-out output)")
     ap.add_argument("--max-drift", type=float, default=0.08,
                     help="reject a view that changes the brightness of this share of already-painted pixels")
+    ap.add_argument("--max-off-palette", type=float, default=1.0,
+                    help="reject a view whose figure has this share of colours that are in none of the concept "
+                         "views (a navy palm on a black glove, a silver hand). Default 1: measured and reported, "
+                         "not gated (hair sheen and small tints on whole characters and objects read off the "
+                         "flat concept); the parts route (hand_views.py) sets 0.03")
+    ap.add_argument("--seed", type=int, default=42, help="first seed: try t of view i paints with seed + 1000 t + i")
     ap.add_argument("--res", type=int, default=2048)
     ap.add_argument("--size", type=int, default=1024)
     ap.add_argument("--fill", type=float, default=0.92)
@@ -243,7 +253,9 @@ def main(argv=None) -> int:
             prior = acc.prior_colors(np.asarray(pimg))
         except (KeyError, TypeError, IndexError, OSError):
             print("no prior texture found; unpainted surface shows the nearest painted colour", file=sys.stderr)
-    use_despill = not M.palette_has_key_hue([Image.open(p) for p in refs.values() if p.exists()])
+    concept_imgs = [Image.open(p) for p in refs.values() if p.exists()]
+    use_despill = not M.palette_has_key_hue(concept_imgs)
+    palette = M.concept_palette(concept_imgs)
     details = []
     if a.detail == "head":
         h = mesh.v[:, 1].max() - mesh.v[:, 1].min()
@@ -332,7 +344,7 @@ def main(argv=None) -> int:
                 ref, refdesc = options[rname]
             ctx_prompt = P_FILL if a.context == "fill" else P_CONTEXT
             prompt = (P_DETAIL if detail else P_FIRST if first else ctx_prompt).format(refdesc=refdesc, **fmt)
-            seed = 42 + 1000 * t + len(log)
+            seed = a.seed + 1000 * t + len(log)
             raw = out / "views" / f"{name}_s{seed}.png"
             t0 = time.time()
             try:
@@ -358,10 +370,15 @@ def main(argv=None) -> int:
             filled = 1.0 if detail else float((unp & wm & changed).sum() / max(1, unp.sum()))
             cand = {"seed": seed, "ref": rname, "paint_s": round(time.time() - t0, 1), **al, "filled": round(filled, 3)}
             light = 0.0 if first else M.lighten_share(warped, img, rmask & wm & ~unp & ~near_miss)
-            cand.update({"drift": round(drift, 3), "lighten": round(light, 3), "bg_dev": round(bg_dev, 1)})
+            offpal, offm = M.off_palette(warped, rmask & wm & ~near_miss, palette)
+            cand.update({"drift": round(drift, 3), "lighten": round(light, 3), "bg_dev": round(bg_dev, 1),
+                         "off_palette": round(offpal, 4)})
             cand["ok"] = (al["iou_after"] >= a.min_iou and al["edge_p90"] <= a.max_edge and filled >= a.min_share
-                          and drift <= a.max_drift and light <= a.max_lighten and bg_dev <= a.max_bg_dev)
-            key = (cand["ok"], al["iou_after"] * filled)
+                          and drift <= a.max_drift and light <= a.max_lighten and bg_dev <= a.max_bg_dev
+                          and offpal <= a.max_off_palette)
+            if offpal > OFFPAL_PICTURE:   # the colours it flagged, magenta on the view (gated or not)
+                Image.fromarray(np.where(offm[..., None], M.MARK, warped)).save(raw.with_name(raw.stem + "_offpal.png"))
+            key = (cand["ok"], al["iou_after"] * filled * (1.0 - offpal))
             if best is None or key > best[0]:
                 best = (key, cand, warped, pm)
             if cand["ok"]:
@@ -403,7 +420,9 @@ def main(argv=None) -> int:
 
     painted_any = any(v.get("status") == "used" for v in log)
     if fatal or not painted_any:
+        gated = any(v.get("status") == "rejected" for v in log)
         print(f"paint server error, run stopped: {fatal}" if fatal else
+              "no view was painted: every try failed a gate (report.json, views/)" if gated else
               "no view was painted; check --server / COMFYUI_SERVER_URL and --models", file=sys.stderr)
         if not painted_any:
             return 3
@@ -438,12 +457,14 @@ def selftest() -> int:
     real_paint = Q.paint
     calls = []
 
+    tint = [np.array([180.0, 90.0, 40.0])]   # the parcel's orange; a navy painter is off the palette
+
     def fake_paint(guide, ref, prompt, out_png, server=None, seed=42, models=None, **_kw):
-        # a model that paints the view: figure pixels warm up a little, background stays key
+        # a model that paints the view in one colour shaded by the guide, background stays key
         g = np.asarray(Image.open(guide).convert("RGB")).astype(np.float64)
         fg = M.key_mask(g.astype(np.uint8))
         o = g.copy()
-        o[fg] = np.clip(0.8 * g[fg] + np.array([50.0, 20.0, 0.0]), 0, 255)
+        o[fg] = np.clip(tint[0] * np.clip(g[fg].mean(1, keepdims=True) / 150.0, 0.7, 1.2), 0, 255)
         Path(out_png).parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(o.astype(np.uint8)).save(out_png)
         calls.append({"ref": Path(ref).name, "prompt": prompt, "models": models})
@@ -463,7 +484,7 @@ def selftest() -> int:
             concept.mkdir()
             for k in CONCEPT_YAW:
                 im = np.zeros((128, 128, 3), np.uint8)
-                im[24:104, 32:96] = (180, 90, 40)  # an orange parcel on black
+                im[24:104, 32:96] = (np.array([180, 90, 40]) * np.linspace(0.6, 1.25, 80)[:, None, None]).clip(0, 255)
                 Image.fromarray(im).save(concept / f"{k}.png")
             sheet = td / "sheet.png"
             Image.fromarray(np.concatenate([np.asarray(Image.open(concept / f"{k}.png"))
@@ -518,6 +539,25 @@ def selftest() -> int:
             nz = [v for v in json.loads((td / "nz" / "report.json").read_text())["views"] if v["source"] == "nbv"]
             checks["no_zoom_label"] = (len(nz) > 0 and not any(v["zoom"] or v["name"].endswith("z") for v in nz)
                                        and not any("close-up" in c["prompt"] for c in calls[n0:]))
+            # a painter that paints the parcel navy: every view is off the palette and rejected
+            tint[0] = np.array([30.0, 34.0, 90.0])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = main(base + ["--out", str(td / "navy"), "--anchors", "0:0", "--no-nbv", "--tries", "2",
+                                    "--seed", "7", "--max-off-palette", "0.03"])
+            nv = json.loads((td / "navy" / "report.json").read_text())["views"]
+            checks["off_palette_rejects"] = (code == 3 and "every try failed a gate" in err.getvalue()
+                                             and len(nv) == 1 and nv[0]["status"] == "rejected"
+                                             and nv[0]["off_palette"] > 0.5 and nv[0]["seed"] in (7, 1007)
+                                             and any((td / "navy" / "views").glob("*_offpal.png")))
+            # without --max-off-palette it is measured and reported, never a rejection
+            with contextlib.redirect_stderr(io.StringIO()):
+                code_d = main(base + ["--out", str(td / "navy_d"), "--anchors", "0:0", "--no-nbv", "--tries", "1"])
+            nd = json.loads((td / "navy_d" / "report.json").read_text())["views"]
+            checks["off_palette_default_reports_only"] = (code_d == 0 and len(nd) == 1 and nd[0]["status"] == "used"
+                                                          and nd[0]["off_palette"] > 0.5
+                                                          and any((td / "navy_d" / "views").glob("*_offpal.png")))
+            tint[0] = np.array([180.0, 90.0, 40.0])
             # a GLB without a base-colour texture paints and gets one; a GLB that cannot be written is exit 1
             bare = td / "bare.glb"
             M.edit_glb_json(glb, lambda js: js["materials"][0]["pbrMetallicRoughness"].pop("baseColorTexture"), bare)

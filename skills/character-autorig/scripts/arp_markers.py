@@ -41,7 +41,8 @@ How each marker is found (methods are reported per marker: measured, proportion,
               axis where it is half the arm's radius outside the torso's edge at the armpit slice.
   hand_tip    the arm vertex farthest along the axis. elbow and wrist at --arm-ratios (0.42, 0.75)
               of shoulder -> hand_tip; the wrist moves to a narrowing of the arm within 0.66-0.84
-              when there is one.
+              when there is one, and the elbow keeps 0.42 / 0.75 of shoulder -> wrist (so does it
+              when the AI places the wrist): the forearm keeps its length wherever the wrist lands.
   neck        the narrowest central slice between the shoulders and 0.95 H; head_top the highest
               vertex; chin the lowest slice above the neck whose front reaches a quarter of the way
               from the neck's front to the face's; head_base between neck and chin.
@@ -52,7 +53,8 @@ How each marker is found (methods are reported per marker: measured, proportion,
               with `fixed`, a fixed hand shape scaled to wrist -> hand_tip and turned to the hand's
               own plane (its thinnest axis is the palm normal). The thumb is always the fixed shape.
 Both sides are measured apart, compared (asymmetry), and averaged into one mirrored pair.
-`--adjust` {marker: [x, y, z]} replaces measured markers after measuring (a person moved them).
+`--adjust` {marker: [x, y, z]} replaces measured markers after measuring (a person moved them); the
+proportion spine points follow an adjusted pelvis or neck_base (each by its share of both ends' moves).
 An adjusted side marker (a .L or .R name) leaves the symmetry gate: a person placed it and its
 mirror, so its measured difference is reported in asymmetry_accepted instead of gated.
 
@@ -72,7 +74,8 @@ is true and a note says why, and the markers are the slices' alone):
   fingers     when the slices give `fixed` and the AI found fingers (smart.fingers and smart.go
               passed): Go!'s hand_ref, thumb1-3_ref, <f>1_base_ref and <f>1-3_ref (.l, mirrored by
               the pipeline) replace those in arp_refs; the wrist and every finger joint landmark
-              follow (method "ai"), so contract_bones and hand_frames do too. A finger the AI did
+              follow (method "ai"), so contract_bones and hand_frames do too, and so does a
+              proportion elbow (0.42 / 0.75 of shoulder -> the new wrist). A finger the AI did
               not fit (the add-on's four-finger hand has no index) keeps the fixed shape.
               fingers {mode "ai", count, names, slices {mode, reason}}. An adjusted wrist or finger
               joint keeps the person's position.
@@ -512,8 +515,7 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes):
     arm = arm & (along > 0)
     tip_t = float(along[arm].max())
     out["hand_tip"], how["hand_tip"] = shoulder + tip_t * d, "measured"   # on the axis, as far as the arm goes
-    e_r, w_r = arm_ratios
-    out["elbow"], how["elbow"] = shoulder + e_r * tip_t * d, "proportion"
+    w_r = arm_ratios[1]
     stations = np.linspace(0.66, 0.84, 10)
     radius = []
     for f in stations:
@@ -524,10 +526,19 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes):
         out["wrist"], how["wrist"] = shoulder + w_r * tip_t * d, "proportion"
     else:
         out["wrist"], how["wrist"] = shoulder + stations[k] * tip_t * d, "measured"
+    out["elbow"], how["elbow"] = elbow_from_wrist(shoulder, out["wrist"], arm_ratios), "proportion"
     out["_arm_axis"] = d
     out["_edge"] = edge
     notes.append(f"{'L' if s > 0 else 'R'} arm: {len(track)} slices below the armpit at {c_top['h']:.3f} H")
     return out, how
+
+
+def elbow_from_wrist(shoulder, wrist, arm_ratios):
+    """The proportion elbow, elbow/wrist ratio of the way shoulder -> wrist (0.42 / 0.75): the upper arm keeps
+    its share of the arm without the hand wherever the wrist lands (a narrowing, the AI's), so the forearm
+    does not shrink. On a proportion wrist it is 0.42 of the way to hand_tip."""
+    shoulder = np.asarray(shoulder, dtype=float)
+    return shoulder + (arm_ratios[0] / arm_ratios[1]) * (np.asarray(wrist, dtype=float) - shoulder)
 
 
 def hand_frame(V, wrist, tip, s):
@@ -929,8 +940,9 @@ def smart_agreement(lm: dict, H: float, z0: float, smart: dict, tol: float) -> d
     return rows
 
 
-def _merge_fingers(V, m: dict, smart: dict, adjusted: set) -> tuple[dict, str | None]:
-    """Go!'s hand and finger references onto the landmarks; {ref: smart ref} taken, or a reason."""
+def _merge_fingers(V, m: dict, smart: dict, adjusted: set, arm_ratios=(0.42, 0.75)) -> tuple[dict, str | None]:
+    """Go!'s hand and finger references onto the landmarks; {ref: smart ref} taken, or a reason. A proportion
+    elbow follows the AI's wrist (elbow_from_wrist)."""
     refs, lm, how = smart["refs"], m["landmarks"], m["methods"]
     present = [f for f in ARP_FINGERS if all(f"{f}{j}_ref.l" in refs for j in (1, 2, 3))
                and (f == "thumb" or f"{f}1_base_ref.l" in refs)]
@@ -942,6 +954,9 @@ def _merge_fingers(V, m: dict, smart: dict, adjusted: set) -> tuple[dict, str | 
         lm["wrist.L"], lm["wrist.R"] = w.copy(), mirror(w)
         how["wrist.L"] = how["wrist.R"] = "ai"
         take["hand_ref.l"] = refs["hand_ref.l"]
+        if how.get("elbow.L") == "proportion" and not {"elbow.L", "elbow.R"} & adjusted:
+            e = elbow_from_wrist(lm["shoulder.L"], w, arm_ratios)
+            lm["elbow.L"], lm["elbow.R"] = e, mirror(e)
     for s, side in ((1, ".L"), (-1, ".R")):
         m["frames"][side] = hand_frame(V, lm["wrist" + side], lm["hand_tip" + side], s)
     for s, side in ((1, ".L"), (-1, ".R")):     # the fingers the AI does not give: the fixed shape again
@@ -989,7 +1004,7 @@ def merge_smart(V, m: dict, smart: dict, opts: dict, adjusted: set) -> tuple[dic
     elif g.get("smart.fingers") is not True or smart["count"] < 1:
         record["notes"].append("smart.fingers did not pass: the fixed hand stays")
     else:
-        got, why = _merge_fingers(V, m, smart, adjusted)
+        got, why = _merge_fingers(V, m, smart, adjusted, opts.get("arm_ratios") or (0.42, 0.75))
         if why:
             record["notes"].append(why + ": the fixed hand stays")
         else:
@@ -1009,10 +1024,23 @@ def merge_smart(V, m: dict, smart: dict, opts: dict, adjusted: set) -> tuple[dic
     return take, record
 
 
+def respine(lm: dict, how: dict, ends: dict, spine_bones: int) -> None:
+    """A proportion spine point follows an adjusted pelvis or neck_base: each moves by its share of both ends'
+    moves (spine i of n by (1 - i/n) of the pelvis's and i/n of neck_base's), so the spine stays between them
+    and root_ref keeps pointing up. An adjusted spine point stays where the person put it."""
+    n = spine_bones + 1
+    dp, dn = lm["pelvis"] - ends["pelvis"], lm["neck_base"] - ends["neck_base"]
+    for i in range(1, n):
+        k = f"spine{i}"
+        if how.get(k) == "proportion":
+            lm[k] = lm[k] + dp * (1 - i / n) + dn * (i / n)
+
+
 def build_report(V, F, opts) -> dict:
     m = measure(V, F, opts)
     lm, H, z0 = m["landmarks"], m["height"], m["ground_z"]
     smart = opts.get("smart")
+    ends = {k: lm[k].copy() for k in ("pelvis", "neck_base")}
     for name, xyz in (opts.get("adjust") or {}).items():
         if name not in lm:
             raise Refused(f"--adjust names {name!r}, which is not a marker")
@@ -1023,6 +1051,7 @@ def build_report(V, F, opts) -> dict:
             if twin not in (opts.get("adjust") or {}):
                 lm[twin] = mirror(lm[name])
                 m["methods"][twin] = "adjusted"
+    respine(lm, m["methods"], ends, opts["spine_bones"])
     taken, record = ({}, None) if smart is None else \
         merge_smart(V, m, smart, opts, {n for n in (opts.get("adjust") or {})})
     upper = lm["elbow.L"] - lm["shoulder.L"]
@@ -1301,6 +1330,11 @@ def selftest_smart(ok, v, f, opts, rep) -> None:
     ok("smart: finger landmarks and the wrist follow, .R mirrored, method ai",
        lm1["index0.L"] == ref["head"] and lm1["index0.R"] == [-ref["head"][0], ref["head"][1], ref["head"][2]]
        and r1["methods"]["wrist.L"] == "ai" and lm1["wrist.L"] == doc["refs"]["hand_ref.l"]["head"])
+    sh1, wr1 = np.array(lm1["shoulder.L"]), np.array(lm1["wrist.L"])
+    ok("smart: the proportion elbow follows the AI wrist (0.42 / 0.75 of shoulder -> wrist), .R mirrored",
+       np.allclose(lm1["elbow.L"], sh1 + 0.56 * (wr1 - sh1), atol=1e-4) and r1["methods"]["elbow.L"] == "proportion"
+       and np.allclose(lm1["elbow.R"], [-lm1["elbow.L"][0], lm1["elbow.L"][1], lm1["elbow.L"][2]], atol=1e-6)
+       and not np.allclose(lm1["elbow.L"], rep["landmarks"]["elbow.L"], atol=1e-4))
     spec = {b["name"]: b for b in r1["contract_bones"]["bones"]}
     ok("smart: contract Index1.L on Go!'s index", spec["Index1.L"]["head"] == ref["head"])
     ok("smart: facial refs carried, both sides as Go! put them, ear too, facial true",
@@ -1514,6 +1548,19 @@ def selftest_host() -> tuple[int, list, int]:
                                                                  if g["name"] == "markers.windows")["pass"])
     ok("no window gate: reported only", next(g for g in build_report(v, f, dict(opts, adjust=adj, no_window_gate=True))["gates"]
                                              if g["name"] == "markers.windows")["pass"])
+    # a pelvis moved up by a person: the proportion spine follows, root_ref still points up
+    base = build_report(v, f, opts)
+    pz = base["landmarks"]["pelvis"][2] + 0.1
+    rs = build_report(v, f, dict(opts, adjust={"pelvis": [base["landmarks"]["pelvis"][0], base["landmarks"]["pelvis"][1], pz]}))
+    zs = [rs["landmarks"][k][2] for k in ("pelvis", "spine1", "spine2", "spine3", "neck_base")]
+    root = rs["arp_refs"]["root_ref.x"]
+    ok("adjust pelvis: the proportion spine follows (evenly between pelvis and neck_base), root_ref points up",
+       all(a < b for a, b in zip(zs, zs[1:])) and abs((zs[2] - zs[0]) - (zs[4] - zs[2])) < 1e-6
+       and root["tail"][2] > root["head"][2] and rs["methods"]["spine1"] == "proportion"
+       and rs["landmarks"]["neck_base"] == base["landmarks"]["neck_base"])
+    keep = build_report(v, f, dict(opts, adjust={"pelvis": rs["landmarks"]["pelvis"], "spine2": base["landmarks"]["spine2"]}))
+    ok("adjust pelvis and spine2: spine2 stays where the person put it",
+       keep["landmarks"]["spine2"] == base["landmarks"]["spine2"] and keep["methods"]["spine2"] == "adjusted")
     # an asymmetric body fails the symmetry gate: move the left leg out
     vs, fs = M.body()
     sel = (vs[:, 0] > 0.04) & (vs[:, 2] < 0.85)

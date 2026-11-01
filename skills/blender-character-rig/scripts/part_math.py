@@ -1345,11 +1345,14 @@ def hair_target(parts, tris):
 
 
 def split_hair(V, F, rgb, hair_rgb, skin_rgb, chin_y, delta=0.03, centre_frac=0.4, smooth=3,
-               island_frac=0.005):
+               island_frac=0.005, face_top=0.45, face_yaw=35.0):
     """Split the hair off a registered, painted head (welded V, F; rgb per face, 0..1). Hair = faces
     nearer (CIELAB) the hair colour than the skin colour, more than delta x part height outside the
-    scalp-radius map, above the chin; majority-smoothed over neighbours; islands under island_frac of
-    the hair area go back to the head. hair.components counts the pieces holding >= 2 % of the hair
+    scalp-radius map, above the chin and outside the face; majority-smoothed over neighbours; islands
+    under island_frac of the hair area go back to the head. The face is decided by geometry, never by
+    colour (lips and a mouth can sit nearer a dark-red or brown hair colour than the skin): in front
+    (within face_yaw degrees of +Z around the head's centre) and below the brow line, face_top of the
+    way from the chin to the top. hair.components counts the pieces holding >= 2 % of the hair
     (a few loose strands are hair; a split that shatters is not). Returns (hair mask, stats with gates)."""
     top = float(V[:, 1].max())
     H = top - float(V[:, 1].min())
@@ -1382,6 +1385,9 @@ def split_hair(V, F, rgb, hair_rgb, skin_rgb, chin_y, delta=0.03, centre_frac=0.
     dh = np.linalg.norm(lab - srgb_to_lab(hair_rgb), axis=1)
     ds = np.linalg.norm(lab - srgb_to_lab(skin_rgb), axis=1)
     haircol = dh < ds
+    yaw = np.degrees(np.abs(np.arctan2(d[:, 0], d[:, 2])))
+    face = (yaw < face_yaw) & (c[:, 1] < chin_y + face_top * (top - chin_y))
+    haircol = haircol & ~face
     hair = haircol & (r > rs + delta * H) & (c[:, 1] > chin_y)
     a, b = edge_face_pairs(F)
     deg = np.bincount(a, minlength=len(F)) + np.bincount(b, minlength=len(F))
@@ -1408,6 +1414,7 @@ def split_hair(V, F, rgb, hair_rgb, skin_rgb, chin_y, delta=0.03, centre_frac=0.
     stats = {"delta": delta, "centre": centre.round(5).tolist(), "hair_faces": int(hair.sum()),
              "hair_area_share": round(float(area[hair].sum() / area.sum()), 4),
              "hair_coloured_share": round(float(area[haircol].sum() / area.sum()), 4),
+             "face_share": round(float(area[face].sum() / area.sum()), 4),
              "islands_returned": round(returned, 4), "components_all": n_comp,
              "components": int((sizes >= 0.02 * sizes.sum()).sum()) if hair.any() else 0,
              "largest_share": round(float(sizes.max() / sizes.sum()), 4) if hair.any() else 0.0,
@@ -2197,6 +2204,26 @@ def selftest():
             ok("hair: every gate passes", all(gates.values()), st["gates"])
         else:
             ok("hair: hugging hair fails a gate", not all(gates.values()), st["gates"])
+    # lips: a dark-red mouth standing out of the face reads nearer the hair colour than the skin; the
+    # face (in front, below the brow line) stays the head's whatever its colour
+    Vl0, Fl0, kl = synthetic_figure(res=1, neck_bottom=0.30, spikes=0.15)
+    Vl0 = Vl0.copy()
+    mouth_v = (np.abs(Vl0[:, 0]) < 0.025) & (np.abs(Vl0[:, 1] - 0.38) < 0.008) & (Vl0[:, 2] > 0.05)
+    rho = np.linalg.norm(Vl0[:, [0, 2]], axis=1)
+    mouth_v &= rho > rho[mouth_v].max() - 0.0025           # the outer shell only (the inner wall is 0.005 in)
+    Vl0[mouth_v, 2] += 0.02
+    Vl, Fl, _ = weld(Vl0, Fl0)
+    cl = Vl[Fl].mean(1)
+    lips = (np.abs(cl[:, 0]) < 0.03) & (np.abs(cl[:, 1] - 0.38) < 0.012) & (cl[:, 2] > 0.05)
+    rgb = np.where(np.isin(kl, (1, 3))[:, None], hair_rgb, skin_rgb)
+    rgb[lips] = (0.55, 0.22, 0.2)
+    mask, st = split_hair(Vl, Fl, rgb, hair_rgb, skin_rgb, chin_y=0.355, delta=0.03)
+    no_face, _ = split_hair(Vl, Fl, rgb, hair_rgb, skin_rgb, chin_y=0.355, delta=0.03, face_yaw=0.0)
+    _, area = face_normals(Vl, Fl)
+    ok("hair: lips stay on the head (taken without the face rule)",
+       lips.any() and not (mask & lips).any() and (no_face & lips).any()
+       and float(area[mask & (kl == 3)].sum() / area[kl == 3].sum()) >= 0.95,
+       {"lip_faces": int(lips.sum()), "taken": int((mask & lips).sum()), "taken_no_rule": int((no_face & lips).sum())})
 
     # 5. plan on a synthetic anchor written as a GLB, masks from its own projection
     with tempfile.TemporaryDirectory() as tmp:

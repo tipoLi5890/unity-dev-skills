@@ -145,7 +145,10 @@ never on one an Animation window preview has posed. It logs:
    parent.
 4. **Write.** Root to tip, each bone turns along its simulated segment, read between the last two
    substeps by the time left over, so a frame with no substep (144 Hz, a 60 Hz frame that came in
-   short) still moves instead of sticking for a frame; twist stays the animation's.
+   short) still moves instead of sticking for a frame; twist stays the animation's. That segment is
+   up to a substep old while the bone and its colliders are where the animation is now: a child it
+   would put inside one of the chain's colliders is pushed out at this frame's collider pose (a
+   shorts hem pressed on its own swinging thigh otherwise shows a few millimetres inside it).
 
 **Cost:** per frame, substeps × Σ over chains of particles × (1 + colliders it tests), plus one
 `FromToRotation` per bone; no allocation, no `GetComponent` in the loop. The runner's full set (19
@@ -159,7 +162,8 @@ character and read the real cost with `unity-profiling`.
 
 `resources/Tests/SecondaryMotionTests.cs` (EditMode, namespace `UnityDev.SecondaryMotion.Tests`):
 gravity settles a chain below its parent at exact lengths, stiffness returns it, sphere and
-capsule colliders keep particles outside, a teleport resets instead of exploding, 30, 144 and
+capsule colliders keep particles outside, the written bones of a hem stay outside a thigh capsule
+swinging with their parent at 30, 60 and 144 Hz, a teleport resets instead of exploding, 30, 144 and
 jittered frame rates agree, the chain moves on every frame at 144 Hz and at an uneven 60 Hz, the
 angle clamp holds, unanimated bones return to rest, a zero-length bone makes no NaN, and the
 `secondary/1` reader takes an empty chain list and refuses broken files. Run them in a project that has the files:

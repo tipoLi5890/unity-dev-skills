@@ -53,7 +53,9 @@ geometry or texture: an attached contact shadow becomes a dark skirt, highlights
 glow becomes painted-on colour.
 
 - One object, whole in frame, about 80% of it; chunky, because thin floating parts (straps,
-  antennae) fuse or drop. A 1254 px square source is already enough; do not upscale.
+  antennae) fuse or drop. A 1254 px square source is already enough; do not upscale. Four views
+  cut from a turnaround sheet come out near 750 px a side and `turnaround_to_views.py` scales them
+  to `--size 1024`: expected, not an upscale to undo.
 - Soft even lighting; no cast shadow, ground plane or rim glow.
 - No special background is needed: mid-grey, the project's key colour and alpha convert alike.
   To mask by the image's own alpha instead of background removal, use a copy of the graph with

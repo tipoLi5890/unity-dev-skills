@@ -13,7 +13,8 @@ Pieces:
   render_context                   the painted texture with unpainted surface shown as a prior or marker
   align_painted                    register a painted view to the render silhouette
   gate measures                    painted_pixels, drift_share, lighten_share, background_deviation,
-                                   silhouette_edge_p90; despill for key-green bled into the figure
+                                   silhouette_edge_p90, off_palette (against concept_palette);
+                                   despill for key-green bled into the figure
   Accumulator                      weighted back-projection, coverage, prior fill and gutter
   next_best_view                   the orbit camera that sees the most unpainted seeable surface
 
@@ -742,6 +743,53 @@ def palette_has_key_hue(images, margin=25, share=0.02):
     return hits > share * max(1, tot)
 
 
+def chroma_lab(rgb: np.ndarray) -> np.ndarray:
+    """CIE Lab (D65) with a and b scaled up in dark colours: x clip(50 / max(L, 12), 1, 4).
+
+    Plain Lab puts a navy (L 7, b -12) within 9 of black; scaled, it is 50 away. Lighter colours
+    (L >= 50) are unscaled."""
+    c = np.asarray(rgb, np.float64) / 255.0
+    c = np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92)
+    X = c @ np.array([[0.4124, 0.2126, 0.0193], [0.3576, 0.7152, 0.1192], [0.1805, 0.0722, 0.9505]])
+    X = X / np.array([0.9505, 1.0, 1.089])
+    f = np.where(X > 0.008856, np.cbrt(X), 7.787 * X + 16 / 116)
+    L = 116 * f[..., 1:2] - 16
+    ab = np.stack([500 * (f[..., 0] - f[..., 1]), 200 * (f[..., 1] - f[..., 2])], -1)
+    return np.concatenate([L, ab * np.clip(50.0 / np.maximum(L, 12.0), 1.0, 4.0)], -1)
+
+
+def concept_palette(images, bg_tol=12, q=4.0, mass=0.97):
+    """The concept's colours: chroma_lab of every figure pixel (farther than bg_tol from the border's
+    median colour, eroded 2 px), binned in q-unit cells; the most frequent cells holding `mass` of the
+    pixels are kept (outlines, highlights and stray rare colours drop out). Returns a cKDTree of the
+    cell centres, or None when the images hold no figure."""
+    pts = []
+    for im in images:
+        a = np.asarray(im.convert("RGB")).astype(np.float64)
+        bg = np.median(np.concatenate([a[0], a[-1], a[:, 0], a[:, -1]]), 0)
+        fg = ndimage.binary_erosion(np.abs(a - bg).max(2) > bg_tol, iterations=2)
+        if fg.any():
+            pts.append(chroma_lab(a[fg]))
+    if not pts:
+        return None
+    cells, cnt = np.unique(np.round(np.concatenate(pts) / q).astype(np.int32), axis=0, return_counts=True)
+    order = np.argsort(-cnt)
+    keep = order[: int(np.searchsorted(np.cumsum(cnt[order]) / cnt.sum(), mass)) + 1]
+    return cKDTree(cells[keep] * q)
+
+
+def off_palette(img: np.ndarray, region: np.ndarray, palette, de=15.0, open_px=2):
+    """Share of region pixels whose chroma_lab colour is more than de from every concept colour,
+    after a 2 px opening (specks and anti-aliased outlines do not count). Returns (share, mask)."""
+    m = np.zeros(region.shape, bool)
+    if palette is None or not region.any():
+        return 0.0, m
+    d, _ = palette.query(chroma_lab(img[region]))
+    m[region] = d > de
+    m = ndimage.binary_opening(m, iterations=open_px) & region
+    return float(m.sum() / region.sum()), m
+
+
 def despill(img: np.ndarray, mask: np.ndarray, allow=8):
     """Pull key-green that the model bled into the figure back to neutral (only inside mask)."""
     a = img.astype(np.int16).copy()
@@ -1026,6 +1074,24 @@ def selftest():
     check("lighten_drift", abs(lighten_share(o_light, g_dark, region) - 0.5) < 1e-6
           and abs(drift_share(o_light, g_dark, region) - 0.5) < 1e-6
           and drift_share(g_dark, g_dark, region) == 0.0)
+
+    # off_palette: a navy patch on a glove whose concept is orange, skin and near-black is caught;
+    # the concept's own colours, shaded a little, are not; no figure in the concept turns it off
+    con = np.zeros((96, 96, 3), np.uint8)
+    con[16:48, 16:80] = (226, 114, 40)
+    con[48:64, 16:80] = (233, 177, 140)
+    con[64:80, 16:80] = (29, 28, 28)
+    pal = concept_palette([Image.fromarray(con)])
+    view = np.empty((H, W, 3), np.uint8)
+    view[:, :] = (215, 108, 38)
+    view[:16] = (24, 26, 27)
+    view[16:32, :32] = (22, 19, 42)         # navy, plain Lab 9 from black
+    s_nav, m_nav = off_palette(view, region, pal)
+    s_ok, _ = off_palette(np.where(m_nav[..., None], np.uint8(28), view), region, pal)
+    check("off_palette", pal is not None and abs(s_nav - 0.125) < 0.01 and s_ok == 0.0
+          and concept_palette([Image.new("RGB", (32, 32))]) is None
+          and off_palette(view, region, None)[0] == 0.0,
+          {"navy": round(s_nav, 3), "clean": round(s_ok, 3)})
 
     rmask = np.zeros((128, 128), bool)
     rmask[40:88, 40:88] = True
