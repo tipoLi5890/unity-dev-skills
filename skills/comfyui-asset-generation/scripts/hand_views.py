@@ -35,11 +35,11 @@ views, per hand:
 
 generate, per hand: the Pixal3D multi-view job at the part's preset with its face target set to
 --hand-ratio (0.2) x the anchor's triangles (the job decimates before it unwraps and bakes; a collapse in
-Blender afterwards tears the textured mesh open along its UV seams), then hand_parts.py gate (the
-registration and finger gates, blender-character-rig); on exit 2 the job runs again with every sampler
+Blender afterwards must weld first, or it tears the textured mesh open along its UV seams), then
+hand_parts.py gate (the registration and finger gates, blender-character-rig); on exit 2 the job runs again with every sampler
 seed moved (up to --hand-seeds jobs): a gate is never loosened. --paint then runs mesh-texture-paint's
-paint_loop.py on the passing GLB (--kind object) into paint/<hand>/, so the glove keeps the concept's
-colour (the multi-view bake darkens it).
+paint_loop.py on the passing GLB (--kind object, --prior '': the bake's own texture streaks and tints the
+context) into paint/<hand>/, so the glove keeps the concept's colour (the multi-view bake darkens it).
 
 Exit codes are part_views.py's: 0 done; 1 usage or refused plan; 2 a gate failed after every seed; 3 a
 server or job failure.
@@ -483,6 +483,8 @@ def paint_part(a, plan, part, base):
     cmd = [sys.executable, str(PAINT_LOOP), str(glb), "--concept", str(vd), "--sheet", str(vd / "sheet.png"),
            "--out", str(root / "paint" / name), "--kind", "object" if hand else "character",
            "--subject", f"{SIDE[part['region']]} hand and forearm" if hand else "character's head"]
+    if hand:     # the hand job's own bake streaks the forearm grey and tints the palm olive; shown as context the
+        cmd += ["--prior", ""]       # model continues them and redraws steep views: the nearest painted colour
     if a.server or base:
         cmd += ["--server", a.server or base]
     P.wait_idle(base, a.wait_idle)

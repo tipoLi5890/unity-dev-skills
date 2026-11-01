@@ -92,6 +92,12 @@ gating, for a known-odd body a person has looked at.
 30–60° by default (`--arm-angle`), the contract's A-pose. A T-pose never gets this far: no arm part
 hangs clear of the torso, and the call refuses (exit 1).
 
+**Segments.** `markers.limb_ratio`: per side, shoulder → elbow over elbow → wrist and hip → knee over
+knee → ankle, each inside 0.5–2.0. One segment twice the other is a joint off its place (an elbow
+moved toward the wrist), not a style. `markers.finger_lengths`: the shortest
+finger phalanx, joint to joint, ≥ 0.01 × wrist → hand_tip; a chain collapsed onto its base bends
+nothing. Both read adjusted and AI markers too.
+
 **Bend hints.** Auto-Rig Pro reads which way a knee or elbow bends from its reference chain, and a
 leg that is straight in the mesh gives it nothing to read. In `arp_refs` and `contract_bones` the
 knee sits at least 1 % of the leg's length forward (−Y) of the hip–ankle line and the elbow 2 % of

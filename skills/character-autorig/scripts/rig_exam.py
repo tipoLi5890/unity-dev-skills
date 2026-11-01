@@ -26,13 +26,13 @@ current deform_gate.py (EXAM/refs/NAME/accepted.deform.json).
 
 faults, on a copy of the base rig (the markers file moved with arp_markers.py --adjust, then arp, contract, deform
 without the repair ladder; or the base FBX's weights edited by rig_exam_blender.py, then deform_gate.py):
-    elbow_shift     both elbow markers 0.05 H toward the wrist          expected: deform.volume_loss_max
+    elbow_shift     both elbow markers 0.05 H toward the wrist          expected: markers.limb_ratio, deform.volume_loss_max
     knee_swap       knee.L and knee.R markers swapped                   expected: contract sides, or any arp/deform gate
-    finger_collapse index1-3 markers onto index0, both hands            expected: arp.refs_placed or contract gates
-    leg_smear       half the left leg's weight on the right leg's bones expected: a deform gate
+    finger_collapse index1-3 markers onto index0, both hands            expected: markers.finger_lengths, arp/contract
+    leg_smear       half the left leg's weight on the right leg's bones expected: deform.cross_side_weight
     elbow_blend     50/50 upper/lower arm weight around each elbow      expected: deform.volume_loss_max
     knee_blend      50/50 thigh/shin weight around each knee            expected: deform.volume_loss_max
-    rigid           every vertex on its heaviest bone alone             expected: deform.self_intersection_p95
+    rigid           every vertex on its heaviest bone alone             expected: deform.hinge_blended, self_intersection
     none            the base FBX unchanged (the control)               expected: every gate passes
 A fault that no gate fails has slipped through: the report lists it.
 
@@ -85,10 +85,12 @@ RIG_JOINTS = {"UpperArm": "shoulder", "LowerArm": "elbow", "Hand": "wrist", "Upp
               "Little2": "little1", "Little3": "little2", "Thumb1": "thumb0", "Thumb2": "thumb1", "Thumb3": "thumb2"}
 MARKER_FAULTS = ("elbow_shift", "knee_swap", "finger_collapse")
 WEIGHT_FAULTS = ("leg_smear", "elbow_blend", "knee_blend", "rigid", "none")
-EXPECT = {"elbow_shift": ["deform.volume_loss_max"], "knee_swap": ["sides", "arp.*", "deform.*"],
-          "finger_collapse": ["arp.refs_placed", "axes", "parent_chain", "contract"],
-          "leg_smear": ["deform.*"], "elbow_blend": ["deform.volume_loss_max"],
-          "knee_blend": ["deform.volume_loss_max"], "rigid": ["deform.self_intersection_p95"], "none": []}
+EXPECT = {"elbow_shift": ["markers.limb_ratio", "deform.volume_loss_max"],
+          "knee_swap": ["sides", "arp.*", "deform.*"],
+          "finger_collapse": ["markers.finger_lengths", "arp.refs_placed", "axes", "parent_chain", "contract"],
+          "leg_smear": ["deform.cross_side_weight"], "elbow_blend": ["deform.volume_loss_max"],
+          "knee_blend": ["deform.volume_loss_max"],
+          "rigid": ["deform.hinge_blended", "deform.self_intersection_p95"], "none": []}
 VOLUME_FAULTS = ("elbow_blend", "knee_blend")
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 SHIFT_H = 0.05

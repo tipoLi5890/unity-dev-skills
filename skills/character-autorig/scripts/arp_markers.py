@@ -114,6 +114,11 @@ Gates (each failing one makes exit 2):
                       over the markers not adjusted (see --adjust).
   markers.arm_angle   the upper arm (shoulder -> elbow) below horizontal, inside --arm-angle
                       (30-60 degrees: the contract's A-pose).
+  markers.limb_ratio  per side, shoulder -> elbow over elbow -> wrist and hip -> knee over knee -> ankle
+                      inside 0.5-2.0: one segment twice the other is a joint off its place (an elbow
+                      moved toward the wrist), not a style. Adjusted markers are gated too.
+  markers.finger_lengths  the shortest finger phalanx (joint to joint, every finger with landmarks)
+                      >= 0.01 x wrist -> hand_tip: a chain collapsed onto its base bends nothing.
   markers.previews    (Blender, with --preview-dir) both pictures are on disk.
 
 Prints one JSON object. Exit codes: 0 every gate passed (or a selftest passed); 2 a gate failed
@@ -154,6 +159,8 @@ HAND = {
 HAND_REF = 0.37          # Auto-Rig Pro's hand reference bone, wrist toward the knuckles, x L
 WINDOWS = {"ankle": (0.02, 0.13), "knee": (0.22, 0.36), "hip": (0.42, 0.60),
            "shoulder": (0.72, 0.88), "neck": (0.78, 0.93)}
+LIMB_RATIO = (0.5, 2.0)    # upper over lower segment of each arm and leg: neither twice the other
+PHALANX_MIN = 0.01         # x wrist -> hand_tip: the shortest finger phalanx
 SIDED = ("shoulder", "elbow", "wrist", "hand_tip", "hip", "knee", "ankle", "ball", "toe_tip", "heel")
 
 
@@ -815,6 +822,25 @@ def contract_bones(m, spine_bones, samples, mitten=False):
     return bones
 
 
+def proportions(lm: dict) -> tuple[dict, float | None]:
+    """({arm.S: upper arm / forearm, leg.S: thigh / shin}, the shortest finger phalanx over wrist -> hand_tip, or
+    None without finger landmarks): a joint far off its place shows as one segment twice the other, a finger
+    chain collapsed to a point as a phalanx of nothing."""
+    def d(a, b):
+        return float(np.linalg.norm(np.subtract(lm[a], lm[b])))
+    ratios, shortest = {}, None
+    for s in ("L", "R"):
+        ratios[f"arm.{s}"] = round(d(f"shoulder.{s}", f"elbow.{s}") / max(d(f"elbow.{s}", f"wrist.{s}"), 1e-9), 3)
+        ratios[f"leg.{s}"] = round(d(f"hip.{s}", f"knee.{s}") / max(d(f"knee.{s}", f"ankle.{s}"), 1e-9), 3)
+        hand = max(d(f"wrist.{s}", f"hand_tip.{s}"), 1e-9)
+        for f in FINGERS:
+            joints = [f"{f.lower()}{i}.{s}" for i in range(4) if f"{f.lower()}{i}.{s}" in lm]
+            for a, b in zip(joints, joints[1:]):
+                r = d(a, b) / hand
+                shortest = r if shortest is None else min(shortest, r)
+    return ratios, (None if shortest is None else round(shortest, 4))
+
+
 def gate(name, value, limit, ok):
     return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
 
@@ -1036,6 +1062,10 @@ def build_report(V, F, opts) -> dict:
              gate("markers.symmetry", round(asym, 4), round(opts["symmetry_max"] * H, 4),
                   asym <= opts["symmetry_max"] * H),
              gate("markers.arm_angle", round(arm_angle, 2), [a_lo, a_hi], a_lo <= arm_angle <= a_hi)]
+    ratios, phalanx = proportions(lm)
+    gates += [gate("markers.limb_ratio", ratios, list(LIMB_RATIO),
+                   all(LIMB_RATIO[0] <= v <= LIMB_RATIO[1] for v in ratios.values())),
+              gate("markers.finger_lengths", phalanx, PHALANX_MIN, phalanx is None or phalanx >= PHALANX_MIN)]
 
     def r(p):
         return [round(float(x), 5) for x in p]
@@ -1446,6 +1476,20 @@ def selftest_host() -> tuple[int, list, int]:
     mit = build_report(v, f, dict(opts, mitten=True))["contract_bones"]["bones"]
     ok("--mitten: finger bones kept, not deforming", sum(1 for b in mit if b["name"][:-3] in FINGERS
                                                           and not b["deform"]) == 15)
+
+    def gate_of(r, name):
+        return next(g for g in r["gates"] if g["name"] == name)
+    ok("limb ratio and finger lengths pass on the tube body", gate_of(rep, "markers.limb_ratio")["pass"]
+       and gate_of(rep, "markers.finger_lengths")["pass"] and gate_of(rep, "markers.finger_lengths")["value"])
+    el, wr = np.array(lm["elbow.L"]), np.array(lm["wrist.L"])
+    shift = {"elbow.L": (el + (wr - el) / np.linalg.norm(wr - el) * 0.05 * H).tolist()}
+    ok("an elbow 0.05 H toward the wrist (adjusted, mirrored) fails markers.limb_ratio",
+       not gate_of(build_report(v, f, dict(opts, adjust=shift)), "markers.limb_ratio")["pass"])
+    i0, i1 = np.array(lm["index0.L"]), np.array(lm["index1.L"])
+    step = (i1 - i0) / np.linalg.norm(i1 - i0) * 0.0005
+    collapse = {f"index{i}.L": (i0 + step * i).tolist() for i in (1, 2, 3)}
+    ok("an index chain collapsed onto its base fails markers.finger_lengths",
+       not gate_of(build_report(v, f, dict(opts, adjust=collapse)), "markers.finger_lengths")["pass"])
     # failing inputs
     v2, f2 = M.body(fused_legs=True)
     try:

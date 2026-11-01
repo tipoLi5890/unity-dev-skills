@@ -8,7 +8,8 @@ atlas is exact up to the resize. Runs before the rig: the ship track rigs once, 
 
 usage (Blender, headless):
     blender -b --factory-startup -P ship_merge.py -- PARTS.blend|PARTS.glb --out DIR [--name NAME]
-            [--plan PLAN.parts.json] [--objects Body,Head,...] [--atlas 4096|2048] [--pad 8]
+            [--eyes <c>_eyes.glb] [--plan PLAN.parts.json] [--objects Body,Head,...] [--atlas 4096|2048]
+            [--pad 8]
             [--separate hair,eyes] [--max-tris N] [--budgets ART_DIRECTION.md --class character]
             [--min-density 0.5] [--no-render] [--report PATH]
     blender -b --factory-startup -P ship_merge.py -- --selftest
@@ -32,6 +33,14 @@ maps       base colour (sRGB); normal (flat where a part has none); ORM (R occlu
            target_tex_px (a calibrated row), else 4096.
 UVs        faces whose corners lie in two UV cells (a seam across 0/1) are refused (exit 1); a face
            wholly in another cell is moved back into 0..1.
+eyes       --eyes takes eye_fit.py fit's <c>_eyes.glb; PARTS is then <c>_parts.glb, the file fit edited
+           (its head has the painted eyes cut out: asset.extras.eye_fit; the .blend still has them).
+           A parts GLB fit edited without --eyes is refused (holes where the eyes were), as is --eyes
+           with a .blend. The eyeballs get tiles of the atlas like any part and stay their own objects
+           Eye.L / Eye.R (vertex group part.eyes, their centre/radius/axis extras kept), written to
+           DIR/<name>_ship_eyes.glb and not into <name>_ship.glb: `autorig.py all <name>_ship.glb
+           --eyes <name>_ship_eyes.glb --facial` binds each to its eye bone (eye_fit.py bind), where
+           they share the body's one material. Gate ship.eyes: both kept, extras on, the atlas material.
 merge      every part not named in --separate (by part or region: hair, eyes) joins one mesh with a
            vertex group part.<part> each; separated parts stay their own objects with the same
            material. By default the hair joins: character-autorig's secondary stage finds hair spikes
@@ -44,8 +53,8 @@ gates      ship.materials (1); ship.uv_in_tiles (every face's UVs inside its til
            target_tris x 1.25 only warns, and with neither nothing is checked (counts reported);
            ship.inspect_glb: comfyui-asset-generation inspect_glb.py on the GLB (--max-materials 1,
            --require base and normal when a part had one, the row and --max-tris passed on).
-outputs    DIR/<name>_ship.glb, <name>_ship.blend, atlas_basecolor.png, atlas_normal.png,
-           atlas_orm.png (when any), <name>.ship.gate.json, inspect_glb.json, and unless --no-render
+outputs    DIR/<name>_ship.glb, <name>_ship_eyes.glb (with --eyes), <name>_ship.blend, atlas_basecolor.png,
+           atlas_normal.png, atlas_orm.png (when any), <name>.ship.gate.json, inspect_glb.json, and unless --no-render
            merge.png (front, three-quarter, face close-up; the hands when there are hands; the atlas).
 
 Report: gate/1 (schemas/gate-1.json). Exit codes: 0 every gate passed (or --selftest passed); 2 a
@@ -92,6 +101,7 @@ def parser(prog="ship_merge.py"):
     p.add_argument("--out")
     p.add_argument("--name", help="default: the plan's character, else the file's stem")
     p.add_argument("--plan", help="parts/1: each object's part and budget_share")
+    p.add_argument("--eyes", help="eye_fit.py fit's <c>_eyes.glb: eyeballs in the atlas, kept as their own objects")
     p.add_argument("--objects", help="comma-separated object names (default: collection Parts)")
     p.add_argument("--atlas", type=int, choices=ATLAS_SIDES)
     p.add_argument("--pad", type=int, default=8)
@@ -369,6 +379,45 @@ def atlas_material(name, img_bc, img_nm, img_orm):
 
 
 # ----------------------------------------------------------------------------------- the merge
+EYE_KEYS = ("eye", "centre", "radius", "axis")
+
+
+def glb_asset_extras(path):
+    """asset.extras of a GLB's JSON chunk ({} when none or not a GLB)."""
+    import struct
+    with open(path, "rb") as handle:
+        head = handle.read(20)
+        if len(head) < 20 or head[:4] != b"glTF":
+            return {}
+        n = struct.unpack("<I", head[12:16])[0]
+        doc = json.loads(handle.read(n))
+    return (doc.get("asset") or {}).get("extras") or {}
+
+
+def load_eyes(path):
+    """Eye.L and Eye.R from eye_fit.py fit's GLB, transforms baked, extras (custom properties) kept."""
+    import bpy
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=path)
+    new = [o for o in bpy.data.objects if o not in before]
+    eyes = {}
+    for o in new:
+        side = o.get("eye") if o.type == 'MESH' else None
+        if side in ("L", "R"):
+            w = o.matrix_world.copy()
+            o.parent = None
+            o.data.transform(w)
+            o.matrix_world.identity()
+            o.name = o.data.name = f"Eye.{side}"
+            eyes[side] = o
+    for o in new:
+        if o not in eyes.values():
+            bpy.data.objects.remove(o, do_unlink=True)
+    if set(eyes) != {"L", "R"} or any(o.get("centre") is None or o.get("radius") is None for o in eyes.values()):
+        raise Refused(f"{path}: want Eye.L and Eye.R with eye_fit's extras (eye, centre, radius, axis)")
+    return [eyes["L"], eyes["R"]]
+
+
 def load_parts(path, names):
     """Mesh objects of the parts file, transforms baked: (objects, source note)."""
     import bpy
@@ -452,7 +501,7 @@ def match_parts(objs, plan):
 
 
 def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=None, pad=8, separate="",
-         max_tris=0, budgets=None, cls="character", min_density=0.5, render=True):
+         max_tris=0, budgets=None, cls="character", min_density=0.5, render=True, eyes=None):
     """Run the merge; returns (exit code, gate/1 report)."""
     import bpy
     np = _np()
@@ -485,18 +534,36 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
         raise Refused(f"--pad {pad} does not fit a {atlas // MIN_TILE_DIV} px tile")
     os.makedirs(out_dir, exist_ok=True)
 
+    is_glb = parts_path.lower().endswith((".glb", ".gltf"))
+    fitted = bool(glb_asset_extras(parts_path).get("eye_fit")) if parts_path.lower().endswith(".glb") else False
+    if eyes and not fitted:
+        raise Refused("--eyes takes <c>_parts.glb, the parts eye_fit.py fit edited (its head has the painted eyes "
+                      "cut out; " + ("this one has no asset.extras.eye_fit)" if is_glb
+                                     else "the .blend still has them)"))
+    if fitted and not eyes:
+        raise Refused(f"{os.path.basename(parts_path)}: eye_fit.py fit cut the painted eyes out of its head: pass "
+                      "--eyes <c>_eyes.glb, or the ship mesh has holes for eyes")
     objs = load_parts(parts_path, [s.strip() for s in objects.split(",") if s.strip()] if objects else None)
+    eye_objs = load_eyes(eyes) if eyes else []
+    import assemble_parts as ap
+    for o in eye_objs:
+        ap.triangulate(o)
+        if len({m.name for m in o.data.materials if m is not None}) > 1:
+            raise Refused(f"{o.name} has more than one material")
+    objs = objs + eye_objs
     who = match_parts(objs, plan)
-    unmatched = [o.name for o in objs if plan and who[o.name] is None]
+    unmatched = [o.name for o in objs if plan and who[o.name] is None and o not in eye_objs]   # eyes: never a plan part
     if unmatched:
         warnings.append(f"no plan part for {', '.join(unmatched)}: no budget share checked")
     sep = {norm_name(s) for s in separate.split(",") if s.strip()}
 
     def part_of(o):
         p = who[o.name]
-        return (p or {}).get("name") or norm_name(o.name)
+        return (p or {}).get("name") or ("eyes" if o in eye_objs else norm_name(o.name))
 
     def is_separate(o):
+        if o in eye_objs:
+            return True
         p = who[o.name] or {}
         keys = {norm_name(p.get("name", "")), norm_name(p.get("region", "")), norm_name(o.name),
                 norm_name(" ".join(tokens(o.name)[:1]))}
@@ -610,7 +677,7 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
     inside = float(np.concatenate(inside_all).mean()) if inside_all else 0.0
 
     joined = [info[n]["obj"] for n in info if not is_separate(info[n]["obj"])]
-    kept = [info[n]["obj"] for n in info if is_separate(info[n]["obj"])]
+    kept = [info[n]["obj"] for n in info if is_separate(info[n]["obj"]) and info[n]["obj"] not in eye_objs]
     kept_names = {n for n in info if is_separate(info[n]["obj"])}
     has_hands = any(t in ("hand", "hands") for n in info for t in tokens(n))
     for rec in info.values():
@@ -625,19 +692,35 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
     for o in kept:
         o.name = o.data.name = f"{label}_{norm_name(part_of(o))}"
     outs = [merged] + kept
-    for o in outs:
+    for o in outs + eye_objs:
         o.hide_render = False
     sys.path.insert(0, HERE)
     import assemble_parts as ap
     glb = os.path.join(out_dir, f"{label}_ship.glb")
     ap.export_glb(glb, outs)
+    eyes_glb = None
+    if eye_objs:            # their own GLB, extras on: autorig --eyes binds each to its eye bone
+        eyes_glb = os.path.join(out_dir, f"{label}_ship_eyes.glb")
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in eye_objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = eye_objs[0]
+        bpy.ops.export_scene.gltf(filepath=eyes_glb, export_format='GLB', use_selection=True, export_apply=True,
+                                  export_yup=True, export_extras=True)
+        bpy.ops.object.select_all(action='DESELECT')
     blend = os.path.join(out_dir, f"{label}_ship.blend")
     bpy.ops.wm.save_as_mainfile(filepath=blend)
 
     # ---- gates
     gates = []
-    mats_after = sorted({m.name for o in outs for m in o.data.materials if m is not None})
+    mats_after = sorted({m.name for o in outs + eye_objs for m in o.data.materials if m is not None})
     gates.append(gate("ship.materials", len(mats_after), "== 1", len(mats_after) == 1))
+    if eye_objs:
+        eg = glb_eyes(eyes_glb)
+        good = sorted(eg) == ["Eye.L", "Eye.R"] and all(
+            all(k in e["extras"] for k in EYE_KEYS) and e["materials"] == [mat.name] for e in eg.values())
+        gates.append(gate("ship.eyes", len(eg), f"Eye.L and Eye.R in {os.path.basename(eyes_glb)}, extras "
+                          f"{'/'.join(EYE_KEYS)}, material {mat.name} only", good, eyes=eg))
     gates.append(gate("ship.uv_in_tiles", r4(inside), "== 1.0 (every UV inside its part's tile)", inside >= 1.0))
     ratios = {n: (rec["density_after"] / rec["density_before"] if rec["density_before"] else None)
               for n, rec in info.items()}
@@ -706,8 +789,11 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
         "draw_calls_after": sum(len({m.name for m in o.data.materials if m}) for o in outs),
         "materials_after": mats_after,
         "objects_after": [o.name for o in outs],
+        "eyes_after": [o.name for o in eye_objs],
     }
     outputs = {"glb": glb, "blend": blend, "atlas_basecolor": os.path.join(out_dir, "atlas_basecolor.png")}
+    if eyes_glb:
+        outputs["eyes_glb"] = eyes_glb
     if img_nm is not None:
         outputs["atlas_normal"] = os.path.join(out_dir, "atlas_normal.png")
     if img_orm is not None:
@@ -715,7 +801,7 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
     if ins is not None:
         outputs["inspect_glb"] = ins_json
     if render:
-        outputs["merge"] = render_merge(outs, img_bc, out_dir, has_hands)
+        outputs["merge"] = render_merge(outs + eye_objs, img_bc, out_dir, has_hands)
     passed = all(g["pass"] for g in gates)
     report = {"schema": "gate/1", "tool": "ship_merge", "pass": passed, "ok": passed,
               "verdict": "green" if passed else "failed", "character": name, "parts_file": os.path.abspath(parts_path),
@@ -724,6 +810,22 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
     with open(os.path.join(out_dir, f"{label}.ship.gate.json"), "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=1, default=str)
     return (0 if passed else 2), report
+
+
+def glb_eyes(path):
+    """{node name: {extras, materials}} of the eye nodes in a GLB (read from its JSON chunk)."""
+    import struct
+    with open(path, "rb") as handle:
+        head = handle.read(20)
+        doc = json.loads(handle.read(struct.unpack("<I", head[12:16])[0]))
+    mats = doc.get("materials") or []
+    out = {}
+    for nd in doc.get("nodes") or []:
+        if "mesh" in nd and str(nd.get("name", "")).startswith("Eye."):
+            prims = doc["meshes"][nd["mesh"]]["primitives"]
+            out[nd["name"]] = {"extras": sorted((nd.get("extras") or {}).keys()),
+                               "materials": sorted({mats[p["material"]].get("name") for p in prims if "material" in p})}
+    return out
 
 
 def group_centres(outs, word):
@@ -827,6 +929,22 @@ def _quad_mesh(name, centre, size, img_side, colour, col, uv_box=(0.0, 0.0, 1.0,
     obj = bpy.data.objects.new(name, me)
     col.objects.link(obj)
     return obj
+
+
+def _glb_mark_eye_fit(path):
+    """Write asset.extras.eye_fit into a GLB's JSON chunk, as eye_fit.py fit does."""
+    import struct
+    with open(path, "rb") as handle:
+        data = handle.read()
+    n = struct.unpack("<I", data[12:16])[0]
+    doc = json.loads(data[20:20 + n])
+    doc.setdefault("asset", {}).setdefault("extras", {})["eye_fit"] = {"faces_removed": 0}
+    js = json.dumps(doc).encode()
+    js += b" " * (-len(js) % 4)
+    rest = data[20 + n:]
+    with open(path, "wb") as handle:
+        handle.write(data[:8] + struct.pack("<I", 12 + 8 + len(js) + len(rest)) + struct.pack("<I", len(js))
+                     + b"JSON" + js + rest)
 
 
 def contract_sample(script, case, doc):
@@ -962,6 +1080,41 @@ def selftest():
             ok("a face across a UV cell border is refused (exit 1)", False)
         except Refused as exc:
             ok("a face across a UV cell border is refused (exit 1)", "cross a UV cell border" in str(exc), str(exc))
+        # eyeballs: the parts GLB eye_fit edited plus its eyes GLB
+        bpy.ops.wm.open_mainfile(filepath=build("eyes"))
+        parts_glb = os.path.join(tmp, "testchar_parts.glb")
+        ap.export_glb(parts_glb, [o for o in bpy.data.objects if o.type == 'MESH'])
+        _glb_mark_eye_fit(parts_glb)
+        ap.clear_scene()
+        col = ap.collection("Eyes")
+        for side, x in (("L", 0.05), ("R", -0.05)):
+            o = _quad_mesh(f"Eye.{side}", (x, 1.35), 0.02, 32, (0.9, 0.9, 0.9), col)
+            o["eye"], o["centre"], o["radius"], o["axis"] = side, [x, 1.35, 0.0], 0.01, [0.0, 0.0, 1.0]
+            o.select_set(True)
+        eyes_glb = os.path.join(tmp, "testchar_eyes.glb")
+        bpy.ops.export_scene.gltf(filepath=eyes_glb, export_format='GLB', use_selection=True, export_yup=True,
+                                  export_extras=True)
+        code, rep = ship(parts_glb, os.path.join(tmp, "out5"), plan_path=plan_path, atlas=2048, pad=4, render=False,
+                         eyes=eyes_glb)
+        gv = {g["name"]: g for g in rep["gates"]}
+        eg = glb_eyes(rep["outputs"]["eyes_glb"]) if rep["outputs"].get("eyes_glb") else {}
+        mg = glb_eyes(rep["outputs"]["glb"])
+        ok("--eyes: exit 0, Eye.L and Eye.R kept with their extras and the atlas material in <name>_ship_eyes.glb, "
+           "none in <name>_ship.glb, every UV in its tile, one material",
+           code == 0 and gv.get("ship.eyes", {}).get("pass") and rep["eyes_after"] == ["Eye.L", "Eye.R"]
+           and rep["objects_after"] == ["testchar"] and not mg and gv["ship.uv_in_tiles"]["pass"]
+           and rep["materials_after"] == ["testchar_atlas"] and rep["parts"]["Eye.L"]["part"] == "eyes"
+           and any("Eye.L" in t["members"] for t in rep["tiles"]),
+           [eg, mg, [g["name"] for g in rep["gates"] if not g["pass"]]])
+        contract_sample("ship_merge", "eyes", rep)
+        for args, want in (((build("eyes2"),), "--eyes takes"), ((parts_glb,), "pass --eyes")):
+            try:
+                ship(args[0], os.path.join(tmp, "out6"), atlas=2048, pad=4, render=False,
+                     eyes=eyes_glb if want == "--eyes takes" else None)
+                ok(f"refused: {want}", False)
+            except Refused as exc:
+                ok(f"refused: --eyes with a .blend; a parts GLB eye_fit edited without --eyes ({want})",
+                   want in str(exc), str(exc))
     failed = [c["check"] for c in checks if not c["pass"]]
     return (1 if failed else 0), {"tool": "ship_merge", "selftest": "fail" if failed else "pass",
                                   "failed": failed, "checks": checks}
@@ -986,7 +1139,7 @@ def main(argv=None, prog="ship_merge.py"):
         else:
             code, report = ship(args.parts, args.out, args.name, args.plan, args.objects, args.atlas, args.pad,
                                 args.separate, args.max_tris, args.budgets, args.cls, args.min_density,
-                                not args.no_render)
+                                not args.no_render, args.eyes)
     except Refused as exc:
         code, report = 1, {"schema": "gate/1", "tool": "ship_merge", "pass": False, "ok": False,
                            "verdict": "failed", "gates": [], "refused": str(exc)}

@@ -21,10 +21,18 @@ The chain, one step per timer tick:
                AI files' info.dat version >= 1.20, the mesh present, no Auto-Rig Pro rig in the file.
   select       id.get_selected_objects (EXEC; INVOKE opens a dialog) -> the add-on's working body.
   body         arp.guess_markers -> root neck chin head_tip and shoulder elbow hand hand_tip thigh knee
-               foot (_loc = .L on +X, _loc_sym = .R).
+               foot (_loc = .L on +X, _loc_sym = .R). It runs --body-runs times (3): the guess moves by
+               millimetres from run to run (the hand marker is the wrist Go! builds on), so per marker
+               the guess nearest the markers' median is put back (body_runs: runs, spread in metres; a
+               later guess that fails keeps the good ones: failed_after, error).
   fingers      arp.guess_fingers with --fingers; 5 that fails is tried again with 4 (the add-on's
                four-finger hand is thumb, middle, ring, pinky: no index). A failure is a popup that
-               raises nothing: judged by thumb1_loc. Both failing turns fingers off for Go!.
+               raises nothing: judged by thumb1_loc. Both failing turns fingers off for Go!. The guess
+               varies from run to run, so it runs --finger-runs times (5) and per finger the run nearest
+               that finger's per-marker median is put back on the markers Go! reads (each finger stays
+               one guess); fingers.runs reports the runs, the run kept per finger and the spread (metres).
+               A later guess that fails and takes the markers is followed by one more (restore), else
+               that count fails.
   face         (--facial) id.facial_setup, arp.guess_facial, then --eyes: proxy puts a sphere behind
                each eye from the lid markers (manual eyeball mode), none turns eyes off, auto lets the
                add-on look for eyeball objects, objects imports real eyeballs (--eye-glb, blender-character-rig
@@ -63,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -109,6 +118,8 @@ def parser() -> UsageParser:
     p.add_argument("--eye-frame-glb", help="--eyes objects: the GLB the open file was prepped from (its frame)")
     p.add_argument("--body-samples", type=int, default=0, help="front pictures per body guess (0: the add-on's)")
     p.add_argument("--finger-samples", type=int, default=0, help="per finger guess (0: the add-on's)")
+    p.add_argument("--body-runs", type=int, default=3, help="body guesses; per marker the one nearest their median")
+    p.add_argument("--finger-runs", type=int, default=5, help="finger guesses; per finger the one nearest their median")
     p.add_argument("--timeout", type=float, default=TIMEOUT, help="seconds for the whole chain")
     p.add_argument("--probe", action="store_true", help="report add-on, operators and AI files; no AI run")
     p.add_argument("--selftest", action="store_true")
@@ -131,7 +142,8 @@ def eye_args_error(a) -> str | None:
 def options(a) -> dict:
     return {"fingers": a.fingers, "facial": a.facial, "eyes": a.eyes if a.facial else None,
             "shading": "MATERIAL", "body_samples": a.body_samples or None,
-            "finger_samples": a.finger_samples or None, "timeout_s": a.timeout}
+            "finger_samples": a.finger_samples or None, "body_runs": a.body_runs, "finger_runs": a.finger_runs,
+            "timeout_s": a.timeout}
 
 
 # --- the report: pure functions over what the Blender side collected ---------------------------------------------
@@ -174,6 +186,30 @@ def body_required() -> list:
     return list(CENTRE) + [f"{b}.{s}" for b in SIDED for s in ("L", "R")]
 
 
+def medoid_run(runs: list, group=lambda k: "") -> tuple:
+    """The finger guess to keep from several ({marker: xyz} each, the same markers), per group of markers
+    (a finger): the run nearest the group's per-marker median, so each finger stays one guess. Returns
+    ({group: run index}, spread: the worst marker's largest distance from its median, {group: [mean
+    distance per run]})."""
+    import statistics
+    keys = sorted(set.intersection(*[set(r) for r in runs])) if runs else []
+    if len(runs) < 2 or not keys:
+        return {group(k): 0 for k in keys}, 0.0, {}
+    med = {k: [statistics.median(r[k][i] for r in runs) for i in range(3)] for k in keys}
+    dist = {k: [math.dist(r[k], med[k]) for r in runs] for k in keys}
+    kept, mean = {}, {}
+    for g in sorted({group(k) for k in keys}):
+        ks = [k for k in keys if group(k) == g]
+        mean[g] = [sum(dist[k][i] for k in ks) / len(ks) for i in range(len(runs))]
+        kept[g] = min(range(len(runs)), key=lambda i: mean[g][i])
+    return kept, max(max(d) for d in dist.values()), mean
+
+
+def finger_of(marker: str) -> str:
+    """thumb1_loc, index3_loc_sym -> thumb, index (the finger a marker belongs to)."""
+    return next((f for f in FINGERS if marker.startswith(f)), marker)
+
+
 def finger_block(loc: dict, tries: list, requested: int | None) -> dict:
     marks = {}
     for k, v in loc.items():
@@ -182,7 +218,8 @@ def finger_block(loc: dict, tries: list, requested: int | None) -> dict:
             marks[n] = r5(v)
     names = [f for f in FINGERS if f"{f}1.L" in marks]
     ok = [t for t in tries if t.get("ok")]
-    return {"requested": requested, "count": len(names) if ok else 0, "fell_back": len(tries) > 1 and bool(ok),
+    counts = [t.get("count") for t in tries]
+    return {"requested": requested, "count": len(names) if ok else 0, "fell_back": len(set(counts)) > 1 and bool(ok),
             "names": names if ok else [], "tries": tries, "markers": dict(sorted(marks.items())) if ok else {}}
 
 
@@ -273,8 +310,10 @@ def assemble(state: dict, opts: dict) -> tuple[dict, int]:
            "arp": {"version": state.get("arp_version"), "ai_version": state.get("ai_version")},
            "blender": state.get("blender"), "options": opts, "steps": state.get("steps") or [],
            "body_markers": body_markers(state.get("body_loc") or {}),
-           "fingers": finger_block(state.get("finger_loc") or {}, state.get("finger_tries") or [],
-                                   opts.get("fingers")),
+           **({"body_runs": state["body_runs"]} if state.get("body_runs") else {}),
+           "fingers": {**finger_block(state.get("finger_loc") or {}, state.get("finger_tries") or [],
+                                      opts.get("fingers")), **({"runs": state["finger_runs"]}
+                                                               if state.get("finger_runs") else {})},
            "facial": {"enabled": bool(opts.get("facial")), "ok": fc.get("ok"), "cancelled": fc.get("cancelled"),
                       "features": fc.get("features"), "keypoints_found": fc.get("keypoints_found"),
                       "keypoints_total": fc.get("keypoints_total"), "eye_proxies": fc.get("eye_proxies"),
@@ -545,14 +584,34 @@ class Run:
         if self.a.body_samples:
             scn.arp_smart_AI_body_samples = self.a.body_samples
         stale = self.clear_stale()
-        end = self.watch()
-        res, err, dt = self.op("arp.guess_markers")
-        self.S["kp_files"] = end()
-        self.clear_stale()
-        self.S["body_loc"] = {k: v for k, v in self.locs().items()
-                              if (side_name(k) or "").split(".")[0] in CENTRE + SIDED}
+        is_body = lambda k: (side_name(k) or "").split(".")[0] in CENTRE + SIDED
+        runs, dt, failed = [], 0.0, None
+        for r in range(max(1, self.a.body_runs)):     # the guess varies run to run: per marker the medoid
+            end = self.watch()
+            res, err, t = self.op("arp.guess_markers")
+            kp = end()
+            self.clear_stale()
+            dt += t
+            if r == 0:
+                self.S["kp_files"] = kp
+            if err:
+                failed = err
+                break
+            runs.append({k: v for k, v in self.locs().items() if is_body(k)})
+        if runs:                 # a later guess that failed: the good ones are kept, the failure reported
+            kept, spread, _ = medoid_run(runs, lambda k: k)
+            for name in set.intersection(*[set(x) for x in runs]):
+                o = bpy.data.objects.get(name)
+                if o is not None:
+                    o.matrix_world.translation = runs[kept[name]][name]
+            bpy.context.view_layer.update()
+            self.S["body_runs"] = {"runs": len(runs), "spread_m": round(spread, 5),
+                                   **({"failed_after": len(runs), "error": failed} if failed else {})}
+        self.S["body_loc"] = {k: v for k, v in self.locs().items() if is_body(k)}
         missing = [n for n in body_required() if n not in body_markers(self.S["body_loc"])]
-        return {"ok": not err and not missing, "error": err, "seconds": dt, "missing": missing,
+        err = failed if not runs or missing else None     # ok and error never both
+        return {"ok": bool(runs) and not missing, "error": err, "seconds": round(dt, 2), "missing": missing,
+                "runs": len(runs),
                 "samples": scn.arp_smart_AI_body_samples, "kp_files": len(self.S["kp_files"]),
                 "stale_removed": stale}
 
@@ -563,14 +622,34 @@ class Run:
             scn.arp_smart_AI_samples = self.a.finger_samples
         for n in ([5, 4] if self.a.fingers == 5 else [4]):
             scn.arp_fingers_to_detect = n
-            self.clear_stale()
-            res, err, dt = self.op("arp.guess_fingers")
-            self.clear_stale()
-            ok = bpy.data.objects.get("thumb1_loc") is not None and not err
-            self.S["finger_tries"].append({"count": n, "ok": ok, "error": err, "seconds": dt})
-            if ok:
+            runs = []
+            for _ in range(max(1, self.a.finger_runs)):     # the guess varies run to run: keep the medoid
+                self.clear_stale()
+                res, err, dt = self.op("arp.guess_fingers")
+                self.clear_stale()
+                ok = bpy.data.objects.get("thumb1_loc") is not None and not err
+                self.S["finger_tries"].append({"count": n, "ok": ok, "error": err, "seconds": dt})
+                if not ok:
+                    break
+                runs.append({k: v for k, v in self.locs().items() if k.startswith(FINGERS)})
+            if runs and any(bpy.data.objects.get(k) is None for k in runs[0]):
+                # a later guess failed and took the markers with it: one more guess puts them back, or none count
+                self.clear_stale()
+                res, err, dt = self.op("arp.guess_fingers")
+                self.clear_stale()
+                ok = bpy.data.objects.get("thumb1_loc") is not None and not err
+                self.S["finger_tries"].append({"count": n, "ok": ok, "error": err, "seconds": dt, "restore": True})
+                runs = runs + [{k: v for k, v in self.locs().items() if k.startswith(FINGERS)}] if ok else []
+            if runs:
+                kept, spread, _ = medoid_run(runs, finger_of)
+                for name in set.intersection(*[set(r) for r in runs]):   # each finger's kept guess back
+                    o = bpy.data.objects.get(name)                       # onto the markers Go! reads
+                    if o is not None:
+                        o.matrix_world.translation = runs[kept[finger_of(name)]][name]
+                bpy.context.view_layer.update()
                 self.S["finger_loc"] = {k: v for k, v in self.locs().items() if k.startswith(FINGERS)}
-                return {"ok": True, "count": n}
+                self.S["finger_runs"] = {"runs": len(runs), "kept": kept, "spread_m": round(spread, 5)}
+                return {"ok": True, "count": n, "runs": len(runs), "spread_m": round(spread, 5)}
         scn.arp_fingers_enable = False             # Go!'s invoke would run the finger guess again
         return {"ok": False, "count": 0, "error": "no finger markers (a popup in the add-on)"}
 
@@ -955,6 +1034,20 @@ def selftest() -> int:
     check("_loc -> .L, _loc_sym -> .R, the centre markers bare; 18 in all",
           bm["shoulder.L"][0] > 0 and bm["shoulder.R"][0] < 0 and "root" in bm and "root.L" not in bm
           and len(bm) == 18 and gate(rep, "smart.body_markers")["value"] == 11)
+    runs = [{"thumb1_loc": [0.5, 0.0, 0.9], "thumb2_loc": [0.5, 0.0, 0.88], "index1_loc": [0.6, 0.0, 0.9]},
+            {"thumb1_loc": [0.503, 0.0, 0.9], "thumb2_loc": [0.503, 0.0, 0.88], "index1_loc": [0.62, 0.0, 0.9]},
+            {"thumb1_loc": [0.52, 0.0, 0.88], "thumb2_loc": [0.52, 0.0, 0.86], "index1_loc": [0.601, 0.0, 0.9]}]
+    kept, spread, _ = medoid_run(runs, finger_of)
+    check("finger runs: per finger the run nearest its median (thumb from run 0 or 1, index from run 0 or 2, "
+          "never the outlier), spread the worst marker's distance; one run keeps itself",
+          kept["thumb"] in (0, 1) and kept["index"] in (0, 2) and abs(spread - math.dist([0.52, 0, 0.88], [0.503, 0, 0.9])) < 1e-9
+          and medoid_run(runs[:1], finger_of)[0] == {"thumb": 0, "index": 0} and medoid_run(runs[:1])[1] == 0.0,
+          kept=kept, spread=spread)
+    rr, _ = assemble(_fake_state(finger_tries=[{"count": 5, "ok": True}] * 5,
+                                 finger_runs={"runs": 5, "kept": {"thumb": 1}, "spread_m": 0.004}), opts())
+    check("five runs at five fingers are no fallback; fingers.runs reported",
+          rr["fingers"]["fell_back"] is False and rr["fingers"]["runs"]["kept"] == {"thumb": 1}
+          and parser().parse_args([]).finger_runs == 5 and parser().parse_args([]).body_runs == 3)
     fg = rep["fingers"]
     check("five fingers: names thumb..pinky, markers 1..4 per side, no fallback",
           fg["count"] == 5 and fg["names"] == list(FINGERS) and "pinky4.R" in fg["markers"] and not fg["fell_back"])

@@ -10,7 +10,8 @@ usage (Blender, headless):
     blender -b -P deform_gate.py -- --fbx runner_arp.fbx --map arp_map_report.json [options]
     blender -b --factory-startup -P deform_gate.py -- --selftest
 options: [--map REPORT_OR_ROLE_MAP.json] [--poses all|arms_up,deep_squat,...|all,jaw_open] [--steps 2]
-         [--volume-max 0.35] [--intersect-p95 0.08] [--out REPORT.json] [--render DIR]
+         [--volume-max 0.35] [--intersect-p95 0.08] [--cross-side-max 0.05] [--hinge-blend-min 0.03]
+         [--out REPORT.json] [--render DIR]
 
 Bones are named by the humanoid contract (`unity-rigged-character` -> humanoid-contract.md).
 `--map` reads either a contract_map.py report (its `retarget_map`, contract bone -> rig bone) or a
@@ -74,11 +75,26 @@ Gates (each failing one makes exit 2):
                                   LowerLeg in deep_squat) was measured by the volume gate in at
                                   least one pose; its value lists the ones never measured. A hinge
                                   the volume gate cannot read is a failure, not a silent pass.
+  deform.cross_side_weight        read off the bind at rest (no pose bends a smear onto the other leg):
+                                  on the skin farther than half the hip half-width from the Hips, the
+                                  share of each side's limb weight held by the other side's limb bones
+                                  (UpperArm..fingers, UpperLeg..Toes and every bone below them, a twist
+                                  twin included; Shoulder and cc_ bones excluded), the larger side's
+                                  share <= --cross-side-max (0.05); and no vertex there held >= 0.5 by
+                                  the other side's limb (`held`, 0: a shoe sole bound to the other foot
+                                  is a small share of the side, and it still tears when the legs part)
+  deform.hinge_blended            at each elbow and knee, the vertices within the volume patch's radius
+                                  that both the upper and the lower bone (each with the bones below it up
+                                  to the next contract bone) hold >= 0.1 of, as a share of the patch; the
+                                  least >= --hinge-blend-min (0.03). Zero is a hard seam: a rigid skin keeps
+                                  its volume and its self-intersection can stay under the limit on a slim body;
+                                  no elbow or knee to read (value null) fails
 
 Report: {tool, armature, mesh, height, triangles, outward_triangles, inward_triangles, poses: {name: {samples: [{t, new_intersections, moved,
 ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the pose turns), skipped?}}, volume_loss_max {value, pose,
 joint}, ball_joint_loss_max,
-self_intersection {p95, max, pose}, renders?, gates [{name, value, limit, pass}], schema, pass, ok}: a gate/1
+self_intersection {p95, max, pose}, skin {cross_side {band_m, L/R {share, vertices, held}}, hinge_blend {joint:
+{blended, vertices}}}, renders?, gates [{name, value, limit, pass}], schema, pass, ok}: a gate/1
 report (schemas/gate-1.json); `ok`, pass's old name, equals it for one release. A refused input
 reports pass false, no gates, `refused` and `error`.
 
@@ -112,6 +128,10 @@ GATED = ("LowerArm", "LowerLeg", "Spine", "Chest", "UpperChest", "Hand", "Foot")
 # hinge joints the volume gate must reach whenever a requested pose bends them
 HINGES = ("LowerArm", "LowerLeg")
 CENTRE = ("Root", "Hips", "Spine", "Chest", "UpperChest", "Neck", "Head")
+# a side's limb: these contract bones (fingers by name) and the bones below each; the Shoulder sits by the midline
+LIMBS = ("UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toes") + FINGERS
+CROSS_BAND = 0.5      # x the hip half-width either side of the Hips: the crotch, where both legs may share
+BLEND_SHARE = 0.1     # a hinge vertex is blended when both the upper and the lower bone hold this much
 # the next joint down each chain: a bone's span ends there
 CHAIN = {"Hips": "Spine", "Spine": "Chest", "Chest": "UpperChest", "UpperChest": "Neck", "Neck": "Head",
          "Shoulder": "UpperArm", "UpperArm": "LowerArm", "LowerArm": "Hand", "UpperLeg": "LowerLeg",
@@ -486,12 +506,72 @@ def joint_regions(rig: Rig, v_rest, tri, rotated) -> tuple[dict, dict]:
     return regions, skipped
 
 
+def owners(rig: Rig) -> dict:
+    """{bone: contract bone} for every bone of the rig: itself when mapped, else the first mapped bone up
+    its parent chain (a twist twin owns to its limb bone); a secondary-chain bone (cc_*) owns nothing."""
+    rev = {b: c for c, b in rig.name.items()}
+    out = {}
+    for b in rig.obj.data.bones:
+        p = b
+        while p is not None and p.name not in rev:
+            p = p.parent
+        out[b.name] = None if b.name.startswith("cc_") or p is None else rev[p.name]
+    return out
+
+
+def skin_matrix(mesh, rig: Rig) -> tuple[np.ndarray, list]:
+    """(weights (vertices, groups) normalised per vertex, group bone names): the deform bones' groups only,
+    as the Armature modifier reads them; a vertex with no weight keeps a zero row."""
+    bones = rig.obj.data.bones
+    names = [g.name for g in mesh.vertex_groups if g.name in bones and bones[g.name].use_deform]
+    col = {g.index: names.index(g.name) for g in mesh.vertex_groups if g.name in names}
+    W = np.zeros((len(mesh.data.vertices), len(names)))
+    for v in mesh.data.vertices:
+        for ge in v.groups:
+            if ge.group in col:
+                W[v.index, col[ge.group]] += ge.weight
+    s = W.sum(axis=1, keepdims=True)
+    return np.divide(W, s, out=np.zeros_like(W), where=s > 1e-9), names
+
+
+def skin_readings(rig: Rig, mesh, v_rest) -> dict:
+    """Two readings of the bind at rest, no pose needed (deform.cross_side_weight, deform.hinge_blended)."""
+    W, names = skin_matrix(mesh, rig)
+    own = owners(rig)
+    limb = {n: own.get(n) for n in names if own.get(n) and own[n].endswith((".L", ".R"))
+            and own[n].split(".")[0].rstrip("123") in LIMBS}
+    cols = {s: [j for j, n in enumerate(names) if (limb.get(n) or "").endswith("." + s)] for s in ("L", "R")}
+    mid = float(rig.head["Hips"][0])
+    lx = float(rig.head["UpperLeg.L"][0]) - mid
+    band = CROSS_BAND * abs(lx)
+    x = v_rest[:, 0] - mid
+    cross = {}
+    for s, o, on_side in (("L", "R", x * np.sign(lx) > band), ("R", "L", x * np.sign(lx) < -band)):
+        same, opp = W[on_side][:, cols[s]].sum(axis=1), W[on_side][:, cols[o]].sum(axis=1)
+        total = float((same + opp).sum())
+        cross[s] = {"share": round(float(opp.sum()) / total, 4) if total > 0 else 0.0,
+                    "vertices": int((opp > 0.05).sum()), "held": int((opp >= 0.5).sum())}
+    blend = {}
+    for c in ("LowerArm.L", "LowerArm.R", "LowerLeg.L", "LowerLeg.R"):
+        up = ("UpperArm." if c.startswith("LowerArm") else "UpperLeg.") + c[-1]
+        if not rig.has(c, up):
+            continue
+        cu = [j for j, n in enumerate(names) if own.get(n) == up]
+        cl = [j for j, n in enumerate(names) if own.get(n) == c]
+        near = np.linalg.norm(v_rest - rig.head[c], axis=1) <= 0.5 * min(rig.span(c), rig.span(up))
+        u, lo = W[near][:, cu].sum(axis=1), W[near][:, cl].sum(axis=1)
+        both = np.minimum(u, lo) >= BLEND_SHARE
+        blend[c] = {"blended": round(float(both.mean()), 4) if near.any() else 0.0, "vertices": int(near.sum())}
+    return {"cross_side": {"band_m": round(band, 4), **cross}, "hinge_blend": blend}
+
+
 def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = True) -> dict:
     import bpy
     import autorig_blender as A
     apply_pose(rig, [], 0.0)
     bpy.context.view_layer.update()
     v_rest, tri_all = A.mesh_arrays(mesh)
+    skin_read = skin_readings(rig, mesh, A.mesh_arrays(mesh, evaluated=False)[0])   # one row per vertex group row
     height = float(np.ptp(v_rest[:, 2]))
     ids = welded(v_rest)
     outer = outward(v_rest, tri_all, ids=ids) if outer_only else np.ones(len(tri_all), dtype=bool)
@@ -524,7 +604,7 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
     bpy.context.view_layer.update()
     return {"height": height, "triangles": int(len(tri_all)), "outward_triangles": int(len(tri)),
             "inward_triangles": int(len(tri_all) - len(tri)), "rest_intersecting": len(rest_hits),
-            "poses": out, "renders": renders}
+            "poses": out, "renders": renders, "skin": skin_read}
 
 
 def gates_of(result: dict, poses, args) -> list:
@@ -553,6 +633,13 @@ def gates_of(result: dict, poses, args) -> list:
         for s in data["samples"]:
             measured.update(s["volume_loss"])
     unmeasured = sorted(hinges - measured)
+    sk = result.get("skin") or {}
+    sides = [v for k, v in (sk.get("cross_side") or {}).items() if k in ("L", "R")]
+    cross = max((v["share"] for v in sides), default=0.0)
+    held = sum(v["held"] for v in sides)
+    blend = sk.get("hinge_blend") or {}
+    least = min(blend, key=lambda c: blend[c]["blended"]) if blend else None
+    low = round(blend[least]["blended"], 4) if least else None
     return [
         {"name": "deform.volume_loss_max", "value": round(worst[0], 4), "limit": args.volume_max,
          "pass": bool(worst[0] <= args.volume_max)},
@@ -560,6 +647,10 @@ def gates_of(result: dict, poses, args) -> list:
          "pass": bool(p95 <= args.intersect_p95)},
         {"name": "deform.poses", "value": skipped, "limit": [], "pass": not skipped},
         {"name": "deform.joints_measured", "value": unmeasured, "limit": [], "pass": not unmeasured},
+        {"name": "deform.cross_side_weight", "value": {"share": round(cross, 4), "held": held},
+         "limit": {"share": args.cross_side_max, "held": 0}, "pass": bool(cross <= args.cross_side_max and held == 0)},
+        {"name": "deform.hinge_blended", "value": low, "joint": least, "limit": args.hinge_blend_min,
+         "pass": bool(low is not None and low >= args.hinge_blend_min)},
     ]
 
 
@@ -582,6 +673,8 @@ def parser():
     p.add_argument("--steps", type=int, default=2)
     p.add_argument("--volume-max", type=float, default=0.35)
     p.add_argument("--intersect-p95", type=float, default=0.08)
+    p.add_argument("--cross-side-max", type=float, default=0.05)
+    p.add_argument("--hinge-blend-min", type=float, default=0.03)
     p.add_argument("--out")
     p.add_argument("--render")
     p.add_argument("--selftest", action="store_true")
@@ -685,7 +778,8 @@ def skin(mesh, rig_obj, spec, mode: str) -> None:
     """Weights for the selftest. good: nearest bone by distance / radius, shared with its parent and
     children (exp falloff), smoothed over edges; hard: nearest bone only; blend: as good, then every
     arm vertex near the elbow split half and half between the upper arm and the forearm (the
-    over-wide blend that collapses an elbow)."""
+    over-wide blend that collapses an elbow); leak: as good, then half of every left-leg weight moved to
+    the right leg's bones."""
     import autorig_blender as A
     v, tri = A.mesh_arrays(mesh, evaluated=False)
     bones = [b for b in spec if b.get("deform", True)]
@@ -722,6 +816,11 @@ def skin(mesh, rig_obj, spec, mode: str) -> None:
         keep = np.zeros_like(w, dtype=bool)
         np.put_along_axis(keep, order[:, :4], True, axis=1)
         w = np.where(keep, w, 0.0)
+    if mode == "leak":                  # half of the left leg's weight on the right leg's bones
+        for c in ("UpperLeg", "LowerLeg"):
+            a, b = index[f"{c}.L"], index[f"{c}.R"]
+            w[:, b] += 0.5 * w[:, a]
+            w[:, a] *= 0.5
     if mode == "blend":
         for s in ("L", "R"):
             lo = index[f"LowerArm.{s}"]
@@ -845,7 +944,7 @@ def selftest() -> tuple[int, dict]:
     body.parent = rig_obj
     args = parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name])
     results = {}
-    for mode in ("good", "hard", "blend"):
+    for mode in ("good", "hard", "blend", "leak"):
         skin(body, rig_obj, spec, mode)
         code, rep = run(args)
         results[mode] = (code, rep)
@@ -858,9 +957,17 @@ def selftest() -> tuple[int, dict]:
     contract_sample("deform_gate", "good", rep)
     ok("good skin: six poses measured", len(rep.get("poses", {})) == 6 and
        all(d["samples"] for d in rep.get("poses", {}).values()))
+    ok("good skin: no weight across the midline, every hinge blended", gate["deform.cross_side_weight"]["pass"]
+       and gate["deform.hinge_blended"]["pass"])
     code, rep = results["hard"]
     gate = {g["name"]: g for g in rep.get("gates", [])}
     ok("hard skin: exit 2, self-intersection fails", code == 2 and not gate["deform.self_intersection_p95"]["pass"])
+    ok("hard skin: no hinge blended, deform.hinge_blended fails", not gate["deform.hinge_blended"]["pass"]
+       and gate["deform.hinge_blended"]["value"] == 0.0)
+    code, rep = results["leak"]
+    gate = {g["name"]: g for g in rep.get("gates", [])}
+    ok("half the left leg on the right leg's bones: exit 2, deform.cross_side_weight fails", code == 2 and
+       not gate["deform.cross_side_weight"]["pass"] and rep["skin"]["cross_side"]["L"]["share"] > 0.1)
     ok("hard skin: a failed gate/1 report", rep.get("pass") is False and rep.get("ok") is False)
     contract_sample("deform_gate", "hard", rep)
     code, rep = results["blend"]

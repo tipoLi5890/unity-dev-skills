@@ -107,12 +107,12 @@ the result with `deform_gate.py`.
 
 | Fault | The defect | Expected gate |
 |---|---|---|
-| `elbow_shift` | both elbow markers 0.05 H toward the wrist | `deform.volume_loss_max` |
+| `elbow_shift` | both elbow markers 0.05 H toward the wrist | `markers.limb_ratio` (or `deform.volume_loss_max`) |
 | `knee_swap` | the left and right knee markers swapped | the contract's `sides` |
-| `finger_collapse` | index 1–3 on top of index 0, both hands | `arp.refs_placed` or a contract gate |
-| `leg_smear` | half of the left leg's weight on the right leg's bones | a deform gate |
+| `finger_collapse` | index 1–3 on top of index 0, both hands | `markers.finger_lengths` |
+| `leg_smear` | half of the left leg's weight on the right leg's bones | `deform.cross_side_weight` |
 | `elbow_blend`, `knee_blend` | the joint's weight split 50/50 between its two bones within 0.6 of the shorter span | `deform.volume_loss_max` |
-| `rigid` | every vertex on its heaviest bone alone | `deform.self_intersection_p95` |
+| `rigid` | every vertex on its heaviest bone alone | `deform.hinge_blended` (or the self-intersection gate) |
 | `none` | the base FBX unchanged (the control) | none: a failure here is a false fail |
 
 The verdict is `caught` when the expected gate failed, `caught_by_other_gate` when another gate
@@ -120,14 +120,18 @@ failed, and `slipped` when no gate failed. A gate the base rig already failed do
 catching a fault (`base_failed`). For example, a reference whose markers fail the windows without the
 AI cannot catch a collapsed finger through those windows.
 
-**Defects the gates do not catch.** Look at the renders for these:
+**Defects that once slipped** and the gate that now reads each one without a pose: a whole limb
+weighted to the other side's bones (no pose bends the limb it pulls on; `deform.cross_side_weight`
+reads the bind at rest), a rigid skin on a slim body (it keeps its volume and its seam is diluted over
+the moved region; `deform.hinge_blended` finds no blended vertex at the hinges), a finger chain
+collapsed to a point (`markers.finger_lengths`) and an elbow marker 0.05 H toward the wrist (the loss
+can stay under the limit on a slim limb; `markers.limb_ratio` reads one segment over twice the other).
+A smaller marker slip than that is still the volume gate's and the renders'. The new limits sit
+between the good rigs (controls, accepted references, the cast's exports) and the faults with a
+margin both ways; rerun the faults and the controls before retuning one.
 
-- A whole limb weighted to the other side's bones. No pose bends the limb it pulls on, and a hip's
-  patch is too small to measure.
-- A rigid skin on a slim body. The joint turns rigidly, so it keeps its volume, and the seam is
-  diluted over the moved region.
-- A finger chain collapsed to a point. No gate checks a finger bone's length.
-- An elbow marker off the crease on a slim limb. The loss rises but can stay under the limit.
+**Defects the gates do not catch.** Look at the renders for this:
+
 - A mitten read as four fingers. The split is read from random surface samples, and a mitten's
   sample gaps can mimic four parts. The fist on such a hand is then gated as fingers.
 

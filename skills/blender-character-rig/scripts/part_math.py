@@ -1330,6 +1330,20 @@ def _median_filter_wrap(a, sy=3, sx=5):
     return np.median(np.stack(stack), axis=0)
 
 
+def hair_target(parts, tris):
+    """The hair's triangle target from its budget_share: its share of the triangles of the parts built
+    so far at most its share of their shares, i.e. share / (sum of those shares - share) x the others'
+    triangles. parts: the plan's parts; tris: {region: triangles} of the parts present (hair included).
+    None when the plan gives the hair no share or a present part has none."""
+    by = {p.get("region"): p.get("budget_share") for p in parts}
+    s = by.get("hair")
+    if not s or "hair" not in tris or any(not by.get(r) for r in tris):
+        return None
+    others = sum(n for r, n in tris.items() if r != "hair")
+    rest = sum(by[r] for r in tris) - s
+    return int(s / rest * others) if rest > 0 else None
+
+
 def split_hair(V, F, rgb, hair_rgb, skin_rgb, chin_y, delta=0.03, centre_frac=0.4, smooth=3,
                island_frac=0.005):
     """Split the hair off a registered, painted head (welded V, F; rgb per face, 0..1). Hair = faces
@@ -1982,6 +1996,14 @@ def selftest():
             failed.append(name)
 
     rng = np.random.default_rng(7)
+    pl = [{"region": "body", "budget_share": 0.46}, {"region": "head", "budget_share": 0.22},
+          {"region": "hair", "budget_share": 0.12}, {"region": "hand.R", "budget_share": 0.08}]
+    ht = hair_target(pl, {"body": 56666, "head": 18839, "hair": 50298})
+    ok("hair target: 0.12 / (0.80 - 0.12) x the body and head (the hands not built yet)",
+       ht == int(0.12 / 0.68 * (56666 + 18839)), ht)
+    ok("hair target: none without a hair share or with a present part unshared",
+       hair_target(pl[:2], {"body": 1, "head": 1}) is None
+       and hair_target(pl[1:3], {"body": 1, "head": 1, "hair": 1}) is None)
     # 1. registration: a lumpy ellipsoid "head" with a neck stub below the region (the part's own
     #    neck, which ICP must trim), a known similarity, noise, and a crop-only start
     nu, nv = 400, 200

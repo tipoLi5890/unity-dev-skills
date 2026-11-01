@@ -181,13 +181,17 @@ python3 scripts/part_views.py generate ArtDirection/parts/courier/courier.parts.
   fingers (`hand.fingers`: ≥ 4 separate sections in ≥ 30 % of 40 slices across the hand). On a failure
   the job runs again with every sampler seed moved, up to `--hand-seeds` (3) jobs: never loosen a
   gate. `generated.attempts` keeps each job's gates.
-- **Paint.** `--paint` runs `mesh-texture-paint` `paint_loop.py --kind object` on each passing hand
-  into `paint/<hand>/`: the multi-view bake darkens an orange glove to brown; the paint loop takes the
-  colour back from the redrawn views. The palm carries the back's paint (the hidden view is a mirror).
+- **Paint.** `--paint` runs `mesh-texture-paint` `paint_loop.py --kind object --prior ''` on each
+  passing hand into `paint/<hand>/`: the multi-view bake darkens an orange glove to brown; the paint
+  loop takes the colour back from the redrawn views. The bake's own texture is not the context: it
+  streaks the forearm grey and tints the palm olive, the model continues both, and with it a steep
+  view comes back as another hand; the nearest painted colour reads cleanly. The palm carries the
+  back's paint (the hidden view is a mirror).
 - **Budget.** Each hand job keeps its preset's grid and texture but decimates to `--hand-ratio`
   (0.2) × the anchor's triangles (node 186), before it unwraps and bakes: a hand at Template's face
-  count outweighs the body, and a collapse in Blender afterwards tears the textured mesh open along its
-  UV seams. Template is enough: Showcase adds surface, not separation, at ten times the faces.
+  count outweighs the body, and a collapse in Blender afterwards needs the mesh welded first, or it
+  tears the textured mesh open along its UV seams (`blender-character-rig` → `part-assembly.md` §3).
+  Template is enough: Showcase adds surface, not separation, at ten times the faces.
 
 ## GPU order and cost
 

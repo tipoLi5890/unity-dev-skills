@@ -146,16 +146,32 @@ alone; look at that pose first.
 | intersections in `deep_squat` | thighs crossing the belly or calves into thighs | hip markers too low or too far in; a soft belly touching the thighs is expected, so never loosen the limit for one character |
 | `deform.joints_measured` names an elbow or knee | the patch around the joint has fewer than 8 outward triangles or does not wrap it: an opening, a decimated joint, flipped normals | look at the mesh there (`mesh_check.py`, a picture); fix the mesh, never drop the pose |
 | a whole limb moves with the wrong pose | weights on the wrong side's bone | rebind; check `markers.symmetry` and the sides gate of the contract |
+| `deform.cross_side_weight` fails | a limb's skin holds weight on the other side's limb bones | rebind; a repair never moves weight across the midline |
+| `deform.hinge_blended` fails | a hard seam: no vertex at that elbow or knee shares the two bones | rebind, or smooth the weights over the joint |
+
+**Two readings of the bind at rest** (no pose is needed, so a defect no pose bends is still seen; both
+are in the report's `skin`). A bone belongs to the contract bone it is mapped to, or else to the first
+mapped bone up its parent chain (a twist twin to its limb bone); `cc_` chain bones belong to none.
+
+- **`deform.cross_side_weight`**: on the skin farther than half the hip half-width from the Hips, the
+  share of each side's limb weight (UpperArm to the fingers, UpperLeg to Toes, and the bones below them;
+  not the Shoulder) held by the other side's limb bones; the larger side's share ≤ 0.05
+  (`--cross-side-max`), and no vertex there held at least half by the other side (`held` 0). A bind
+  leaks nothing past the crotch; a shoe sole bound to the other foot is a small share of the side
+  but still tears when the legs part, hence the count.
+- **`deform.hinge_blended`**: at each elbow and knee, within the volume patch's radius, the share of
+  vertices that the upper and the lower bone each hold at least 0.1 of; the least ≥ 0.03
+  (`--hinge-blend-min`). A rigid skin reads 0 there, though it keeps its volume and its seam can stay
+  under the self-intersection limit on a slim body.
 
 **What the gates miss.** `scripts/rig_exam.py faults` plants known defects in a good rig
-(`reference/rig-exam.md`). A 50/50 blend at an elbow or knee fails the volume gate, and so does a swapped knee
-(the contract's `sides`). These pass both gates: a whole limb weighted to the other side's bones (no pose bends
-the limb it pulls on), a rigid skin on a slim body, and a finger chain collapsed to a point. Read the renders
-for them. Run the exam's volume check before you change the patch or the limit.
+(`reference/rig-exam.md`) and lists which gate catches each. Run the exam's volume check before you
+change the patch or the limit, and the faults before you change either reading's limit.
 
-The selftest builds a metaball runner, a contract skeleton from its markers, and three skins:
+The selftest builds a metaball runner, a contract skeleton from its markers, and four skins:
 distance-based weights smoothed over the joints pass; nearest-bone-only weights fail the
-self-intersection gate; a 50/50 blend around the elbows fails the volume gate. A copy of the good
+self-intersection gate and `deform.hinge_blended`; a 50/50 blend around the elbows fails the volume
+gate; half the left leg's weight on the right leg fails `deform.cross_side_weight`. A copy of the good
 skin with an inward-facing twin 4 mm inside it, on the same weights, passes with every hinge
 measured and the single skin's p95 (counted whole, every hinge goes unmeasured and
 `deform.joints_measured` fails); the good skin split along a UV seam keeps no rest crossings and

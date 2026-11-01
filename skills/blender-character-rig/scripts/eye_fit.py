@@ -54,7 +54,8 @@ the face was built), else to Head (no eye bones: `degraded`, a warning, no failu
 The skin's weights on an eye bone move to its parent (only the ball turns with the gaze), and the eye
 bones with every bone pivoting at them (lids, the eye target) move onto the balls' centres (the face
 rig is mirrored, a generated head is not); then the FBX is exported again with blender-retarget
-brt_arp op export. An eye an earlier bind left is replaced.
+brt_arp op export. An eye an earlier bind left is replaced. Eyes whose material is a copy of one already on
+the rig (ship_merge.py --eyes: the body's atlas) take that one, the copy dropped (materials_shared).
 Gates: eyes.transform_residual (<= 1e-5 x height), eyes.bound (every vertex one group, weight 1),
 eyes.skin_off_eye_bone (no other mesh weighted to an eye bone), eyes.follows_bone (each eye bone turned
 --turn degrees left, right, up and down as Unity turns LeftEye/RightEye, its own constraints and the
@@ -946,6 +947,9 @@ def bind(out, eyes_glb, rig_glb, name=None, turn=25.0):
     eyes = _import_eyes(eyes_glb, mesh.users_collection[0])
     if set(eyes) != {"L", "R"}:
         raise Refused(f"{eyes_glb}: eyes {sorted(eyes)}, want L and R")
+    # ship eyes (ship_merge.py --eyes) carry the body's atlas material: the import's .001 copy is dropped
+    # for the one on the rig when its images match pixel for pixel, so the FBX holds one material
+    shared_mats = sorted({n for o in eyes.values() for n in ap.share_materials(o, bound)})
     names = {b.name for b in rig.data.bones}
     report_eyes, degraded, warnings = {}, False, []
     for side, o in eyes.items():
@@ -1121,6 +1125,7 @@ def bind(out, eyes_glb, rig_glb, name=None, turn=25.0):
            "name": name, "scale": s, "shift": [float(x) for x in t], "eyes": report_eyes,
            "pivot_offset": {k: r4(v) for k, v in pivot.items()},
            "pivot_offset_after": {k: r4(v) for k, v in pivot_after.items()}, "warnings": warnings,
+           "materials_shared": shared_mats,
            "export": {k: v for k, v in export.items() if k in ("export", "meshes", "refused", "reason")},
            "next": f"autorig.py deform {out}", "gates": gates}
     return (0 if ok else 2), rep

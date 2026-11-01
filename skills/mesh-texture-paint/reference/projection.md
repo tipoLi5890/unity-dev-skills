@@ -95,7 +95,9 @@ The main loop stops at the first of:
 
 - coverage ≥ `--target 0.97`;
 - `--max-views` views tried (a rejected view counts): **20** for a character, **16** for an object;
-- 3 rejected views in a row;
+- 3 rejected views in a row (after a rejected next-best view the next one keeps 35° away from it: the
+  model redraws a steep view of a thin part the same wrong way from a nearby angle; a rejected anchor
+  does not push the next-best views away);
 - 3 next-best views in a row skipped with nothing unpainted;
 - the next-best view adds less than `--min-gain 0.003` of the seeable surface, or none is left.
 

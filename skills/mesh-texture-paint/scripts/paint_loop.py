@@ -9,7 +9,8 @@ painted texels), which the model repaints to match the reference. The output is 
 the render silhouette, gated (silhouette IoU, outline distance, painted share, brightness drift,
 dark-to-light share, background deviation) and its painted pixels are projected into the UV
 texture. Anchor cameras go first, then the camera that sees the most unpainted surface
-(zoomed onto it unless the mesh is thin or, for objects, the view is steep), until coverage,
+(zoomed onto it unless the mesh is thin or, for objects, the view is steep; never within 35
+degrees of a next-best camera whose paint was rejected), until coverage,
 the view budget, three rejections in a row or three next-best views in a row with nothing
 unpainted stop the loop; optional detail passes follow.
 Up to --tries seeds per camera, the reference alternating between the sheet and the nearest
@@ -278,7 +279,9 @@ def main(argv=None) -> int:
             main_done, stop = True, "anchors_done"
         if not main_done and plan is None:
             nb = M.next_best_view(acc, radius, a.fill, used, pitch=(lo_p, hi_p), zoom=not a.no_zoom,
-                                  zoom_max_pitch=a.zoom_max_pitch, render_size=a.size)
+                                  zoom_max_pitch=a.zoom_max_pitch, render_size=a.size,
+                                  avoid=[(v["yaw"], v["pitch"]) for v in log
+                                         if v.get("status") == "rejected" and v.get("source") == "nbv"])
             if nb is None or nb["gain"] < a.min_gain:
                 main_done, stop = True, "no_view" if nb is None else "min_gain"
             else:

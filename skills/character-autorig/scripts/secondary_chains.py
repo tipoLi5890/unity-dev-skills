@@ -30,7 +30,9 @@ with the body height H; any of them replaced by a marker chain, reference/second
               reaching >= 0.04 H off it (buttocks and shoulder blades do not) whose centroid lies
               above UpperChest; one chain from the nape down its middle
   bag         the same test, a component centred between Hips - 0.08 H and UpperChest; one bone
-              from the top attachment (body side) to the bottom, rigid below its top quarter
+              from the top attachment (body side) to the bottom, rigid below its top quarter; its
+              share fades smoothly from 0.012 H outside the bulge to 0.04 H inside it, so a swing
+              stretches a band of skin, not the one edge between the bag and the jacket below
   hem         the jacket's bottom edge: the z where horizontal skin (|normal z| > 0.5, the hem's
               underside) peaks within Hips +- 0.06 H, outside the bag and hood; six sectors (FL, L,
               BL, FR, R, BR), each live when the skin 0.012 H above the edge stands >= 0.004 H
@@ -65,7 +67,10 @@ Each vertex belongs to one region (bag > hood > hair > hem > shorts_hem > strap)
 Colliders: capsules Hips, Spine, Chest, UpperChest, UpperLeg.L/R, LowerLeg.L/R and the Head sphere,
 radii from the skin around them; each kind tests its own group (a shorts hem: both thighs, its own
 included), and a collider is shrunk (or dropped from that chain, under half its radius) until no
-chain joint below the root starts inside it.
+chain joint below the root starts inside it. A hood rests on the back, inside the torso capsules, so
+those drop out of its group; it gets a Back sphere instead (radius 0.5 H on UpperChest, centre in front
+of the chain) whose surface runs just under its rest joints: it never starts inside it and stops the
+hood sinking into the back further than it rests.
 
 Gates (gate/1 report, each failing one makes exit 2):
   secondary.chains_placed          every --require kind got a chain (hem: >= 4); [] without --require
@@ -151,6 +156,8 @@ BULGE = 0.04          # hood, bag: deepest point off the opened back profile
 LIP = 0.004           # hem: the skin just above the edge stands out from the skin just below
 HEM_RING = 4          # hem: live sectors needed, or no hem at all
 SHORTS_RATIO, SHORTS_DROP = 1.35, 0.01   # shorts hem: radius above / below the drop, and the drop
+BAG_BORDER = (0.012, 0.04)   # bag: its share fades from this far outside its bulge to this far inside (x H)
+BACK_SPHERE = 0.5     # hood: the back sphere's radius (x H), flat across the hood's span
 SPIKE_SIDES = 0.12    # hair: share of a cluster's skin facing sideways (|normal . radial| < 0.5)
 HUMAN = {"Hips": "Hips", "Spine": "Spine", "Chest": "Chest", "UpperChest": "UpperChest", "Neck": "Neck",
          "Head": "Head"}
@@ -481,10 +488,24 @@ def detect_hood(body, core, info, taken):
                         ramp=0.35, parents=["Neck", "UpperChest"], sources=["UpperChest", "Neck", "Chest"])
 
 
+def soft_border(body, core, allowed, out, inner):
+    """A feather across the core's border: 0 at `out` outside it, 1 at `inner` inside, smoothstep between. A
+    fused shell has no seam to hide a swing in: the stretch spreads over the band instead of the one edge
+    between a full share and none (a bag's bottom against the jacket)."""
+    co = body.co
+    t = np.zeros(len(co))
+    rim = allowed & ~core
+    if rim.any():
+        t[rim] = (out - nearest_dist(co[core], co[rim])) / (out + inner)
+    if (~core).any():
+        t[core] = (out + nearest_dist(co[~core], co[core])) / (out + inner)
+    return smoothstep(t)
+
+
 def detect_bag(body, core, info, taken):
     co, H = body.co, body.H
     allowed = body.in_parts(TORSO) & ~taken
-    feather = grow(body, core, allowed, 0.012 * H)
+    feather = soft_border(body, core, allowed, BAG_BORDER[0] * H, BAG_BORDER[1] * H)
     region = feather > 0
     p = co[core]
     z_top, z_bot = p[:, 2].max(), p[:, 2].min()
@@ -1224,6 +1245,9 @@ def size_colliders(body, chains, heads):
                         c.setdefault("_orig", c["radius"])
                         report["shrunk"].append([g, round(c["radius"], 4), round(new, 4), ch["name"]])
                         c["radius"] = new
+    for ch in chains:
+        if ch["kind"] == "hood":
+            back_sphere(body, ch, cols, heads, report)
     inside = 0
     for ch in chains:
         pr = KINDS[ch["kind"]]["radius"] * body.H
@@ -1233,6 +1257,40 @@ def size_colliders(body, chains, heads):
                 _, d = seg_project(j[None, :], c["_A"], c["_B"])
                 inside += int(d[0] < c["radius"] + pr - 1e-6)
     return cols, report, inside
+
+
+def back_sphere(body, ch, cols, heads, report):
+    """A hood rests on the back, inside the torso capsules, which shrinking drops from its group. This gives it a
+    large sphere on the UpperChest bone, its centre in front, whose surface runs just under the chain's rest joints
+    below the root: through the first and the last of them less their particle radius + 2 mm (a middle one under
+    it moves the sphere forward). The hood cannot sink into the back further than it rests, and nothing starts
+    inside it."""
+    a = body.bone("UpperChest")
+    J = np.asarray(ch["joints"], float)[1:]
+    if a not in heads or not len(J):
+        return
+    pr, R = KINDS["hood"]["radius"] * body.H, BACK_SPHERE * body.H
+    q = J[:, 1:] - [pr + 0.002, 0.0]                     # (y, z) of each joint, its particle radius in front
+    a_, b_ = q[0], q[-1]
+    half = 0.5 * float(np.linalg.norm(b_ - a_))
+    if half > 1e-6:                                        # the surface through the first and the last
+        t = (b_ - a_) / (2 * half)
+        n = np.array([-t[1], t[0]])
+        n = n if n[0] < 0 else -n                          # toward the front (-Y)
+        c = 0.5 * (a_ + b_) + n * np.sqrt(max(R * R - half * half, 0.0))
+    else:
+        c = a_ + np.array([-R, 0.0])
+    for _ in range(20):                                    # a joint under the surface: move it forward
+        reach = float((np.linalg.norm(J[:, 1:] - c, axis=1) - (R + pr + 0.002)).min())
+        if reach >= 0:
+            break
+        c = c + np.array([reach - 1e-4, 0.0])
+    centre = np.array([J[:, 0].mean(), c[0], c[1]])
+    name = "Back" if "Back" not in cols else f"Back.{ch['name']}"
+    cols[name] = dict(name=name, shape="sphere", a=a, a_role=HUMAN.get("UpperChest"), center=r6(centre), radius=R,
+                      _A=centre, _B=centre)
+    ch["colliders"].append(name)
+    report.setdefault("added", []).append([name, ch["name"]])
 
 
 def secondary_json(name, chains, cols, heads, stats):
@@ -1641,7 +1699,7 @@ def run(a) -> tuple[dict, int]:
                           chk["outside_region"] == 0 and chk["weight_mismatch_max"] <= 0.01))
     cols_d, pen, inside = size_colliders(body, allc, heads)
     gates.append(gate("secondary.rest_penetration", inside, 0, inside == 0))
-    report["colliders"] = {"shrunk": pen["shrunk"], "dropped": pen["dropped"],
+    report["colliders"] = {"shrunk": pen["shrunk"], "dropped": pen["dropped"], "added": pen.get("added", []),
                            "radii": {k: round(v["radius"], 4) for k, v in cols_d.items()}}
     weighted = {}
     for tag, _, _, cs, _, cols_ in parts:
@@ -1974,6 +2032,25 @@ def selftest(a):
         refused = 1
     checks["hair apart: --require hair without --hair-chains fails chains_placed (exit 2); --hair-chains with "
            "--hair-mesh none is refused (exit 1)"] = code == 2 and placed["value"] == ["hair"] and refused == 1
+    # 7 the hood's back sphere: under every rest joint by the particle radius, its centre in front of them
+    from types import SimpleNamespace
+    fake = SimpleNamespace(H=1.75, bone=lambda role: "spine_03.x")
+    hood = {"name": "hood", "kind": "hood", "colliders": [],
+            "joints": [[0.0, 0.12, 1.47], [0.012, 0.13, 1.37], [0.011, 0.095, 1.256]]}
+    cols, rep7 = {}, {}
+    back_sphere(fake, hood, cols, {"spine_03.x": [0.0, 0.0, 1.27]}, rep7)
+    b, pr = cols.get("Back"), KINDS["hood"]["radius"] * 1.75
+    gap = [np.linalg.norm(np.subtract(j, b["center"])) - b["radius"] - pr for j in hood["joints"][1:]] if b else [-1]
+    checks["hood: a Back sphere on UpperChest, centre in front, every joint below the root outside it by < 1 cm"] = (
+        b is not None and hood["colliders"] == ["Back"] and b["center"][1] < 0.095 - 0.5 * b["radius"]
+        and all(0 <= g < 0.01 for g in gap))
+    # 8 the bag's border: a smooth fade from outside the bulge into it, not one edge from full share to none
+    line = np.c_[np.linspace(0, 0.2, 201), np.zeros(201), np.zeros(201)]
+    core = line[:, 0] >= 0.1
+    f = soft_border(SimpleNamespace(co=line), core, np.ones(201, bool), 0.02, 0.03)
+    checks["bag border: 0 well outside, 1 well inside, rising smoothly through the border"] = (
+        f[line[:, 0] < 0.079].max() == 0 and f[line[:, 0] > 0.131].min() == 1 and np.all(np.diff(f) >= 0)
+        and np.abs(np.diff(f)).max() < 0.1)
     ok = all(bool(v) for v in checks.values())
     return {"schema": "gate/1", "tool": TOOL, "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
             "gates": [{"name": f"selftest: {k}", "value": bool(v), "limit": True, "pass": bool(v)}

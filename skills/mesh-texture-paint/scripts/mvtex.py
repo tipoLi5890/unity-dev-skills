@@ -809,10 +809,12 @@ def speck_free(hit, x, y, size, min_px):
 
 def next_best_view(acc: "Accumulator", radius, fill, used, n=128, min_sep=20.0, pitch=(-60.0, 65.0),
                    size=256, zoom=True, min_frame=0.25, min_view_share=0.05, zoom_max_pitch=None,
-                   speck_area=SPECK_AREA, render_size=1024):
+                   speck_area=SPECK_AREA, render_size=1024, avoid=(), avoid_sep=35.0):
     """Pick the orbit direction that sees the most unpainted seeable surface (cos-weighted).
 
-    used: list of (yaw, pitch) already tried. Unpainted regions that would show as specks under
+    used: list of (yaw, pitch) already tried. avoid: cameras whose paint was rejected; no camera within
+    avoid_sep degrees of one is picked (the model redraws the same steep view the same wrong way, and
+    three rejections in a row end the loop). Unpainted regions that would show as specks under
     speck_area pixels in a render_size render do not count: the context render fills them with
     the nearest painted colour, so a camera aimed at them finds nothing to paint. Returns
     dict(yaw, pitch, gain, target, radius) or None. With zoom, the camera frames the unpainted
@@ -823,12 +825,14 @@ def next_best_view(acc: "Accumulator", radius, fill, used, n=128, min_sep=20.0, 
     if not need.any():
         return None
     U = [yaw_pitch_to_dir(*u) for u in used]
-    cosmin = math.cos(math.radians(min_sep))
+    A = [yaw_pitch_to_dir(*u) for u in avoid]
+    cosmin, cosavoid = math.cos(math.radians(min_sep)), math.cos(math.radians(avoid_sep))
     min_px = max(1, int(round(speck_area * (size / render_size) ** 2)))
     best = None
     for d in fibonacci_dirs(n):
         yw, pt = dir_to_yaw_pitch(d)
-        if not (pitch[0] <= pt <= pitch[1]) or any(float(d @ u) > cosmin for u in U):
+        if not (pitch[0] <= pt <= pitch[1]) or any(float(d @ u) > cosmin for u in U) \
+                or any(float(d @ u) > cosavoid for u in A):
             continue
         cam = Camera.orbit(acc.mesh.center, radius, yw, pt, size=size, fill=fill)
         vis, cos, x, y = acc.visibility(cam)
@@ -1070,6 +1074,12 @@ def selftest():
     nz = next_best_view(acc, 0.5, 0.9, [(0.0, 0.0)], n=64, size=128, zoom=False)
     ok = ok and nz is not None and nz["target"] is None and nz["radius"] == 0.5  # unzoomed: no target
     check("next_best_view", ok, {"view": None if nb is None else [nb["yaw"], nb["pitch"], nb["gain"]]})
+    if nb is not None:     # its paint rejected: the next pick keeps 35 degrees off it
+        na = next_best_view(acc, 0.5, 0.9, [(0.0, 0.0), (nb["yaw"], nb["pitch"])], n=64, size=128,
+                            avoid=[(nb["yaw"], nb["pitch"])])
+        sep = None if na is None else math.degrees(math.acos(np.clip(float(
+            yaw_pitch_to_dir(na["yaw"], na["pitch"]) @ yaw_pitch_to_dir(nb["yaw"], nb["pitch"])), -1, 1)))
+        check("next_best_view: avoid", na is not None and sep >= 35.0, {"sep_deg": None if sep is None else round(sep, 1)})
     sc = acc.screen_coverage(0.87, 0.9, size=128)
     check("screen_coverage", 0.05 < sc < 0.5, {"value": round(sc, 3)})  # one face of four side views
 

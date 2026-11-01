@@ -102,6 +102,8 @@ folder, set in memory only; an empty folder tries the fallback without touching 
 | `--facial`, `--no-facial` | on | the face step |
 | `--eyes` | proxy | `proxy` or `none`, as above; `auto` lets the add-on find separate eyeball objects (a mesh that has them; it fails on a single-mesh character); `objects` takes `--eye-glb` and `--eye-frame-glb` (autorig passes them with `--eyes`) |
 | `--body-samples`, `--finger-samples` | the add-on's | front pictures per body guess, hand pictures per finger guess |
+| `--body-runs` | 3 | body guesses: per marker the guess nearest the markers' median is put back. The hand marker is the wrist Go! builds on when the AI's wrist is taken, so its run-to-run drift reaches the rig |
+| `--finger-runs` | 5 | finger guesses per count: a finger joint moves by up to about a centimetre from run to run, so per finger the run nearest that finger's per-marker median is put back on the markers Go! reads (each finger one guess). 1 is the add-on's single guess |
 | `--timeout` | 600 s | the whole chain; on a timeout the result is written and Blender quits. The inference programs are CPU-bound, so a busy machine is slow |
 
 ## The result (`autorig-smart/1`)
@@ -111,7 +113,8 @@ World space, metres, +Z up, facing −Y, `.L` on +X: the frame of `autorig-marke
 | Key | Holds |
 |---|---|
 | `body_markers` | `root`, `neck`, `chin`, `head_tip` and the sided `shoulder`, `elbow`, `hand`, `hand_tip`, `thigh`, `knee`, `foot` `.L/.R` |
-| `fingers` | `requested`, `count`, `fell_back` (5 failed, 4 used), `names`, and `markers` per joint (`thumb1.L` … `pinky4.R`, 4 the tip) |
+| `body_runs` | `runs`, `spread_m` (the worst marker's distance from the median); `failed_after` and `error` when a later guess failed and the good ones were kept |
+| `fingers` | `requested`, `count`, `fell_back` (5 failed, 4 used), `names`, `markers` per joint (`thumb1.L` … `pinky4.R`, 4 the tip), and `runs`: how many guesses, the run `kept` per finger, and `spread_m` (the worst marker's distance from the median) |
 | `facial` | whether it ran, the features the add-on kept, keypoints found, the eye proxies |
 | `refs` | per reference bone: `head`, `tail`, `roll`, `group` (body, finger, facial, ear), `parent` |
 | `rig_matrix_world` | Go!'s rig object, so a reader can check it holds no rotation |

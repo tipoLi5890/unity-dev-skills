@@ -95,6 +95,19 @@ removing the spikes leaves no hole.
    failed gates kept, marked `accepted`: the hair is then in the rig mesh and the markers' height
    includes it again.
 
+**To its share.** The head job spends most of its triangles on the hair (spikes are geometry), often
+more than twice the face's. A smaller job would starve the face, so the split hair alone comes down
+to its `budget_share`, before the rig: its share of the parts built so far may not pass its share of
+their shares (`part_math.hair_target`: share / (sum of those shares − share) × the others' triangles;
+body 0.46, head 0.22, hair 0.12 → 0.176 × body and head), so with the hands added later it stays
+under its share of the whole. The hair is **welded first**, then Blender's collapse decimate runs:
+the glTF import splits vertices along every UV seam, and a collapse of the split mesh opens each seam
+into a crack, while on the welded mesh each corner keeps its UVs on its own side of the seam. Gates
+`hair.reduce.tears` (open edges of the welded hair not more than before: a count, so a collapse that
+closes old edges while it opens new ones can pass; provisional) and `hair.reduce.silhouette` (four
+views, before against after, ≥ 0.95, provisional); reported in `hair_budget`. `--keep-hair-tris`
+leaves it whole (a warning). Never reduce the merged or rigged mesh.
+
 The hair keeps the head's material and UVs. A head that was only upscaled, not redrawn, has flat hair
 hugging the scalp: the split shatters and the gates catch it. Light hair close to skin colour may not
 separate by colour; the geometric term carries it, and the gates decide.
@@ -355,12 +368,13 @@ The ship track's mesh from a character in parts: one mesh, one material, one atl
 **before** the rig (S6 rigs once, on it). `assemble_parts.py ship` runs the same script:
 
 ```bash
-blender -b --factory-startup -P assemble_parts.py -- ship <c>_parts.blend --out ship/ \
-    --plan <c>.parts.json [--atlas 4096|2048] [--separate hair,eyes] [--max-tris N]
+blender -b --factory-startup -P assemble_parts.py -- ship <c>_parts.glb --eyes <c>_eyes.glb --out ship/ \
+    --plan <c>.parts.json [--atlas 4096|2048] [--separate hair] [--max-tris N]
     [--budgets ART_DIRECTION.md --class character] [--min-density 0.5]
 ```
 
-- **Parts.** The mesh objects of collection `Parts` (or `--objects`), each with one material. The
+- **Parts.** The mesh objects of a `.blend`'s collection `Parts` or of a `.glb` (or `--objects`), each
+  with one material. The
   plan maps each object to its part by name or region (`Hand.R` → `hand.R`, `Eye.L` → `eyes`) and so
   to its `budget_share`.
 - **Tiles, no rebake.** One square tile per set of images (Head and Hair share one: the hair is split
@@ -386,10 +400,14 @@ blender -b --factory-startup -P assemble_parts.py -- ship <c>_parts.blend --out 
   `--separate hair,eyes` keeps those parts as their own objects with the same material, e.g. hair
   bound rigidly by `bind` or eyes bound to the eye bones; each is then one more draw call.
 - **Vertex groups** `part.<part>` stay on the merged mesh in the `.blend`, for a later bind by part.
-- **Eyeballs.** `eye_fit.py fit` edits the GLBs, not `<c>_parts.blend`, so a merge from the `.blend`
-  keeps the painted eyes and carries no balls: the ship track's character looks ahead. A ball merged
-  into the mesh would take the auto-rigger's weights, not its eye bone's; keep eyeballs for the
-  showcase rig (§6).
+- **Eyeballs.** `eye_fit.py fit` cuts the painted eyes out of the GLBs, not `<c>_parts.blend`: with
+  eyeballs, merge from `<c>_parts.glb` and pass `--eyes <c>_eyes.glb` (`--eyes` with a `.blend`, or a
+  parts GLB `fit` edited without `--eyes`, is refused: holes where the eyes were). The balls take
+  tiles of the atlas like any part but never join the mesh, where they would take the auto-rigger's
+  weights: `Eye.L` and `Eye.R`, their `centre`/`radius`/`axis` extras kept, go to
+  `<c>_ship_eyes.glb` (gate `ship.eyes`), and the rig binds each to its eye bone:
+  `autorig.py all OUT ship/<c>_ship.glb --eyes ship/<c>_ship_eyes.glb --facial` (`eye_fit.py bind`
+  drops the import's copy of the atlas material for the body's, so the FBX keeps one material).
 
 Gates: `ship.materials` = 1; `ship.uv_in_tiles` = 1.0; `ship.density` each part's tile side over
 its texture's side ≥ 0.5 (one halving; texels per unit before and after reported per part; a
@@ -400,10 +418,12 @@ only. `ship.inspect_glb`: `comfyui-asset-generation` `inspect_glb.py` on the GLB
 and normal slots, the row or `--max-tris`). Reduce a part over its share **before** the merge, on the
 part (`game-mesh.md`), never on the merged or rigged mesh.
 
-Outputs in `--out`: `<c>_ship.glb` (what `autorig.py all` takes), `<c>_ship.blend`,
+Outputs in `--out`: `<c>_ship.glb` (what `autorig.py all` takes), `<c>_ship_eyes.glb` (with `--eyes`),
+`<c>_ship.blend`,
 `atlas_basecolor.png`, `atlas_normal.png`, `atlas_orm.png`, `<c>.ship.gate.json`, `inspect_glb.json`
 and `merge.png` (front, three-quarter, the face, each hand, the atlas) for a person. In Unity the
-character is then one `SkinnedMeshRenderer`, one sub-mesh, one material with base and normal bound.
+body is then one `SkinnedMeshRenderer`, one sub-mesh, one material with base and normal bound; each
+eyeball is a small renderer of its own with that same material, turned by `LeftEye`/`RightEye`.
 
 ## Failure → fix
 
@@ -416,6 +436,9 @@ character is then one `SkinnedMeshRenderer`, one sub-mesh, one material with bas
 | `hair.components` many, `hair.coverage` low | The head was not redrawn (flat hair), or the colours are wrong: check `views.colours` against the sheet |
 | `part.cut.collar_kept` low | The hood is fused to the head above the cut: the cut would take it. Check `compare.png`; a lower band or `whole` |
 | `seam.colour` fails, cells refused | The head's neck is painted as another material (a collar, a scarf, a shadow in another hue): check the head's paint and `views.colours.skin`; repaint the head, never a larger limit |
+| `hair.reduce.tears` fails | The hair was reduced unwelded, or the head job's mesh has coincident but distinct surfaces: check the hair close up; `--keep-hair-tris` and reduce it by hand, never on the merged mesh |
+| `hair.reduce.silhouette` fails | The share is too small for the spikes: raise the hair's `budget_share` in the plan (the others' shrink), never the limit |
+| `ship` refused: eyes | A parts GLB `eye_fit.py fit` edited needs `--eyes <c>_eyes.glb`; `--eyes` needs that GLB, not the `.blend` (§8) |
 | `eye.found` fails | The paint has no light sclera (closed, stylised or tinted eyes) or the eyes are not mirrored: keep the painted eyes; never widen the colour rule to pass |
 | `eye.rim_gap` or `eye.poke` fails | The head's surface at the eye does not follow a ball (a flat or bulging paint surface): check `eyes.png`; repaint or regenerate the head, never a larger limit |
 | `eyes.poke_turned` fails | `pivot_offset_after` is not 0: an eye bone could not be moved (a renamed bone), or skin still rides a bone that turns with the eye; look at the turned poses. Never a larger limit |

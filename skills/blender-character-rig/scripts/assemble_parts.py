@@ -9,7 +9,7 @@ files the rig stage takes. The geometry is `part_math.py` (same folder, numpy on
 
 usage (Blender, headless):
     blender -b --factory-startup -P assemble_parts.py -- assemble PLAN.parts.json --out ASSEMBLY_DIR
-            [--seam overlap|bridge] [--accept-joined-hair] [--no-render]
+            [--seam overlap|bridge] [--accept-joined-hair] [--keep-hair-tris] [--no-render]
     blender -b -P assemble_parts.py -- bind OUT --hair ASSEMBLY_DIR/<c>_hair.glb --rig-glb ASSEMBLY_DIR/<c>_rig.glb
             [--name NAME] [--report PATH]   (no --factory-startup: the FBX export needs Auto-Rig Pro)
     blender -b --factory-startup -P assemble_parts.py -- hands PLAN.parts.json --assembly ASSEMBLY_DIR --out FINE_DIR
@@ -65,6 +65,11 @@ assemble, in order:
              seam.colour, over the sectors where the seam is in the open (nothing of the anchor outside
              it but the neck): delta E of the part just above the seam to the anchor just below <= 6,
              sharpest lightness step per 0.1 x radius from there up <= 12 (provisional); before kept.
+  hair tris  the split hair down to its budget_share (part_math hair_target: its share of the parts built so
+             far at most its share of their shares) unless --keep-hair-tris: welded, then Blender's collapse
+             decimate (a collapse of the unwelded import opens its UV seams into cracks); gates
+             hair.reduce.tears (open edges of the welded hair not more than before) and
+             hair.reduce.silhouette (four views, before against after, >= 0.95, provisional).
   coverage   part.coverage.rim: horizontal rays from the anchor's cut rim toward the neck axis hit the
              part >= 0.98 (the part fills the opening); part.coverage.sphere: 288 rays from a sphere
              (1.5 x head height) toward the head region's centre hit geometry >= 0.99.
@@ -111,7 +116,7 @@ if HERE not in sys.path:
 
 GATES = {"scale_ratio": 0.05, "rms": 0.03, "rotation_deg": 6.0, "hidden": 0.95, "rim": 0.98, "sphere": 0.99,
          "silhouette": 0.95, "head_extent": 0.05, "bridge_gap_mean": 0.10, "bridge_gap_max": 0.25,
-         "collar_kept": 0.99, "tuck": 0.25, "colour_delta": 6.0, "colour_edge": 12.0}
+         "collar_kept": 0.99, "tuck": 0.25, "colour_delta": 6.0, "colour_edge": 12.0, "hair_silhouette": 0.95}
 # overlap seam: the stump to 0.90 of the part's neck, the part's bottom to 0.92 of the stump, crossing once
 # over the lowest 35 % of the band, the stump first cut into 8 rows; an edge counts as covered only by a
 # surface 3 % of the radius outside it
@@ -137,6 +142,7 @@ def parser():
     a.add_argument("--out", required=True)
     a.add_argument("--seam", choices=("overlap", "bridge"))
     a.add_argument("--accept-joined-hair", action="store_true")
+    a.add_argument("--keep-hair-tris", action="store_true", help="no reduction of the hair to its budget share")
     a.add_argument("--no-render", action="store_true")
     b = sub.add_parser("bind")
     b.add_argument("autorig_out")
@@ -461,7 +467,54 @@ def _resolve(base, path):
     return path if os.path.isabs(path) else os.path.normpath(os.path.join(base, path))
 
 
-def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=True, render_px=768):
+def reduce_hair(hair, target):
+    """The hair down to `target` triangles before the rig: welded first (the import splits vertices
+    along UV seams, and a collapse of the split mesh opens them into cracks), then Blender's collapse
+    decimate, which keeps each corner's UVs on its own side of a seam; triangulated. Returns
+    {before, after, boundary_before, boundary_after} (open edges of the welded mesh: new ones are
+    tears)."""
+    import bpy
+    import bmesh
+
+    def welded_boundary():
+        bm = bmesh.new()
+        bm.from_mesh(hair.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-6)
+        n = sum(1 for e in bm.edges if e.is_boundary)
+        bm.free()
+        return n
+    before, b0 = len(hair.data.polygons), welded_boundary()
+    bm = bmesh.new()
+    bm.from_mesh(hair.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-6)
+    bm.to_mesh(hair.data)
+    bm.free()
+    mod = hair.modifiers.new("hair_budget", 'DECIMATE')
+    mod.decimate_type = 'COLLAPSE'
+    mod.ratio = min(1.0, target / max(1, len(hair.data.polygons)))
+    mod.use_collapse_triangulate = True
+    with bpy.context.temp_override(object=hair, active_object=hair, selected_objects=[hair]):
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    triangulate(hair)
+    return {"before": before, "after": len(hair.data.polygons), "boundary_before": b0,
+            "boundary_after": welded_boundary()}
+
+
+def hair_silhouette_iou(V0, F0, V1, F1, px=512):
+    """Worst IoU over the four views of the hair before and after its reduction (one frame each)."""
+    import part_math as pm
+    lo, hi = V0.min(0), V0.max(0)
+    upp = 1.15 * float((hi - lo).max()) / px
+    worst = 1.0
+    for view in VIEWS:
+        u, _ = pm.view_uv(V0, view)
+        frame = (upp, px / 2 - (u.min() + u.max()) / 2 / upp, px / 2 + (lo[1] + hi[1]) / 2 / upp)
+        worst = min(worst, pm.iou(pm.silhouette(V0, F0, view, px, frame), pm.silhouette(V1, F1, view, px, frame)))
+    return float(worst)
+
+
+def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=True, render_px=768,
+             keep_hair_tris=False):
     """Run the assembly; returns (exit code, gate/1 report)."""
     import bpy
     np = _np()
@@ -748,6 +801,26 @@ def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=Tru
                                                          float(neck["band"][1]), colours, rng)
     detail["seam_colour"]["seam_y"] = r4(seam_y)
     gates.append(g)
+
+    # ---- the hair to its budget share, before the rig: welded collapse, gated for tears and silhouette
+    if hair is not None:
+        tris = {"body": len(body.data.polygons), "head": len(head.data.polygons), "hair": len(hair.data.polygons)}
+        target = pm.hair_target(plan["parts"], tris)
+        red = {"target": target, "triangles": tris["hair"], "reduced": False}
+        if target is not None and tris["hair"] > target and not keep_hair_tris:
+            V0, F0, _ = arrays(hair)
+            red.update(reduce_hair(hair, target), reduced=True)
+            V1, F1, _ = arrays(hair)
+            red["silhouette_iou"] = r4(hair_silhouette_iou(V0, F0, V1, F1))
+            gates.append(gate("hair.reduce.tears", red["boundary_after"], f"<= {red['boundary_before']} (open edges "
+                              "of the welded hair before: a new one is a tear)",
+                              red["boundary_after"] <= red["boundary_before"]))
+            gates.append(gate("hair.reduce.silhouette", red["silhouette_iou"], f">= {GATES['hair_silhouette']} "
+                              "(the hair before and after, worst of four views, 512 px; provisional)",
+                              red["silhouette_iou"] >= GATES["hair_silhouette"]))
+        elif target is not None and tris["hair"] > target:
+            warnings.append(f"hair: {tris['hair']} triangles over its share's {target} (--keep-hair-tris)")
+        detail["hair_budget"] = red
 
     # ---- coverage
     Vb, Fb, _ = arrays(body)
@@ -1353,7 +1426,27 @@ def selftest():
         ok("good: the rig GLB's head texture carries the match (skin half changed, hair half not)",
            changed is not None and changed[0] > 0 and changed[1] == 0, changed)
         ok("good: the collar stays", rep["gates"] and next(g for g in rep["gates"] if g["name"] == "part.cut.collar_kept")["pass"])
+        hb = rep.get("hair_budget") or {}
+        ok("good: the hair's budget reported (a target from the plan's shares)", hb.get("target") is not None, hb)
         contract_sample("assemble_parts", "good", rep)
+
+        with open(plan, encoding="utf-8") as handle:      # a hair share far under its triangles: reduced
+            tight = json.load(handle)
+        for p in tight["parts"]:
+            if p["region"] == "hair":
+                p["budget_share"] = 0.02
+        tight_path = os.path.join(tmp, "tight.parts.json")
+        with open(tight_path, "w", encoding="utf-8") as handle:
+            json.dump(tight, handle, indent=1)
+        code, rep = assemble(tight_path, os.path.join(tmp, "tight_out"), render=False)
+        hb, gv = rep.get("hair_budget") or {}, {g["name"]: g for g in rep["gates"]}
+        ok("hair share 0.02: the hair reduced to its target (+2 %), no tear, its silhouette kept, exit 0",
+           code == 0 and hb.get("reduced") and hb["after"] <= 1.02 * hb["target"]
+           and gv["hair.reduce.tears"]["pass"] and gv["hair.reduce.silhouette"]["pass"],
+           [hb, [g["name"] for g in rep["gates"] if not g["pass"]]])
+        code, rep = assemble(tight_path, os.path.join(tmp, "keep_out"), render=False, keep_hair_tris=True)
+        ok("--keep-hair-tris: nothing reduced, a warning", not (rep.get("hair_budget") or {}).get("reduced")
+           and any("--keep-hair-tris" in w for w in rep["warnings"]))
 
         code, rep = assemble(plan, os.path.join(tmp, "bridge_out"), seam_mode="bridge", render=False)
         gv = {g["name"]: g for g in rep["gates"]}
@@ -1469,7 +1562,8 @@ def main():
         if args.selftest:
             code, report = selftest()
         elif args.cmd == "assemble":
-            code, report = assemble(args.plan, args.out, args.seam, args.accept_joined_hair, not args.no_render)
+            code, report = assemble(args.plan, args.out, args.seam, args.accept_joined_hair, not args.no_render,
+                                    keep_hair_tris=args.keep_hair_tris)
         elif args.cmd == "hands":
             import hand_parts
             try:

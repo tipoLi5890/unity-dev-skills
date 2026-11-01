@@ -45,7 +45,7 @@ radius as a fraction of the height H.
 
 | kind | Found as | Chains | Hangs from | stiffness / drag / gravity / max° | radius | Colliders |
 |---|---|---|---|---|---|---|
-| `hood` | a bulge ≥ 0.04 H off the opened back profile, centred above UpperChest | 1 × 2 bones | Neck or UpperChest | 0.35 / 0.35 / 0.6 / 40 | 0.023 H | Chest, UpperChest |
+| `hood` | a bulge ≥ 0.04 H off the opened back profile, centred above UpperChest | 1 × 2 bones | Neck or UpperChest | 0.35 / 0.35 / 0.6 / 40 | 0.023 H | Chest, UpperChest, Back |
 | `bag` | the same, centred between Hips − 0.08 H and UpperChest | 1 × 1 bone | Spine, Hips or Chest | 0.25 / 0.45 / 1.0 / 30 | 0.034 H | Hips, Spine, both thighs |
 | `hem` | horizontal skin within Hips ± 0.06 H with a lip: the skin 0.012 H above the edge ≥ 0.004 H further out than below, in ≥ 4 of six sectors | 4–6 × 1 | Hips or Spine | 0.55 / 0.40 / 0.3 / 25 | 0.011 H | both thighs, Hips |
 | `shorts_hem` | per leg, a drop of the thigh's skin radius by ≥ 1.35 × and ≥ 0.01 H | 3 per leg × 1 | UpperLeg | 0.65 / 0.40 / 0.2 / 20 | 0.009 H | both thighs, its own included |
@@ -59,14 +59,21 @@ vertex belongs to one region (bag, hood, hair, hem, shorts hem, strap in that or
 **Weights.** A chain's share ramps from 0 at its root to its maximum along it, feathered at the
 region border and blended between neighbours of a ring. It is taken from the chain's parent first,
 then from the region's other source bones in proportion; limb bones never give to a torso chain.
-Every vertex keeps at most 4 weights summing to 1. Outside the regions nothing changes.
+Every vertex keeps at most 4 weights summing to 1. Outside the regions nothing changes. The bag's
+share fades smoothly from 0.012 H outside its bulge to 0.04 H inside it: on a fused shell the bag's
+bottom meets the jacket at one edge, and a full share against none there stretches that edge
+several times over when the bag swings; the fade spreads it over a band.
 
 **Colliders.** Capsules between bone origins (Hips across the thighs, Spine, Chest, UpperChest,
 both thighs inset 0.1, both shins) and a Head sphere, radii from the skin around them. Each kind
 tests its group; a collider that holds a chain joint below the root at rest is shrunk until it
 does not, or dropped from that chain's list when that would take it under half its radius. A
 collider is shared, so a shorts hem's own thigh shrinking also tightens the bag's and the hem's
-test. A hood whose tip rests on the back can end with no collider: `colliders.dropped` says so.
+test. A hood's tip rests on the back, inside the torso capsules, so those drop from its list
+(`colliders.dropped`); it gets a `Back` sphere instead (`colliders.added`): radius 0.5 H on
+UpperChest, its centre in front of the chain, its surface just under the rest joints by the particle
+radius and 2 mm. It never starts in penetration, and the hood cannot sink into the back further than
+it rests.
 
 ## Manual chains — the markers file
 

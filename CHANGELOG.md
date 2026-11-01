@@ -2,6 +2,71 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.41.1
+
+A strengthening round. Four defects the rig exam planted used to pass every gate; each now has a
+gate that reads it without a pose. The hood no longer sinks into the back and the bag's lower
+edge no longer stretches at a lane change. The ship mesh gets its eyeballs back, the split hair
+comes down to its triangle share, and the smart stage keeps a steadier AI guess.
+
+- **`character-autorig` → `deform_gate.py`: two readings of the bind at rest.**
+  `deform.cross_side_weight`: away from the midline (half the hip half-width from the Hips), the
+  share of a side's limb weight held by the other side's limb bones ≤ 0.05 (`--cross-side-max`) and
+  no vertex held ≥ 0.5 by the other side (`held` 0); twist bones count with their limb, `cc_`
+  chains with none. `deform.hinge_blended`: at each elbow and knee, the share of nearby vertices
+  both bones hold ≥ 0.1 of, the least ≥ 0.03 (`--hinge-blend-min`); no hinge to read fails. The
+  report gains `skin`. The repair ladder never moves weight across the midline: a failed
+  cross-side reading stops the run for a rebind.
+- **`arp_markers.py`: `markers.limb_ratio`** (upper over lower segment of each arm and leg inside
+  0.5–2.0, set from anatomy) and **`markers.finger_lengths`** (the shortest phalanx ≥ 0.01 ×
+  wrist → hand tip), adjusted and AI markers included.
+- **The rig exam** expects the gate that catches each fault. On the standard body and the accepted
+  runner, all 14 planted faults are caught by their expected gate (before: `leg_smear`, `rigid`,
+  `finger_collapse` and `elbow_shift` slipped on the standard body, two of them on the runner too);
+  both controls pass; the nine bodies and the reference keep their outcomes and joint errors
+  (p50 0.0174 H, p95 0.0656 H). On the controls the new readings sit far from their limits (cross
+  side ≤ 0.0001 and 0 held, hinge blend ≥ 0.11, limb ratio 0.67–1.27 on the cast, phalanx ≥ 0.024).
+- **`secondary_chains.py`.** The hood loses the torso capsules it rests inside, so it gets a `Back`
+  sphere (radius 0.5 H on UpperChest, centre in front, its surface just under the rest joints;
+  `colliders.added`): in the Unity capture its sink into the back fell from 4.5–6.1 cm to
+  0.4–1.2 cm across 10–144 fps. The bag's share fades smoothly from 0.012 H outside its bulge to
+  0.04 H inside (it was a step): the worst edge stretch at the lane change fell from 9.17 to 2.43
+  (p99 4.08 → 1.76). The bag now swings visibly less: most of it carries 0.4–0.8 of its bone.
+- **`blender-character-rig` → `ship_merge.py --eyes`.** The ship mesh merges from `<c>_parts.glb`
+  (the file `eye_fit.py fit` edited) with `--eyes <c>_eyes.glb`: the balls take atlas tiles, stay
+  `Eye.L`/`Eye.R` with their extras, go to `<c>_ship_eyes.glb` (gate `ship.eyes`) and bind to the eye
+  bones with `autorig.py all … --eyes … --facial`; `--eyes` with a `.blend`, and a fitted parts GLB
+  without `--eyes`, are refused. `eye_fit.py bind` drops the import's copy of the atlas material,
+  so in Unity the body is one renderer, one sub-mesh, one material and each eye a renderer with that
+  same material. With the eye tiles in a 4096 atlas the hand tiles drop to 1024 (density still 0.5).
+- **`assemble_parts.py`: the hair to its share.** The split hair is welded, then collapse-decimated
+  to `part_math.hair_target` before the rig (share over the other built parts' shares × their
+  triangles, so it stays under its share once the hands join); gates `hair.reduce.tears` and
+  `hair.reduce.silhouette` (≥ 0.95), both provisional (the tear gate counts open edges);
+  `--keep-hair-tris` skips it. On the courier runner: 50,298 → 14,126 triangles, open edges
+  1,356 → 1,086, silhouette 0.98. A collapse only tears the UV seams of an unwelded import; the docs
+  that said it always tears are corrected.
+- **`arp_smart.py`: steadier guesses.** The body guess runs `--body-runs` (3) and the finger guess
+  `--finger-runs` (5) times; per marker (body) and per finger the run nearest the median is put
+  back. The worst finger disagreement between whole runs fell from 21.8 to 10.7 mm and the wrist's
+  from 6.7 to 3.0 mm, for about 24 s more. A later guess that fails keeps the good ones and is
+  reported; a finger guess that takes the markers with it is followed by one more (both guarded,
+  not yet seen in a run). In nine full runs the fist never failed: the occasional failure was the
+  left elbow's volume at 120° (0.35–0.43 first, then a repair failing self-intersection) where the
+  AI's wrist is taken, and it stays (about one run in three before and after).
+- **`mesh-texture-paint`, hands.** `hand_views.py --paint` paints with `--prior ''` (the nearest
+  painted colour as context, not the hand job's own bake, whose grey forearm streaks and olive palm
+  the model continued), and after a rejected next-best view the next keeps 35° away from it. Both
+  palms now read black as in the concept; the evidence is mixed (left painted share 0.71 → 0.78,
+  right 0.85 → 0.77, one seed each) and a gate on the paint's colours against the concept is still
+  missing.
+- **On the courier runner, end to end.** `fine` (assemble, hands, `eye_fit.py fit`, `autorig.py all
+  --hair --eyes --facial`) exits 0 with the deformation gate passing first time (volume loss 0.296,
+  self-intersection p95 0.063, cross side 0 and 0 held, hinge blend 0.13; limb ratio 1.27 / 1.03),
+  three body and five finger guesses (spread 8.6 / 5.7 mm). The ship track (`ship --eyes`, one rig
+  with the eyes) exits 0: one material, both eyes bound to their bones; its elbow read 0.48 first
+  and passed after one repair (0.12), the AI wrist's limb ratio 1.68.
+
 ## 0.41.0
 
 Tier `fine`: hands and eyeballs of their own, and the ship merge. A whole-body job fuses the
