@@ -4,6 +4,7 @@
 usage (Blender, headless; rig_exam.py runs these):
     blender -b --factory-startup -P rig_exam_blender.py -- cast OUT_DIR [--only standard,chibi] [--seed 0]
     blender -b --factory-startup -P rig_exam_blender.py -- weights FBX CONTRACT.json FAULT OUT.blend [--report R.json]
+                                                                [--skirt MARKERS.json]
     blender -b --factory-startup -P rig_exam_blender.py -- --selftest
 
 cast: per body of CAST below, a metaball body built around a known skeleton (A-pose, facing -Y, soles on Z 0),
@@ -20,6 +21,9 @@ for `deform_gate.py --armature RIG --mesh MESH --map CONTRACT.json`. FAULT is on
   elbow_blend / knee_blend   every vertex of the limb within 0.6 x the shorter span of the joint split 50/50
               between the upper and the lower bone (the wide blend the volume gate is for)
   rigid       each vertex keeps only its heaviest deform bone (a hard seam at every joint)
+  skirt_split (--skirt: the base's arp_markers --body skirt report) the skirt's own skin (arp_markers.skirt_region)
+              on Hips and the thigh of its own side, the thigh's share rising to 1 at the hem and switching
+              sides at the midline: a skirt torn between the thighs, as a plain bind leaves a long coat
 Bones come from the contract report's retarget_map (an exporter's twist twin, `_stretch` -> `_twist`, counts
 with its bone). The report names the armature and mesh in the saved file.
 
@@ -43,7 +47,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 SCHEMA = "exam/1"
-FAULTS = ("none", "leg_smear", "elbow_blend", "knee_blend", "rigid")
+FAULTS = ("none", "leg_smear", "elbow_blend", "knee_blend", "rigid", "skirt_split")
 FINGER_NAMES = ("index", "middle", "ring", "little")
 
 # Body parameters, metres for a 1.7 m adult; `scale` sets the final size. Every body starts from STANDARD.
@@ -60,7 +64,7 @@ CAST = {
     "long_limbs": dict(leg=1.12, arm=1.15, torso=0.95, arm_deg=(30.0, 30.0)),
     "mitten":     dict(hands="mitten"),
     "spiky_hair": dict(hair=True),
-    "skirt":      dict(skirt=0.40),
+    "skirt":      dict(skirt=0.40),              # rigged with --body skirt (rig_exam.py run)
     "asym":       dict(arm_deg=(43.5, 46.5), knee_dz=0.008, shoulder_dz=0.006),
 }
 
@@ -399,7 +403,7 @@ def write_weights(mesh, names, W, touched):
             vg.add(idx[keep][np.isclose(w[keep], value, atol=5e-7)].tolist(), float(value), 'REPLACE')
 
 
-def apply_fault(rig, mesh, rmap: dict, fault: str) -> dict:
+def apply_fault(rig, mesh, rmap: dict, fault: str, skirt=None) -> dict:
     deform = [b.name for b in rig.data.bones if b.use_deform]
     names = [g.name for g in mesh.vertex_groups if g.name in deform]
     W = weight_matrix(mesh, names)
@@ -455,6 +459,26 @@ def apply_fault(rig, mesh, rmap: dict, fault: str) -> dict:
             W[sel, cl[0]] = 0.5 * limb[sel]
             touched |= sel
             info["joints"][side] = {"vertices": int(sel.sum()), "radius": round(float(0.6 * span), 4)}
+    elif fault == "skirt_split":
+        if not skirt:
+            raise ValueError("skirt_split needs --skirt (an arp_markers --body skirt report)")
+        import arp_markers
+        first = lambda n: n[0] if isinstance(n, list) else n
+        cols = {r: names.index(first(rmap[r])) for r in ("Hips", "UpperLeg.L", "UpperLeg.R")
+                if first(rmap.get(r)) in names}
+        if len(cols) < 3:
+            raise ValueError("skirt_split: no Hips or thigh groups")
+        sel = arp_markers.skirt_region(V, skirt)
+        top, hem = float(skirt["top_z"]), float(skirt["hem_z"])
+        u = np.clip((top - V[sel, 2]) / max(top - hem, 1e-6), 0, 1)
+        alpha = u * u * (3 - 2 * u)
+        left = V[sel, 0] > float(skirt["midline_x"])
+        W[sel] = 0.0
+        W[sel, cols["Hips"]] = 1 - alpha
+        W[sel, cols["UpperLeg.L"]] = np.where(left, alpha, 0.0)
+        W[sel, cols["UpperLeg.R"]] = np.where(left, 0.0, alpha)
+        touched |= sel
+        info["skirt_vertices"] = int(sel.sum())
     elif fault != "none":
         raise ValueError(f"unknown fault {fault!r}; known {list(FAULTS)}")
     if touched.any():
@@ -463,7 +487,7 @@ def apply_fault(rig, mesh, rmap: dict, fault: str) -> dict:
     return info
 
 
-def weights(fbx, contract, fault, out_blend) -> dict:
+def weights(fbx, contract, fault, out_blend, skirt_markers=None) -> dict:
     import bpy
     bpy.ops.wm.read_homefile(use_empty=True)
     if not os.path.isfile(fbx):
@@ -479,7 +503,8 @@ def weights(fbx, contract, fault, out_blend) -> dict:
     if not meshes:
         raise ValueError("no mesh is skinned to the armature")
     mesh = max(meshes, key=lambda o: len(o.data.vertices))
-    info = apply_fault(rig, mesh, rmap, fault)
+    skirt = json.loads(Path(skirt_markers).read_text(encoding="utf-8")).get("skirt") if skirt_markers else None
+    info = apply_fault(rig, mesh, rmap, fault, skirt)
     os.makedirs(os.path.dirname(os.path.abspath(out_blend)), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=out_blend)
     return {"tool": "rig_exam_blender", "op": "weights", "armature": rig.name, "mesh": mesh.name,
@@ -585,6 +610,7 @@ def parser():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--faces", type=int, default=40000)
     p.add_argument("--report")
+    p.add_argument("--skirt", help="weights skirt_split: the base's arp_markers --body skirt report")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -607,7 +633,7 @@ def main() -> None:
         if a.op == "cast" and len(a.args) == 1:
             rep = cast(a.args[0], a.only.split(",") if a.only else None, a.seed, a.faces)
         elif a.op == "weights" and len(a.args) == 4:
-            rep = weights(*a.args)
+            rep = weights(*a.args, skirt_markers=a.skirt)
         else:
             raise ValueError("usage: cast OUT_DIR | weights FBX CONTRACT FAULT OUT.blend")
     except (ValueError, OSError, KeyError) as exc:

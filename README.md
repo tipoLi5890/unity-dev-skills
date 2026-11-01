@@ -180,7 +180,7 @@ For a game build the parts merge into one mesh with one texture atlas, one draw 
 ### A layered 2D runner that rigs itself
 
 <div align="center">
-<img src=".github/media/layered2d.gif" alt="Two scenes in Unity. First, the 2D courier runner from the front, full body on the left and a close-up of the face on the right: he breathes, blinks and talks. Then the same runner drawn from the side runs along a street whose sky, skyline, shopfronts and road scroll at different speeds, with a fire hydrant passing in front" width="640">
+<img src=".github/media/layered2d.gif" alt="Two scenes in Unity. First, the 2D courier runner from the front, full body on the left and a close-up of the face on the right: he breathes, blinks and talks. Then the same runner drawn from the side runs along a street whose sky and skyline scroll slower than the shopfronts and road, while a mailbox, a trash bin, a fire hydrant and a traffic cone pass in front, never the same one twice in a row" width="640">
 <p><sub>One front and one side drawing, cut into layers and rigged in Unity: blink and talk from the front, a run over the parallax street from the side.</sub></p>
 </div>
 

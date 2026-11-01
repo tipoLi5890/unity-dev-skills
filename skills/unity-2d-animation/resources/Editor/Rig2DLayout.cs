@@ -382,8 +382,9 @@ namespace UnityDev.Rig2D
             return new Part2D { name = l.name, bones = partBones, vertices = verts.ToArray(), indices = tris.ToArray() };
         }
 
-        /// <summary>Share of the layer's solid pixels within a pixel of the part's triangles. A
-        /// mesh cuts off what it does not cover, so a rig file's mesh below 0.98 is replaced.</summary>
+        /// <summary>Share of the layer's solid pixels whose centre lies in one of the part's
+        /// triangles. A mesh cuts off what it does not cover, and each such pixel renders as
+        /// background, so a rig file's mesh below AutoRig2D.MinCover is replaced.</summary>
         public static float Coverage(Layer2D l, Part2D part)
         {
             int w = l.rect.width, h = l.rect.height;
@@ -402,26 +403,17 @@ namespace UnityDev.Rig2D
                         float px = x + 0.5f, py = y + 0.5f;
                         float l1 = ((b.y - c.y) * (px - c.x) + (c.x - b.x) * (py - c.y)) / den;
                         float l2 = ((c.y - a.y) * (px - c.x) + (a.x - c.x) * (py - c.y)) / den;
-                        if (l1 >= -0.02f && l2 >= -0.02f && 1f - l1 - l2 >= -0.02f) hit[y * w + x] = true;
+                        if (l1 >= -1e-3f && l2 >= -1e-3f && 1f - l1 - l2 >= -1e-3f) hit[y * w + x] = true;
                     }
             }
-            // solid pixels, with a pixel of slack for a mesh drawn along the edge
             bool[] solid = l.solid ?? l.mask;
             int on = 0, covered = 0;
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    if (!solid[y * w + x]) continue;
-                    on++;
-                    bool near = false;
-                    for (int dy = -1; dy <= 1 && !near; dy++)
-                        for (int dx = -1; dx <= 1; dx++)
-                        {
-                            int xx = x + dx, yy = y + dy;
-                            if (xx >= 0 && yy >= 0 && xx < w && yy < h && hit[yy * w + xx]) { near = true; break; }
-                        }
-                    if (near) covered++;
-                }
+            for (int i = 0; i < solid.Length; i++)
+            {
+                if (!solid[i]) continue;
+                on++;
+                if (hit[i]) covered++;
+            }
             return on == 0 ? 1f : covered / (float)on;
         }
 

@@ -4,8 +4,9 @@
 // sums to 1; every SpriteSkin of the generated prefab and of the variant is Ready; the face
 // library swaps the eyes; a raised arm, skinned on the CPU from the imported data and masked by
 // the layer's own alpha, opens no hole and keeps the shoulder covered; the side run moves the
-// legs in opposite phase; the spring on the bag stays finite and inside its angle limit; and the
-// rig.json reader flips y and normalises weights.
+// legs in opposite phase; the spring on the bag stays finite and inside its angle limit; the pose
+// gate passes the rig and fails a torso mesh with triangles missing; the rig.json reader flips y and
+// normalises weights; and a rig-file layer the PSB lacks is a problem.
 //
 // Drop into an Editor test assembly (UNITY_INCLUDE_TESTS) that references the assemblies holding
 // AutoRig2D.cs, Rig2DLayout.cs, SpriteLibraryBuilder.cs and RigDriver2D.cs, plus
@@ -164,6 +165,34 @@ namespace UnityDev.Rig2D.Tests
         }
 
         [Test]
+        public void PoseGatePassesTheRigAndCatchesACutMesh()
+        {
+            Assert.Greater(_result.poseHoles.Count, 1, "the pose gate did not run: " + _result.ToJson());
+            Assert.AreEqual(0, _result.poseHoles[0].holes, "solid pixels at rest that no triangle draws");
+            Assert.IsFalse(_result.problems.Any(p => p.StartsWith("pose gate")), _result.ToJson());
+            // a torso mesh with every third triangle gone, as a hand edit or a careless mesher
+            // leaves it: background shows through the body at rest
+            const string psb = Folder + "/Courier2D_cut.psb";
+            File.WriteAllBytes(psb, SyntheticPsb.Courier(W, H));
+            AssetDatabase.ImportAsset(psb, ImportAssetOptions.ForceSynchronousImport);
+            Assert.IsTrue(AutoRig2D.Rig(psb, new AutoRig2D.Options { variant = false }).Ok);
+            var f = new SpriteDataProviderFactories();
+            f.Init();
+            var dp = f.GetSpriteEditorDataProviderFromObject(AssetImporter.GetAtPath(psb));
+            dp.InitSpriteEditorDataProvider();
+            var mesh = dp.GetDataProvider<ISpriteMeshDataProvider>();
+            SpriteRect torso = dp.GetSpriteRects().First(x => x.name == "torso");
+            int[] idx = mesh.GetIndices(torso.spriteID);
+            mesh.SetIndices(torso.spriteID, Enumerable.Range(0, idx.Length / 3).Where(t => t % 3 != 0).SelectMany(t => new[] { idx[3 * t], idx[3 * t + 1], idx[3 * t + 2] }).ToArray());
+            mesh.SetEdges(torso.spriteID, Rig2DLayout.BoundaryEdges(mesh.GetIndices(torso.spriteID)));
+            dp.Apply();
+            ((UnityEditor.U2D.PSD.PSDImporter)AssetImporter.GetAtPath(psb)).SaveAndReimport();
+            AutoRig2D.Result cut = AutoRig2D.PoseCheck(psb);
+            Assert.Greater(cut.poseHoles[0].holes, 0, cut.ToJson());
+            Assert.IsTrue(cut.problems.Any(p => p.Contains("drawn by no triangle")), "a cut mesh passed the pose gate: " + cut.ToJson());
+        }
+
+        [Test]
         public void SideRunMovesTheLegsInOppositePhase()
         {
             GameObject go = Spawn(_result.variant);
@@ -218,6 +247,34 @@ namespace UnityDev.Rig2D.Tests
             // a rig file beside the PSB whose bones carry part names (head, hand_L, foot_R …): the
             // importer would rename those to head_1 and nothing would find them
             const string psb = Folder + "/Courier2D_file.psb";
+            WriteWithRigFile(psb, "");
+            AutoRig2D.Result r = AutoRig2D.Rig(psb, new AutoRig2D.Options { variant = false });
+            Assert.IsTrue(r.Ok, r.ToJson());
+            Assert.AreEqual("rig.json", r.source);
+            GameObject go = Spawn(psb);
+            foreach (string n in new[] { "neck", "wrist_L", "ankle_R", "shoulder_L", "knee_R" }) Bone(go, n);
+            Assert.IsFalse(go.GetComponentsInChildren<Transform>(true).Any(t => t.name.EndsWith("_1")), "a bone was renamed by the importer");
+            foreach (SpriteSkin sk in go.GetComponentsInChildren<SpriteSkin>(true))
+                Assert.AreEqual(SpriteSkinState.Ready, AutoRig2D.SkinState(sk), sk.name);
+        }
+
+        [Test]
+        public void RigFileLayerWithNoSpriteIsAProblem()
+        {
+            // the rig file meshes a layer the PSB does not have (renamed, or a stale import): the
+            // rig would come back without it and every other gate would still pass
+            const string psb = Folder + "/Courier2D_renamed.psb";
+            WriteWithRigFile(psb, ",\"parts\":[{\"name\":\"scarf\",\"bones\":[\"chest\"],\"verts\":[90,80,110,80,100,100]," +
+                                  "\"indices\":[0,1,2],\"bw\":[0,1,0,0,0,1,0,0,0,1,0,0]}]");
+            AutoRig2D.Result r = AutoRig2D.Rig(psb, new AutoRig2D.Options { variant = false });
+            Assert.IsFalse(r.Ok, "a rig-file layer with no sprite passed: " + r.ToJson());
+            Assert.IsTrue(r.problems.Any(p => p.Contains("layer scarf of the rig file has no sprite")), r.ToJson());
+            Assert.AreEqual(1, r.problems.Count, "only the missing layer is a problem: " + r.ToJson());
+        }
+
+        // the synthetic courier, and beside it a rig2d/1 file with its bones (named like parts) plus extra
+        static void WriteWithRigFile(string psb, string extra)
+        {
             File.WriteAllBytes(psb, SyntheticPsb.Courier(W, H));
             var sb = new StringBuilder("{\"schema\":\"rig2d/1\",\"width\":" + W + ",\"height\":" + H + ",\"y_down\":true,\"view\":\"front\",\"bones\":[");
             var rows = new List<string>();
@@ -232,17 +289,9 @@ namespace UnityDev.Rig2D.Tests
                 B("thigh_" + k, "hips", X(114), 132, X(116), 86); B("shin_" + k, "thigh_" + k, X(116), 86, X(118), 40);
                 B("foot_" + k, "shin_" + k, X(118), 40, X(130), 18);
             }
-            sb.Append(string.Join(",", rows)).Append("]}");
+            sb.Append(string.Join(",", rows)).Append(']').Append(extra).Append('}');
             File.WriteAllText(Path.ChangeExtension(psb, ".rig2d.json"), sb.ToString());
             AssetDatabase.ImportAsset(psb, ImportAssetOptions.ForceSynchronousImport);
-            AutoRig2D.Result r = AutoRig2D.Rig(psb, new AutoRig2D.Options { variant = false });
-            Assert.IsTrue(r.Ok, r.ToJson());
-            Assert.AreEqual("rig.json", r.source);
-            GameObject go = Spawn(psb);
-            foreach (string n in new[] { "neck", "wrist_L", "ankle_R", "shoulder_L", "knee_R" }) Bone(go, n);
-            Assert.IsFalse(go.GetComponentsInChildren<Transform>(true).Any(t => t.name.EndsWith("_1")), "a bone was renamed by the importer");
-            foreach (SpriteSkin sk in go.GetComponentsInChildren<SpriteSkin>(true))
-                Assert.AreEqual(SpriteSkinState.Ready, AutoRig2D.SkinState(sk), sk.name);
         }
 
         [Test]

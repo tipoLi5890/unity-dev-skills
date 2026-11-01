@@ -13,12 +13,13 @@ which binds the hair to the Head bone after the contract and exports through Aut
 |---|---|---|---|
 | Standard adult proportions — **the default** | `character-autorig`: `mesh_check` → `arp_markers` → `brt_arp` `pipeline` (Auto-Rig Pro) → `contract_map --require contract` → `deform_gate`; the rig is on the humanoid contract | `humanoid-motion` two-camera (a front and a side view in one generated video), or a pack retargeted in `blender-retarget` | the realistic humanoid variant: A-pose, arms 30–60° down, straight elbows, legs apart |
 | Standard proportions, Auto-Rig Pro absent or failing on the Blender in use | `character-autorig`'s hand-built route: the same markers into `blender-character-rig`'s `bcr_armature` with contract names, `bcr_skin`, the same contract and deformation gates | as above | as above |
+| Standard proportions in a long coat, a skirt or a robe (a hem from the knees up to 0.42 H, the legs showing under it) | `character-autorig`'s skirt route, `autorig.py all --body skirt`: the legs read under and inside the hem, the skirt bound across both thighs, its tear gated, spring chains on its hem | as the default row | the realistic humanoid variant, the legs apart under the hem; a floor-length robe takes the hand-built route |
 | A custom body: short limbs, a large head, ears, a tail, mitten hands | `character-autorig`'s hand-built route when every marker can be placed; otherwise positional skinning in `blender-character-rig` | `humanoid-motion` two-camera for a contract body; keyed in `blender-character-rig`; stock clips retargeted in `blender-retarget` | the mascot A-pose, thin parts drawn thick |
 | Standard adult proportions, the motion from **one** purchased or captured pack | the fit route: the pack's own skeleton fitted to the mesh headless (`blender-character-rig` → `reference/fit-to-clip-skeleton.md`) | the pack's files, played unchanged (Generic) | the realistic humanoid variant |
 
 ## Where each route reads
 
-- **Contract routes** (rows 1–3 on the contract): the skeleton and its acceptance,
+- **Contract routes** (rows 1–4 on the contract): the skeleton and its acceptance,
   `unity-rigged-character` → `reference/humanoid-contract.md`; the Auto-Rig Pro call,
   `character-autorig` → `reference/arp-pipeline.md`; the hand-built route, `character-autorig` →
   `reference/hand-built-route.md`; the mesh and deformation gates, `character-autorig` →

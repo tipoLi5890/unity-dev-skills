@@ -15,7 +15,7 @@ usage (Blender, headless; not --factory-startup when it exports, the exporter is
         [--map arp|ROLE_MAP.json|CONTRACT_REPORT.json] [--kinds auto|hood,bag,hem,shorts_hem,hair] \
         [--require KINDS] [--markers MARKERS.json] [--save OUT.blend] [--fbx OUT.fbx] \
         [--out OUT.secondary.json] [--report GATE.json] [--render DIR] [--detect-only] \
-        [--hair-mesh auto|NAME|none] [--hair-chains]
+        [--hair-mesh auto|NAME|none] [--hair-chains] [--skirt MARKERS.json]
     blender -b --factory-startup -P secondary_chains.py -- --selftest [--render DIR]
 
 --armature defaults to the armature the mesh's Armature modifier uses. --kinds auto (default) looks
@@ -28,8 +28,11 @@ with the body height H; any of them replaced by a marker chain, reference/second
   hood        a bulge behind the upper back: back depth (behind the spine line, central strip) above
               a morphological opening of its own profile by > 0.02 H, in a connected component
               reaching >= 0.04 H off it (buttocks and shoulder blades do not) whose centroid lies
-              above UpperChest; one chain from the nape down its middle
-  bag         the same test, a component centred between Hips - 0.08 H and UpperChest; one bone
+              above UpperChest; one chain from the nape down its middle. A component spanning more than
+              BACK_SPAN degrees round the spine line wraps the body (a belt read against a vented coat
+              back) and is neither; a hood narrower than HOOD_WIDTH x H across is hair or a tie
+  bag         the same test, a component centred between Hips - 0.08 H and UpperChest and at least
+              BAG_WIDTH x H across (a hank of hair or a strap lying on the back is narrower); one bone
               from the top attachment (body side) to the bottom, rigid below its top quarter; its
               share fades smoothly from 0.012 H outside the bulge to 0.04 H inside it, so a swing
               stretches a band of skin, not the one edge between the bag and the jacket below
@@ -39,15 +42,30 @@ with the body height H; any of them replaced by a marker chain, reference/second
               further out than the skin below it and the bag does not cover it; at least four
               live, else no hem; one one-bone chain per live sector, neighbours fading to zero
               towards a dead one
+  hem, --skirt (an arp_markers --body skirt report: a long coat, a skirt, a robe) the hem is the markers'
+              one, wherever it hangs: the skirt's own skin (arp_markers.skirt_region) in six sectors round
+              the hips, a sector live with >= 30 vertices within 0.03 H of the hem; one two-bone chain per
+              live sector from the hip down the skirt's surface to the hem, hung from the bone holding
+              most of its skin (the thigh it covers, after the skirt bind; else Hips) and taking its share
+              from that bone first, so a pose moves the skirt as the bind did; the share rises to
+              SKIRT_SHARE at the hem (then from Hips and both thighs), fading to 0 within
+              SKIRT_FADE x H of the legs' own skin (a skirt joined to them); the six blend round the ring and
+              share its skin (one ring, not one region each); shorts_hem is not searched (the skirt
+              covers the thighs)
   shorts_hem  per leg, the largest drop of the median skin radius around the thigh axis (hip to
               knee and on), kept when the radius above is >= 1.35 x and >= 0.01 H more than below
               (a thigh tapering to the knee is not a hem); 3 one-bone chains (front, outer, back);
-              the inner side fades to zero
+              the inner side fades to zero. Both legs find it within SHORTS_PAIR x H of each other, or
+              neither leg gets a chain (one leg alone is a skirt's or a coat's hem: detect.shorts.unpaired)
   hair        head-dominant skin outside the face cone; the farthest fifth from the head centre
               clustered by direction (k-means, at most 6, merged under 25 degrees); a cluster is a
               spike when >= 0.12 of its skin faces sideways (|normal . radial| < 0.5: a smooth skull
-              has none); one chain per spike from the hair mass to its tips, two bones when longer
-              than 0.04 H
+              has none) and those sides face round it: when one axis holds more than SPIKE_PLATE of
+              its own skin's side normals it is a plate (a cap brim, a visor: detect.hair_rejected); one
+              chain per spike from the hair mass to its tips, two bones when longer than 0.04 H. A
+              marker chain of kind hair (a ponytail) may skin the head and the torso within its
+              region radius and takes its share from them, hung from Head (so it turns with the head);
+              one that hangs below the neck gets the hood's Back sphere beside the Head one
   strap       not detected: fixed at both ends, a free-tip spring is the wrong tool. A marker chain
               of kind strap gets one stiff bone whose share peaks mid-span (a sag).
 A separate hair object (--hair-mesh, default auto: the mesh assemble_parts.py bind leaves, marked
@@ -59,7 +77,7 @@ only). A spike too small to give each bone 50 vertices is left rigid (detect.dro
 Weights: inside a region a chain's share ramps from 0 at its root to s_max along it, feathered at
 the region border and blended between neighbouring chains of a ring; the share is taken from the
 chain's parent first, then from the region's other source bones (spine bones for the torso, the
-thigh's own bones for the shorts, head and neck for the hair) in proportion; limb bones are never
+thigh's own bones for the shorts, head and neck for the hair, head and torso for a marker hair chain) in proportion; limb bones are never
 touched for torso chains. Every vertex keeps at most 4 deform weights (a fifth drops the smallest
 body weight, not a chain weight) and sums to 1, so the exporter's own limit pass trims nothing.
 Each vertex belongs to one region (bag > hood > hair > hem > shorts_hem > strap).
@@ -132,6 +150,7 @@ for _s, _S in (("l", "L"), ("r", "R")):
                       f"Foot.{_S}": f"foot.{_s}"})
 LIMB_ROLES = ("Shoulder", "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot")
 TORSO = ("Hips", "Spine", "Chest", "UpperChest", "Neck", "Shoulder.L", "Shoulder.R")
+PONYTAIL = ("Head",) + TORSO   # a marker hair chain's skin and sources: a ponytail hangs onto the neck and back
 
 # Defaults per kind: stiffness, drag, gravity, wind, inertia, max angle, particle radius (x H),
 # share s_max, colliders.
@@ -155,10 +174,16 @@ DETECTED = ("hood", "bag", "hem", "shorts_hem", "hair")      # --kinds auto
 BULGE = 0.04          # hood, bag: deepest point off the opened back profile
 LIP = 0.004           # hem: the skin just above the edge stands out from the skin just below
 HEM_RING = 4          # hem: live sectors needed, or no hem at all
+SKIRT_SHARE = 0.6     # hem --skirt: the chains' share at the hem (the thighs keep the rest of theirs)
+SKIRT_FADE = 0.04     # hem --skirt: the share fades to 0 over this distance (x H) towards the legs' own skin
 SHORTS_RATIO, SHORTS_DROP = 1.35, 0.01   # shorts hem: radius above / below the drop, and the drop
 BAG_BORDER = (0.012, 0.04)   # bag: its share fades from this far outside its bulge to this far inside (x H)
 BACK_SPHERE = 0.5     # hood: the back sphere's radius (x H), flat across the hood's span
 SPIKE_SIDES = 0.12    # hair: share of a cluster's skin facing sideways (|normal . radial| < 0.5)
+SPIKE_PLATE = 0.72    # hair: a spike's side normals turn around it; a plate's (a cap brim) share one axis above this
+BACK_SPAN = 180.0     # hood, bag: a component spanning more of the circle round the spine line wraps the body (a belt)
+HOOD_WIDTH, BAG_WIDTH = 0.12, 0.08   # x H across: narrower is a hank of hair or a tie lying on the back
+SHORTS_PAIR = 0.03    # shorts hem: both legs find it within this height (x H), or neither leg is a shorts hem
 HUMAN = {"Hips": "Hips", "Spine": "Spine", "Chest": "Chest", "UpperChest": "UpperChest", "Neck": "Neck",
          "Head": "Head"}
 for _S, _w in (("L", "Left"), ("R", "Right")):
@@ -399,6 +424,17 @@ def source_bones(body, roles):
 
 # ----------------------------------------------------------------------------- detection
 
+def wrap_span(az):
+    """Degrees of the circle the azimuths cover (10-degree bins, 360 less the widest empty arc): a bag or a
+    hood hangs behind the spine line, a belt or a coat's waist read against a vented back wraps the body."""
+    occ = np.histogram(np.asarray(az, float), bins=36, range=(-180, 180))[0] > 0
+    run = gap = 0
+    for v in np.concatenate([occ, occ]):
+        run = 0 if v else run + 1
+        gap = max(gap, run)
+    return 360.0 - 10.0 * min(gap, 36)
+
+
 def back_regions(body, taken):
     """Hood and bag: components of skin bulging behind the back."""
     co, H = body.co, body.H
@@ -436,10 +472,19 @@ def back_regions(body, taken):
         comps.append((m.sum(), m, float(co[m, 2].mean())))
     z_uc = body.head("UpperChest")[2]
     z_hips = body.head("Hips")[2]
-    hood = [c for c in comps if c[2] >= z_uc]
-    bag = [c for c in comps if z_hips - 0.08 * H <= c[2] < z_uc]
     info = {"back_profile_base": [round(float(x), 4) for x in base[lo:hi + 1:5]],
-            "components": [(int(c[0]), round(c[2], 3)) for c in comps]}
+            "components": [(int(c[0]), round(c[2], 3)) for c in comps], "rejected": []}
+
+    span = lambda m: wrap_span(np.degrees(np.arctan2(co[m, 0] - xs[m], dy[m])))
+    width = lambda m: float(np.ptp(co[m, 0]))
+    behind = []
+    for c in comps:
+        sp = span(c[1])
+        if sp > BACK_SPAN:
+            info["rejected"].append({"vertices": int(c[0]), "z": round(c[2], 3), "span_deg": sp, "why": "wraps the body"})
+        else:
+            behind.append(c)
+
     def union(cs):
         if not cs:
             return None
@@ -447,8 +492,22 @@ def back_regions(body, taken):
         for c in cs:
             m |= c[1]
         return m
+    hood = union([c for c in behind if c[2] >= z_uc])
+    if hood is not None and width(hood) < HOOD_WIDTH * H:
+        info["rejected"].append({"vertices": int(hood.sum()), "z": round(float(co[hood, 2].mean()), 3),
+                                 "width_H": round(width(hood) / H, 4), "why": "hood: too narrow (hair or a tie?)"})
+        hood = None
+    bag = []
+    for c in behind:
+        if not z_hips - 0.08 * H <= c[2] < z_uc:
+            continue
+        if width(c[1]) < BAG_WIDTH * H:
+            info["rejected"].append({"vertices": int(c[0]), "z": round(c[2], 3), "width_H": round(width(c[1]) / H, 4),
+                                     "why": "bag: too narrow (hair or a strap?)"})
+        else:
+            bag.append(c)
     pick = lambda cs: max(cs, key=lambda c: c[0])[1] if cs else None
-    return union(hood), pick(bag), dict(info, excess=excess, base_dy=base, zb=zb, ys=ys, xs=xs)
+    return hood, pick(bag), dict(info, excess=excess, base_dy=base, zb=zb, ys=ys, xs=xs)
 
 
 def grow(body, core, allowed, dist):
@@ -616,6 +675,67 @@ def detect_hem(body, taken, skip=()):
     return out, info
 
 
+def detect_skirt_hem(body, taken, skirt, skip=()):
+    """The hem of a long coat or skirt at the markers' height (arp_markers --body skirt), wherever it hangs."""
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    import arp_markers
+    co, H = body.co, body.H
+    region = arp_markers.skirt_region(co, skirt) & ~taken
+    hem_z, top_z, hip_z = float(skirt["hem_z"]), float(skirt["top_z"]), float(skirt["hip_z"])
+    info = {"hem_z": round(hem_z, 4), "hem_from": "skirt markers", "skirt_vertices": int(region.sum())}
+    if region.sum() < 100:
+        info["hem"] = "too little skirt skin"
+        return [], info
+    cx = float(skirt["midline_x"])
+    cy = float(body.spine_line(np.array([hip_z]))[1][0])
+    az = np.degrees(np.arctan2(co[:, 0] - cx, -(co[:, 1] - cy)))
+    r = np.hypot(co[:, 0] - cx, co[:, 1] - cy)
+    names = {30: "hemFL", 90: "hemL", 150: "hemBL", -30: "hemFR", -90: "hemR", -150: "hemBR"}
+    anchors, spec = [], []
+    for a, nm in names.items():
+        d = ((az - a + 180) % 360) - 180
+        sec = region & (np.abs(d) < 20)
+        near = sec & (np.abs(co[:, 2] - hem_z) < 0.03 * H)
+        live = int(near.sum()) >= 30 and nm not in skip
+        anchors.append((a, live))
+        spec.append((a, nm, live, int(near.sum())))
+    info["hem_sectors"] = [{"name": nm, "az": a, "live": live, "vertices": n} for a, nm, live, n in spec]
+    if sum(sp[2] for sp in spec) < HEM_RING:
+        info["hem"] = f"fewer than {HEM_RING} sectors reach the hem"
+        return [], info
+    idx = np.where(region)[0]
+    bw = ring_blend(az[idx], anchors)
+    u = np.clip((top_z - co[idx, 2]) / max(top_z - hem_z, 1e-6), 0, 1)
+    # the chains fade out towards the legs' own skin (a skirt joined to them at its hem): a leg moves all of its skin
+    legs = body.in_parts(("UpperLeg.L", "UpperLeg.R", "LowerLeg.L", "LowerLeg.R")) & ~region & (co[:, 2] < top_z)
+    fade = smoothstep(nearest_dist(co[legs], co[idx]) / (SKIRT_FADE * H)) if legs.any() else np.ones(len(idx))
+    info["faded"] = int((fade < 0.99).sum())
+    out = []
+    for i, (a, nm, live, _) in enumerate(spec):
+        if not live:
+            continue
+        d = ((az - a + 180) % 360) - 180
+        sec = region & (np.abs(d) < 15)
+        dirv = np.array([math.sin(math.radians(a)), -math.cos(math.radians(a)), 0])
+        joints = []
+        for z in (hip_z, 0.5 * (hip_z + hem_z), hem_z):
+            m = sec & (np.abs(co[:, 2] - z) < 0.01 * H)
+            rad = float(np.quantile(r[m], 0.9)) if m.sum() >= 5 else None
+            joints.append(None if rad is None else np.array([cx, cy, z]) + dirv * (rad - 0.006 * H))
+        if any(j is None for j in joints):
+            continue
+        joints = np.array(joints)
+        s = SKIRT_SHARE * smoothstep(u / 0.8) * bw[:, i] * fade
+        su, _ = polyline_u(co[idx], joints)
+        share = np.zeros((len(co), 2))
+        share[idx] = s[:, None] * split_bones(su, joints)
+        parent = pick_parent(body, share.sum(1), ["UpperLeg.L", "UpperLeg.R", "Hips"])
+        out.append(chain_dict(nm, "hem", joints, share, parent,
+                              source_bones(body, ["Hips", "Spine", "UpperLeg.L", "UpperLeg.R"]), az=a, ring="skirt"))
+    return out, info
+
+
 def detect_shorts(body, taken, skip=()):
     co, H = body.co, body.H
     out, info = [], {}
@@ -694,6 +814,11 @@ def detect_shorts(body, taken, skip=()):
             share[idx, 0] = s
             out.append(chain_dict(nm, "shorts_hem", np.array([j0, j1]), share, ul,
                                   list(fam), side=S.lower(), az=ang))
+    hems = {S: info[f"shorts{S}"]["z"] for S in ("L", "R") if "z" in (info.get(f"shorts{S}") or {})}
+    if len(hems) == 1 or (len(hems) == 2 and abs(hems["L"] - hems["R"]) > SHORTS_PAIR * H):
+        # shorts end on both legs at one height; a drop on one leg alone is a skirt's or a coat's hem
+        info["shorts"] = {"unpaired": {S: round(z, 4) for S, z in hems.items()}, "dropped": [c["name"] for c in out]}
+        out = []
     return out, info
 
 
@@ -764,6 +889,12 @@ def detect_hair(body, taken, max_chains=6):
         info.setdefault("hair_sides", []).append(round(sides, 3))
         if sides < SPIKE_SIDES:      # a smooth skull or a bun: no spike sides, nothing to swing
             continue
+        own = body.nrm[members][np.abs((body.nrm[members] * d[members]).sum(1)) < 0.5]   # its own skin, not a neighbour's
+        plate = float(np.linalg.eigvalsh(own.T @ own / len(own))[-1]) if len(own) else 0.0   # the main normal axis's share
+        info.setdefault("hair_plate", []).append(round(plate, 3))
+        if plate > SPIKE_PLATE:      # its sides face one way: a cap brim or a visor, not a lock of hair
+            info.setdefault("hair_rejected", []).append({"dir": r6(C[k]), "plate": round(plate, 3)})
+            continue
         u, _ = polyline_u(co[region], js)
         u = np.clip(radial[np.isin(cap_idx, np.where(region)[0])], 0, 1)
         split = split_bones(u, js)
@@ -778,7 +909,7 @@ def marker_chain(body, m, taken):
     kind = m["kind"]
     joints = np.array(m["joints"], float)
     allowed = {"hood": TORSO, "bag": TORSO, "hem": ("Hips", "Spine", "Chest", "UpperLeg.L", "UpperLeg.R"),
-               "hair": ("Head",), "strap": TORSO}.get(kind, TORSO)
+               "hair": PONYTAIL, "strap": TORSO}.get(kind, TORSO)
     if kind == "shorts_hem":
         S = "L" if joints[0][0] > 0 else "R"
         allowed = (f"UpperLeg.{S}", f"LowerLeg.{S}")
@@ -790,7 +921,7 @@ def marker_chain(body, m, taken):
     parents = {"hood": ["Neck", "UpperChest"], "bag": ["Spine", "Hips"], "hem": ["Hips", "Spine"],
                "hair": ["Head"], "strap": ["UpperChest", "Chest"]}.get(kind, list(allowed))
     sources = {"hood": ["UpperChest", "Neck", "Chest"], "bag": ["Hips", "Spine", "Chest", "UpperChest"],
-               "hem": ["Hips", "Spine", "Chest"], "hair": ["Head", "Neck"],
+               "hem": ["Hips", "Spine", "Chest"], "hair": list(PONYTAIL),
                "strap": ["UpperChest", "Chest", "Spine"]}.get(kind, list(allowed))
     ramp = 0.0001 if kind == "strap" else 0.35
     ch = finish_chain(body, m["name"], kind, joints, region, feather, ramp, parents, sources,
@@ -800,17 +931,21 @@ def marker_chain(body, m, taken):
     return ch
 
 
-def detect_all(body, kinds, markers=None, required=()):
-    """Chains for `kinds` (and every marker chain); `missing` lists the `required` kinds not found."""
+def detect_all(body, kinds, markers=None, required=(), skirt=None):
+    """Chains for `kinds` (and every marker chain); `missing` lists the `required` kinds not found. `skirt`
+    (the markers' skirt block): the hem is the skirt's, and no shorts hem is searched."""
     markers = markers or {}
     skip = set(markers.get("skip", []))
     mk = {m["name"]: m for m in markers.get("chains", [])}
     taken = np.zeros(len(body.co), bool)
     chains, info, missing = [], {}, []
 
+    rings = {}     # chains blended round one ring (the skirt's hem) share their skin with each other
+
     def take(ch):
         reg = ch["share"].sum(1) > 0
-        ch["region"] = reg & ~taken
+        ring = ch.get("ring")
+        ch["region"] = reg & ~(taken & ~rings[ring]) if ring in rings else reg & ~taken
         ch["share"][~ch["region"]] = 0
         if ch["region"].sum() < 20:
             info.setdefault("dropped_empty", []).append(ch["name"])
@@ -821,6 +956,8 @@ def detect_all(body, kinds, markers=None, required=()):
                 info.setdefault("dropped_small", []).append(ch["name"])
                 return False
         taken[ch["region"]] = True
+        if ring:
+            rings[ring] = rings.get(ring, np.zeros(len(taken), bool)) | ch["region"]
         chains.append(ch)
         return True
 
@@ -856,11 +993,13 @@ def detect_all(body, kinds, markers=None, required=()):
                         if take(ch):
                             found.append(ch["name"])
             elif kind == "hem":
-                cs, i = detect_hem(body, taken, skip)
+                cs, i = detect_skirt_hem(body, taken, skirt, skip) if skirt else detect_hem(body, taken, skip)
                 info.update(i)
                 for ch in cs:
                     if take(ch):
                         found.append(ch["name"])
+            elif kind == "shorts_hem" and skirt:
+                cs, i = [], {"shorts": "not searched: a skirt covers the thighs (--skirt)"}
             elif kind == "shorts_hem":
                 cs, i = detect_shorts(body, taken, skip)
                 info.update(i)
@@ -951,7 +1090,26 @@ def apply_shares(body, chains, limit=4):
             continue
         over = lambda: int((row > 1e-9).sum()) - limit
         cc = [j for j in range(deform_n, len(cols)) if row[j] > 1e-9]
-        if over() > 0 and len(cc) > 1:
+        hung = {owner[j]["parent_bone"] for j in cc}
+        if over() > 0 and len(cc) > 1 and len(hung) > 1:
+            # chains of one ring hung from different bones (a skirt's, from each thigh): merge only within one
+            # parent, then each parent's remainder into its own chain (its rigid child): the body moves as before
+            for pb in hung:
+                same = sorted((j for j in cc if owner[j]["parent_bone"] == pb), key=lambda j: row[j])
+                while over() > 0 and len(same) > 1:
+                    j = same.pop(0)
+                    row[same[-1]] += row[j]
+                    row[j] = 0
+                    steps[0] += 1
+            for pb in hung:
+                pc = body.col[pb]
+                live = [j for j in cc if owner[j]["parent_bone"] == pb and row[j] > 1e-9]
+                if over() > 0 and live and row[pc] > 1e-9:
+                    row[max(live, key=lambda j: row[j])] += row[pc]
+                    row[pc] = 0
+                    steps[2] += 1
+            cc = [j for j in cc if row[j] > 1e-9]
+        if over() > 0 and len(cc) > 1 and len(hung) == 1:
             cc.sort(key=lambda j: row[j])
             while over() > 0 and len(cc) > 1:
                 j = cc.pop(0)
@@ -1245,8 +1403,9 @@ def size_colliders(body, chains, heads):
                         c.setdefault("_orig", c["radius"])
                         report["shrunk"].append([g, round(c["radius"], 4), round(new, 4), ch["name"]])
                         c["radius"] = new
-    for ch in chains:
-        if ch["kind"] == "hood":
+    z_neck = body.head("Neck")[2] if body.bone("Neck") else -np.inf
+    for ch in chains:     # a hood, or hair hanging below the neck (a ponytail), rests on the back
+        if ch["kind"] == "hood" or (ch["kind"] == "hair" and min(j[2] for j in ch["joints"]) < z_neck):
             back_sphere(body, ch, cols, heads, report)
     inside = 0
     for ch in chains:
@@ -1269,7 +1428,7 @@ def back_sphere(body, ch, cols, heads, report):
     J = np.asarray(ch["joints"], float)[1:]
     if a not in heads or not len(J):
         return
-    pr, R = KINDS["hood"]["radius"] * body.H, BACK_SPHERE * body.H
+    pr, R = KINDS[ch["kind"]]["radius"] * body.H, BACK_SPHERE * body.H
     q = J[:, 1:] - [pr + 0.002, 0.0]                     # (y, z) of each joint, its particle radius in front
     a_, b_ = q[0], q[-1]
     half = 0.5 * float(np.linalg.norm(b_ - a_))
@@ -1556,12 +1715,20 @@ def run(a) -> tuple[dict, int]:
     kinds, required = kind_list(a.kinds, "--kinds"), kind_list(a.require, "--require")
     hair_obj = find_hair(a, me, rig)
     hair_body, hchains = None, []
+    skirt = None
+    if a.skirt:
+        try:
+            skirt = json.load(open(a.skirt, encoding="utf-8")).get("skirt")
+        except (OSError, ValueError) as e:
+            raise Refused(f"--skirt: {e}")
+        if not skirt:
+            raise Refused(f"--skirt: {a.skirt} carries no skirt (arp_markers.py --body skirt)")
     if hair_obj is None:
-        chains, info, missing = detect_all(body, kinds, markers, required)
+        chains, info, missing = detect_all(body, kinds, markers, required, skirt=skirt)
     else:   # a separate hair (assemble_parts bind): the body has none; spikes, if asked, go on the hair object
         split = lambda keep: dict(markers, chains=[m for m in markers.get("chains", []) if keep(m["kind"])])
         chains, info, missing = detect_all(body, [k for k in kinds if k != "hair"], split(lambda k: k != "hair"),
-                                           [k for k in required if k != "hair"])
+                                           [k for k in required if k != "hair"], skirt=skirt)
         hair_body = read_body(rig, hair_obj, roles)
         hair_body.H, hair_body.zmin = body.H, body.zmin      # every threshold scales with the body's height
         hair_body.around = body.co[body.in_parts(("Head",))]
@@ -1747,6 +1914,7 @@ def parser():
     p.add_argument("--detect-only", action="store_true")
     p.add_argument("--hair-mesh", help="auto (default: the parts_hair object), a mesh name, or none")
     p.add_argument("--hair-chains", action="store_true", help="spike chains on the separate hair object")
+    p.add_argument("--skirt", help="an arp_markers.py --body skirt report: the hem is the skirt's")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -1815,14 +1983,23 @@ def _tube(bm, x, y, z0, z1, r, segs=40, rings=None):
         bmesh.ops.subdivide_edges(bm, edges=side, cuts=rings - 1, use_grid_fill=True)
 
 
-def build_shell(hair_apart=False):
+def build_shell(hair_apart=False, extra=()):
     """A torso tube with a jacket hem lip, a box bag on the back, shorts tubes over thinner legs, a head
     sphere with five elongated spikes; each vertex bound to its two nearest bones. hair_apart: the spikes
     are their own object `Hair` (marked parts_hair, bound rigidly to head.x), as assemble_parts.py bind
-    leaves a character in parts."""
+    leaves a character in parts. extra, the look-alikes: "brim" a flat plate out of the head's side, "pony" a thick hank hanging from the back of the
+    head down the back, "one_leg" shorts on the left leg only."""
     import bmesh
     _clear()
     bm = bmesh.new()
+    if "brim" in extra:          # flat, out of the front-right of the head (the face cone and the spikes clear)
+        bmesh.ops.create_uvsphere(bm, u_segments=48, v_segments=16, radius=1, matrix=Matrix.Translation(
+            (0.077, -0.046, 1.64)) @ Matrix.Diagonal((0.1, 0.1, 0.006, 1)))
+    if "pony" in extra:
+        for k in range(12):
+            t = k / 11
+            bmesh.ops.create_uvsphere(bm, u_segments=20, v_segments=10, radius=0.045, matrix=Matrix.Translation(
+                (0.0, 0.1 + 0.095 * t, 1.56 - 0.3 * t)))
     _tube(bm, 0, 0, 1.0, 1.45, 0.15)                     # jacket body
     _tube(bm, 0, 0, 0.94, 1.02, 0.165, segs=96, rings=8)     # hem lip
     for k in range(8):                                   # its underside: the horizontal skin of the edge
@@ -1834,11 +2011,12 @@ def build_shell(hair_apart=False):
     _tube(bm, 0, 0, 0.86, 0.95, 0.13, segs=96, rings=9)      # shorts waist
     _tube(bm, 0, 0, 1.45, 1.53, 0.05, rings=8)           # neck
     for sx in (1, -1):
-        _tube(bm, 0.1 * sx, 0, 0.55, 0.9, 0.09, rings=35)     # shorts leg
+        if sx > 0 or "one_leg" not in extra:
+            _tube(bm, 0.1 * sx, 0, 0.55, 0.9, 0.09, rings=35)     # shorts leg
         _tube(bm, 0.1 * sx, 0, 0.0, 0.56, 0.055, rings=56)    # bare leg
     bmesh.ops.create_cube(bm, size=1, matrix=Matrix.Translation((0, 0.2, 1.1)) @ Matrix.Diagonal((0.16, 0.1, 0.22, 1)))
-    bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if e.verts[0].co.y > 0.14 and e.verts[1].co.y > 0.14],
-                              cuts=10, use_grid_fill=True)
+    bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if e.verts[0].co.y > 0.14 and e.verts[1].co.y > 0.14
+                                         and e.verts[0].co.z < 1.22], cuts=10, use_grid_fill=True)
     bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=24, radius=0.1, matrix=Matrix.Translation((0, 0, 1.62)))
     bh = bmesh.new() if hair_apart else bm
     for d in ((0, 0, 1), (0, 0.8, 0.6), (0.8, 0.2, 0.55), (-0.8, 0.2, 0.55), (0, -0.6, 0.8)):
@@ -2062,6 +2240,49 @@ def selftest(a):
     checks["bag border: 0 well outside, 1 well inside, rising smoothly through the border"] = (
         f[line[:, 0] < 0.079].max() == 0 and f[line[:, 0] > 0.131].min() == 1 and np.all(np.diff(f) >= 0)
         and np.abs(np.diff(f)).max() < 0.1)
+    # 9 look-alikes, each caught by its own rule (and found as the kind it mimics with that rule off)
+    g = globals()
+
+    def look(extra, kinds, **off):
+        res = []
+        for knobs in ({}, off):
+            saved = {k: g[k] for k in knobs}
+            g.update(knobs)
+            try:
+                _, ob = build_shell(extra=extra)
+                res.append(detect_all(read_body(ob.parent, ob, load_roles("arp")), kinds)[:2])
+            finally:
+                g.update(saved)
+        return res
+    ring = np.linspace(-180, 180, 200, endpoint=False)
+    checks["back span: a band all round the spine line spans 360, a block behind 80 (the bag/hood rule)"] = (
+        wrap_span(ring) == 360 and wrap_span(ring[np.abs(ring) < 40]) == 80 and wrap_span(ring) > BACK_SPAN)
+    (ch, inf), (ch0, _) = look(("pony",), ["bag", "hood"], HOOD_WIDTH=0.0, BAG_WIDTH=0.0)
+    hank = lambda cs: [c for c in cs if c["kind"] in ("hood", "bag") and np.asarray(c["joints"])[-1][2] > 1.15]
+    checks["a hank hanging down the back is no hood or bag (too narrow; the box bag stays); with the width rules off "
+           "it is one"] = (not hank(ch) and any("narrow" in r["why"] for r in inf["back"]["rejected"]) and hank(ch0))
+    (ch, inf), (ch0, _) = look(("brim",), ["hair"], SPIKE_PLATE=1.01)
+    brim = lambda cs: [c for c in cs if np.asarray(c["joints"])[-1][0] > 0.15]
+    checks["a flat brim out of the head is no hair spike (its sides face one way); the spikes stay; with the plate rule "
+           "off it is one"] = (not brim(ch) and len(ch) >= 3 and inf.get("hair_rejected") and brim(ch0))
+    (ch, inf), _ = look(("one_leg",), ["shorts_hem"])
+    checks["shorts on one leg only: no shorts chain, the drop reported unpaired"] = (
+        not ch and "L" in inf.get("shorts", {}).get("unpaired", {}))
+    rig, obj = build_shell(extra=("pony",))
+    mk = os.path.join(tmp, "hank.markers.json")
+    with open(mk, "w", encoding="utf-8") as f:
+        json.dump({"chains": [{"kind": "hair", "name": "pony", "region_radius": 0.06,
+                               "joints": [[0, 0.1, 1.56], [0, 0.148, 1.41], [0, 0.195, 1.26]]}]}, f)
+    rep, code = run(args("--mesh", obj.name, "--kinds", "none", "--markers", mk,
+                         "--out", os.path.join(tmp, "Hank.secondary.json")))
+    pony = [c for c in rep.get("chains", []) if c["name"] == "pony"]
+    sp = json.load(open(os.path.join(tmp, "Hank.secondary.json"), encoding="utf-8")) if code == 0 else {}
+    cols = next((c.get("colliders") for c in sp.get("chains", []) if c["name"] == "pony"), None)
+    checks["a ponytail as a hair marker chain: hung from head.x, skinned on the neck and back below the head, a "
+           "Back sphere beside the Head one, every gate green"] = (
+        code == 0 and pony and pony[0]["parent"] == "head.x" and pony[0]["region_vertices"] > 100
+        and rep["weights"]["pony"]["from_parent"] < 0.9 and cols is not None and "Back" in str(cols)
+        and all(g_["pass"] for g_ in rep["gates"]))
     ok = all(bool(v) for v in checks.values())
     return {"schema": "gate/1", "tool": TOOL, "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
             "gates": [{"name": f"selftest: {k}", "value": bool(v), "limit": True, "pass": bool(v)}

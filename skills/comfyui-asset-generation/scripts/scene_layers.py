@@ -27,7 +27,11 @@ depth; it does not split a character into body parts (layer_split.py does that).
            0.99; scene.alpha_clean: each layer's semi-transparent share 3 px or more inside (alpha
            9..246; a ghost layer) <= 0.03;
            scene.depth_order: where a back and a front layer both cover a pixel, the source
-           matches the front one on >= 0.6 of those pixels, per pair with >= 400 shared px.
+           matches the front one on >= 0.6 of those pixels, per pair with >= 400 shared px;
+           scene.props_whole (props mode): props clear of the left and right edges >= 2, since
+           a cut prop is left out of the shuffle and one prop can only repeat. Ask the concept
+           for several separate objects inside the frame, and try another --seed when the model
+           leaves them on the street layer.
   writes   DIR/<name>.png (canvas-sized), scene.json (back to front: name, png, box, depth,
            role "strip" or "props", tile, and scroll from --scroll: 1 moves with the play line,
            0 stays fixed to the camera, above 1 is a foreground), scene.gate.json (gate/1), scene.psd (psd_write.py),
@@ -63,6 +67,9 @@ MODELS = {
 
 class JobFailed(Exception):
     pass
+
+
+PROPS_WHOLE_MIN = 2   # props clear of the frame's left and right edges
 
 
 def graph(image: str, prompt: str, layers=4, max_size=1024, seed=1, prefix="scene_layers/layer",
@@ -261,13 +268,19 @@ def analyse(source, layers, names=None, band=16, max_error=8.0, prop_min=400, pr
         from scipy import ndimage as ndi
         F = final[-1]
         m = F[..., 3] > 127
-        lab, n = ndi.label(ndi.binary_closing(m, iterations=2))
+        # padded, so the closing's border erosion keeps a prop's columns at the frame's edge
+        lab, n = ndi.label(ndi.binary_closing(np.pad(m, 3), iterations=2)[3:-3, 3:-3])
         for k in range(1, n + 1):
             mk = (lab == k) & (F[..., 3] > 0)
             if mk.sum() < prop_min:
                 continue
             ys, xs = np.nonzero(mk)
             prop_list.append({"mask": mk, "box": [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1]})
+        # a prop the frame cuts shows its straight edge and is left out of the shuffle; with fewer
+        # than two whole props the shuffle can only repeat one
+        whole = [p for p in prop_list if p["box"][0] > 0 and p["box"][2] < W]
+        gates.append(gate("scene.props_whole", len(whole), PROPS_WHOLE_MIN, len(whole) >= PROPS_WHOLE_MIN,
+                          props=len(prop_list), cut_by_frame=len(prop_list) - len(whole)))
     return list(zip(names, final, depth_of)), gates, prop_list, comp
 
 
@@ -399,7 +412,11 @@ def selftest() -> int:
     checks["split_sky_road"] = len(named) == 4 and [d for _, _, d in named] == [0, 0, 1, 2]
     checks["clean_pass"] = all(x["pass"] for x in gates if x["name"] != "scene.coverage")
     checks["coverage_counts_gap"] = g["scene.coverage"]["pass"] is False   # the 30-row gap is uncovered
-    checks["props_two"] = len(props) == 2
+    checks["props_two"] = len(props) == 2 and g["scene.props_whole"]["pass"]
+    edge = near.copy()
+    edge[70:112, 140:200] = (180, 140, 90, 255)                      # the parcels cut by the frame
+    _, gates4, props4, _ = analyse(over([sky, far, edge]), [sky, far, edge], None)
+    checks["cut_prop_caught"] = len(props4) == 2 and not next(x for x in gates4 if x["name"] == "scene.props_whole")["pass"]
     _, gates2, _, _ = analyse(src, [sky, near, far], None)                  # wrong depth order
     checks["order_caught"] = not next(x for x in gates2 if x["name"] == "scene.depth_order")["pass"]
     soft = far.copy()

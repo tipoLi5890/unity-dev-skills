@@ -3,9 +3,9 @@
 
 usage (in this order; `all` runs them one after another):
     autorig.py prep     OUT GLB [--name NAME] [--height 1.75] [--hair HAIR.glb] [--eyes EYES.glb] -> OUT/NAME.glb, .blend
-    autorig.py check    OUT [--name NAME]                           -> rig/NAME.mesh.json
+    autorig.py check    OUT [--name NAME] [--body human|skirt]      -> rig/NAME.mesh.json
     autorig.py smart    OUT [--name NAME] [--facial] [--fingers 5|4] -> rig/NAME.smart.json, rig/NAME_smart.blend
-    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] -> rig/NAME.markers.json, rig/markers/
+    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] [--body human|skirt] -> rig/NAME.markers.json
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
     autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json [rig/NAME.bind.json]
     autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
@@ -26,7 +26,17 @@ markers read its gates one by one and take only what passed; never with --no-sma
 arp: blender-retarget brt_arp op pipeline (--resolution N: the bind's resolution), the rig saved as
 rig/NAME_arp.blend, the Unity FBX in export/.
 contract: unity-rigged-character contract_map.py map --map arp --require contract, --min-fingers 30 unless the
-markers say fingers.mode fixed (a mitten; `ai` counts as found). deform: deform_gate.py on the FBX with the
+markers say fingers.mode fixed (a mitten; `ai` counts as found).
+
+--body skirt (a long coat, a skirt, a robe; check, markers and all take it): mesh_check and arp_markers read the
+legs under the hem and inside the skirt (reference/markers.md), and the markers carry `skirt`. Whenever they do,
+the contract stage ends with skirt_bind (after parts_bind and eyes_bind; this file inside Blender, no
+--factory-startup): in rig/NAME_arp.blend the skirt's own skin (arp_markers.skirt_region: the hem band up to the
+hip + 0.06 H, off the legs) is reweighted to Hips and both thighs, the thighs' share rising smoothly from 0 at the
+band's top to SKIRT_LEG_MAX at the hem and split left/right by a smoothstep across twice the hip width (no
+seam between the thighs), feathered into the bind over the band's top SKIRT_FEATHER x H; then the FBX is exported
+again. A bind that fails a gate stops the run. deform and secondary get --skirt rig/NAME.markers.json: the
+deform gate reads the skirt's tear, the chains find its hem. deform: deform_gate.py on the FBX with the
 contract's retarget_map (--render rig/poses/ unless --no-render; without fist when fingers.mode is fixed; with
 jaw_open when deform_gate knows that pose, the markers carry the face and the contract maps a Jaw).
 secondary (last, after the repair; --no-secondary skips it): secondary_chains.py on the rig to take on (the
@@ -103,7 +113,7 @@ MAC_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 WIN_BLENDER_GLOB = r"C:\Program Files\Blender Foundation\Blender*\blender.exe"
 STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform", "secondary")
 STOP_ON_GATE = {"check", "markers", "arp", "deform"}   # a later stage cannot use what these failed to make
-STOP_STEPS = {"parts_bind", "eyes_bind"}   # a failed bind leaves the FBX without the part: deform would gate the wrong file
+STOP_STEPS = {"parts_bind", "eyes_bind", "skirt_bind"}   # a failed bind leaves the FBX without the part: deform would gate the wrong file
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 DEFORM_POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")   # deform_gate.POSES
 SMART_KILL = 600 + 60 + 120       # arp_smart's --timeout, its watchdog's margin, then the window is killed
@@ -120,6 +130,8 @@ AMOUNTS = (1.0, 0.9)
 CROSS = "deform.cross_side_weight"
 CROSS_BAND = 0.5          # deform_gate.CROSS_BAND: x the hip half-width either side of the Hips is left alone
 MAX_ATTEMPTS = 3
+SKIRT_LEG_MAX = 0.85      # skirt_bind: the thighs' share at the hem (the rest stays on Hips)
+SKIRT_FEATHER = 0.03      # skirt_bind: x H under the band's top over which the new weights blend into the bind
 MANUAL_RUNGS = ("by hand, one at a time, each gated again (autorig.py deform): a finer bind (autorig.py arp OUT "
                 "--resolution, brt_arp pipeline 'resolution' one step up), then the joint marker moved to the "
                 "crease (autorig.py markers OUT --adjust FILE, arp_markers.py --adjust); never a looser limit "
@@ -186,7 +198,8 @@ class Ctx:
                   "repair": o / "repair", "smart": o / "rig" / f"{n}.smart.json",
                   "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json",
                   "hair": o / f"{n}_hair.glb", "bind": o / "rig" / f"{n}.bind.json",
-                  "eyes": o / f"{n}_eyes.glb", "eyes_bind": o / "rig" / f"{n}.eyes_bind.json"}
+                  "eyes": o / f"{n}_eyes.glb", "eyes_bind": o / "rig" / f"{n}.eyes_bind.json",
+                  "skirt_bind": o / "rig" / f"{n}.skirt_bind.json"}
         sec = o / "secondary"
         self.f.update({"sec_dir": sec, "sec_blend": sec / f"{n}_sec.blend", "sec_fbx": sec / f"{n}.fbx",
                        "sec_skeleton": sec / f"{n}.skeleton.json", "sec_json": sec / f"{n}.secondary.json",
@@ -198,6 +211,7 @@ class Ctx:
         self.smart = None      # this run's smart: None (not run), planned, ready, passed, failed, skipped
         self.markers_smart = []   # the --smart the markers were given
         self.smart_why = None     # the probe's failed gates, or the smart step's failed gates or error
+        self.args = a
 
 
 def safe_name(stem: str) -> str:
@@ -321,6 +335,17 @@ def deform_poses(known: tuple, fixed: bool | None, jaw: bool) -> str | None:
     return ",".join([p for p in known if p != "jaw_open" and p != "fist"] + (["jaw_open"] if jaw else []))
 
 
+def is_skirt(c: Ctx, a=None) -> bool:
+    """--body skirt, or the markers carry a skirt (arp_markers --body skirt: a stage run alone)."""
+    if getattr(a, "body", "human") == "skirt":
+        return True
+    return (read_json(c.f["markers"]) or {}).get("body") == "skirt"
+
+
+def skirt_arg(c: Ctx, a=None) -> list:
+    return ["--skirt", c.f["markers"]] if is_skirt(c, a) else []
+
+
 def has_jaw(c: Ctx) -> bool:
     """The markers carry the face (facial true) and the contract maps a Jaw bone."""
     m, k = read_json(c.f["markers"]) or {}, read_json(c.f["contract"]) or {}
@@ -358,7 +383,8 @@ def plan(c: Ctx, stage: str, a) -> list:
                      f["prep"], logs / "prep.log", kind="inner")]
     if stage == "check":
         need(c, f["glb"], "prep")
-        return [step("check", py_cmd(c, HERE / "mesh_check.py", f["glb"], "--out", f["mesh"]), f["mesh"],
+        body = ["--body", "skirt"] if a.body == "skirt" else []
+        return [step("check", py_cmd(c, HERE / "mesh_check.py", f["glb"], "--out", f["mesh"], *body), f["mesh"],
                      logs / "check.log", kind="python")]
     if stage == "smart":
         need(c, f["blend"], "prep")
@@ -379,6 +405,7 @@ def plan(c: Ctx, stage: str, a) -> list:
         prev = [] if a.no_render else ["--preview-dir", f["previews"]]
         c.markers_smart = smart_args(c, a)
         adj = ["--adjust", Path(os.path.abspath(a.adjust))] if a.adjust else []
+        adj += ["--body", "skirt"] if a.body == "skirt" else []
         return [step("markers", blender_cmd(c, HERE / "arp_markers.py", "--mesh", c.name, "--out", f["markers"],
                                             *c.markers_smart, *adj, *prev, blend=f["blend"]), f["markers"],
                      logs / "markers.log")]
@@ -404,6 +431,12 @@ def plan(c: Ctx, stage: str, a) -> list:
                                                        "--rig-glb", f["glb"], "--name", c.name,
                                                        "--report", f["eyes_bind"], factory=False),
                               f["eyes_bind"], logs / "eyes_bind.log"))
+        if is_skirt(c, a):   # a long coat or skirt: its skin off the thighs' seam, before any deform gate
+            steps.append(step("skirt_bind", blender_cmd(c, SELF, "_inside", "skirt", "--markers", f["markers"],
+                                                        "--contract", f["contract"], "--fbx", f["fbx"],
+                                                        "--save", f["arp_blend"], "--report", f["skirt_bind"],
+                                                        blend=f["arp_blend"], factory=False),
+                              f["skirt_bind"], logs / "skirt_bind.log", kind="inner"))
         return steps
     if stage == "deform":
         need(c, f["fbx"], "arp"); need(c, f["contract"], "contract")
@@ -414,6 +447,7 @@ def plan(c: Ctx, stage: str, a) -> list:
         blend, _ = take_on(c)
         need(c, blend, "arp"); need(c, f["contract"], "contract")
         extra = (["--markers", Path(os.path.abspath(a.secondary_markers))] if a.secondary_markers else []) + \
+            skirt_arg(c, a) + \
             (["--hair-chains"] if a.hair_chains else []) + ([] if a.no_render else ["--render", f["sec_pics"]])
         fingers = [] if fingers_fixed(c) else ["--min-fingers", a.min_fingers]
         return [step("secondary", blender_cmd(c, HERE / "secondary_chains.py", "--mesh", c.name, "--map", f["contract"],
@@ -433,7 +467,7 @@ def deform_step(c: Ctx, name, fbx, out, render, logs, contract=None) -> dict:
     poses = ["--poses", chosen] if chosen else []
     rend = ["--render", render] if render else []
     return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", contract or c.f["contract"],
-                                  *poses, *rend, "--out", out), out, logs / f"{name}.log")
+                                  *poses, *rend, *skirt_arg(c, c.args), "--out", out), out, logs / f"{name}.log")
 
 
 def cross_arg(cross: dict | None, band=None) -> list:
@@ -694,6 +728,10 @@ def parser() -> Parser:
             p.add_argument("--no-render", action="store_true", help="no marker pictures, no pose renders")
         if s in ("smart", "markers", "all"):
             p.add_argument("--no-smart", action="store_true", help="no Auto-Rig Pro AI: slice markers alone")
+        if s in ("check", "markers", "all"):
+            p.add_argument("--body", choices=("human", "skirt"), default="human",
+                           help="skirt: a long coat, skirt or robe (the legs read under its hem, the skirt bound "
+                                "off the thighs' seam)")
         if s in ("markers", "all"):
             p.add_argument("--adjust", help="arp_markers.py --adjust: JSON {marker: [x, y, z]} a person placed")
         if s in ("arp", "all"):
@@ -719,7 +757,7 @@ def parse(argv) -> argparse.Namespace:
     for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
                  ("no_smart", False), ("facial", False), ("fingers", 5), ("no_secondary", False),
                  ("secondary_markers", None), ("hair", None), ("hair_chains", False), ("eyes", None),
-                 ("adjust", None), ("resolution", None)):
+                 ("adjust", None), ("resolution", None), ("body", "human")):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -824,6 +862,9 @@ def main(argv=None, osname=None, env=None) -> int:
             files.update(blend=c.f["sec_blend"], fbx=c.f["sec_fbx"], contract=c.f["sec_contract"],
                          deform=c.f["sec_deform"])
     out["result"] = {k: str(v) for k, v in files.items() if Path(v).exists()}
+    hint = (read_json(c.f["mesh"]) or {}).get("skirt_hint") if "check" in stages else None
+    if hint:
+        out["skirt_hint"] = hint
     out.update({"exit_code": rc, "ok": rc == 0})
     return _emit(c, a, out, rc)
 
@@ -870,7 +911,7 @@ def _emit(c, a, out, code) -> int:
 # --- inside Blender: prep, arp, repair ------------------------------------------------------------------------------
 def inside(argv: list) -> None:
     p = argparse.ArgumentParser(prog="autorig.py _inside")
-    p.add_argument("what", choices=("prep", "arp", "repair"))
+    p.add_argument("what", choices=("prep", "arp", "repair", "skirt"))
     for k in ("glb", "name", "save", "report", "mesh", "markers", "fbx", "contract", "hinges", "backup_dir",
               "cross_side"):
         p.add_argument("--" + k.replace("_", "-"))
@@ -878,7 +919,7 @@ def inside(argv: list) -> None:
     p.add_argument("--cross-band", type=float); p.add_argument("--resolution", type=int)
     a = p.parse_args(argv)
     try:
-        rep, code = {"prep": _in_prep, "arp": _in_arp, "repair": _in_repair}[a.what](a)
+        rep, code = {"prep": _in_prep, "arp": _in_arp, "repair": _in_repair, "skirt": _in_skirt}[a.what](a)
     except Exception as exc:   # noqa: BLE001 — every failure is reported, exit 1
         import traceback
         rep, code = {"ok": False, "error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}, 1
@@ -970,6 +1011,98 @@ def _in_repair(a):
     log["export_failed_gates"] = [g.get("name") for g in x.get("gates", []) if gate_failed(g)]
     bpy.ops.wm.save_as_mainfile(filepath=a.save, copy=True)
     return {"ok": passed, **log}, 0 if passed else 1
+
+
+def skirt_weights(V, W, cols: dict, sk: dict, region) -> np.ndarray:
+    """skirt_bind's weights (numpy, no Blender): rows of W (vertices x groups) inside `region` become Hips and
+    both thighs (cols {"Hips", "UpperLeg.L", "UpperLeg.R"}: column indices), the thighs' share alpha rising by a
+    smoothstep from 0 at the band's top to SKIRT_LEG_MAX at the hem, split left/right by a smoothstep over twice
+    the hip half-width around the midline; blended into the old row over SKIRT_FEATHER x H under the top. At
+    most 4 weights per row (the smallest dropped), each row summing to 1."""
+    import numpy as np
+    W = np.array(W, dtype=float)
+    sm = lambda x: (lambda y: y * y * (3 - 2 * y))(np.clip(x, 0.0, 1.0))
+    idx = np.nonzero(region)[0]
+    z, x = V[idx, 2], V[idx, 0]
+    top, hem, H = float(sk["top_z"]), float(sk["hem_z"]), float(sk["height"])
+    alpha = SKIRT_LEG_MAX * sm((top - z) / max(top - hem, 1e-6))
+    lam = sm((x - float(sk["midline_x"])) / (4 * max(float(sk["half_width"]), 1e-4)) + 0.5)
+    beta = sm((top - z) / (SKIRT_FEATHER * H))
+    new = np.zeros((len(idx), W.shape[1]))
+    new[:, cols["Hips"]] = 1 - alpha
+    new[:, cols["UpperLeg.L"]] += alpha * lam
+    new[:, cols["UpperLeg.R"]] += alpha * (1 - lam)
+    old = W[idx]
+    s = old.sum(axis=1, keepdims=True)
+    old = np.divide(old, s, out=np.zeros_like(old), where=s > 1e-9)
+    rows = (1 - beta)[:, None] * old + beta[:, None] * new
+    if rows.shape[1] > 4:
+        cut = np.argsort(-rows, axis=1)[:, 4:]
+        np.put_along_axis(rows, cut, 0.0, axis=1)
+    rows /= np.maximum(rows.sum(axis=1, keepdims=True), 1e-12)
+    W[idx] = rows
+    return W
+
+
+def _in_skirt(a):
+    """skirt_bind: the skirt's own skin reweighted off the thighs' seam (skirt_weights), the FBX exported again."""
+    import bpy
+    import numpy as np
+    sys.path.insert(0, str(BRT))
+    sys.path.insert(0, str(HERE))
+    import brt_arp
+    import arp_markers
+    markers = json.loads(Path(a.markers).read_text(encoding="utf-8"))
+    sk = markers.get("skirt")
+    if markers.get("body") != "skirt" or not sk:
+        return {"ok": False, "error": f"{a.markers} carries no skirt (arp_markers --body skirt)"}, 1
+    rmap = json.loads(Path(a.contract).read_text(encoding="utf-8")).get("retarget_map") or {}
+    first = lambda n: n[0] if isinstance(n, list) else n
+    roles = {r: first(rmap.get(r)) for r in ("Hips", "UpperLeg.L", "UpperLeg.R")}
+    if not all(roles.values()):
+        return {"ok": False, "error": f"the contract maps no {[r for r, b in roles.items() if not b]}"}, 1
+    skip = lambda o: o.get("parts_hair") or o.name.split(".")[0] in ("Hair", "Eye") or o.name.startswith("Eye")
+    bound = [(o, m.object) for o in bpy.data.objects if o.type == 'MESH' and not skip(o)
+             for m in o.modifiers if m.type == 'ARMATURE' and m.object is not None and m.object.type == 'ARMATURE']
+    if not bound:
+        return {"ok": False, "error": "no mesh is bound to an armature in this file"}, 1
+    mesh, rig = max(bound, key=lambda t: len(t[0].data.vertices))
+    deform = [b.name for b in rig.data.bones if b.use_deform]
+    missing = [b for b in roles.values() if b not in deform]
+    if missing:
+        return {"ok": False, "error": f"no deform bones {missing} on {rig.name}"}, 1
+    for b in roles.values():
+        if mesh.vertex_groups.get(b) is None:
+            mesh.vertex_groups.new(name=b)
+    groups = [g for g in mesh.vertex_groups if g.name in deform]
+    gi = {g.index: k for k, g in enumerate(groups)}
+    n = len(mesh.data.vertices)
+    V = np.array([tuple(mesh.matrix_world @ v.co) for v in mesh.data.vertices], dtype=float)
+    W = np.zeros((n, len(groups)))
+    for v in mesh.data.vertices:
+        for ge in v.groups:
+            if ge.group in gi:
+                W[v.index, gi[ge.group]] = ge.weight
+    region = arp_markers.skirt_region(V, sk)
+    cols = {r: next(k for k, g in enumerate(groups) if g.name == b) for r, b in roles.items()}
+    W2 = skirt_weights(V, W, cols, sk, region)
+    idx = np.nonzero(region)[0]
+    for k, g in enumerate(groups):
+        g.remove([int(i) for i in idx])
+        keep = idx[W2[idx, k] > 1e-6]
+        for i in keep:
+            g.add([int(i)], float(W2[i, k]), 'REPLACE')
+    log = {"mesh": mesh.name, "armature": rig.name, "bones": roles, "vertices": int(len(idx)),
+           "region_share": round(float(len(idx)) / max(n, 1), 4), "leg_max": SKIRT_LEG_MAX,
+           "band_z": [round(float(sk["hem_z"]), 4), round(float(sk["top_z"]), 4)]}
+    gates = [{"name": "skirt.region", "value": int(len(idx)), "limit": ">= 50", "pass": bool(len(idx) >= 50)}]
+    Path(a.fbx).parent.mkdir(parents=True, exist_ok=True)
+    x = brt_arp.run({"op": "export", "armature": rig.name, "fbx": a.fbx})
+    gates.append({"name": "skirt.export", "value": bool(report_passed(x)), "limit": True, "pass": bool(report_passed(x))})
+    log["export_failed_gates"] = [g.get("name") for g in x.get("gates", []) if gate_failed(g)]
+    bpy.ops.wm.save_as_mainfile(filepath=a.save)
+    ok = all(g["pass"] for g in gates)
+    return {"ok": ok, "pass": ok, "gates": gates, **log}, 0 if ok else 2
 
 
 def mirror_bone(name: str) -> str:
@@ -1244,6 +1377,18 @@ def selftest() -> int:
             check(f"{osname}: --no-secondary plans no secondary step; --secondary-markers passes --markers down",
                   code == 0 and not any(s["name"].startswith("secondary") for s in r5["steps"])
                   and s6[s6.index("--markers") + 1] == os.path.abspath("m.json"))
+            _, rs, _ = go(["all", str(out), str(glb), "--body", "skirt", "--dry-run"], osname, {"BLENDER": bl})
+            ss = {s_["name"]: s_["cmd"] for s_ in rs.get("steps", [])}
+            mk = str(out / "rig" / "Runner_Courier.markers.json")
+            sb = ss.get("skirt_bind", [])
+            check(f"{osname}: --body skirt reaches mesh_check and the markers; skirt_bind (this file inside Blender, "
+                  "the arp blend, no --factory-startup) sits between contract and deform; deform and the chains get "
+                  "--skirt MARKERS",
+                  list(ss) == order[:7] + ["skirt_bind"] + order[7:] and "--body" in ss["check"]
+                  and ss["markers"][ss["markers"].index("--body") + 1] == "skirt" and sb[sb.index("--") + 1:sb.index("--") + 3]
+                  == ["_inside", "skirt"] and "--factory-startup" not in sb and sb[sb.index("-P") - 1].endswith("_arp.blend")
+                  and all(c_[c_.index("--skirt") + 1] == mk for c_ in (ss["deform"], ss["secondary"], ss["secondary_deform"]))
+                  and "--skirt" not in steps["deform"] and "--body" not in steps["check"], steps=list(ss))
             _, r7, _ = go(["all", str(out), str(glb), "--adjust", "adj.json", "--resolution", "8", "--dry-run"], osname,
                           {"BLENDER": bl})
             s7 = {s["name"]: s["cmd"] for s in r7.get("steps", [])}
@@ -1276,6 +1421,27 @@ def selftest() -> int:
         win = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
         check("nt: the newest Blender Foundation install when not on PATH",
               default_blender("nt", {}, none, lambda p: False, lambda g: [win.replace("5.2", "4.5"), win]) == win)
+        # skirt_bind's weights on a skirt cylinder: Hips and both thighs, smooth across the midline, the bind kept at the top
+        import numpy as np
+        ang = np.linspace(-np.pi, np.pi, 72, endpoint=False)
+        zs = np.linspace(0.55, 0.97, 22)
+        V = np.array([[0.2 * np.sin(t), -0.14 * np.cos(t), z] for z in zs for t in ang])
+        rng = np.random.default_rng(1)
+        W0 = rng.random((len(V), 6)) * (rng.random((len(V), 6)) > 0.5)
+        W0[:, 4:] = 0.0
+        W0[:, 3] += 0.01
+        sk = {"top_z": 0.97, "hem_z": 0.56, "height": 1.78, "midline_x": 0.0, "half_width": 0.12}
+        W1 = skirt_weights(V, W0, {"Hips": 0, "UpperLeg.L": 1, "UpperLeg.R": 2}, sk, np.ones(len(V), bool))
+        hem = np.isclose(V[:, 2], zs[0])
+        front = hem & np.isclose(V[:, 0], 0.0, atol=1e-9) & (V[:, 1] < 0)
+        lam = W1[hem, 1] / np.maximum(W1[hem, 1] + W1[hem, 2], 1e-9)
+        top = np.isclose(V[:, 2], zs[-1])
+        check("skirt_bind weights: rows sum to 1 with at most 4 weights; at the hem Hips holds 1 - SKIRT_LEG_MAX and the "
+              "front centre is half each thigh; the left share changes by under 0.1 between neighbours round the hem; "
+              "the band's top keeps the bind", np.allclose(W1.sum(1), 1) and ((W1 > 0).sum(1) <= 4).all()
+              and np.allclose(W1[hem, 0], 1 - SKIRT_LEG_MAX, atol=0.02) and abs(W1[front, 1][0] - W1[front, 2][0]) < 1e-6
+              and np.abs(np.diff(lam)).max() < 0.1
+              and np.allclose(W1[top], W0[top] / W0[top].sum(1, keepdims=True)))
         check("posix: the macOS app when not on PATH", default_blender("posix", {}, none, lambda p: p == MAC_BLENDER,
                                                                        lambda g: []) == MAC_BLENDER)
         check("$BLENDER wins over PATH", default_blender("nt", {"BLENDER": "B"}, lambda n: "P") == "B")

@@ -14,7 +14,8 @@ build, run, faults and reference's rig check take --blender PATH (env BLENDER, e
 
 The cast (rig_exam_blender.py): metaball bodies built around a known skeleton, seeded, about 40k triangles each:
 standard, chibi (outside the marker windows: expected to stop there), heavy, thin (arms 55 deg), long_limbs (arms
-30 deg), mitten (fingers fused), spiky_hair (hair raising the top), skirt (a solid skirt over the crotch), asym (a
+30 deg), mitten (fingers fused), spiky_hair (hair raising the top), skirt (a solid skirt over the crotch, run with
+--body skirt), asym (a
 few degrees and millimetres apart). Each truth file (exam/1, kind truth) holds the joints the body was built from.
 
 run: `autorig.py all EXAM/runs/NAME EXAM/cast/NAME.glb --name NAME --height H --no-smart` (H the body's own height, so
@@ -33,6 +34,8 @@ without the repair ladder; or the base FBX's weights edited by rig_exam_blender.
     elbow_blend     50/50 upper/lower arm weight around each elbow      expected: deform.volume_loss_max
     knee_blend      50/50 thigh/shin weight around each knee            expected: deform.volume_loss_max
     rigid           every vertex on its heaviest bone alone             expected: deform.hinge_blended, self_intersection
+    skirt_split     (a skirt base only) the skirt on Hips and its own side's thigh, split at the midline
+                                                                        expected: deform.skirt_tear
     none            the base FBX unchanged (the control)               expected: every gate passes
 A fault that no gate fails has slipped through: the report lists it.
 
@@ -84,13 +87,14 @@ RIG_JOINTS = {"UpperArm": "shoulder", "LowerArm": "elbow", "Hand": "wrist", "Upp
               "Middle3": "middle2", "Ring1": "ring0", "Ring2": "ring1", "Ring3": "ring2", "Little1": "little0",
               "Little2": "little1", "Little3": "little2", "Thumb1": "thumb0", "Thumb2": "thumb1", "Thumb3": "thumb2"}
 MARKER_FAULTS = ("elbow_shift", "knee_swap", "finger_collapse")
-WEIGHT_FAULTS = ("leg_smear", "elbow_blend", "knee_blend", "rigid", "none")
+WEIGHT_FAULTS = ("leg_smear", "elbow_blend", "knee_blend", "rigid", "skirt_split", "none")
 EXPECT = {"elbow_shift": ["markers.limb_ratio", "deform.volume_loss_max"],
           "knee_swap": ["sides", "arp.*", "deform.*"],
           "finger_collapse": ["markers.finger_lengths", "arp.refs_placed", "axes", "parent_chain", "contract"],
           "leg_smear": ["deform.cross_side_weight"], "elbow_blend": ["deform.volume_loss_max"],
           "knee_blend": ["deform.volume_loss_max"],
-          "rigid": ["deform.hinge_blended", "deform.self_intersection_p95"], "none": []}
+          "rigid": ["deform.hinge_blended", "deform.self_intersection_p95"],
+          "skirt_split": ["deform.skirt_tear"], "none": []}
 VOLUME_FAULTS = ("elbow_blend", "knee_blend")
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 SHIFT_H = 0.05
@@ -592,6 +596,8 @@ def cmd_run(a) -> tuple[int, dict]:
         if out.exists():
             shutil.rmtree(out)
         cmd = autorig(a, "all", out, src / f"{name}.glb", "--name", name, "--height", truth["height"])
+        if (truth.get("spec") or {}).get("skirt"):      # a long skirt: the case is rigged on the skirt route
+            cmd += ["--body", "skirt"]
         if not a.smart:
             cmd.append("--no-smart")
         code = sh(cmd, exam / "logs" / f"run_{name}.log")
@@ -653,7 +659,9 @@ def cmd_faults(a) -> tuple[int, dict]:
     fbx = src / "export" / f"{name}.fbx"
     if a.fbx:                                   # a reference: its accepted rig is the base for weight faults
         fbx, contract = Path(a.fbx), Path(a.contract or contract)
-    chosen = a.only.split(",") if a.only else list(MARKER_FAULTS + WEIGHT_FAULTS)
+    skirt = (markers or {}).get("body") == "skirt"
+    chosen = a.only.split(",") if a.only else [f for f in MARKER_FAULTS + WEIGHT_FAULTS if skirt or f != "skirt_split"]
+    sk_arg = ["--skirt", src / "rig" / f"{name}.markers.json"] if skirt else []
     unknown = [f for f in chosen if f not in MARKER_FAULTS + WEIGHT_FAULTS]
     if unknown:
         raise Refused(f"unknown faults {unknown}; known {list(MARKER_FAULTS + WEIGHT_FAULTS)}")
@@ -700,14 +708,15 @@ def cmd_faults(a) -> tuple[int, dict]:
         else:
             blend = out / f"{name}_{fault}.blend"
             wrep = out / "weights.json"
-            code = sh(blender(a, HELPER, "weights", fbx, contract, fault, blend, "--report", wrep), out / "weights.log")
+            code = sh(blender(a, HELPER, "weights", fbx, contract, fault, blend, "--report", wrep, *sk_arg),
+                      out / "weights.log")
             w = read_json(wrep) or {}
             if code != 0:
                 doc["error"] = w.get("error") or f"weights exited {code}"
             else:
                 drep = out / f"{name}.deform.json"
                 code = sh(blender(a, DEFORM, "--armature", w["armature"], "--mesh", w["mesh"], "--map", contract,
-                                  *fault_poses(markers), "--out", drep, blend=blend), out / "deform.log")
+                                  *fault_poses(markers), *sk_arg, "--out", drep, blend=blend), out / "deform.log")
                 d = read_json(drep)
                 doc["weights"] = {k: w.get(k) for k in ("moved", "joints", "changed_vertices")}
                 doc["steps"].append({"name": "deform", "exit_code": code, "failed_gates": failed_gates(d)})

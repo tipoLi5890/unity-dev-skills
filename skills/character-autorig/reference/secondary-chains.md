@@ -45,16 +45,37 @@ radius as a fraction of the height H.
 
 | kind | Found as | Chains | Hangs from | stiffness / drag / gravity / max° | radius | Colliders |
 |---|---|---|---|---|---|---|
-| `hood` | a bulge ≥ 0.04 H off the opened back profile, centred above UpperChest | 1 × 2 bones | Neck or UpperChest | 0.35 / 0.35 / 0.6 / 40 | 0.023 H | Chest, UpperChest, Back |
-| `bag` | the same, centred between Hips − 0.08 H and UpperChest | 1 × 1 bone | Spine, Hips or Chest | 0.25 / 0.45 / 1.0 / 30 | 0.034 H | Hips, Spine, both thighs |
+| `hood` | a bulge ≥ 0.04 H off the opened back profile, centred above UpperChest, ≥ 0.12 H across | 1 × 2 bones | Neck or UpperChest | 0.35 / 0.35 / 0.6 / 40 | 0.023 H | Chest, UpperChest, Back |
+| `bag` | the same, centred between Hips − 0.08 H and UpperChest, ≥ 0.08 H across | 1 × 1 bone | Spine, Hips or Chest | 0.25 / 0.45 / 1.0 / 30 | 0.034 H | Hips, Spine, both thighs |
 | `hem` | horizontal skin within Hips ± 0.06 H with a lip: the skin 0.012 H above the edge ≥ 0.004 H further out than below, in ≥ 4 of six sectors | 4–6 × 1 | Hips or Spine | 0.55 / 0.40 / 0.3 / 25 | 0.011 H | both thighs, Hips |
-| `shorts_hem` | per leg, a drop of the thigh's skin radius by ≥ 1.35 × and ≥ 0.01 H | 3 per leg × 1 | UpperLeg | 0.65 / 0.40 / 0.2 / 20 | 0.009 H | both thighs, its own included |
-| `hair` | head skin outside the face cone, the farthest fifth clustered by direction; a cluster is a spike when ≥ 0.12 of its skin faces sideways | ≤ 6 × 1–2 | Head | 0.75 / 0.30 / 0.1 / 20 | 0.006 H | Head |
+| `hem`, `--skirt` | the skirt route's hem (`arp_markers --body skirt`), wherever it hangs: the skirt's own skin in six sectors, a sector live with ≥ 30 vertices within 0.03 H of the hem | 4–6 × 2 | the thigh it covers (else Hips) | as `hem` | 0.011 H | both thighs, Hips |
+| `shorts_hem` | per leg, a drop of the thigh's skin radius by ≥ 1.35 × and ≥ 0.01 H, on both legs within 0.03 H | 3 per leg × 1 | UpperLeg | 0.65 / 0.40 / 0.2 / 20 | 0.009 H | both thighs, its own included |
+| `hair` | head skin outside the face cone, the farthest fifth clustered by direction; a cluster is a spike when ≥ 0.12 of its skin faces sideways and no one axis holds > 0.72 of those sides' normals | ≤ 6 × 1–2 | Head | 0.75 / 0.30 / 0.1 / 20 | 0.006 H | Head |
 | `strap` | never detected (fixed at both ends): a marker chain only | 1 × 1, stiff | UpperChest or Chest | 0.85 / 0.50 / 0.3 / 10 | 0.006 H | Chest, UpperChest |
 
 The thresholds are what separate clothing from anatomy: the selftest's smooth body (buttocks, a
 tapering thigh, an oval skull) gets no chain, the test shell gets every kind but the hood. Each
 vertex belongs to one region (bag, hood, hair, hem, shorts hem, strap in that order).
+
+**Look-alikes** (each rule has a counterexample in the selftest, found with the rule off). A back
+component spanning more than 180° round the spine line wraps the body: a belt read against a coat
+whose back is vented (the opened profile drops to the front skin there) is no bag. A hood narrower
+than 0.12 H, or a bag narrower than 0.08 H, is a hank of hair, a hair tie or a strap. A hair cluster
+whose sideways skin faces one way is a plate, a cap's brim or a visor (`detect.hair_rejected`). A
+shorts drop on one leg alone, or at heights more than 0.03 H apart, is a skirt's or a coat's hem:
+no shorts chain (`detect.shorts.unpaired`). Everything rejected is listed in `detect.back.rejected`;
+a narrow one behind the head is the place for a ponytail marker.
+
+**A long coat or skirt** (`autorig.py` passes `--skirt rig/NAME.markers.json` on the skirt route).
+The jacket hem's search (Hips ± 0.06 H) never reaches a knee-length hem, and a chain hung from Hips
+can take only Hips' share of a skirt the thighs hold (0.17–0.34 on a greatcoat). Here each sector's
+chain runs from the hip down the skirt's surface to the markers' hem, hangs from the bone holding
+most of its skin (the thigh it covers, after the skirt bind) and takes its share from that bone
+first: 0.6 at the hem (`SKIRT_SHARE`), fading to 0 within 0.04 H of the legs' own skin (a skirt
+joined to them). The six blend round one ring and share its skin; where a vertex would hold more
+than four weights, chains merge only with chains on the same bone, then that bone's remainder goes
+into its own chain, so a pose moves the skirt as the bind did and the Blender gates read the same.
+No shorts hem is searched under a skirt.
 
 **Weights.** A chain's share ramps from 0 at its root to its maximum along it, feathered at the
 region border and blended between neighbours of a ring. It is taken from the chain's parent first,
@@ -96,7 +117,12 @@ bone's head.
 ```
 
 A marker chain's region is the allowed skin (its kind's body parts, not yet taken) within
-`region_radius` (default 0.03 H) of its polyline. **The strap's stiff mid-sag:** a strap is fixed
+`region_radius` (default 0.03 H) of its polyline. **A ponytail** is a `hair` marker chain from the
+tie down the hank: its region may take the head's and the torso's skin (a ponytail on a fused shell
+is bound to Neck, UpperChest, even a Shoulder), its share comes from those bones, and it hangs from
+Head, so it turns with the head (a `hood` marker on UpperChest does not); one that hangs below the
+neck gets the `Back` sphere beside the Head one. Keep `region_radius` to the hank's own width, or
+the coat under it swings too. **The strap's stiff mid-sag:** a strap is fixed
 at the shoulder and the hip, so its one bone gets a share that peaks mid-span and fades to zero at
 both ends (sin² along it): the middle sags and settles, the ends ride the chest. `side` (`x`, `l`,
 `r`) names the bones' suffix; a shorts marker's thigh is the side its first joint is on.
@@ -116,5 +142,7 @@ spring runtime handles both (`unity-rigged-character` → `reference/secondary-m
 body, and checks: every kind but the hood found, every gate green, each shorts hem testing both
 thighs, `--require hood` failing, a strap marker's mid-span share, an empty chain list on the
 smooth body, a rig that already has chains refused, and the spikes as a separate hair object: rigid
-by default, chained on that object with `--hair-chains`, `--require hair` failing without it. Its secondary/1 and gate/1 samples go to
+by default, chained on that object with `--hair-chains`, `--require hair` failing without it; the
+look-alikes (a hank down the back, a flat brim, shorts on one leg, a band wrapping the body) caught by
+their rules, and a ponytail marker hung from Head with a Back sphere. Its secondary/1 and gate/1 samples go to
 `tools/check-contracts.py`.

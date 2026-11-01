@@ -31,6 +31,20 @@ python3 scripts/part_math.py plan ArtDirection/sources/runner_anchor.glb --views
   narrowest radius (within 1.2 ×). A collar may sit around it but not touch it. Above the band the
   low-poly chin fuses onto the neck; below it the neck meets the hood or shoulders. No band (a raised
   hood, a helmet) → exit 2: `three` does not take that character.
+- **A covered neck** (`anchor.neck.covered`, and a line in the output's `warnings`). When the ring goes
+  on below the band no wider (≤ 1.2 × its radius) for ≥ 0.1 head heights with loops nested in it on at
+  least half the rows (a stand collar fused to the jaw, hair fused to the nape), the band sits on the
+  jaw and the anchor has no neck to measure. The plan says so, counts it a collar (seam `overlap`,
+  `collar_top` = the band's low), and puts the seam under the collar: `part_bottom_y` reaches the
+  cover's foot (the last height before the ring passes 1.5 × the radius), so the generated neck runs
+  down inside the collar. The jaw and collar faces in that column are dropped from the keep masks but
+  not grown upward (grown, they take the chin and the mouth), and in the side views the neck prior is
+  a round neck whose back is the nape (`covered.nape_z`), not the jaw-deep band ring.
+- **Hair hanging below the cut** (`views.hanging`). A piece of the faces between `part_bottom_y` and
+  `cut_y` that meets the deleted head at the cut with most of that rim outside the neck disc (a
+  ponytail, long locks; a collar or a hood meets kept faces there) is kept in the head's views down to
+  `part_bottom_y` (`views/head/hang_<view>.png`), so the guide is not cut flat at the cut; the
+  assembly keeps the anchor's own below the cut.
 - **Seam heights.** `cut_y` = band low + 0.2 × band length (the lowest height where the neck is still
   an isolated ring); `part_bottom_y` = band low − 0.1 × head height: the part's neck must reach this
   far, with a flat bottom. Never place a seam plane from view pixels.
@@ -44,7 +58,8 @@ python3 scripts/part_math.py plan ArtDirection/sources/runner_anchor.glb --views
   (a depth-tested raster, head region against the rest). The mask keeps the head region where it is
   the visible surface, minus every other visible surface grown upward by `--hood-grow` × head height
   (0.08: a drawn hood sits a few pixels above the low-poly anchor's). A hood in front of or behind the
-  neck is removed by geometry, never by colour; a plain projected silhouette keeps it.
+  neck is removed by geometry, never by colour; a plain projected silhouette keeps it. Over a covered
+  neck the column's faces are not grown (above).
 - `--painted` records the S3b repaint as `anchor.painted_glb`; the assembly takes it over `glb`. The
   painted head is `generated.painted`, else `paint/<part>/<stem>_painted.glb` (run `paint_loop.py`
   with `--out paint/<part>`), else the generated GLB.

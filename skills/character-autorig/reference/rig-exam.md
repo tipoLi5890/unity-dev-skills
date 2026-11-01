@@ -45,7 +45,7 @@ by up to 2 %, so a seed always gives the same cast.
 | `long_limbs` | longer arms and legs, arms 30° | every stage passes |
 | `mitten` | the standard body with fused fingers | `fingers.mode` `fixed` |
 | `spiky_hair` | hair that raises the top of the mesh | the windows read the hair as height |
-| `skirt` | a solid skirt over the crotch, hem at 0.40 of 1.7 m | the crotch read at the hem |
+| `skirt` | a solid skirt over the crotch, hem at 0.40 of 1.7 m; run with `--body skirt` | without it, the crotch read at the hem; with it, the crotch hidden and the hip placed from the knee |
 | `asym` | arms a few degrees apart, one knee and shoulder a few mm higher | within the symmetry gate |
 
 **Truth** (`NAME.truth.json`, `exam/1`, kind `truth`, in the GLB's frame with Z up):
@@ -113,6 +113,7 @@ the result with `deform_gate.py`.
 | `leg_smear` | half of the left leg's weight on the right leg's bones | `deform.cross_side_weight` |
 | `elbow_blend`, `knee_blend` | the joint's weight split 50/50 between its two bones within 0.6 of the shorter span | `deform.volume_loss_max` |
 | `rigid` | every vertex on its heaviest bone alone | `deform.hinge_blended` (or the self-intersection gate) |
+| `skirt_split` | a skirt base only (planted when its markers carry `skirt`): the skirt's own skin on Hips and the thigh of its own side, the thigh's share rising to 1 at the hem, switching sides at the midline (a plain bind's long coat) | `deform.skirt_tear` |
 | `none` | the base FBX unchanged (the control) | none: a failure here is a false fail |
 
 The verdict is `caught` when the expected gate failed, `caught_by_other_gate` when another gate

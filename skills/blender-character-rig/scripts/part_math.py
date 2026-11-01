@@ -19,8 +19,12 @@ and head height, the seam heights, the frame fit of the anchor onto the clean vi
 offset per view, the silhouette IoU), each generated part's crop box per view and its keep masks
 (`views/<part>/keep_<view>.png`: the view mask where the anchor's part region is the surface nearest
 the camera, minus every other surface the view sees, grown upward by --hood-grow x head height, so a
-hood in front of or behind the neck is removed by geometry, never by colour). --painted records the
-S3b repaint as anchor.painted_glb (the assembly takes it). CLEAN_DIR holds the cleaned views' masks,
+hood in front of or behind the neck is removed by geometry, never by colour). A covered neck (the ring
+goes on below the band, no wider, nested: a stand collar fused to the jaw) is reported (anchor.neck.covered,
+`warnings`): the part's neck reaches the cover's foot and the column is dropped from the keep masks
+without growing. Hair hanging below the cut outside the neck (a ponytail) is kept in the views
+(views.hanging, `hang_<view>.png`). --painted records the S3b repaint as anchor.painted_glb (the
+assembly takes it). CLEAN_DIR holds the cleaned views' masks,
 `*front*mask*.png` and likewise for left, back and right. Coordinates are the anchor GLB's own
 frame: +Y up, the character facing +Z (the `front` view); a view maps a point to px = cx + u / units_per_px, row = cy - y / units_per_px with
 u = x (front), -x (back), -z (left), +z (right).
@@ -76,6 +80,7 @@ TIERS = {
 RESERVED_TIERS = ("custom",)
 FRAME_IOU_MIN = 0.90
 HIDE_FAN_DEG = (0, -35, 35, -70, 70)     # tuck_band: covered = every ray of this horizontal fan meets the hide
+COVERED_MIN = 0.1          # neck_band: the ring goes on below the band, nested, this many head heights: a covered neck
 
 
 class Refused(Exception):
@@ -489,7 +494,7 @@ def neck_band(V, F, step=0.002, axis_xz=None):
             r_eq = math.sqrt(c["area"] / math.pi)
             solidity = c["area"] / max(_hull_area(c["xz"]), 1e-30)
             row.update({"r": r_eq, "solidity": round(solidity, 3), "children": len(c["children"]),
-                        "centroid": c["centroid"].tolist(),
+                        "centroid": c["centroid"].tolist(), "z_back": float(c["xz"][:, 1].min()),
                         "collar": collar_near(loops, h, sub, r_eq, c["centroid"]),
                         "ok": solidity >= 0.85 and len(c["children"]) <= 1})
         profile.append(row)
@@ -523,19 +528,76 @@ def neck_band(V, F, step=0.002, axis_xz=None):
                 break
             if r.get("collar"):
                 collar_top = r["y"]
+    # Below the band the same ring may go on, no wider, with loops nested in it (a stand collar fused to the
+    # jaw, hair fused to the nape): the band then sits on the jaw and the neck is covered. Its foot is the
+    # last height before the ring passes 1.5 x the band's radius (the shoulders).
+    covered, below = None, profile[lo + 1:]
+    k = 0
+    while k < len(below) and below[k].get("r") and below[k]["r"] <= 1.2 * r_min:
+        k += 1
+    nested = [r for r in below[:k] if not r["ok"]]
+    if k and band[0] - below[k - 1]["y"] >= COVERED_MIN * (top - band[1]) and len(nested) * 2 >= k:
+        foot = below[k - 1]["y"]
+        for r in below[k:]:
+            if not r.get("r") or r["r"] > 1.5 * r_min:
+                break
+            foot = r["y"]
+        # the band ring holds the chin; the neck under it is round and its back follows the nape (the
+        # ring's back): the profile views put the neck there, one diameter deep
+        covered = {"to_y": round(float(below[k - 1]["y"]), 5), "foot_y": round(float(foot), 5),
+                   "nested_rows": len(nested), "rows": k,
+                   "children_max": max(r.get("children") or 0 for r in below[:k]),
+                   "nape_z": round(float(np.mean([r["z_back"] for r in run])), 6)}
+        # what covers it is a collar to the seam, and it starts at the band (a loop flagged above the band
+        # is hair behind the head: a ponytail beside a jaw-high collar)
+        collar, collar_top = True, band[0]
     return {"band": [round(band[0], 5), round(band[1], 5)], "axis_xz": [round(float(a), 6) for a in axis],
             "radius": round(radius, 5), "collar": bool(collar),
             "collar_top": None if collar_top is None else round(float(collar_top), 5),
-            "head_top": round(top, 5), "profile": profile}
+            "covered": covered, "head_top": round(top, 5), "profile": profile}
+
 
 
 def seam_heights(neck, margin_frac=0.1):
     """cut_y (the lowest height where the neck is still an isolated ring), part_bottom_y (how far the
-    part's neck must reach below the band) and the head height (top - band high)."""
+    part's neck must reach below the band) and the head height (top - band high). Over a covered neck the
+    part's neck reaches the cover's foot: the seam goes under the collar."""
     lo, hi = neck["band"]
     head_height = neck["head_top"] - hi
-    return {"cut_y": round(lo + 0.2 * (hi - lo), 5), "part_bottom_y": round(lo - margin_frac * head_height, 5),
+    bottom = lo - margin_frac * head_height
+    if neck.get("covered"):
+        bottom = min(bottom, neck["covered"]["foot_y"])
+    return {"cut_y": round(lo + 0.2 * (hi - lo), 5), "part_bottom_y": round(bottom, 5),
             "head_height": round(head_height, 5)}
+
+
+def hanging_faces(V, F, region, cut_y, bottom_y, axis_xz, radius, disc=1.3):
+    """The head's own pieces hanging below the cut outside the neck (a ponytail, long locks): components of
+    the faces between bottom_y and cut_y that meet the deleted head region at the cut with most of that rim
+    outside the neck disc. A collar or a hood meets kept faces there, the neck meets it inside the disc.
+    For the views only (the guide keeps them down to the part's bottom); the assembly keeps the anchor's."""
+    cy = V[F].mean(1)[:, 1]
+    band = (cy <= cut_y) & (cy > bottom_y) & ~region
+    out = np.zeros(len(F), bool)
+    info = []
+    if not band.any() or not region.any():
+        return out, info
+    head_v = np.zeros(len(V), bool)
+    head_v[F[region].reshape(-1)] = True
+    dist = np.linalg.norm(V[:, [0, 2]] - np.asarray(axis_xz, float), axis=1)
+    lab = face_components(F, band)
+    for k in np.unique(lab[band]):
+        faces = np.nonzero(band & (lab == k))[0]
+        verts = np.unique(F[faces].reshape(-1))
+        rim = verts[head_v[verts]]
+        if len(rim) < 4:
+            continue
+        outside = float((dist[rim] > disc * radius).mean())
+        if outside >= 0.5:
+            out[faces] = True
+            info.append({"faces": int(len(faces)), "rim_outside": round(outside, 3),
+                         "bottom_y": round(float(V[verts, 1].min()), 5)})
+    return out, info
 
 
 def region_faces(V, F, cut_y, axis_xz, radius, box=None, disc=1.3, float_above=None):
@@ -1176,17 +1238,29 @@ def label_raster(V, F, labels, view, size, frame):
     return out.reshape(h, w)
 
 
-def keep_mask(V, F, region, view, mask, frame, grow_px, dilate_px=3):
+def keep_mask(V, F, region, view, mask, frame, grow_px, dilate_px=3, still=None, hang=None):
     """The view mask a part keeps: pixels where the part's region is the surface the view sees (dilated
     a little), minus every other surface the view sees in front of or around it, that surface grown
-    upward by grow_px (the drawn hood or collar sits a few pixels above the low-poly anchor's)."""
+    upward by grow_px (the drawn hood or collar sits a few pixels above the low-poly anchor's). Faces in
+    `still` (a covered neck's column: the jaw below the cut and the collar fused to it) are dropped but not
+    grown: grown, they would take the chin and the mouth above them. Faces in `hang` (hair hanging below the
+    cut) are kept like the region; with hang the return is (keep, the hanging pixels kept)."""
     h, w = mask.shape
-    lab = label_raster(V, F, np.where(region, 1, 2), view, (w, h), frame)
+    labels = np.where(region, 1, 2)
+    if still is not None:
+        labels = np.where(~region & still, 3, labels)
+    if hang is not None:
+        labels = np.where(~region & hang, 4, labels)
+    lab = label_raster(V, F, labels, view, (w, h), frame)
+    mask = mask & (lab != 3)
+    hung = lab == 4
+    lab = np.where(hung, 1, lab)
     other = lab == 2
     grown = other.copy()
     for dy in range(1, int(grow_px) + 1):
         grown[:-dy] |= other[dy:]
-    return dilate(lab == 1, dilate_px) & mask & ~grown
+    keep = dilate(lab == 1, dilate_px) & mask & ~grown
+    return keep if hang is None else (keep, dilate(hung, dilate_px) & keep)
 
 def iou(a, b):
     u = np.logical_or(a, b).sum()
@@ -1738,37 +1812,61 @@ def plan_core(V, F, masks, tier, character, margin_frac=0.1, band_step=0.002, ho
               "head_height": seam["head_height"],
               "neck": {"band": neck["band"], "axis_xz": neck["axis_xz"], "radius": neck["radius"],
                        "collar": neck["collar"], **({"collar_top": neck["collar_top"]} if neck["collar"] else {})}}
+    if neck.get("covered"):
+        anchor["neck"]["covered"] = neck["covered"]
     parts = json.loads(json.dumps(TIERS[tier]))
     keep = {}
     hw = 1.5 * (neck["head_top"] - seam["cut_y"])
     region, info = region_faces(V, F, seam["cut_y"], neck["axis_xz"], neck["radius"], box=(hw, hw))
+    hang, hang_info = hanging_faces(V, F, region, seam["cut_y"], seam["part_bottom_y"], neck["axis_xz"],
+                                    neck["radius"])
+    still = None
+    if neck.get("covered"):
+        cy = V[F].mean(1)[:, 1]
+        still = (cy <= seam["cut_y"]) & (cy > seam["part_bottom_y"]) & ~hang & \
+            (np.linalg.norm(V[F].mean(1)[:, [0, 2]] - np.asarray(neck["axis_xz"]), axis=1) <= 1.5 * neck["radius"])
+    warnings = []
+    if neck.get("covered"):
+        c = neck["covered"]
+        warnings.append(f"neck: covered below the band down to y {c['to_y']} ({c['nested_rows']} of {c['rows']} rows "
+                        f"hold up to {c['children_max']} nested loops: a stand collar or hair fused to the nape); the "
+                        f"band sits on the jaw, the head part's neck reaches the cover's foot (y {c['foot_y']})")
+    if hang_info:
+        warnings.append(f"hair hangs below the cut outside the neck ({len(hang_info)} piece(s), e.g. a ponytail): the "
+                        f"head views keep it down to the part's bottom; the anchor keeps the rest")
     for p in parts:
         if p["region"] != "head":
             continue
         p["region_box"] = {"y_min": seam["part_bottom_y"], "y_max": neck["head_top"]}
         p["seam"] = {"mode": "overlap" if neck["collar"] else "bridge", "cut_y": seam["cut_y"],
                      "part_bottom_y": seam["part_bottom_y"], "margin_frac": margin_frac}
-        cb = crop_boxes(V, F, region, frame, seam["part_bottom_y"])
+        cb = crop_boxes(V, F, region | hang, frame, seam["part_bottom_y"])
         p["views"] = {"source": "clean-views", "box_side_px": cb["box_side_px"], "boxes": cb["boxes"],
                       "clip_row_px": cb["clip_row_px"], "dir": f"views/{p['name']}"}
+        if hang_info:     # the views keep these below the chin, outside the neck column (hang_<view>.png)
+            p["views"]["hanging"] = {"pieces": hang_info,
+                                     "masks": {v: f"views/{p['name']}/hang_{v}.png" for v in VIEWS}}
         keep[p["name"]] = {}
         for view in VIEWS:
             m = masks[view]
             cx, cy = frame["offset_px"][view]
             sil = keep_mask(V, F, region, view, m, (frame["units_per_px"], cx, cy),
-                            hood_grow * seam["head_height"] / frame["units_per_px"])
+                            hood_grow * seam["head_height"] / frame["units_per_px"], still=still,
+                            hang=hang if hang_info else None)
             x0, y0, x1, y1 = cb["boxes"][view]
-            out = np.zeros((y1 - y0, x1 - x0), bool)
             sx0, sy0 = max(x0, 0), max(y0, 0)
             sx1, sy1 = min(x1, m.shape[1]), min(y1, m.shape[0])
-            out[sy0 - y0: sy1 - y0, sx0 - x0: sx1 - x0] = sil[sy0:sy1, sx0:sx1]
-            keep[p["name"]][view] = out
+            for key, img in zip(("", "hang_"), sil if hang_info else (sil,)):
+                out = np.zeros((y1 - y0, x1 - x0), bool)
+                out[sy0 - y0: sy1 - y0, sx0 - x0: sx1 - x0] = img[sy0:sy1, sx0:sx1]
+                keep[p["name"]][key + view] = out
     hands = None
     if any(p["region"] in ("hand.L", "hand.R") for p in parts):
         import hand_parts       # forearm slices, wrist planes, hand boxes and keep masks (same folder)
         hands = hand_parts.plan_hands(V, F, masks, frame, anchor, parts, keep)
     doc = {"schema": "parts/1", "character": character, "tier": tier, "anchor": anchor, "parts": parts}
-    return doc, keep, {"neck_profile": neck["profile"], "region": info, "frame_bad": bad, "hands": hands}
+    return doc, keep, {"neck_profile": neck["profile"], "region": info, "frame_bad": bad, "hands": hands,
+                       "warnings": warnings}
 
 
 def read_masks(views_dir):
@@ -1817,12 +1915,12 @@ def cmd_plan(args):
         d = os.path.join(out_dir, "views", part)
         os.makedirs(d, exist_ok=True)
         for view, m in views.items():
-            write_png_gray(os.path.join(d, f"keep_{view}.png"), m)
+            write_png_gray(os.path.join(d, view + ".png" if view.startswith("hang_") else f"keep_{view}.png"), m)
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(doc, handle, indent=1)
     code = 2 if extra["frame_bad"] else 0
     res = {"plan": args.out, "neck": doc["anchor"]["neck"], "frame": doc["anchor"]["frame"],
-           "region": {"deleted": extra["region"]["deleted"][:4]}}
+           "region": {"deleted": extra["region"]["deleted"][:4]}, "warnings": extra["warnings"]}
     if extra["frame_bad"]:
         res["gate_failed"] = f"part.frame_fit: IoU under {FRAME_IOU_MIN} in {extra['frame_bad']}"
     return code, res
@@ -2065,6 +2163,38 @@ def selftest():
        collar_kept(V, F, kill, ys, neck["axis_xz"], neck["radius"]) >= 0.99
        and collar_kept(V, F, kill | (kind == 2), ys, neck["axis_xz"], neck["radius"]) < 0.5)
     ok("cut: the head and hair go", kill[(c[:, 1] > 0.40)].all(), int(kill.sum()))
+    ok("neck: a bare neck is not covered", neck["covered"] is None, neck["covered"])
+
+    # 2b. a covered neck: the neck column as thick as the jaw (a collar fused to it) holds loose shells in its
+    # wall (nested loops) from 0.27 to 0.35: the band sits above them on the jaw, the run below it is reported
+    # and the part's neck reaches its foot
+    Vc0, Fc0, _ = synthetic_figure(res=1, collar=False, spikes=None, neck_r=0.045)
+    junk = [revolve(lambda v: (np.full_like(v, 0.0015), 0.27 + 0.08 * v), 8, 20,
+                    axis=(0.0425 * math.sin(t), 0.0425 * math.cos(t))) for t in (-2.6, 3.1, 2.6)]
+    Vc, Fc, _ = weld(*merge((Vc0, Fc0), *junk))
+    nc = neck_band(Vc, Fc, step=0.002)
+    cov = nc["covered"] or {}
+    ok("neck: a covered neck is reported, the band above it, the seam at its foot",
+       nc["band"][0] >= 0.345 and cov.get("to_y", 1) <= 0.275 and cov.get("nested_rows", 0) >= 30
+       and nc["collar"] and seam_heights(nc)["part_bottom_y"] <= cov.get("foot_y", -1) + 1e-9
+       and seam_heights(nc)["part_bottom_y"] < nc["band"][0] - 0.1 * (nc["head_top"] - nc["band"][1]),
+       {"band": nc["band"], "covered": nc["covered"]})
+
+    # 2c. hair hanging below the cut: a sheet behind the neck joined to the head above the cut hangs; one at the
+    # neck (inside the disc) and one joined to kept faces (a hood) do not
+    def sheet(z, x0=-0.02, x1=0.02, y0=0.30, y1=0.46, n=16):
+        ys_, xs_ = np.linspace(y0, y1, n), np.linspace(x0, x1, 4)
+        Vq = np.array([[x, y, z] for y in ys_ for x in xs_])
+        Fq = [[i * 4 + j, i * 4 + j + 1, (i + 1) * 4 + j + 1] for i in range(n - 1) for j in range(3)]
+        Fq += [[i * 4 + j, (i + 1) * 4 + j + 1, (i + 1) * 4 + j] for i in range(n - 1) for j in range(3)]
+        return Vq, np.array(Fq)
+    Vh, Fh = merge(sheet(-0.09), sheet(0.01), sheet(0.09))
+    ch = Vh[Fh].mean(1)
+    head_reg = (ch[:, 1] > 0.40) & (ch[:, 2] < 0.05)          # the third sheet's top is kept (not the head's)
+    hang, hinfo = hanging_faces(Vh, Fh, head_reg, 0.40, 0.32, (0.0, 0.0), 0.03)
+    ok("hang: the sheet behind the neck hangs; the neck's and the hood's do not",
+       hang.any() and (ch[hang, 2] < -0.05).all() and (ch[hang, 1] > 0.32).all() and len(hinfo) == 1,
+       hinfo)
 
     # 3. silhouettes
     frame = (1.063e-3, 512.0, 512.0)

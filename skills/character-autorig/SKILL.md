@@ -65,7 +65,7 @@ so every clip made for any contract character plays on it.
 
 | # | Stage | Tool | Passes when | On failure |
 |---|---|---|---|---|
-| 1 | Riggable mesh | `scripts/mesh_check.py` (host, numpy) | legs part below the crotch, both arms hang clear in the arm band, double shell ≤ 0.25 (an inward-facing inner shell is reported as `inner_shell`, kept, not gated) | regenerate: back to the views or the 3D generation (`game-character-pipeline` S1/S3) |
+| 1 | Riggable mesh | `scripts/mesh_check.py` (host, numpy) | legs part below the crotch (a skirt's hem: `--body skirt`), both arms hang clear in the arm band, double shell ≤ 0.25 (an inward-facing inner shell is reported as `inner_shell`, kept, not gated) | regenerate: back to the views or the 3D generation (`game-character-pipeline` S1/S3) |
 | 2 | AI markers (optional) | `scripts/arp_smart.py` (a Blender window) | `smart.*`: body markers, fingers, face, Go!'s reference bones | `reference/arp-ai.md`; stage 3 goes on from slices |
 | 3 | Markers | `scripts/arp_markers.py` (Blender or host), `--smart` with stage 2's file | heights in their windows (a near miss passes when the AI's marker is in: `confirmed_by`), left/right within 0.02 H, upper arm 30–60° below horizontal; a **person** accepts the two pictures | `--adjust` the marker that is off; outside the windows → the hand-built route |
 | 4 | Auto-Rig Pro | `blender-retarget` → `brt_arp` op `pipeline` | the preset appended, three spine bones, every reference bone placed, Match, bind with no unweighted vertex, ≤ 4 influences, the Unity FBX written and read back | read the failing gate; the rig is rolled back before the bind |

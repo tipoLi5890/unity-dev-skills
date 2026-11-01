@@ -12,6 +12,7 @@ usage:
                   [--leg-band 0.12,0.38] [--leg-min-ratio 0.9]
                   [--arm-band 0.50,0.74] [--arm-min-span 0.05]
                   [--shell-gap 0.006] [--shell-max 0.25] [--shell-samples 6000]
+                  [--body human|skirt]
     mesh_check.py --selftest
 
 The mesh is read whole (every primitive of every node, node transforms applied). glTF is +Y up and
@@ -46,9 +47,22 @@ Gates (each failing one makes exit 2):
                    generators always write, a cloth flap, an ear), is reported as `inner_shell`
                    and not gated: the deformation gate measures the outward-facing side only.
 
-Report: {tool, file, height, triangles, vertices, midline_x, crotch_h, legs{band, cuts, separated,
+--body skirt (a long coat, a skirt, a robe: one part across the midline from a hem down to the knees
+or below, the legs apart under it). The hem is the lowest cut from which a part crosses the midline
+in every cut up to 0.6 H (the crotch of a body in trousers). legs_separated is read from the leg
+band's foot up to 0.02 H under the hem, and a second gate stands beside it:
+  skirt_hem        a hem was found and the legs show under it for >= 0.08 x H (SKIRT_MIN_LEGS) of
+                   the leg band. Fails: a floor-length robe (no legs to measure: the hand-built
+                   route), both legs in one tube.
+  double_shell     gated over the surface outside the skirt zone (the hem to 0.55 H); the zone's own
+                   share is reported as skirt.layer: a coat over trousers is two sheets there by design.
+The report gains skirt {hem_h, legs_band, hem_width_over_legs, layer}. With the default body, a hem
+signature (legs apart under a part that crosses the midline from 0.22-0.42 H up, at least 1.15 x
+their span) is reported as skirt_hint: rerun with --body skirt.
+
+Report: {tool, file, body, height, triangles, vertices, midline_x, crotch_h, legs{band, cuts, separated,
 ratio, first_fused_h}, arms{band, cuts, run_h, armpit_h, left, right}, double_shell{ratio, inner_shell,
-samples, gap}, gates[{name, value, limit, pass}], schema, pass, ok}: a gate/1 report
+samples, gap}, skirt?, skirt_hint?, gates[{name, value, limit, pass}], schema, pass, ok}: a gate/1 report
 (schemas/gate-1.json); `ok`, pass's old name, equals it for one release. Heights ending in `_h` are
 fractions of H.
 
@@ -71,6 +85,10 @@ from pathlib import Path
 import numpy as np
 
 MIN_PART_CELLS = 4
+SKIRT_MIN_LEGS = 0.08     # x H of leg band that must show under a hem
+SKIRT_TOP = 0.55          # the skirt zone runs from the hem up to here (x H)
+HEM_CLEAR = 0.02          # the legs are read up to this far under the hem (x H)
+HINT_WIDTH = 1.15         # skirt_hint: the hem at least this much wider than the legs under it
 
 # ------------------------------------------------------------------------------ loading
 
@@ -380,7 +398,7 @@ def surface_samples(v: np.ndarray, f: np.ndarray, count: int, seed: int = 0) -> 
     return pts, cross[pick] / area[pick, None]
 
 
-def double_shell(v: np.ndarray, f: np.ndarray, gap: float, samples: int, seed: int = 0) -> dict:
+def double_shell(v: np.ndarray, f: np.ndarray, gap: float, samples: int, seed: int = 0, zone=None) -> dict:
     """Share of the surface with another sheet parallel to it within `gap` along its normal.
 
     From each sample a segment runs `gap` both ways along the face normal; a hit on another
@@ -389,6 +407,7 @@ def double_shell(v: np.ndarray, f: np.ndarray, gap: float, samples: int, seed: i
     back-to-back thin wall (an inward-facing inner shell, a flap): `inner_shell`. Any other hit
     (same facing on either side, or facing it from in front) marks it doubled, the gated `ratio`;
     a sample with both counts as doubled. Triangles are found through a grid of `gap` cells.
+    `zone` (z0, z1): samples with z inside it leave `ratio` and are counted in `zone_ratio`.
     """
     tri = v[f]
     cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
@@ -413,6 +432,8 @@ def double_shell(v: np.ndarray, f: np.ndarray, gap: float, samples: int, seed: i
                 for k in range(a[2], b[2] + 1):
                     table.setdefault((i, j, k), []).append(t)
     min_sep, doubled, inner = gap * 0.1, 0, 0
+    in_zone = np.zeros(samples, bool) if zone is None else (pts[:, 2] >= zone[0]) & (pts[:, 2] <= zone[1])
+    zone_doubled = 0
     probe = np.linspace(-1.0, 1.0, 9)
     for q in range(samples):
         p, n = pts[q], nrm[q]
@@ -443,19 +464,80 @@ def double_shell(v: np.ndarray, f: np.ndarray, gap: float, samples: int, seed: i
             continue
         back_to_back = (t < 0) & (facing < 0)
         if (hit & ~back_to_back).any():
-            doubled += 1
+            if in_zone[q]:
+                zone_doubled += 1
+            else:
+                doubled += 1
         else:
             inner += 1
-    return {"ratio": doubled / samples, "inner_shell": round(inner / samples, 4), "samples": samples,
-            "gap": gap}
+    out_n, zone_n = int(samples - in_zone.sum()), int(in_zone.sum())
+    rep = {"ratio": doubled / max(out_n, 1), "inner_shell": round(inner / samples, 4), "samples": samples,
+           "gap": gap}
+    if zone is not None:
+        rep.update(zone=[round(float(zone[0]), 5), round(float(zone[1]), 5)], zone_samples=zone_n,
+                   zone_ratio=round(zone_doubled / max(zone_n, 1), 4))
+    return rep
+
+
+def extent(parts: list[dict]) -> float:
+    return max(p["x"][1] for p in parts) - min(p["x"][0] for p in parts) if parts else 0.0
+
+
+def skirt_hint(prof: dict, crotch_h: float | None, leg_band, min_ratio: float) -> dict | None:
+    """A hem signature on the default body: the legs apart under a part that crosses the midline from
+    0.22-0.42 H up (a long coat or a skirt), so the crotch read there is a hem."""
+    if crotch_h is None or not 0.22 <= crotch_h < 0.42:
+        return None
+    below = legs(prof, (leg_band[0], crotch_h - HEM_CLEAR))
+    if below["cuts"] < 4 or below["ratio"] < min_ratio:
+        return None
+    wide = hem_width(prof, crotch_h)
+    if wide is None or wide < HINT_WIDTH:      # a pelvis as wide as the legs under it: a low crotch, no hem
+        return None
+    return {"hem_h": crotch_h, "legs_below": round(below["ratio"], 4), "hem_width_over_legs": round(wide, 4),
+            "why": f"a part crosses the midline from {crotch_h:.3f} H up with the legs apart under it: a hem, not "
+                   "a crotch. A long coat, a skirt or a robe: rerun with --body skirt"}
+
+
+def hem_width(prof: dict, hem: float) -> float | None:
+    """The widest cut within 0.04 H over the hem (every part) over the legs' span just under it."""
+    below = min((c for c in prof["cuts"] if c["h"] <= hem - HEM_CLEAR), key=lambda c: abs(c["h"] - (hem - HEM_CLEAR)),
+                default=None)
+    leg_w = extent(below["parts"]) if below else 0.0
+    hem_w = max((extent(c["parts"]) for c in prof["cuts"] if hem <= c["h"] <= hem + 0.04), default=0.0)
+    return hem_w / leg_w if leg_w > 0 else None
+
+
+def skirt(prof: dict, args) -> dict:
+    """The skirt route's reading: the hem, the legs under it, the hem's width over the legs'."""
+    hem = crotch(prof)
+    lo = args.leg_band[0]
+    if hem is None:
+        return {"hem_h": None, "legs_band": None, "legs": legs(prof, (lo, lo)), "shown": 0.0,
+                "why": "no part crosses the midline from below 0.6 H up: no hem (and no crotch)"}
+    band = (lo, round(min(args.leg_band[1], hem - HEM_CLEAR), 5))
+    lg = legs(prof, band)
+    shown = max(0.0, band[1] - band[0])
+    wide = hem_width(prof, hem)
+    out = {"hem_h": hem, "legs_band": list(band), "legs": lg, "shown": round(shown, 5),
+           "hem_width_over_legs": None if wide is None else round(wide, 4)}
+    if shown < SKIRT_MIN_LEGS - 1e-9:
+        out["why"] = (f"the legs show for {shown:.3f} H under the hem at {hem:.3f} H (< {SKIRT_MIN_LEGS}): a floor-length "
+                      "robe has no legs to place markers on; take the hand-built route")
+    return out
 
 
 def check(v: np.ndarray, f: np.ndarray, args) -> dict:
     prof = profile(v, f, step=args.step, cell=args.cell)
     height = prof["height"]
-    lg = legs(prof, tuple(args.leg_band))
+    body = getattr(args, "body", "human")
+    sk = skirt(prof, args) if body == "skirt" else None
+    lg = sk["legs"] if sk else legs(prof, tuple(args.leg_band))
     am = arms(prof, tuple(args.arm_band), args.step)
-    ds = double_shell(v, f, args.shell_gap * height, args.shell_samples)
+    zone = None
+    if sk and sk["hem_h"] is not None:
+        zone = (float(v[:, 2].min()) + sk["hem_h"] * height, float(v[:, 2].min()) + SKIRT_TOP * height)
+    ds = double_shell(v, f, args.shell_gap * height, args.shell_samples, zone=zone)
     gates = [
         {"name": "legs_separated", "value": round(lg["ratio"], 4), "limit": f">= {args.leg_min_ratio}",
          "pass": bool(lg["ratio"] >= args.leg_min_ratio)},
@@ -464,12 +546,23 @@ def check(v: np.ndarray, f: np.ndarray, args) -> dict:
         {"name": "double_shell", "value": round(ds["ratio"], 4), "limit": f"<= {args.shell_max}",
          "pass": bool(ds["ratio"] <= args.shell_max)},
     ]
+    if sk:
+        gates.insert(1, {"name": "skirt_hem", "value": sk["hem_h"], "limit": f"legs shown >= {SKIRT_MIN_LEGS}",
+                         "pass": bool(sk["hem_h"] is not None and "why" not in sk)})
     ds["gap"] = round(ds["gap"], 6)
     ok = all(g["pass"] is True for g in gates)
-    return {"schema": "gate/1", "tool": "mesh_check", "pass": ok, "ok": ok, "height": round(height, 6), "triangles": int(len(f)),
-            "vertices": int(len(v)), "midline_x": round(prof["midline_x"], 6),
-            "crotch_h": crotch(prof), "legs": lg, "arms": am, "double_shell": ds,
-            "gates": gates}
+    crotch_h = crotch(prof)
+    rep = {"schema": "gate/1", "tool": "mesh_check", "pass": ok, "ok": ok, "body": body, "height": round(height, 6),
+           "triangles": int(len(f)), "vertices": int(len(v)), "midline_x": round(prof["midline_x"], 6),
+           "crotch_h": crotch_h, "legs": lg, "arms": am, "double_shell": ds, "gates": gates}
+    if sk:
+        rep["skirt"] = {k: v for k, v in sk.items() if k != "legs"}
+        rep["skirt"]["layer"] = ds.get("zone_ratio")
+    else:
+        hint = skirt_hint(prof, crotch_h, args.leg_band, args.leg_min_ratio)
+        if hint:
+            rep["skirt_hint"] = hint
+    return rep
 
 
 # ------------------------------------------------------------------------------ CLI
@@ -503,6 +596,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--shell-gap", type=float, default=0.006)
     p.add_argument("--shell-max", type=float, default=0.25)
     p.add_argument("--shell-samples", type=int, default=6000)
+    p.add_argument("--body", choices=("human", "skirt"), default="human",
+                   help="skirt: a long coat, skirt or robe; the legs are read under its hem")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -579,9 +674,17 @@ def assemble(pieces) -> tuple[np.ndarray, np.ndarray]:
     return np.vstack(vs), np.vstack(fs)
 
 
-def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip=True):
+def open_tube(a, b, rx, ry, n=32, rings=12):
+    """A tube from a to b along Z with no caps (a skirt open at its hem), as (vertices, faces)."""
+    v, f = tube(a, b, rx, n=n, rings=rings, rx=rx, ry=ry)
+    return v, f[:2 * n * (rings - 1)]
+
+
+def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip=True, skirt=None, open_skirt=False):
     """A 1.7 m body of tubes: A-pose by default, facing -Y. `inner` adds an inner twin shell that
-    far inside, facing inward (back to back with the skin) or, with inner_flip False, outward."""
+    far inside, facing inward (back to back with the skin) or, with inner_flip False, outward.
+    `skirt` (a fraction of 1.7 m): a skirt from the waist down to that hem around both legs, solid
+    (a closed tube) or with open_skirt a sheet open at the hem with the legs inside it."""
     s45 = math.sqrt(0.5)
     parts = [((0, 0, 0.86), (0, 0, 1.42), dict(r=0.15, rx=0.15, ry=0.10)),
              ((0, 0, 1.40), (0, 0, 1.52), dict(r=0.05)),
@@ -601,6 +704,10 @@ def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip
             parts.append((a, a + 0.62 * np.array([side * s45, 0, -s45]), dict(r=0.045)))
         parts.append(((side * 0.11, 0.05, 0.04), (side * 0.11, -0.14, 0.04), dict(r=0.04)))
     pieces = [tube(a, b, **kw) for a, b, kw in parts]
+    if skirt is not None:
+        hem = skirt * 1.7
+        pieces.append(open_tube((0, 0, hem), (0, 0, 1.0), 0.21, 0.14) if open_skirt else
+                      tube((0, 0, hem), (0, 0, 1.0), 0.21, rx=0.21, ry=0.14))
     if inner:
         for a, b, kw in parts:
             kw2 = {k: max(0.005, v - inner) for k, v in kw.items()}
@@ -686,6 +793,22 @@ def selftest() -> int:
            and gate(rep, "legs_separated")["pass"])
         ok("single shell: ratio small, no inner shell", gate(reports["good"][1], "double_shell")["value"] < 0.1
            and reports["good"][1]["double_shell"]["inner_shell"] < 0.05)
+        # a long skirt: the default body passes the leg band but reports a hem; --body skirt reads the legs
+        # under it; a floor-length robe shows too little leg
+        for name, sv in (("skirt", body(skirt=0.40)), ("robe", body(skirt=0.10))):
+            write_obj(d / f"{name}.obj", *sv)
+        code, rep = run([str(d / "skirt.obj")])
+        ok("skirt, default body: a skirt_hint at the hem, no skirt block", rep.get("skirt_hint") is not None
+           and abs(rep["skirt_hint"]["hem_h"] - 0.40) < 0.03 and "skirt" not in rep)
+        code, rep = run([str(d / "skirt.obj"), "--body", "skirt"])
+        ok("skirt, --body skirt: exit 0, hem near 0.40, legs read under it", code == 0
+           and abs(rep["skirt"]["hem_h"] - 0.40) < 0.03 and rep["skirt"]["legs_band"][1] <= rep["skirt"]["hem_h"]
+           and gate(rep, "skirt_hem")["pass"] and gate(rep, "legs_separated")["pass"] and rep["body"] == "skirt")
+        contract_sample("mesh_check", "skirt", rep)
+        code, rep = run([str(d / "robe.obj"), "--body", "skirt"])
+        ok("floor-length robe, --body skirt: skirt_hem fails (too little leg shows)", code == 2
+           and not gate(rep, "skirt_hem")["pass"] and "floor-length" in rep["skirt"]["why"])
+        ok("good body, --body skirt: still passes (the hem is its crotch)", run([str(d / "good.obj"), "--body", "skirt"])[0] == 0)
         # two plates 4 mm apart: facing each other is gated, back to back is an inner shell
         sq = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], float)
         up_f, down_f = np.array([[0, 1, 2], [0, 2, 3]]), np.array([[0, 2, 1], [0, 3, 2]])

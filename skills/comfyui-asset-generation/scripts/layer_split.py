@@ -26,7 +26,8 @@ Each result is keyed (key_unmix.py --edge tint) and placed back on the canvas. G
 in the zone that must not change (noarms: the head and lower legs; bald, face_blank: the chin and
 collar; eyes, mouth: the whole head): fill.aligned (75th percentile |RGB|) <= 12; fill.iou (the
 silhouettes there) >= 0.95; fill.inside (head fills: outside the source silhouette grown 4 px)
-<= 0.03. A failing fill retries the next seed. The armless fill may widen the clothes into the
+<= 0.03; fill.changed (eyes_closed, mouth_open: share of the head changed by more than 40) >= 0.01.
+A failing fill retries the next seed. The armless fill may widen the clothes into the
 gaps beside the arms: split clips it to the source. Writes FILLS_DIR/fills.json, the placed
 fills, source_keyed.png and head_crop/*.png (1024 px crops for cubism_psd.py's eye split).
 
@@ -39,22 +40,33 @@ fills, source_keyed.png and head_crop/*.png (1024 px crops for cubism_psd.py's e
              own; the shoulder joint sits 27 % of the way from the neck to the crotch on the
              armless fill's edge (front) or where the two arms' axes meet (side); a capsule from
              it to the hand, with a round cap, takes the upper arm over the body, and sleeve left
-             over beside it joins the arm. The wrist is the narrowest cross-section at 50-80 %,
-             the elbow halfway. Front: _R is the character's right (screen left), _L its left.
-             Side: _near is the limb forward in the facing direction, _far the one behind; the
-             far arm keeps what shows and is swept on under the torso to the shoulder.
+             over beside it joins the arm. Over the body the capsule also takes what is drawn
+             there (a strap, a buckle, a chest stripe): pixels unlike the free forearm's colours,
+             or dark and wider than two outlines, are repainted from the sleeve around them, so
+             they stay on the torso when the arm swings. The wrist is the narrowest
+             cross-section at 50-80 %, the elbow halfway. Front: _R is the character's right
+             (screen left), _L its left. Side: _near is the limb forward in the facing
+             direction, _far the one behind; the far arm keeps what shows and is swept on under
+             the torso to the shoulder.
   torso      the armless fill clipped to the source; where an arm hides the torso's side, a
              straight segment bridges the visible edge above and below; the shoulder is rounded
              and outlined in the source's outline colour where the new edge has none, so a raised
              arm shows a round, outlined shoulder, never a straight cut.
   head/hair  the bald fill is the head; the hair is what differs from it; eyes and mouth are the
-             patches the eyes_closed and mouth_open fills changed (open/closed pairs for swaps).
+             patches the eyes_closed and mouth_open fills changed, with the thin strokes joined
+             to them (a mouth line's ends), as open/closed pairs for swaps. The torso is cut
+             away from both: drawn over the head from the neck row, it would hide them.
   overlap    each lower layer runs --overlap px under the one above at its joint.
-  rig        bones in image pixels (y down), a Delaunay mesh per part, two-bone smoothstep
-             weights across each joint; rig2d.json, manifest.json, debug.png, pose.png (rest and
-             the arms raised 120 degrees: look at the shoulders).
+  rig        bones in image pixels (y down), a Delaunay mesh per part that draws every pixel of
+             its layer (a triangle the edge test drops is given back when it holds one),
+             two-bone smoothstep weights across each joint; rig2d.json, manifest.json,
+             debug.png, pose.png (rest and the arms raised 120 degrees: look at the shoulders).
 Gates (split.gate.json, gate/1): split.composite_iou >= 0.99 and split.composite_px40 <= 0.005
-(the layers against the source); split.alpha_clean (semi-transparent pixels 3 px or more inside
+(the layers against the source, outside what the sleeve fill repainted); split.sleeve_fill (the
+share of an arm repainted) <= 0.25; split.mesh_cover (layer pixels no triangle draws: each
+renders as background, a sliver along the edge) == 0; split.swap_visible (the share of what each
+swap changes that still shows under the layers above it at rest; bangs may hide the eyes) >= 0.9;
+split.alpha_clean (semi-transparent pixels 3 px or more inside
 any layer) <= 0.01; split.joint_overlap >= 0.5 x --overlap px at every joint; split.names (the
 view's full set, unique); split.limbs (two arms, two legs); split.shoulder_notch: where an arm
 moves away, the body left behind has no notch (closing with a 12 px disc adds <= 0.1 % of the
@@ -83,6 +95,9 @@ TEMPLATE = SKILL / "templates" / "qwen_image_edit_2511_fill_api.json"
 TEMPLATE_ARGS = ("REPLACE_WITH_SQUARE_INPUT.png", "REPLACE_WITH_PROMPT")
 KEY_UNMIX = SKILL.parent / "codex-visual" / "scripts" / "key_unmix.py"
 EDIT_SIZE = 1024
+FILL_CHANGED_MIN = 0.01   # share of the head an eyes_closed or mouth_open fill must change
+SWAP_VISIBLE_MIN = 0.9    # share of what the open mouth changes that must show at rest
+SLEEVE_FILL_MAX = 0.25    # a quarter of an arm repainted: the capsule took the body, not a sleeve
 
 MODELS = {
     "unet": "qwen_image_edit_2511_int8_convrot.safetensors",
@@ -408,9 +423,63 @@ def finish_arms(geo, A, S, torso, taken, view, ov):
                 qx = np.clip(np.round(xs + dt * g["u"][0]), 0, A.shape[1] - 1).astype(int)
                 qy = np.clip(np.round(ys + dt * g["u"][1]), 0, A.shape[0] - 1).astype(int)
                 img[ys, xs] = S[qy, qx]
+        if not (view == "side" and name == "far"):
+            g["occluders"] = sleeve_fill(img, g, A)
         g["img"] = img
         g["arm"] = g["full"] & (g["tt"] <= g["tW"] + 2)
         g["hand"] = g["full"] & (g["tt"] > g["tW"] - ov)
+
+
+def sleeve_fill(img, g, A):
+    """Where the upper arm lies over the body, the capsule also takes what is drawn there: a
+    strap, a buckle, a chest stripe, drawstrings. Those belong to the body and would swing with
+    the arm. Pixels unlike the sleeve (its colours, measured on the free forearm) or dark and
+    thick (a strap, not a 1-3 px outline) are repainted in place from the sleeve around them.
+    Returns the repainted mask; the torso layer keeps what was there."""
+    np, ndi = _np(), _ndi()
+    sleeve = g["core"] & (g["tt"] <= g["tW"])          # the forearm clear of the body
+    if sleeve.sum() < 200:
+        sleeve = g["core"]                              # a short forearm: the hand's colours join in
+    over = g["full"] & ~ndi.binary_dilation(g["core"], iterations=2) & (g["tt"] <= g["tW"])
+    if sleeve.sum() < 200 or not over.any():
+        return np.zeros_like(A)
+    rgb = img[..., :3]
+    # the sleeve's colours: 16 levels a channel, a bin counts when 0.05 % of the forearm is in it
+    q = lambda c: (np.clip(c, 0, 255) // 16).astype(int)
+    hist = np.zeros((16, 16, 16), np.int64)
+    qs = q(rgb[sleeve])
+    np.add.at(hist, (qs[:, 0], qs[:, 1], qs[:, 2]), 1)
+    known_bins = ndi.binary_dilation(hist >= max(3, 0.0005 * sleeve.sum()), iterations=1)
+    qo = q(rgb)
+    unlike = over & ~known_bins[qo[..., 0], qo[..., 1], qo[..., 2]]
+    lum = luma(rgb)
+    dark_lim, _, width = outline_style(img, A)
+    # dark and wider than two outlines side by side (an arm's edge on the body's edge): a strap
+    thick = ndi.binary_opening((lum < dark_lim) & over, structure=disk(width + 1))
+    occ = (unlike | thick) & over
+    occ = ndi.binary_opening(occ, iterations=1)
+    lab_, n = ndi.label(occ)
+    if n:
+        sizes = ndi.sum(occ, lab_, range(1, n + 1))
+        occ = np.isin(lab_, 1 + np.nonzero(sizes >= 30)[0])
+    dark = (lum < dark_lim) & over                      # an occluder's own outline goes with it
+    occ |= dark & ndi.binary_dilation(occ, iterations=4)
+    occ = ndi.binary_dilation(occ, iterations=2) & over
+    if not occ.any():
+        return occ
+    known = g["full"] & ~occ & (g["tt"] <= g["tW"]) & (lum >= dark_lim)   # sleeve, not its outline
+    todo = occ.copy()
+    for sig in (2, 4, 8, 16, 32, 64):                   # normalised convolution, finest scale first
+        w = ndi.gaussian_filter(known.astype(np.float32), sig)
+        ok = todo & (w > 1e-3)
+        if ok.any():
+            for c in range(3):
+                v = ndi.gaussian_filter(np.where(known, rgb[..., c], 0).astype(np.float32), sig)
+                img[..., c][ok] = (v / np.maximum(w, 1e-6))[ok]
+            todo &= ~ok
+        if not todo.any():
+            break
+    return occ
 
 
 def split(src_path: Path, fills_path: Path, out: Path, overlap=22) -> dict:
@@ -535,9 +604,12 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22) -> dict:
 
     def patch(variant, y0, y1):
         d2 = np.abs(variant[..., :3] - S[..., :3]).max(-1)
-        m = (d2 > 40) & (yy > y0) & (yy < y1) & A & ~hair & (variant[..., 3] > 127)
-        m = ndi.binary_opening(m, iterations=1)
+        m0 = (d2 > 40) & (yy > y0) & (yy < y1) & A & ~hair & (variant[..., 3] > 127)
+        m = ndi.binary_opening(m0, iterations=1)
         m = largest(m, keep_frac=0.15) if m.any() else m
+        if m.any():                           # thin strokes joined to it (a mouth line's ends) belong too
+            lab, _ = ndi.label(m0 | m, structure=np.ones((3, 3)))
+            m |= np.isin(lab, np.unique(lab[m]))
         m = ndi.binary_dilation(m, iterations=6)
         return ndi.binary_fill_holes(m) & A & ~hair & (variant[..., 3] > 127)
 
@@ -549,6 +621,9 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22) -> dict:
     parts["eyes_closed"] = {"mask": em, "img": F["eyes_closed"], "bones": ["face"], "hidden": True}
     parts["mouth_closed"] = {"mask": mm, "img": S, "bones": ["face"]}
     parts["mouth_open"] = {"mask": mm, "img": F["mouth_open"], "bones": ["face"], "hidden": True}
+    # the torso is drawn over the head (a collar or hood over the neck) and starts at the neck
+    # row, which on a hooded figure can sit as high as the mouth: it must never cover a face swap
+    parts["torso"]["mask"] = parts["torso"]["mask"] & ~ndi.binary_dilation(em | mm, iterations=2)
     face = ["hair_front", "eyes_open", "eyes_closed", "mouth_closed", "mouth_open", "head"]
     if view == "front":
         order = ["hand_R", "arm_R", "hand_L", "arm_L", "torso"] + face + ["pelvis", "foot_R", "leg_R", "foot_L", "leg_L"]
@@ -581,9 +656,21 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22) -> dict:
     iou = float((cA & A).sum() / max((cA | A).sum(), 1))
     both = cA | A
     d = np.abs(comp[..., :3] * (comp[..., 3:4] / 255) - S[..., :3] * (S[..., 3:4] / 255)).max(-1)
-    px40 = float(((d > 40) & both).sum() / max(both.sum(), 1))
+    # what sleeve_fill repainted on purpose is measured by its own gate, not as a split error
+    painted = np.zeros_like(A)
+    share = {}
+    for k, g in geo.items():
+        occ = g.get("occluders")
+        if occ is not None and occ.any() and f"arm_{k}" in layers:
+            on = layers[f"arm_{k}"][..., 3] > 8
+            painted |= occ & on
+            share[f"arm_{k}"] = round(float((occ & on).sum() / max(on.sum(), 1)), 4)
+    px40 = float(((d > 40) & both & ~painted).sum() / max(both.sum(), 1))
     gates.append(gate("split.composite_iou", round(iou, 4), 0.99, iou >= 0.99))
-    gates.append(gate("split.composite_px40", round(px40, 4), 0.005, px40 <= 0.005))
+    gates.append(gate("split.composite_px40", round(px40, 4), 0.005, px40 <= 0.005,
+                      repainted_px=int(painted.sum())))
+    worst_fill = max(share.values(), default=0.0)
+    gates.append(gate("split.sleeve_fill", worst_fill, SLEEVE_FILL_MAX, worst_fill <= SLEEVE_FILL_MAX, per_arm=share))
     worst, per = 0.0, {}
     for n, a in layers.items():
         al = a[..., 3]
@@ -592,6 +679,16 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22) -> dict:
         per[n] = round(v, 4)
         worst = max(worst, v)
     gates.append(gate("split.alpha_clean", round(worst, 4), 0.01, worst <= 0.01, per_layer=per))
+    uncovered = {}                             # layer pixels no triangle of the mesh draws
+    for rp in rig_parts:
+        al = layers[rp["name"]][..., 3] > 8
+        v = np.array(rp["verts"], np.float64).reshape(-1, 2)
+        t = np.array(rp["indices"], int).reshape(-1, 3)
+        n_un = int((al & ~tri_cover(v, t, al.shape)).sum()) if len(t) else int(al.sum())
+        if n_un:
+            uncovered[rp["name"]] = n_un
+    n_unc = sum(uncovered.values())
+    gates.append(gate("split.mesh_cover", n_unc, 0, n_unc == 0, per_layer=uncovered))
     jo = joint_overlaps(layers, joints, bones, view, sd, ov, L)
     jmin = min(jo.values()) if jo else 0.0
     gates.append(gate("split.joint_overlap", round(jmin, 1), 0.5 * ov, bool(jo) and jmin >= 0.5 * ov, per_joint=jo))
@@ -601,6 +698,8 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22) -> dict:
                       not missing and len(set(present)) == len(present), missing=missing))
     gates.append(gate("split.limbs", len(geo) + len(legs), 4, len(geo) == 2 and len(legs) == 2,
                       arms=sorted(geo), legs=sorted(legs)))
+    sv = swap_visible(layers, present, parts)
+    gates.append(gate("split.swap_visible", sv["worst"], SWAP_VISIBLE_MIN, sv["worst"] >= SWAP_VISIBLE_MIN, **sv))
     notch = shoulder_notch(layers, S, A, geo, L)
     gates.append(gate("split.shoulder_notch", notch["notch_share"], 0.001,
                       notch["notch_share"] <= 0.001 and notch["outlined"] >= 0.7, **notch))
@@ -774,6 +873,37 @@ def _proj(xs, ys, j, joints, bones):
     return (np.c_[xs, ys] - J) @ best
 
 
+def swap_visible(layers, present, parts):
+    """Each swap state against its default, composited under every layer above it at rest: the
+    share of the pixels the swap changes (|RGB| > 40) that still change in the picture, and the
+    mean change there. A layer above that covers the mouth leaves a swap no one sees."""
+    np = _np()
+    out, worst = {}, 1.0
+    for default, alt in (("eyes_open", "eyes_closed"), ("mouth_closed", "mouth_open")):
+        if default not in layers or alt not in layers:
+            continue
+        a, b = layers[default], layers[alt]
+        changed = (np.abs(a[..., :3] - b[..., :3]).max(-1) > 40) & ((a[..., 3] > 127) | (b[..., 3] > 127))
+        if not changed.any():
+            out[alt] = {"visible": 0.0, "changed_px": 0, "mean_delta": 0.0}
+            worst = 0.0
+            continue
+
+        def stack(state):
+            shown = [n for n in present if not parts[n].get("hidden") and n != default] + [state]
+            order = [n for n in present if n in shown]
+            return over([layers[n] for n in reversed(order)])
+        ca, cb = stack(default), stack(alt)
+        d = np.abs(ca[..., :3] - cb[..., :3]).max(-1)
+        vis = float(((d > 40) & changed).sum() / changed.sum())
+        hair = any(n.startswith("hair") for n in present[:present.index(default)])
+        out[alt] = {"visible": round(vis, 3), "changed_px": int(changed.sum()),
+                    "mean_delta": round(float(d[changed].mean()), 1)}
+        if alt.startswith("mouth") or not hair:   # bangs may hide the eyes; nothing hides the mouth
+            worst = min(worst, vis)
+    return {"worst": round(worst, 3), "per_swap": out}
+
+
 def shoulder_notch(layers, S, A, geo, L):
     """Where an arm moves away, the body left behind must be whole and outlined."""
     np, ndi = _np(), _ndi()
@@ -803,6 +933,27 @@ def shoulder_notch(layers, S, A, geo, L):
             "outlined": round(outlined, 3), "edge_px": int(edge.sum()), "dark_luma": round(dark, 1)}
 
 
+def tri_cover(pts, tris, shape):
+    """Pixels whose centre lies in any of the triangles, as a GPU rasterises them."""
+    np = _np()
+    out = np.zeros(shape, bool)
+    H, W = shape
+    for s in tris:
+        a, b, c = pts[s[0]], pts[s[1]], pts[s[2]]
+        den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+        if abs(den) < 1e-9:
+            continue
+        x0, x1 = max(0, int(np.floor(min(a[0], b[0], c[0])))), min(W - 1, int(np.ceil(max(a[0], b[0], c[0]))))
+        y0, y1 = max(0, int(np.floor(min(a[1], b[1], c[1])))), min(H - 1, int(np.ceil(max(a[1], b[1], c[1]))))
+        if x1 < x0 or y1 < y0:
+            continue
+        py, px = np.mgrid[y0:y1 + 1, x0:x1 + 1] + 0.5
+        l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / den
+        l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / den
+        out[y0:y1 + 1, x0:x1 + 1] |= (l1 >= -1e-4) & (l2 >= -1e-4) & (1 - l1 - l2 >= -1e-4)
+    return out
+
+
 def mesh_for(name, mask, p, bones, bidx, step=22):
     """Grid and contour vertices inside the grown mask, Delaunay, triangles kept inside; two-bone
     smoothstep weights across the joint the part's two bones share."""
@@ -824,19 +975,35 @@ def mesh_for(name, mask, p, bones, bidx, step=22):
         if not taken[max(0, y - r_):y + r_ + 1, max(0, x - r_):x + r_ + 1].any():
             taken[y, x] = True
             pts.append((x, y))
-    pts = np.unique(np.array(pts, np.float64), axis=0)
-    if len(pts) < 3:
-        return empty
-    try:
-        tri = Delaunay(pts)
-    except Exception:
-        return empty
     H, W = grown.shape
-    keep = []
-    for s in tri.simplices:
-        q = [pts[s].mean(0)] + [(pts[s[i]] + pts[s[(i + 1) % 3]]) / 2 for i in range(3)]
-        if all(grown[min(H - 1, int(round(v[1]))), min(W - 1, int(round(v[0])))] for v in q):
-            keep.append(s)
+    for _ in range(3):
+        pts = np.unique(np.array(pts, np.float64), axis=0)
+        if len(pts) < 3:
+            return empty
+        try:
+            tri = Delaunay(pts)
+        except Exception:
+            return empty
+        keep, dropped = [], []
+        for s in tri.simplices:
+            q = [pts[s].mean(0)] + [(pts[s[i]] + pts[s[(i + 1) % 3]]) / 2 for i in range(3)]
+            inside = all(grown[min(H - 1, int(round(v[1]))), min(W - 1, int(round(v[0])))] for v in q)
+            (keep if inside else dropped).append(s)
+        # a triangle the test above drops along a wavy edge leaves a sliver of the layer uncovered,
+        # which renders as background: give back every dropped triangle that holds a layer pixel
+        miss = mask & ~tri_cover(pts, keep, mask.shape)
+        for s in dropped:
+            if not miss.any():
+                break
+            r = tri_cover(pts, [s], mask.shape)
+            if (r & miss).any():
+                keep.append(s)
+                miss &= ~r
+        if not miss.any():
+            break
+        my, mx = np.nonzero(miss)                 # outside every triangle (a thin tip): add the
+        corners = [np.c_[mx + dx, my + dy] for dx in (0, 1) for dy in (0, 1)]   # pixels' corners
+        pts = np.vstack([pts] + corners).astype(np.float64)
     if not keep:
         return empty
     keep = np.array(keep)
@@ -1014,8 +1181,9 @@ def keep_zone(name, A, box):
 
 def fill_gates(name, fill, S, A, box):
     """fill.aligned: 75th percentile |RGB| in the keep zone; fill.iou: silhouettes agree there;
-    fill.inside (head fills): the fill stays inside the source silhouette grown 4 px. The armless
-    fill may widen into the gaps beside the arms; split clips it to the source."""
+    fill.inside (head fills): the fill stays inside the source silhouette grown 4 px; fill.changed
+    (eyes, mouth): the share of the head the fill changes by more than 40. The armless fill may
+    widen into the gaps beside the arms; split clips it to the source."""
     np, ndi = _np(), _ndi()
     fA = fill[..., 3] > 127
     kz = keep_zone(name, A, box)
@@ -1032,6 +1200,16 @@ def fill_gates(name, fill, S, A, box):
         grown = ndi.binary_dilation(A, iterations=4)
         inside = float((fA & ~grown & inb).sum() / max((fA & inb).sum(), 1))
         gs.append(gate("fill.inside", round(inside, 4), 0.03, inside <= 0.03))
+    if name in ("eyes_closed", "mouth_open"):
+        # the swap must read at a glance: lips that only part (a hint of teeth) change well under
+        # 1 % of the head; a mouth open with its dark inside, or shut eyes, 2-3 %
+        x0, y0, x1, y1 = box
+        inb = np.zeros_like(fA)
+        inb[max(y0, 0):y1, max(x0, 0):x1] = True
+        head = A & inb
+        ch = (np.abs(fill[..., :3] - S[..., :3]).max(-1) > 40) & head & fA
+        share = float(ch.sum() / max(head.sum(), 1))
+        gs.append(gate("fill.changed", round(share, 4), FILL_CHANGED_MIN, share >= FILL_CHANGED_MIN))
     return gs
 
 
@@ -1113,14 +1291,14 @@ def cmd_fills(a) -> int:
 
 
 # ----------------------------------------------------------------------------------- selftest
-def synth(view="front", facing="right", notch=False):
+def synth(view="front", facing="right", notch=False, strap=False):
     """A flat, outlined figure on the canvas plus its four fills, as split() expects them."""
     np = _np()
     from PIL import Image, ImageDraw
     W, H = 360, 540
     OUT = (20, 20, 25, 255)
 
-    def figure(arms=True, hair=True, eyes="open", mouth="closed", bite=False):
+    def figure(arms=True, hair=True, eyes="open", mouth="closed", bite=False, strap=strap):
         im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
         cx = 180
@@ -1178,6 +1356,8 @@ def synth(view="front", facing="right", notch=False):
                 d.ellipse([p[0] - 13, p[1] - 13, p[0] + 13, p[1] + 13], fill=jacket)
                 d.ellipse([q[0] - 16, q[1] - 16, q[0] + 16, q[1] + 16], fill=OUT)
                 d.ellipse([q[0] - 12, q[1] - 12, q[0] + 12, q[1] + 12], fill=skin)
+        if strap:                                           # a bag strap drawn across arm and chest
+            d.line([(cx - 40, 215), (cx + 50, 150)], fill=(50, 50, 55, 255), width=14)
         return np.asarray(im).astype(np.float32)
 
     src = figure()
@@ -1238,6 +1418,36 @@ def selftest() -> int:
         rep = split(d / "src.png", d / "fills.json", d / "out", overlap=10)
         notch = next(x for x in rep["gates"] if x["name"] == "split.shoulder_notch")
         checks["notch_caught"] = not notch["pass"]
+        man = json.loads((t / "front_front" / "out" / "manifest.json").read_text(encoding="utf-8"))["layers"]
+        lay = {x["name"]: load(t / "front_front" / "out" / x["png"]) for x in man}
+        hid = {x["name"]: {"hidden": x["hidden"]} for x in man}
+        order = [x["name"] for x in man]
+        ok_before = swap_visible(lay, order, hid)["worst"] >= SWAP_VISIBLE_MIN
+        ys, xs = np.nonzero(lay["mouth_open"][..., 3] > 127)          # the torso drawn over the mouth
+        lay["torso"][ys, xs] = lay["head"][ys, xs]
+        lay["torso"][ys, xs, 3] = 255
+        rp = next(p for p in json.loads((t / "front_front" / "out" / "rig2d.json").read_text(encoding="utf-8"))["parts"]
+                  if p["name"] == "torso")
+        v, tri = np.array(rp["verts"]).reshape(-1, 2), np.array(rp["indices"]).reshape(-1, 3)
+        al = load(t / "front_front" / "out" / "torso.png")[..., 3] > 8
+        checks["mesh_gap_caught"] = bool(not (al & ~tri_cover(v, tri, al.shape)).any() and
+                                         (al & ~tri_cover(v, tri[np.arange(len(tri)) % 3 != 0], al.shape)).any())
+        checks["swap_hidden_caught"] = bool(ok_before and swap_visible(lay, order, hid)["worst"] < SWAP_VISIBLE_MIN)
+        src, fills = synth("side", "right", strap=True)         # a strap across the near arm
+        d = t / "strap"
+        d.mkdir()
+        save(src, d / "src.png")
+        doc = {"view": "side", "facing": "right", "canvas": [src.shape[1], src.shape[0]], "fills": {}}
+        for k, v in fills.items():
+            save(v, d / f"{k}.png")
+            doc["fills"][k] = {"png": f"{k}.png"}
+        (d / "fills.json").write_text(json.dumps(doc), encoding="utf-8")
+        rep = split(d / "src.png", d / "fills.json", d / "out", overlap=10)
+        arm = load(d / "out" / "arm_near.png")
+        on = arm[..., 3] > 127
+        strap_left = (on & (np.abs(arm[..., :3] - np.array([50, 50, 55])).max(-1) < 12)).sum()
+        sf = next(x for x in rep["gates"] if x["name"] == "split.sleeve_fill")
+        checks["strap_off_the_sleeve"] = bool(rep["pass"] and strap_left < 20 and sf["value"] > 0)
     try:
         tpl = json.loads(TEMPLATE.read_text(encoding="utf-8"))
         checks["template_matches"] = set(tpl) == {"client_id", "prompt"} and tpl["prompt"] == graph(*TEMPLATE_ARGS)

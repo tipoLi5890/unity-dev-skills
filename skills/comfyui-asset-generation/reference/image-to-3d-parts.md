@@ -24,7 +24,7 @@ anchor GLB's own frame (glTF: +Y up, front = the multi-view front view). Schema:
 
 | Keys | Written by |
 |---|---|
-| `tier`, a part's `preset`, `seam.mode`, `prompt_hint`, `budget_share`, `split.delta` | a person |
+| `tier`, a part's `preset`, `seam.mode`, `prompt_hint`, `prompt_hint_back`, `budget_share`, `split.delta`, `views.accepted` (`part_views.py --accept`) | a person |
 | `anchor` (hash, frame fit, neck band, head height), `region_box`, `seam` heights, `views.boxes`, the keep masks | `blender-character-rig` `part_math.py plan` |
 | `views.dir`, `views.sheet`, `views.colours`, `generated` | `scripts/part_views.py` |
 
@@ -94,14 +94,19 @@ left, back and right. Per generated part and view:
    0.75–1.0 of the visible neck's colour), centred on the anchor's neck axis with its radius, from a
    little above the collar top (`--prior-lift`, a fraction of head height: the drawn hood sits higher
    than the low-res mesh's) down to `clip_row`, filling only what the keep mask dropped. Below the
-   chin only the neck span is kept. Rows below `clip_row` (the part's bottom, `part_bottom_y`, about
-   a tenth of the head height under the anchor's clean-neck band) are black.
+   chin only the neck span is kept, and the plan's hanging hair (`views.hanging`: a ponytail kept to
+   the part's bottom). Rows below `clip_row` (the part's bottom, `part_bottom_y`, about a tenth of the
+   head height under the anchor's clean-neck band, or the foot of a covered neck) are black.
 4. **Redraw.** Qwen-Image-Edit-2511 + Lightning through `mesh-texture-paint`'s `qwen_paint.py`, with
    the guide as **both** pictures, at denoise 1.0 (4 steps, cfg 1). The prompt asks for the same head,
    pixel for pixel, the shaded column painted as a straight bare neck cut flat at the bottom edge, no
    hood, and a true 90° profile in the side views. The back view has a prompt of its own: the back of
    the head, no face, and no `prompt_hint`. Asked for "the same face" over a guide of hair above a skin
-   column, the model draws a face on the back of the head, every seed. The redraw is clipped flat at `clip_row`.
+   column, the model draws a face on the back of the head, every seed. It takes `prompt_hint_back`
+   instead (a person writes what the back shows: `a navy peaked cap with a black band, the hair tied
+   into a ponytail at the nape`); without it the model can drop a cap and draw hair. A view that keeps
+   hanging hair over ≥ 1 % of its box is also told to keep it over the neck. The redraw is clipped flat
+   at `clip_row`.
 5. **Gates** per view, a failing view retrying the next seed:
 
    | Gate | Limit | Catches |
@@ -111,6 +116,15 @@ left, back and right. Per generated part and view:
    | `part.neck_reach` | ≥ 0.85 of the neck span covered on the last row | a neck that slants up and stops short (C-shaped in the mesh) |
    | `part.neck_width` | 0.8–1.25 × the neck diameter | a neck drawn thin or as a collar |
    | `part.sharpness` | ≥ `--sharpness-factor` (5) × the guide's Laplacian variance | the blur coming back |
+
+   **A near miss a person signs off.** When every seed of a view fails, look at its redraws; one that
+   misses only by a little (`redraw_iou` ≥ 0.85, `neck_reach` ≥ 0.70, `neck_width` 0.70–1.40,
+   `redraw_colour` ≤ 0.10, sharpness ≥ 0.6 × the factor) may be accepted:
+   `views PLAN --part head --accept left:43 --accepted-by NAME --accept-note WHY`. The redraw already
+   made from the same guide is gated again, not redrawn; the plan records `views.accepted.<view>` (seed,
+   who, why, the failed values, the redraw's hash), the gates keep `pass: false` with `accepted`, and
+   the report passes with `accepted_views` naming them. A farther miss is refused: regenerate or re-plan. The usual
+   case is a covered neck in profile, where the drawn neck is narrower than the prior.
 
 6. **Background removal.** The four redraws through `templates/four_view_background_removal_api.json`,
    upload names `<c>_<part>_<view>_r_<hash>.png`; `part.bg_area` (BiRefNet mask area over the redraw's)

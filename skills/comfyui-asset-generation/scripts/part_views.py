@@ -4,6 +4,7 @@ clean views, paint the hidden neck as a shaded cylinder, redraw it sharp with Qw
 gate it, remove the background, then run one Pixal3D multi-view job per part.
 
   part_views.py views    PLAN.parts.json --views CLEAN_DIR [--server URL] [--seeds 42,43,44] [--part head]
+                         [--accept left:43 --accepted-by NAME [--accept-note WHY]]
   part_views.py generate PLAN.parts.json [--server URL] [--part head]
   part_views.py --selftest          no network: plan rules, guide, gates, the Qwen graph
 
@@ -19,12 +20,15 @@ longer matches `anchor.glb_sha256` (a new anchor means `plan` again).
   redraw   Qwen 2511 + Lightning at denoise 1.0 with the guide as both pictures (mesh-texture-paint's
            qwen_paint). Never a full-body reference (it re-proportions the face) and never partial
            denoise (it returns the blur). The back view has a prompt of its own (no face, no
-           prompt_hint). The redraw is clipped flat at clip_row.
+           prompt_hint; its own prompt_hint_back, what the back shows: a cap, a ponytail). The redraw is
+           clipped flat at clip_row.
   gates    part.redraw_iou >= 0.90 against the guide's own silhouette; part.redraw_colour <= 0.06 of
            32x32 cells moved more than dE 20 from the guide (a face on the back of the head);
            part.neck_reach >= 0.85 of the neck span on the last row; part.neck_width in [0.8, 1.25]
            of the neck diameter; part.sharpness >= --sharpness-factor x the guide's. A failing view
-           retries the next seed.
+           retries the next seed. --accept VIEW:SEED --accepted-by NAME: a person signs off a near
+           miss (NEAR) already redrawn from the same guide; recorded in views.accepted, the report
+           green with accepted_views and the gates' `accepted`; a farther miss is refused.
   clean    the four redraws through templates/four_view_background_removal_api.json; part.bg_area in
            [0.95, 1.05]. Writes views/<part>/{front,left,back,right}.png (the Pixal3D inputs and
            mesh-texture-paint's --concept), sheet.png (its --sheet), the gate report
@@ -75,6 +79,9 @@ HAND_REGIONS = ("hand.L", "hand.R")                           # views and genera
 NAME = re.compile(r"^[a-z0-9_-]+$")
 
 IOU_MIN, REACH_MIN, WIDTH_RANGE, BG_RANGE = 0.90, 0.85, (0.8, 1.25), (0.95, 1.05)
+# --accept: how far a failing view may miss for a person to sign it off (beyond this: regenerate or re-plan)
+NEAR = {"redraw_iou": (0.85, None), "neck_reach": (0.70, None), "neck_width": (0.70, 1.40),
+        "redraw_colour": (None, 0.10), "sharpness": (0.6, None)}      # sharpness: x --sharpness-factor
 COLOUR_DE, COLOUR_SHARE = 20.0, 0.06      # 32x32 cells whose colour moved more than this; their share
 
 LABEL = {"front": "front",
@@ -95,7 +102,7 @@ PROMPT = {
     "head/back": ("Picture 1 is a blurry, low-resolution view of the back of the head of a stylized 3D game character, "
                   "seen from directly behind, on a pure black background: the back of the hair, the backs of the ears "
                   "and the back of the neck. Picture 2 is the same image. Redraw Picture 1 as a sharp, high-resolution, "
-                  "finely detailed image of the same back of the head: the same hair, ears and skin tone. The face is "
+                  "finely detailed image of the same back of the head{hint}: the same hair, ears and skin tone. The face is "
                   "on the other side of the head and is not visible: draw no face, no eyes, no nose, no mouth. Keep the "
                   "exact silhouette, size and position of Picture 1, pixel for pixel; only add sharp detail. Same "
                   "four-view turnaround style, soft even lighting, no cast shadows, no highlights. " + NECK +
@@ -103,11 +110,22 @@ PROMPT = {
 }
 
 
-def prompt_for(region: str, view: str, hint) -> str | None:
+HANG_SHARE = 0.01     # a view keeps hanging hair below the chin over this share of its box: the prompt says so
+HANG = (" Keep the hair that hangs down from the head (a ponytail, long locks) exactly as in Picture 1, down to the "
+        "bottom edge: the bare neck is only where no hair covers it.")
+
+
+def prompt_for(region: str, view: str, hint, back_hint=None, hanging=False) -> str | None:
+    """The redraw prompt. The back view never takes prompt_hint (a face named there is drawn on the back of the
+    head); it takes its own prompt_hint_back (what the back shows: a cap's band, a ponytail tied at the nape).
+    hanging (the view keeps the plan's hanging hair below the chin over HANG_SHARE of its box; a ponytail
+    hidden behind the head in front does not count): the hanging hair stays over the neck."""
     if view == "back" and f"{region}/back" in PROMPT:
-        return PROMPT[f"{region}/back"]
+        return PROMPT[f"{region}/back"].replace("{hint}", f", with {back_hint}" if back_hint else "") + \
+            (HANG if hanging else "")
     tpl = PROMPT.get(region)
-    return None if tpl is None else tpl.format(label=LABEL[view], hint=f", with {hint}" if hint else "")
+    return None if tpl is None else tpl.format(label=LABEL[view], hint=f", with {hint}" if hint else "") + \
+        (HANG if hanging else "")
 
 
 class Refused(Exception):
@@ -259,7 +277,10 @@ def part_geometry(plan: dict, part: dict, view: str, prior_lift: float) -> dict:
     a, seam = plan["anchor"], part["seam"]
     neck, fr = a["neck"], Frame(plan, part, view)
     r = float(neck["radius"])
-    uc = view_u(view, neck["axis_xz"][0], neck["axis_xz"][1])
+    ax, az = neck["axis_xz"]
+    if (neck.get("covered") or {}).get("nape_z") is not None and view in ("left", "right"):
+        az = neck["covered"]["nape_z"] + r     # a covered neck's band ring holds the chin: in profile the neck
+    uc = view_u(view, ax, az)                  # is round, its back on the nape
     top_y = neck["collar_top"] if neck.get("collar") and neck.get("collar_top") is not None else seam.get("cut_y", neck["band"][0])
     return {"clip_row": int(round(fr.row(seam["part_bottom_y"]))),
             "prior_top": int(math.floor(fr.row(top_y + prior_lift * a["head_height"]))),
@@ -296,11 +317,12 @@ def neck_colour(rgb, keep, g):
     return np.median(px, axis=0) if len(px) >= 12 else None
 
 
-def build_guide(rgb, keep, g, colour):
+def build_guide(rgb, keep, g, colour, hang=None):
     """The Qwen guide in box pixels. Inside the neck span, from prior_top (a little above the anchor's
     collar top: the drawn hood sits higher than the low-res mesh's) to clip_row, a shaded cylinder fills
-    what the keep mask dropped. Below the chin (the top of the neck band) only the neck span is kept;
-    everything below clip_row is black. Returns (guide, silhouette, prior)."""
+    what the keep mask dropped. Below the chin (the top of the neck band) only the neck span is kept, and
+    the plan's hanging hair (hang: a ponytail, part_math.py plan's hang_<view>.png); everything below
+    clip_row is black. Returns (guide, silhouette, prior)."""
     np = _np()
     L = g["L"]
     c0, c1 = g["span"]
@@ -315,7 +337,7 @@ def build_guide(rgb, keep, g, colour):
     prior &= ~keep                         # fill only what the keep mask dropped (the hood, the background)
     rn = max(0, int(math.ceil(g["chin_row"])))
     keep = keep.copy()
-    keep[rn:, ~inside] = False             # below the chin only the neck remains: a hood the keep mask let through
+    keep[rn:, ~inside] = False if hang is None else hang[rn:, ~inside]   # below the chin: the neck (and hair hanging)
     guide = rgb.copy()
     guide[~keep] = 0
     cyl = (np.asarray(colour, float)[None, :] * shade[:, None]).clip(0, 255).astype(np.uint8)
@@ -519,9 +541,41 @@ def qwen():
 
 
 def report(gates, **extra):
-    ok = bool(gates) and all(g["pass"] for g in gates) and "refused" not in extra and "error" not in extra
-    return {"schema": "gate/1", "tool": "part_views", "pass": ok, "ok": ok,
-            "verdict": "green" if ok else "failed", "gates": gates, **extra}
+    ok = bool(gates) and all(g["pass"] or g.get("accepted") for g in gates) and "refused" not in extra \
+        and "error" not in extra
+    signed = sorted({g["name"].split(".")[-1] for g in gates if g.get("accepted")}) if ok else []
+    return {"schema": "gate/1", "tool": "part_views", "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
+            **({"accepted_views": signed} if signed else {}), "gates": gates, **extra}
+
+
+def near_miss(gates, factor):
+    """The failing gates of one view, or None when one misses further than NEAR allows."""
+    failed = {}
+    for g in gates:
+        if g["pass"]:
+            continue
+        key = g["name"].split(".")[1]
+        lo, hi = NEAR[key]
+        if key == "sharpness":
+            lo *= factor
+        v = g["value"]
+        if v is None or (lo is not None and v < lo) or (hi is not None and v > hi):
+            return None
+        failed[g["name"]] = v
+    return failed
+
+
+def parse_accept(text):
+    """--accept left:42[,back:43] -> {view: seed}."""
+    out = {}
+    for item in (text or "").split(","):
+        if not item.strip():
+            continue
+        view, _, seed = item.strip().partition(":")
+        if view not in VIEWS or not seed.strip().lstrip("-").isdigit():
+            raise Refused(f"--accept {item!r}: want VIEW:SEED with VIEW one of {VIEWS}")
+        out[view] = int(seed)
+    return out
 
 
 def cmd_views(a) -> int:
@@ -537,6 +591,11 @@ def cmd_views(a) -> int:
         return 0
     clean = {v: (find_view(a.views, v, "black"), find_view(a.views, v, "mask")) for v in VIEWS}
     seeds = [int(s) for s in a.seeds.split(",")]
+    accepts = parse_accept(a.accept)
+    if accepts and not (a.accepted_by or "").strip():
+        raise Refused("--accept needs --accepted-by NAME: the person who looked at the redraw and signs it off")
+    if accepts and (len(gen) != 1 or gen[0]["region"] in HAND_REGIONS):
+        raise Refused("--accept names views of one head part: add --part NAME (hands have their own retries)")
     qp = qwen()
     models = qp.load_models(a.models)
     base = server_base(a.server)
@@ -569,32 +628,48 @@ def cmd_views(a) -> int:
             keep = np.asarray(Image.open(kp).convert("L")) > 127
             if keep.shape != crops[v].shape[:2]:
                 raise Refused(f"{kp}: {keep.shape} is not the box ({g['L']} px)")
-            geo[v] = (g, keep)
-        fg, fk = geo["front"]
+            hp = (part["views"].get("hanging") or {}).get("masks", {}).get(v)
+            if hp and not (root / hp).is_file():
+                raise Refused(f"hanging-hair mask missing: {root / hp} (part_math.py plan writes it)")
+            hang = (np.asarray(Image.open(root / hp).convert("L")) > 127) if hp else None
+            geo[v] = (g, keep, hang)
+        fg, fk, _ = geo["front"]
         colour = neck_colour(crops["front"], fk, fg)
         if colour is None:
             colour = np.median(crops["front"][fk], axis=0)
+        same_guide = {}
         for v in VIEWS:
-            g, keep = geo[v]
-            guide, sil, prior = build_guide(crops[v], keep, g, colour)
+            g, keep, hang = geo[v]
+            guide, sil, prior = build_guide(crops[v], keep, g, colour, hang)
             g1024, s1024 = upscale(guide), upscale(sil, mask=True)
             s1024[int(round(g["clip_row"] * 1024 / g["L"])):] = False
+            old = vd / f"guide_{v}.png"
+            same_guide[v] = old.is_file() and np.array_equal(np.asarray(Image.open(old).convert("RGB")), g1024)
             Image.fromarray(g1024).save(vd / f"guide_{v}.png")
             guides[v] = (g1024, s1024, g)
         res = {}
         for v in VIEWS:
             g1024, s1024, g = guides[v]
-            prompt = prompt_for(part["region"], v, hint)
+            hang_v = geo[v][2]
+            hanging = hang_v is not None and \
+                hang_v[max(0, int(math.ceil(g["chin_row"]))):].sum() >= HANG_SHARE * g["L"] * g["L"]
+            prompt = prompt_for(part["region"], v, hint, part.get("prompt_hint_back"), hanging)
             best = None
-            for seed in seeds:
+            acc = accepts.get(v)
+            if acc is not None:      # the redraw the person looked at, from the same guide: gated again, not redrawn
+                if not (vd / f"redraw_{v}_s{acc}.png").is_file() or not same_guide[v]:
+                    raise Refused(f"--accept {v}:{acc}: no redraw_{v}_s{acc}.png from this guide in {vd} "
+                                  "(run views first, look at the redraws, then accept one)")
+            for seed in ([acc] if acc is not None else seeds):
                 out = vd / f"redraw_{v}_s{seed}.png"
-                wait_idle(base, a.wait_idle)
                 t0 = time.time()
-                try:
-                    qp.paint(vd / f"guide_{v}.png", vd / f"guide_{v}.png", prompt, out, base, seed,
-                             keep_loaded=True, models=models)
-                except RuntimeError as e:
-                    raise JobFailed(str(e))
+                if acc is None:
+                    wait_idle(base, a.wait_idle)
+                    try:
+                        qp.paint(vd / f"guide_{v}.png", vd / f"guide_{v}.png", prompt, out, base, seed,
+                                 keep_loaded=True, models=models)
+                    except RuntimeError as e:
+                        raise JobFailed(str(e))
                 dt = round(time.time() - t0, 1)
                 rd = np.asarray(Image.open(out).convert("RGB")).copy()
                 if rd.shape[:2] != (1024, 1024):
@@ -612,6 +687,22 @@ def cmd_views(a) -> int:
             _, seed, rd, gates, m = best
             for x in gates:
                 x["seed"] = seed
+            if acc is not None and not best[0][0]:
+                failed = near_miss(gates, a.sharpness_factor)
+                if failed is not None:
+                    sign = {"seed": acc, "by": a.accepted_by.strip(), "note": a.accept_note or "", "gates": failed,
+                            "redraw_sha256": sha256(vd / f"redraw_{v}_s{acc}.png"),
+                            "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                    part["views"].setdefault("accepted", {})[v] = sign
+                    for x in gates:
+                        if not x["pass"]:
+                            x["accepted"] = {"by": sign["by"], "seed": acc}
+                    best = ((True, best[0][1]),) + best[1:]
+                else:
+                    print(f"part {part['name']} view {v}: --accept refused, a gate misses beyond the near-miss "
+                          f"limits {NEAR}", file=sys.stderr)
+            elif acc is not None:
+                (part["views"].get("accepted") or {}).pop(v, None)     # it passes on its own: nothing to sign
             Image.fromarray(rd).save(vd / f"redraw_{v}.png")
             res[v] = (rd, m)
             all_gates += gates
@@ -879,6 +970,13 @@ def selftest() -> int:
         c0i, c1i = int(math.floor(g["span"][0])), int(math.ceil(g["span"][1]))
         checks["leaky_keep_below_chin"] = not teal[int(math.ceil(g["chin_row"])):, :c0i].any() \
             and not teal[int(math.ceil(g["chin_row"])):, c1i + 1:].any()
+        # hair hanging below the chin outside the neck span (the plan's hang mask): kept down to clip_row
+        hang = np.zeros_like(keep)
+        hang[int(math.ceil(g["chin_row"])):, :c0i] = leaky[int(math.ceil(g["chin_row"])):, :c0i]
+        guide_h, sil_h, _ = build_guide(crop, leaky, g, colour, hang)
+        rows_h = slice(int(math.ceil(g["chin_row"])), g["clip_row"])
+        checks["hang_kept_below_chin"] = bool(hang[rows_h].any()) and bool(sil_h[rows_h][hang[rows_h]].all()) \
+            and not (np.abs(guide_h.astype(int) - [40, 170, 190]).sum(2) < 30)[rows_h, c1i + 1:].any()
         g1024, s1024 = upscale(guide), upscale(sil, mask=True)
         clip = int(round(g["clip_row"] * 1024 / g["L"]))
         s1024[clip:] = False
@@ -907,6 +1005,19 @@ def selftest() -> int:
         checks["colours_sampled"] = bool(col) and all(re.fullmatch(r"#[0-9a-f]{6}", c) for c in col.values())
         rep = report(gates, part="head")
         checks["report_gate1"] = rep["schema"] == "gate/1" and rep["pass"] is rep["ok"] is True
+        # --accept: a near miss may be signed off (the verdict says so), a far miss may not
+        thin = [dict(x, **({"value": 0.74, "pass": False} if "neck_width" in x["name"] else {})) for x in gates]
+        far = [dict(x, **({"value": 0.6, "pass": False} if "redraw_iou" in x["name"] else {})) for x in thin]
+        nm = near_miss(thin, 5.0)
+        signed = [dict(x, accepted={"by": "art lead", "seed": 42}) if not x["pass"] else x for x in thin]
+        checks["accept_near_miss_only"] = nm == {"part.neck_width.front": 0.74} and near_miss(far, 5.0) is None \
+            and report(thin)["verdict"] == "failed" and report(signed)["accepted_views"] == ["front"] \
+            and report(signed)["pass"] and parse_accept("left:42,back:7") == {"left": 42, "back": 7}
+        try:
+            parse_accept("side:4")
+            checks["accept_bad_view_refused"] = False
+        except Refused:
+            checks["accept_bad_view_refused"] = True
         # the Qwen graph: picture 1 = picture 2 = the guide, denoise 1
         if (QWEN_DIR / "qwen_paint.py").is_file():
             qp = qwen()
@@ -917,7 +1028,9 @@ def selftest() -> int:
         else:
             print("SKIP qwen graph: mesh-texture-paint is not installed beside this skill")
         back = prompt_for("head", "back", "a young face")
-        checks["back_prompt_no_face"] = "draw no face" in back and "young face" not in back \
+        checks["back_prompt_no_face"] = "draw no face" in back and "young face" not in back and "{" not in back \
+            and "a peaked cap" in prompt_for("head", "back", "a young face", "a peaked cap") \
+            and "ponytail" in prompt_for("head", "left", None, hanging=True) and "ponytail" not in back \
             and "profile" in prompt_for("head", "left", None) and "{" not in prompt_for("head", "front", "x")
         sample = json.loads(json.dumps(plan))
         sample["anchor"]["glb"] = "../../sources/courier_anchor.glb"
@@ -948,6 +1061,10 @@ def main(argv=None) -> int:
     v.add_argument("--prior-lift", type=float, default=0.1,
                    help="the neck prior starts this fraction of head height above the collar top")
     v.add_argument("--models", help="JSON file or inline JSON: unet/clip/vae/lora file names (qwen_paint)")
+    v.add_argument("--accept", help="VIEW:SEED[,...]: a person signs off a near-miss redraw already made from the same "
+                                    "guide (redraw_<view>_s<seed>.png); recorded in the plan as views.accepted")
+    v.add_argument("--accepted-by", help="who looked at it (required with --accept)")
+    v.add_argument("--accept-note", help="why it is good enough (kept in the plan)")
     gn = sub.add_parser("generate", help="one Pixal3D multi-view job per generated part, then inspect_glb")
     gn.add_argument("plan", type=Path)
     gn.add_argument("--timeout", type=float, default=1800)

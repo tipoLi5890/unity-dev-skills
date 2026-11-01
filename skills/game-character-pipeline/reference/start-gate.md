@@ -23,6 +23,8 @@ table, and what each route hands Unity: `reference/routes.md`. In short:
 
 - **A standard adult humanoid** (the default): rigged locally onto the humanoid contract by
   `character-autorig`, clips from `humanoid-motion` or a pack retarget.
+- **A long coat, skirt or robe** over a standard body: the skirt route (`autorig.py all --body
+  skirt`), the legs still apart and showing under the hem in S1.
 - **A custom or Q-version body** (short limbs, a large head, ears, a tail, mitten hands):
   `character-autorig`'s hand-built route when the body still maps to the contract, else
   `blender-character-rig`'s positional skinning; motion through `humanoid-motion` (two cameras) or keyed.

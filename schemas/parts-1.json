@@ -39,7 +39,13 @@
             "axis_xz": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
             "radius": {"type": "number", "exclusiveMinimum": 0},
             "collar": {"type": "boolean"},
-            "collar_top": {"type": ["number", "null"]}
+            "collar_top": {"type": ["number", "null"]},
+            "covered": {
+              "type": ["object", "null"],
+              "description": "the ring goes on below the band, no wider, with loops nested in it (a stand collar fused to the jaw): the band sits on the jaw; part_bottom_y reaches foot_y; nape_z places the side views' neck prior",
+              "properties": {"to_y": {"type": "number"}, "foot_y": {"type": "number"}, "nested_rows": {"type": "integer"},
+                             "rows": {"type": "integer"}, "children_max": {"type": "integer"}, "nape_z": {"type": "number"}}
+            }
           }
         }
       }
@@ -68,6 +74,7 @@
         "from": {"$ref": "#/$defs/name", "description": "source: split only, a part whose source is generate"},
         "preset": {"enum": ["Small", "Medium", "Compact", "Large", "Template", "Showcase"]},
         "prompt_hint": {"type": "string"},
+        "prompt_hint_back": {"type": "string", "description": "the back view's own hint (what the back shows: a cap's band, a ponytail); the back view never takes prompt_hint"},
         "budget_share": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "a fraction of the class's 3D budgets row, never a triangle count"},
         "region_box": {
           "type": "object",
@@ -106,6 +113,22 @@
             "colours": {
               "type": ["object", "null"],
               "properties": {"hair": {"$ref": "#/$defs/hex"}, "skin": {"$ref": "#/$defs/hex"}}
+            },
+            "hanging": {
+              "type": "object",
+              "description": "part_math.py plan: hair hanging below the cut outside the neck (a ponytail), kept in the views down to part_bottom_y",
+              "properties": {"pieces": {"type": "array", "items": {"type": "object"}}, "masks": {"$ref": "#/$defs/per_view"}}
+            },
+            "accepted": {
+              "type": "object",
+              "description": "part_views.py --accept: per view, a near miss a person signed off",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["seed", "by", "gates", "redraw_sha256"],
+                "properties": {"seed": {"type": "integer"}, "by": {"type": "string", "minLength": 1}, "note": {"type": "string"},
+                               "gates": {"type": "object"}, "redraw_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                               "at": {"type": "string"}}
+              }
             }
           }
         },

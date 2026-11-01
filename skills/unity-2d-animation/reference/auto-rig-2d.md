@@ -85,9 +85,15 @@ sprites.
   `{name, bones, verts, indices, bw}`, where `bw` is `i0, w0, i1, w1` per vertex.
 - **`view` and `facing`** set the variant's driver.
 - **Weights:** each vertex keeps its two largest weights, normalised to sum to 1.
-- **Coverage gate:** a part's mesh must cover at least 98 % of the layer's solid pixels
-  (alpha ≥ 50 %), within one pixel. The mesh cuts off whatever it leaves out, so a mesh below
-  that line is replaced by a grid mesh, with a note.
+- **Coverage gate:** a part's mesh must cover at least 99.95 % of the layer's solid pixels
+  (alpha ≥ 50 %): the pixel's centre inside a triangle, with no slack. The mesh cuts off
+  whatever it leaves out, and a thin wedge cut off an edge shows as a background sliver in
+  every pose, so a mesh below that line is replaced by a grid mesh, with a note.
+- **Pose gate:** the prefab is skinned on the CPU in the standard poses (front: rest, arm up,
+  head turn, crouch, all three; side: rest and four phases of the run). At rest no solid layer
+  pixel may be drawn by no triangle (0.05 % of the silhouette at most). Posed, the background
+  cells a small closing fills inside the silhouette may grow by at most 0.2 % over rest, and a
+  small disc round each elbow, wrist, hip, knee and ankle stays 97 % covered.
 
 **From the layers** (no rig file, or `-rig2dJson none`):
 
@@ -164,7 +170,10 @@ skipped, so a sheet without hands still plays.
 | `springs`, `springBones`, … | A 2D spring per `_pivot` bone: Verlet with stiffness and drag per 1/60 s converted per substep, a share of the pivot's motion carried without lag, a pull back to the animated pose, an angle clamp, and a reset on a teleport. These are the ideas behind `unity-rigged-character`'s SpringSolver, in 2D |
 
 The driver writes bones in `Update`, before `SpriteSkin` deforms them. A capture or a test
-disables the component and calls `Evaluate(t)` then `StepSprings(dt)` per frame.
+disables the component and calls `Evaluate(t)` then `StepSprings(dt)` per frame. Frame a
+run capture on the bounds of the whole cycle, sampled over one stride, not on the rest pose:
+the swinging arms and legs reach half as far again as they do at rest, and a rest-framed
+camera cuts them off.
 `PoseArmUp`, `PoseHeadTurn` and `PoseCrouch` are the front view's extreme poses for judging
 weights. For game states, drive `motion` from the controller, or bake clips from the driver and
 hand them to the Animator (`unity-animation`).
@@ -204,6 +213,7 @@ or the variant deleted and rebuilt.
   PSB, so they need no art: every layer rigged, weights summing to 1, every skin Ready, the eye
   swap, a raised arm opening no hole and keeping the shoulder covered, the side run's legs in
   opposite phase, a spring that stays finite and in limits, rig-file bones renamed away from
-  layer names, and the rig2d/1 reader.
+  layer names, a rig-file layer with no sprite reported, the pose gate passing the rig and
+  catching a mesh with triangles cut out, and the rig2d/1 reader.
 - A still of rest, arm up, head turn and crouch, and one run cycle per view, looked at by a
   person.

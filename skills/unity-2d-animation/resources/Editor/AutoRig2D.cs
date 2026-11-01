@@ -24,7 +24,9 @@
 //   exits 0 rigged, 2 a gate failed or a hand rig was left alone, 1 usage error, 3 harness error.
 //
 // Gates (report "problems"): every layer gets bones; every weight sums to 1; every SpriteSkin
-// of the generated prefab is Ready. Bone GUIDs are a hash of the bone name, so a re-run over a
+// of the generated prefab is Ready; the pose gate (PoseGate) skins the prefab in the standard
+// poses and finds no layer pixel left undrawn at rest, no seam opening at a bending joint and
+// every limb joint covered. Bone GUIDs are a hash of the bone name, so a re-run over a
 // repainted file keeps every binding, and a rig whose GUIDs are not ours is a hand rig.
 // Renaming a layer makes it a new sprite with no rig: re-run this after any rename.
 using System;
@@ -47,6 +49,15 @@ namespace UnityDev.Rig2D
     public static class AutoRig2D
     {
         const string MenuPath = "Tools/Unity Dev/2D Animation/Auto-Rig Selected PSB";
+        // A rig file's mesh must draw this share of the layer's solid pixels (pixel centres inside
+        // a triangle); every pixel it leaves out renders as background, a sliver along the edge.
+        public const float MinCover = 0.9995f;
+        // Pose gate: background cells inside the silhouette, as a share of it. At rest the drawing
+        // is the silhouette; in a pose, what a 2-cell closing fills beyond the rest pose's own.
+        public const float MaxRestHoles = 0.0005f, MaxPoseHoles = 0.002f;
+        // ... and every limb joint keeps this share of a JointDisc-cell disc round it covered
+        public const float MinJointCover = 0.97f, JointDisc = 6f;
+        static readonly string[] LimbJoints = { "elbow_", "wrist_", "hip_", "knee_", "ankle_" };
 
         public sealed class Options
         {
@@ -67,6 +78,11 @@ namespace UnityDev.Rig2D
             public readonly List<string> notes = new List<string>();
             public readonly List<string> problems = new List<string>();
             public bool handRig;
+            /// <summary>Per standard pose: background cells inside the silhouette (pose gate).</summary>
+            public readonly List<(string pose, int holes)> poseHoles = new List<(string, int)>();
+            public int silhouette;
+            public float jointCover = 1f;
+            public string jointWorst = "";
             public bool Ok => problems.Count == 0;
 
             public string ToJson()
@@ -76,6 +92,10 @@ namespace UnityDev.Rig2D
                   .Append(",\"bones\":").Append(bones).Append(",\"sprites\":").Append(sprites)
                   .Append(",\"rigged\":").Append(rigged).Append(",\"badWeights\":").Append(badWeights)
                   .Append(",\"skins\":").Append(skins).Append(",\"skinsReady\":").Append(skinsReady)
+                  .Append(",\"silhouette\":").Append(silhouette)
+                  .Append(",\"jointCover\":").Append(jointCover.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
+                  .Append(",\"jointWorst\":").Append(Str(jointWorst))
+                  .Append(",\"poseHoles\":{").Append(string.Join(",", poseHoles.Select(p => Str(p.pose) + ":" + p.holes))).Append('}')
                   .Append(",\"library\":").Append(Str(library)).Append(",\"variant\":").Append(Str(variant))
                   .Append(",\"parts\":[").Append(string.Join(",", parts.Select(Str))).Append(']')
                   .Append(",\"notes\":[").Append(string.Join(",", notes.Select(Str))).Append(']')
@@ -265,7 +285,7 @@ namespace UnityDev.Rig2D
                 if (given.TryGetValue(rect.name, out part) && part.bones.All(byName.ContainsKey))
                 {
                     float cover = Rig2DLayout.Coverage(layer, part);
-                    if (cover < 0.98f) { r.notes.Add($"{rect.name}: the rig file's mesh covers {cover:P0} of the layer; meshed here instead"); part = null; }
+                    if (cover < MinCover) { r.notes.Add($"{rect.name}: the rig file's mesh covers {cover:P2} of the layer; meshed here instead"); part = null; }
                 }
                 else part = null;
                 if (part == null)
@@ -315,6 +335,7 @@ namespace UnityDev.Rig2D
                 r.problems.Add($"layer {name} of the rig file has no sprite: a renamed layer, or a stale import (delete the PSB's .meta and re-run)");
             r.library = BuildLibrary(path, layers.Keys, r);
             if (o.variant) r.variant = BuildVariant(path, r.library, view, facesRight, r);
+            PoseGate(r.variant ?? path, path, layers, r);
             return r;
         }
 
@@ -368,6 +389,221 @@ namespace UnityDev.Rig2D
                 layers[rect.name] = new Layer2D { name = rect.name, rect = doc, mask = mask, solid = solid };
             }
             return layers;
+        }
+
+        // ------------------------------------------------------------------ pose gate
+
+        /// <summary>The standard poses (front: rest, arm up, head turn, crouch, all three; side:
+        /// rest and four phases of the run) skinned on the CPU as SpriteSkin does (bone
+        /// localToWorld x bind pose), rasterised one cell per document pixel and masked by each
+        /// sprite's alpha, so no player loop or GPU is needed. Counts background cells inside the
+        /// silhouette: at rest, solid layer pixels no triangle draws; in a pose, cells a 2-cell
+        /// closing fills beyond what it fills at rest (a seam that opens at a bending joint).</summary>
+        public static void PoseGate(string prefabPath, string psb, Dictionary<string, Layer2D> layers, Result r,
+                                    params (string name, Action<RigDriver2D> set)[] extra)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            Texture2D tex = Provider(psb).GetDataProvider<ITextureDataProvider>()?.GetReadableTexture2D();
+            if (prefab == null || tex == null) { r.notes.Add("pose gate skipped: no prefab or readable texture"); return; }
+            var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            try
+            {
+                var drv = inst.GetComponent<RigDriver2D>() ?? inst.AddComponent<RigDriver2D>();
+                drv.Bind();
+                var skins = inst.GetComponentsInChildren<SpriteSkin>().Where(k => k.GetComponent<SpriteRenderer>().sprite != null).ToArray();
+                if (skins.Length == 0) return;
+                float ppu = skins[0].GetComponent<SpriteRenderer>().sprite.pixelsPerUnit;
+                // world to document pixels, from the rest pose: doc = world * ppu + offset
+                Vector2 offset = Vector2.zero; int n = 0;
+                foreach (SpriteSkin sk in skins)
+                {
+                    Sprite s = sk.GetComponent<SpriteRenderer>().sprite;
+                    if (!layers.TryGetValue(s.name, out Layer2D l)) continue;
+                    Vector2[] w = Skin(sk);
+                    Vector3[] pos = s.GetVertexAttribute<Vector3>(VertexAttribute.Position).ToArray();
+                    for (int v = 0; v < pos.Length; v++)
+                    { offset += (Vector2)l.rect.position + (Vector2)pos[v] * ppu + s.pivot - w[v] * ppu; n++; }
+                }
+                if (n == 0) { r.notes.Add("pose gate skipped: no sprite matches a layer"); return; }
+                offset /= n;
+                var poses = new List<(string name, Action set)>();
+                if (drv.view == RigDriver2D.View.Side)
+                {
+                    poses.Add(("rest", () => { }));
+                    for (int q = 0; q < 4; q++) { float t = q * 0.25f * drv.stride; poses.Add(("run" + q, () => drv.RunSide(t))); }
+                }
+                else
+                    poses.AddRange(new (string, Action)[] { ("rest", () => { }), ("armup", drv.PoseArmUp), ("headturn", drv.PoseHeadTurn),
+                        ("crouch", drv.PoseCrouch), ("combo", () => { drv.PoseArmUp(); drv.PoseHeadTurn(); drv.PoseCrouch(); }) });
+                foreach (var (name, set) in extra) poses.Add((name, () => set(drv)));
+                var shots = new List<(string name, List<(Vector2 a, Vector2 b, Vector2 c, Vector2 ua, Vector2 ub, Vector2 uc)> tris, List<(string, Vector2)> joints)>();
+                Transform[] limbJoints = inst.GetComponentsInChildren<Transform>(true)
+                    .Where(t => t.GetComponent<SpriteRenderer>() == null && t.parent != null && LimbJoints.Any(j => t.name.StartsWith(j))).ToArray();
+                // where the parent puts each joint: a part pulled off its joint leaves this spot bare
+                drv.ResetPose();
+                Vector3[] jointRest = limbJoints.Select(t => t.localPosition).ToArray();
+                foreach (var (name, set) in poses)
+                {
+                    drv.ResetPose(); set();
+                    var tris = new List<(Vector2, Vector2, Vector2, Vector2, Vector2, Vector2)>();
+                    foreach (SpriteSkin sk in skins)
+                    {
+                        Sprite s = sk.GetComponent<SpriteRenderer>().sprite;
+                        Vector2[] w = Skin(sk);
+                        Vector2[] uv = s.GetVertexAttribute<Vector2>(VertexAttribute.TexCoord0).ToArray();
+                        ushort[] idx = s.GetIndices().ToArray();
+                        for (int t = 0; t + 2 < idx.Length; t += 3)
+                            tris.Add((w[idx[t]] * ppu + offset, w[idx[t + 1]] * ppu + offset, w[idx[t + 2]] * ppu + offset, uv[idx[t]], uv[idx[t + 1]], uv[idx[t + 2]]));
+                    }
+                    shots.Add((name, tris, limbJoints.Select((t, i) => (t.name, (Vector2)t.parent.TransformPoint(jointRest[i]) * ppu + offset)).ToList()));
+                }
+                drv.ResetPose();
+                // one window for every pose, 4 cells of margin
+                Vector2 lo = new Vector2(float.MaxValue, float.MaxValue), hi = -lo;
+                foreach (var sh in shots) foreach (var t in sh.tris) { lo = Vector2.Min(lo, Vector2.Min(t.a, Vector2.Min(t.b, t.c))); hi = Vector2.Max(hi, Vector2.Max(t.a, Vector2.Max(t.b, t.c))); }
+                int x0 = Mathf.FloorToInt(lo.x) - 4, y0 = Mathf.FloorToInt(lo.y) - 4, W = Mathf.CeilToInt(hi.x) + 4 - x0, H = Mathf.CeilToInt(hi.y) + 4 - y0;
+                var ideal = new bool[W * H];
+                var shown = new HashSet<string>(skins.Select(k => k.GetComponent<SpriteRenderer>().sprite.name));
+                foreach (Layer2D l in layers.Values.Where(l => shown.Contains(l.name)))
+                    for (int y = 0; y < l.rect.height; y++)
+                        for (int x = 0; x < l.rect.width; x++)
+                        {
+                            int cx = l.rect.x + x - x0, cy = l.rect.y + y - y0;
+                            if ((l.solid ?? l.mask)[y * l.rect.width + x] && cx >= 0 && cy >= 0 && cx < W && cy < H) ideal[cy * W + cx] = true;
+                        }
+                r.silhouette = ideal.Count(b => b);
+                int restClosed = 0;
+                foreach (var sh in shots)
+                {
+                    bool[] on = Rasterise(sh.tris, tex, x0, y0, W, H);
+                    int holes;
+                    if (sh.name == "rest")
+                    {
+                        holes = 0;
+                        bool[] drawn = Rasterise(sh.tris, null, x0, y0, W, H);
+                        for (int i = 0; i < on.Length; i++) if (ideal[i] && !drawn[i]) holes++;
+                        restClosed = ClosingGain(on, W, H);
+                        if (holes > MaxRestHoles * r.silhouette)
+                            r.problems.Add($"pose gate: {holes} solid layer pixels at rest are drawn by no triangle (background shows through; limit {MaxRestHoles:P2} of the silhouette)");
+                    }
+                    else
+                    {
+                        holes = Mathf.Max(0, ClosingGain(on, W, H) - restClosed);
+                        if (holes > MaxPoseHoles * r.silhouette)
+                            r.problems.Add($"pose gate: {sh.name} opens {holes} background cells inside the silhouette (limit {MaxPoseHoles:P1} of it): a seam at a bending joint");
+                    }
+                    r.poseHoles.Add((sh.name, holes));
+                    // every limb joint stays covered: a disc of JointDisc cells round it
+                    foreach (var (joint, at) in sh.joints)
+                    {
+                        float c = DiscCover(on, x0, y0, W, H, at, JointDisc);
+                        if (c < r.jointCover) { r.jointCover = c; r.jointWorst = sh.name + "/" + joint; }
+                    }
+                }
+                if (r.jointCover < MinJointCover)
+                    r.problems.Add($"pose gate: the joint {r.jointWorst} is covered {r.jointCover:P0} (limit {MinJointCover:P0}): the layers part there and background shows");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(inst); }
+        }
+
+        /// <summary>The pose gate alone on an imported, rigged PSB (its variant when there is one),
+        /// with extra poses after the standard ones.</summary>
+        public static Result PoseCheck(string psb, params (string name, Action<RigDriver2D> set)[] extra)
+        {
+            var r = new Result { psb = psb };
+            var dp = Provider(psb);
+            var layers = ReadLayers(dp, dp.GetSpriteRects(), dp.GetDataProvider<ICharacterDataProvider>().GetCharacterData());
+            string variant = Path.ChangeExtension(psb, null) + "_Rig.prefab";
+            PoseGate(AssetDatabase.LoadAssetAtPath<GameObject>(variant) != null ? variant : psb, psb, layers, r, extra);
+            return r;
+        }
+
+        static float DiscCover(bool[] on, int x0, int y0, int W, int H, Vector2 c, float radius)
+        {
+            int hit = 0, all = 0, rr = Mathf.CeilToInt(radius);
+            for (int y = Mathf.FloorToInt(c.y) - rr; y <= Mathf.FloorToInt(c.y) + rr; y++)
+                for (int x = Mathf.FloorToInt(c.x) - rr; x <= Mathf.FloorToInt(c.x) + rr; x++)
+                {
+                    if ((new Vector2(x + 0.5f, y + 0.5f) - c).sqrMagnitude > radius * radius) continue;
+                    all++;
+                    int cx = x - x0, cy = y - y0;
+                    if (cx >= 0 && cy >= 0 && cx < W && cy < H && on[cy * W + cx]) hit++;
+                }
+            return all == 0 ? 1f : hit / (float)all;
+        }
+
+        // a SpriteSkin's vertices in world space, skinned as the package does
+        static Vector2[] Skin(SpriteSkin sk)
+        {
+            Sprite s = sk.GetComponent<SpriteRenderer>().sprite;
+            // copied at once: each accessor's native view is only valid until the next call
+            Vector3[] pos = s.GetVertexAttribute<Vector3>(VertexAttribute.Position).ToArray();
+            BoneWeight[] bw = s.GetVertexAttribute<BoneWeight>(VertexAttribute.BlendWeight).ToArray();
+            Matrix4x4[] bind = s.GetBindPoses().ToArray();
+            Transform[] bones = sk.boneTransforms;
+            var m = bones.Select((b, i) => b.localToWorldMatrix * bind[i]).ToArray();
+            var w = new Vector2[pos.Length];
+            for (int v = 0; v < pos.Length; v++)
+            {
+                BoneWeight q = bw[v];
+                w[v] = q.weight0 * m[q.boneIndex0].MultiplyPoint3x4(pos[v]) + q.weight1 * m[q.boneIndex1].MultiplyPoint3x4(pos[v])
+                     + q.weight2 * m[q.boneIndex2].MultiplyPoint3x4(pos[v]) + q.weight3 * m[q.boneIndex3].MultiplyPoint3x4(pos[v]);
+            }
+            return w;
+        }
+
+        // cells whose centre lies in a triangle and whose texel there is at least half opaque
+        static bool[] Rasterise(List<(Vector2 a, Vector2 b, Vector2 c, Vector2 ua, Vector2 ub, Vector2 uc)> tris, Texture2D tex, int x0, int y0, int W, int H)
+        {
+            // tex null: what the triangles cover, whatever the texture holds there
+            var on = new bool[W * H];
+            foreach (var tr in tris)
+            {
+                float den = (tr.b.y - tr.c.y) * (tr.a.x - tr.c.x) + (tr.c.x - tr.b.x) * (tr.a.y - tr.c.y);
+                if (Mathf.Abs(den) < 1e-9f) continue;
+                int xa = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(tr.a.x, Mathf.Min(tr.b.x, tr.c.x))) - x0), xb = Mathf.Min(W - 1, Mathf.CeilToInt(Mathf.Max(tr.a.x, Mathf.Max(tr.b.x, tr.c.x))) - x0);
+                int ya = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(tr.a.y, Mathf.Min(tr.b.y, tr.c.y))) - y0), yb = Mathf.Min(H - 1, Mathf.CeilToInt(Mathf.Max(tr.a.y, Mathf.Max(tr.b.y, tr.c.y))) - y0);
+                for (int y = ya; y <= yb; y++)
+                    for (int x = xa; x <= xb; x++)
+                    {
+                        if (on[y * W + x]) continue;
+                        float px = x0 + x + 0.5f, py = y0 + y + 0.5f;
+                        float l1 = ((tr.b.y - tr.c.y) * (px - tr.c.x) + (tr.c.x - tr.b.x) * (py - tr.c.y)) / den;
+                        float l2 = ((tr.c.y - tr.a.y) * (px - tr.c.x) + (tr.a.x - tr.c.x) * (py - tr.c.y)) / den;
+                        float l3 = 1f - l1 - l2;
+                        if (l1 < -1e-4f || l2 < -1e-4f || l3 < -1e-4f) continue;
+                        Vector2 u = l1 * tr.ua + l2 * tr.ub + l3 * tr.uc;
+                        if (tex == null || tex.GetPixelBilinear(u.x, u.y).a >= 0.5f) on[y * W + x] = true;
+                    }
+            }
+            return on;
+        }
+
+        // background cells a closing (two 3x3 dilations, two erosions) fills
+        static int ClosingGain(bool[] on, int W, int H)
+        {
+            bool[] Step(bool[] a, bool grow)
+            {
+                var o = new bool[a.Length];
+                for (int y = 0; y < H; y++)
+                    for (int x = 0; x < W; x++)
+                    {
+                        bool v = !grow;
+                        for (int dy = -1; dy <= 1 && v != grow; dy++)
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                int xx = x + dx, yy = y + dy;
+                                bool b = xx >= 0 && yy >= 0 && xx < W && yy < H && a[yy * W + xx];
+                                if (b == grow) { v = grow; break; }
+                            }
+                        o[y * W + x] = v;
+                    }
+                return o;
+            }
+            bool[] c = Step(Step(Step(Step(on, true), true), false), false);
+            int gain = 0;
+            for (int i = 0; i < on.Length; i++) if (c[i] && !on[i]) gain++;
+            return gain;
         }
 
         // ------------------------------------------------------------------ gates

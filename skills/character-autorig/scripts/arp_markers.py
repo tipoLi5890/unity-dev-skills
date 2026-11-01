@@ -14,7 +14,7 @@ usage (host Python, numpy only; no pictures):
     python3 arp_markers.py runner.glb [--up y|z] --out markers.json
 options: [--spine-bones 3] [--fingers auto|fixed] [--adjust ADJUST.json] [--arm-angle 30,60]
          [--arm-ratios 0.42,0.75] [--no-window-gate] [--symmetry-max 0.02] [--mitten]
-         [--smart NAME.smart.json] [--smart-tol 0.03]
+         [--smart NAME.smart.json] [--smart-tol 0.03] [--body human|skirt]
 self-tests:
     python3 arp_markers.py --selftest                       (tube body, numpy only)
     blender -b --factory-startup -P arp_markers.py -- --selftest   (metaball runner, pictures)
@@ -53,6 +53,11 @@ How each marker is found (methods are reported per marker: measured, proportion,
               with `fixed`, a fixed hand shape scaled to wrist -> hand_tip and turned to the hand's
               own plane (its thinnest axis is the palm normal). The thumb is always the fixed shape.
 Both sides are measured apart, compared (asymmetry), and averaged into one mirrored pair.
+--body skirt (a long coat, a skirt, a robe): the crotch cut is the hem. Each leg is followed up from
+SKIRT_FROM under it on the cut's own loops (skirt_legs); a crotch inside the skirt places the hip as
+above, a hidden one places it at HIP_KNEE x the knee's height (skirt_hip); a knee cue at the hem's lip
+or outside SKIRT_KNEE_BAND is refused. The report adds body and `skirt` (skirt_block), which
+skirt_region turns into the skirt's own skin for the bind, deform_gate and secondary_chains.
 `--adjust` {marker: [x, y, z]} replaces measured markers after measuring (a person moved them); the
 proportion spine points follow an adjusted pelvis or neck_base (each by its share of both ends' moves).
 An adjusted side marker (a .L or .R name) leaves the symmetry gate: a person placed it and its
@@ -237,6 +242,20 @@ HEM_CLEAR = (0.02, 0.06)     # a narrowing up to 0.02 above or 0.06 below a hem 
 FRONT_SHARE = 1.5            # a kneecap reaches this many times further forward than back
 SPAN = 0.25                  # how far either side a bulge or a narrowing is compared
 KNEE_PROPORTION = 0.52       # where neither cue is found
+# The skirt route (--body skirt): the legs are followed up inside the skirt on the cut's own loops.
+SKIRT_GROW = 1.8             # a loop over this x the leg's area at the cut below is the skirt around it
+SKIRT_FROM = 0.06            # x H under the hem the legs are first read (their parts there are apart)
+SKIRT_TRACK_TOP = 0.65       # x H: the legs are followed up to here
+CROTCH_MERGE = 1.25          # a loop across the midline no wider than this x both legs' span ...
+CROTCH_AREA = 1.6            # ... and under this x their areas together is their crotch (a skirt is larger)
+CROTCH_LAG = 0.02            # x H: the two legs end within this of each other at a crotch
+TRACK_OVERLAP = 0.3          # a leg's loop overlaps its loop on the cut below at least this much (box IoU)
+HIP_KNEE = 1.86              # hip height over knee height, from the sole, where the crotch is hidden (adult
+                             # anthropometry: hip joint 0.530 H, knee 0.285 H); the ankle marker sits high
+HIP_PROPORTION = 0.50        # x H: the hip where neither the crotch nor a knee shows
+SKIRT_TOP = 0.06             # x H above the hip: the top of the skirt band the bind and the gates read
+HEM_PINCH = 0.02             # x H either side of the hem: a narrowing there is the hem's lip, not a knee
+SKIRT_KNEE_BAND = (0.40, 0.65)   # of the way ankle -> hip: a knee cue outside is a clothing edge (a boot top)
 
 
 def _cross2(o, a, b):
@@ -301,9 +320,11 @@ def _leg_frame(hip, ankle):
     return np.array([x, np.cross(z, x), z])
 
 
-def leg_sections(V, F, hip, ankle, stations=LEG_STATIONS):
+def leg_sections(V, F, hip, ankle, stations=LEG_STATIONS, cont=False):
     """Per station: {t, girth, front, back, centre (world)} of the leg's own cross section (the
-    largest loop around the hip -> ankle line, its convex hull), or None where it has none."""
+    largest loop around the hip -> ankle line, its convex hull), or None where it has none.
+    cont (the skirt route): a loop over SKIRT_GROW x the area the station below chose is a skirt
+    around the leg, not the leg; the largest loop under it is taken, or none (a solid skirt)."""
     R = _leg_frame(hip, ankle)
     L = float(np.linalg.norm(hip - ankle))
     Vl = (V - ankle) @ R.T
@@ -316,18 +337,21 @@ def leg_sections(V, F, hip, ankle, stations=LEG_STATIONS):
     n = len(V)
     a, b = fw[:, [0, 1, 2]], fw[:, [1, 2, 0]]
     tri = (Vl[f], np.minimum(a, b) * n + np.maximum(a, b))
-    out = []
+    out, last = [], None
     for t in stations:
         best = None
         for P in _loops(tri, t * L):
             h = _hull(P)
             if len(h) >= 3 and _inside(h, (0.0, 0.0)):
                 area = 0.5 * abs(float(h[:, 0] @ np.roll(h[:, 1], -1) - h[:, 1] @ np.roll(h[:, 0], -1)))
+                if cont and last is not None and area > SKIRT_GROW * last:
+                    continue
                 if best is None or area > best[0]:
                     best = (area, h)
         if best is None:
             out.append(None)
             continue
+        last = best[0]
         h = best[1]
         nxt = np.roll(h, -1, axis=0)
         cr = h[:, 0] * nxt[:, 1] - nxt[:, 0] * h[:, 1]
@@ -357,20 +381,26 @@ def _until(idx, g, top):
     return out
 
 
-def knee_on_leg(V, F, hip, ankle):
+def knee_on_leg(V, F, hip, ankle, cont=False, avoid_z=None, band=None):
     """(t along ankle -> hip, cue) of the knee, or (None, why). Two cues, in this order:
     kneecap  a bulge rising >= SWELL_MIN above the shin below and narrowing >= DIP_MIN above it
              (not a pinch under a hem), its rise FRONT_SHARE x more in front than at the back
              (a calf swells at the back, a thigh all round): its peak.
     valley   the narrowing between the calf and the thigh, >= VALLEY_MIN narrower than both sides,
              not at a hem (a girth step >= HEM_JUMP between neighbouring stations): its lowest point.
-    Where a hem cuts a side short, that side is compared only up to the hem."""
-    rows = [r for r in leg_sections(V, F, hip, ankle) if r is not None]
+    Where a hem cuts a side short, that side is compared only up to the hem. avoid_z (lo, hi), world z:
+    a cue there is not used (the skirt route: a skirt's hem pinches the leg under its lip); band (lo, hi):
+    a cue outside that share of the way is not used (the skirt route: a boot top sits under a covered knee)."""
+    rows = [r for r in leg_sections(V, F, hip, ankle, cont=cont) if r is not None]
     if len(rows) < 20:
         return None, "too few leg sections along the hip -> ankle line"
     t = np.array([r["t"] for r in rows])
     g = np.array([r["girth"] for r in rows])
     front, back = np.array([r["front"] for r in rows]), np.array([r["back"] for r in rows])
+    zc = np.array([r["centre"][2] for r in rows])
+    clear = np.ones(len(t), bool) if avoid_z is None else (zc < avoid_z[0]) | (zc > avoid_z[1])
+    if band is not None:
+        clear &= (t >= band[0]) & (t <= band[1])
     jump = np.abs(np.diff(g)) / np.minimum(g[:-1], g[1:]) >= HEM_JUMP
     hems = [(t[i] + t[i + 1]) / 2 for i in np.nonzero(jump)[0]]
 
@@ -399,12 +429,12 @@ def knee_on_leg(V, F, hip, ankle):
             fe = max(0.0, front[fl] + k * (front[fr] - front[fl]) - front[i])
             be = max(0.0, back[i] - (back[fl] + k * (back[fr] - back[fl])))
             hem_dip = any(-HEM_CLEAR[0] <= h - t[fr] <= HEM_CLEAR[1] for h in hems)
-            if rise >= SWELL_MIN and dip >= DIP_MIN and fe >= FRONT_SHARE * be and not hem_dip:
+            if rise >= SWELL_MIN and dip >= DIP_MIN and fe >= FRONT_SHARE * be and not hem_dip and clear[i]:
                 caps.append((min(rise, dip), _vertex(t, g, i, -1)))
         if VALLEY_BAND[0] <= t[i] <= VALLEY_BAND[1] and g[i] <= win.min() and g[i - 1] > g[i]:
             depth = min(g[lo_i].max(), g[hi_i].max()) / g[i] - 1
             at_hem = any(-HEM_CLEAR[0] <= h - t[i] <= HEM_CLEAR[1] for h in hems)
-            if depth >= VALLEY_MIN and not at_hem:
+            if depth >= VALLEY_MIN and not at_hem and clear[i]:
                 valleys.append((depth, _vertex(t, g, i, 1)))
     if caps:
         return max(caps)[1], "kneecap"
@@ -413,21 +443,206 @@ def knee_on_leg(V, F, hip, ankle):
     return None, "no kneecap and no narrowing between calf and thigh" + (" (a hem there)" if hems else "")
 
 
-def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes):
+def cut_loops(V, F):
+    """A function z -> the loops of the horizontal cut there, each {x, y (box), c (centroid), r, area, hull}:
+    the cut's own loops (no hole filled), so a leg inside a skirt is a loop of its own."""
+    H = float(np.ptp(V[:, 2])) or 1.0
+    _, weld = np.unique(np.round(V / (1e-6 * H)), axis=0, return_inverse=True)
+    fw = weld.reshape(-1)[F]
+    n = len(V)
+    a, b = fw[:, [0, 1, 2]], fw[:, [1, 2, 0]]
+    tri = (V[F], np.minimum(a, b) * n + np.maximum(a, b))
+
+    def at(z):
+        out = []
+        for P in _loops(tri, z):
+            if len(P) < 6:
+                continue
+            h = _hull(P)
+            if len(h) < 3:
+                continue
+            area = 0.5 * abs(float(h[:, 0] @ np.roll(h[:, 1], -1) - h[:, 1] @ np.roll(h[:, 0], -1)))
+            if area < (0.004 * H) ** 2:
+                continue
+            c = h.mean(axis=0)
+            out.append({"x": (float(h[:, 0].min()), float(h[:, 0].max())), "y": (float(h[:, 1].min()), float(h[:, 1].max())),
+                        "c": c, "r": float(np.linalg.norm(h - c, axis=1).max()), "area": area, "hull": h})
+        return out
+    return at
+
+
+def _box_iou(a, b) -> float:
+    ix = max(0.0, min(a["x"][1], b["x"][1]) - max(a["x"][0], b["x"][0]))
+    iy = max(0.0, min(a["y"][1], b["y"][1]) - max(a["y"][0], b["y"][0]))
+    inter = ix * iy
+    area = lambda q: (q["x"][1] - q["x"][0]) * (q["y"][1] - q["y"][0])
+    return inter / max(area(a) + area(b) - inter, 1e-12)
+
+
+def skirt_legs(V, F, prof, hem_h, notes) -> dict:
+    """The skirt route: each leg followed up from SKIRT_FROM under the hem on the cut's own loops (the
+    largest loop on its side overlapping its loop below, under SKIRT_GROW x its area: the skirt around it
+    is larger). Where both legs end within CROTCH_LAG of each other in one loop across the midline no wider than
+    CROTCH_MERGE x their span and CROTCH_AREA x their areas, that is the crotch (measured). Where a leg ends otherwise (it runs into a
+    solid skirt), the crotch is hidden. Returns {hem_h, crotch_h or None, legs {1, -1: [[z, x, y, r]]}, why}."""
+    H, mid, z0 = prof["height"], prof["midline_x"], float(V[:, 2].min())
+    at = cut_loops(V, F)
+    start = hem_h - SKIRT_FROM
+    tracks, live, why = {1: [], -1: []}, {1: True, -1: True}, None
+    for s in (1, -1):
+        rows = leg_rows(prof, s, hem_h)
+        row = min(rows, key=lambda r: abs(r[0]["h"] - start)) if rows else None
+        if row is None:
+            return {"hem_h": hem_h, "crotch_h": None, "legs": tracks, "why": "no leg parts under the hem"}
+        c = row[0]
+        cand = [lp for lp in at(c["z"]) if not lp["x"][0] < mid < lp["x"][1] and s * (lp["c"][0] - mid) > 0]
+        part = {"x": tuple(row[1]["x"]), "y": tuple(row[1]["y"])}
+        pick = max((lp for lp in cand if _box_iou(lp, part) >= TRACK_OVERLAP), key=lambda lp: lp["area"], default=None)
+        if pick is None:
+            return {"hem_h": hem_h, "crotch_h": None, "legs": tracks, "why": "no leg loop under the hem"}
+        tracks[s].append((c["z"], pick))
+    crotch, ended_at = None, {}
+    h = round(start + 0.01, 5)
+    while h <= SKIRT_TRACK_TOP + 1e-9 and (live[1] or live[-1]):
+        z = z0 + h * H
+        loops = at(z)
+        for s in (1, -1):
+            if not live[s]:
+                continue
+            prev = tracks[s][-1][1]
+            cand = [lp for lp in loops if not lp["x"][0] < mid < lp["x"][1] and s * (lp["c"][0] - mid) > 0
+                    and lp["area"] <= SKIRT_GROW * prev["area"] and _box_iou(lp, prev) >= TRACK_OVERLAP]
+            if cand:
+                tracks[s].append((z, max(cand, key=lambda lp: lp["area"])))
+            else:
+                live[s], ended_at[s] = False, h
+        if len(ended_at) == 1 and h - min(ended_at.values()) > CROTCH_LAG + 1e-9:
+            why = f"one leg runs into the skirt at {min(ended_at.values()):.3f} H, the other goes on"
+            break
+        if len(ended_at) == 2:     # both ended, within CROTCH_LAG of each other: one loop holding both is the crotch
+            l, r = tracks[1][-1][1], tracks[-1][-1][1]
+            span = max(l["x"][1], r["x"][1]) - min(l["x"][0], r["x"][0])
+            for lp in loops:
+                w = lp["x"][1] - lp["x"][0]
+                if lp["x"][0] < mid < lp["x"][1] and w <= CROTCH_MERGE * span and \
+                        lp["area"] <= CROTCH_AREA * (l["area"] + r["area"]) and \
+                        _inside(lp["hull"], l["c"]) and _inside(lp["hull"], r["c"]):
+                    crotch = min(ended_at.values())
+                    break
+            if crotch is None:
+                why = f"the legs run into the skirt at {min(ended_at.values()):.3f} H (no loop of their own and no crotch)"
+            break
+        h = round(h + 0.01, 5)
+    if crotch is None and why is None:
+        why = f"the legs are still apart at {SKIRT_TRACK_TOP} H"
+    out = {s: [[float(z), float(lp["c"][0]), float(lp["c"][1]), float(lp["r"])] for z, lp in tracks[s]] for s in (1, -1)}
+    tops = [round((tracks[s][-1][0] - z0) / H, 3) for s in (1, -1)]
+    # the body's box per cut (skirt and torso, holes filled): the parts centred within the hem's own reach
+    # of the midline (a coat's halves either side of a vent count; an arm or a hand hanging beside it not)
+    reach = max((abs(x - mid) for c in prof["cuts"] if hem_h <= c["h"] <= hem_h + 0.04
+                 for p in c["parts"] for x in p["x"]), default=0.0)
+    torso = []
+    for c in prof["cuts"]:
+        if not hem_h - SKIRT_FROM <= c["h"] <= SKIRT_TRACK_TOP + 0.1:
+            continue
+        kept = [p for p in c["parts"] if abs(p["cx"] - mid) <= reach]
+        if kept:
+            torso.append([float(c["z"]), min(p["x"][0] for p in kept), max(p["x"][1] for p in kept),
+                          min(p["y"][0] for p in kept), max(p["y"][1] for p in kept)])
+    notes.append(f"skirt: hem at {hem_h:.3f} H; legs followed up to {tops[0]:.3f} / {tops[1]:.3f} H; "
+                 + (f"crotch inside the skirt at {crotch:.3f} H" if crotch is not None else f"crotch hidden ({why})"))
+    return {"hem_h": hem_h, "crotch_h": crotch, "legs": out, "torso": torso, "why": why}
+
+
+def _leg_line(track, z_lo):
+    """x(z), y(z) of a leg's centre line fitted on its followed loops above z_lo (the thigh side)."""
+    T = np.array([t[:3] for t in track if t[0] >= z_lo] or [t[:3] for t in track])
+    if len(T) < 3:
+        x, y = float(T[-1][1]), float(T[-1][2])
+        return lambda z: x, lambda z: y
+    px, py = np.polyfit(T[:, 0], T[:, 1], 1), np.polyfit(T[:, 0], T[:, 2], 1)
+    return lambda z: float(np.polyval(px, z)), lambda z: float(np.polyval(py, z))
+
+
+def skirt_hip(V, F, prof, s, skirt, ankle):
+    """(hip, method, knee t, knee cue) on the skirt route. A crotch inside the skirt places the hip as in
+    trousers (crotch + 0.02 H, X and Y of the leg's loop just under it). A hidden one: the hip on the leg's
+    centre line at HIP_KNEE x the knee's height over the sole when a knee shows (read twice, the knee again
+    on the new line), else at HIP_PROPORTION x H with the knee at its proportion. A knee cue within
+    HEM_PINCH of the hem is the hem's lip, and one outside SKIRT_KNEE_BAND of the way a boot top: neither
+    is the knee."""
+    H, z0 = prof["height"], float(V[:, 2].min())
+    track = skirt["legs"][s]
+    hem_z = z0 + skirt["hem_h"] * H
+    avoid = (hem_z - HEM_PINCH * H, hem_z + HEM_PINCH * H)
+    if skirt["crotch_h"] is not None:
+        below = [t for t in track if t[0] <= z0 + (skirt["crotch_h"] - 0.02) * H] or track
+        hip = np.array([below[-1][1], below[-1][2], z0 + (skirt["crotch_h"] + 0.02) * H])
+        kt, cue = knee_on_leg(V, F, hip, ankle, cont=True, avoid_z=avoid, band=SKIRT_KNEE_BAND)
+        return hip, "measured", kt, cue
+    fx, fy = _leg_line(track, ankle[2] + 0.5 * (hem_z - ankle[2]))
+    hip_z = z0 + HIP_PROPORTION * H
+    kt, cue = None, None
+    for _ in range(2):
+        kt, cue = knee_on_leg(V, F, np.array([fx(hip_z), fy(hip_z), hip_z]), ankle, cont=True, avoid_z=avoid, band=SKIRT_KNEE_BAND)
+        if kt is None:
+            break
+        knee_z = ankle[2] + kt * (hip_z - ankle[2])
+        hip_z = z0 + HIP_KNEE * (knee_z - z0)
+    hip = np.array([fx(hip_z), fy(hip_z), hip_z])
+    if kt is not None:
+        kt, cue = knee_on_leg(V, F, hip, ankle, cont=True, avoid_z=avoid, band=SKIRT_KNEE_BAND)
+    return hip, "proportion", kt, cue
+
+
+def skirt_region(V, skirt, margin=0.006):
+    """The skirt's own skin (bool per vertex): rest z from SKIRT_FROM under the hem up to the band's top,
+    inside the body's box at that height (the parts centred within the hem's reach of the midline, + margin
+    x H: not an arm or a hand hanging beside it) and not on a leg (within its followed loop's radius + margin x H). Shared by the bind
+    (autorig.py skirt_bind), deform_gate.py --skirt and secondary_chains.py --skirt."""
+    V = np.asarray(V, float)
+    H = float(skirt["height"])
+    lo, hi = float(skirt["hem_z"]) - SKIRT_FROM * H, float(skirt["top_z"])
+    band = (V[:, 2] >= lo) & (V[:, 2] <= hi)
+    T = np.array(skirt.get("torso") or [], float)
+    if len(T):
+        z = V[band, 2]
+        x0, x1, y0, y1 = (np.interp(z, T[:, 0], T[:, k]) for k in (1, 2, 3, 4))
+        m = 2 * margin * H
+        inside = (V[band, 0] >= x0 - m) & (V[band, 0] <= x1 + m) & (V[band, 1] >= y0 - m) & (V[band, 1] <= y1 + m)
+        band[np.nonzero(band)[0][~inside]] = False
+    leg = np.zeros(len(V), bool)
+    for side in ("L", "R"):
+        T = np.array(skirt["legs"].get(side) or [], float)
+        if len(T) < 2:
+            continue
+        inside = band & (V[:, 2] <= T[-1, 0])
+        if not inside.any():
+            continue
+        z = V[inside, 2]
+        cx, cy, r = (np.interp(z, T[:, 0], T[:, k]) for k in (1, 2, 3))
+        leg[np.nonzero(inside)[0][np.hypot(V[inside, 0] - cx, V[inside, 1] - cy) <= r + margin * H]] = True
+    return band & ~leg
+
+
+def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None):
     """One side's markers (s = +1 left, -1 right) with their methods."""
     H, mid, z0 = prof["height"], prof["midline_x"], float(V[:, 2].min())
     cuts = prof["cuts"]
     out, how = {}, {}
     legs = leg_rows(prof, s, crotch_h)
     at = {c["h"]: (c, p) for c, p in legs}
-    # hip: X and Y of the leg just below the crotch
-    below = [lp for lp in legs if lp[0]["h"] <= crotch_h - 0.02] or legs
-    c, p = below[-1]
-    hip_h = crotch_h + 0.02
-    out["hip"], how["hip"] = np.array([p["cx"], p["cy"], z0 + hip_h * H]), "measured"
     c, p = at[ankle_h]
     out["ankle"], how["ankle"] = np.array([p["cx"], p["cy"], c["z"]]), "measured"
-    kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"])
+    if skirt is None:
+        # hip: X and Y of the leg just below the crotch
+        below = [lp for lp in legs if lp[0]["h"] <= crotch_h - 0.02] or legs
+        c, p = below[-1]
+        hip_h = crotch_h + 0.02
+        out["hip"], how["hip"] = np.array([p["cx"], p["cy"], z0 + hip_h * H]), "measured"
+        kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"])
+    else:
+        out["hip"], how["hip"], kt, cue = skirt_hip(V, F, prof, s, skirt, out["ankle"])
     tag = "L" if s > 0 else "R"
     if kt is None:
         kt = KNEE_PROPORTION
@@ -436,7 +651,12 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes):
     else:
         notes.append(f"{tag} knee: {cue} at {kt:.3f} of ankle -> hip")
         how["knee"] = "measured"
-    sec = leg_sections(V, F, out["hip"], out["ankle"], [kt])[0]
+    if skirt is None:
+        sec = leg_sections(V, F, out["hip"], out["ankle"], [kt])[0]
+    else:   # the station's own loop, chosen up the leg (a single section would take the skirt around it)
+        secs = [r for r in leg_sections(V, F, out["hip"], out["ankle"], cont=True) if r is not None]
+        sec = min(secs, key=lambda r: abs(r["t"] - kt)) if secs else None
+        sec = sec if sec is not None and abs(sec["t"] - kt) <= 0.02 else None
     out["knee"] = sec["centre"] if sec is not None else out["ankle"] + kt * (out["hip"] - out["ankle"])
     # foot: vertices below the ankle, near this leg
     ax = out["ankle"]
@@ -616,10 +836,11 @@ def measure(V, F, opts) -> dict:
     crotch_h = M.crotch(prof)
     if crotch_h is None:
         raise Refused("no crotch: the legs never part (run mesh_check)")
+    skirt = skirt_legs(V, F, prof, crotch_h, notes) if opts.get("body") == "skirt" else None
     sides = {}
     ankle_h = ankle_height(prof, crotch_h)
     for s in (1, -1):
-        sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, opts["arm_ratios"], notes)
+        sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, opts["arm_ratios"], notes, skirt=skirt)
     lm, how, asym = {}, {}, {}
     for name in SIDED:
         pl, pr = sides[1][0][name], sides[-1][0][name]
@@ -707,9 +928,29 @@ def measure(V, F, opts) -> dict:
             for j, p in enumerate(pts):
                 lm[f"{f.lower()}{j}{side}"] = p
                 how[f"{f.lower()}{j}{side}"] = "measured" if (detected and f != "Thumb") else "fixed"
-    return {"height": H, "ground_z": z0, "midline_x": mid, "crotch_h": crotch_h, "landmarks": lm,
-            "methods": how, "asymmetry": asym, "foot_width": foot_width, "frames": frames,
-            "fingers": fingers, "notes": notes}
+    out = {"height": H, "ground_z": z0, "midline_x": mid, "crotch_h": crotch_h, "landmarks": lm,
+           "methods": how, "asymmetry": asym, "foot_width": foot_width, "frames": frames,
+           "fingers": fingers, "notes": notes}
+    if skirt is not None:
+        out["crotch_h"] = skirt["crotch_h"]
+        out["skirt"] = skirt
+    return out
+
+
+def skirt_block(m: dict, lm: dict) -> dict:
+    """The markers' `skirt` (world metres): what the bind, deform_gate and secondary_chains read."""
+    sk, H, z0 = m["skirt"], m["height"], m["ground_z"]
+    hip_z = float(lm["hip.L"][2])
+    r = lambda x: round(float(x), 5)
+    legs = {}
+    for s, side in ((1, "L"), (-1, "R")):
+        legs[side] = [[r(z), r(x), r(y), r(rad)] for z, x, y, rad in sk["legs"][s]]
+    return {"hem_h": sk["hem_h"], "hem_z": r(z0 + sk["hem_h"] * H), "crotch_h": sk["crotch_h"],
+            "hip_from": "crotch inside the skirt" if sk["crotch_h"] is not None else
+            ("knee" if m["methods"].get("knee.L") == "measured" else "proportion"),
+            "why": sk["why"], "hip_z": r(hip_z), "top_z": r(hip_z + SKIRT_TOP * H), "height": r(H),
+            "midline_x": r(m["midline_x"]), "half_width": r(abs(float(lm["hip.L"][0]) - m["midline_x"])),
+            "legs": legs, "torso": [[r(x) for x in row] for row in sk["torso"]]}
 
 
 # ------------------------------------------------------------------------------ outputs
@@ -1101,7 +1342,7 @@ def build_report(V, F, opts) -> dict:
     report = {
         "schema": "autorig-markers/1", "tool": "arp_markers", "space": "world", "up": "+Z", "forward": "-Y",
         "height": round(H, 5), "ground_z": round(z0, 5), "midline_x": round(m["midline_x"], 5),
-        "crotch_h": m["crotch_h"], "arm_angle_deg": round(arm_angle, 2),
+        "body": opts.get("body", "human"), "crotch_h": m["crotch_h"], "arm_angle_deg": round(arm_angle, 2),
         "landmarks": {k: r(v) for k, v in lm.items()}, "methods": m["methods"],
         "asymmetry_m": {k: round(v, 4) for k, v in m["asymmetry"].items()},
         "asymmetry_accepted": {k: round(v, 4) for k, v in accepted.items()},
@@ -1115,6 +1356,8 @@ def build_report(V, F, opts) -> dict:
         "notes": m["notes"], "gates": gates, "pass": all(g["pass"] is True for g in gates),
         "ok": all(g["pass"] is True for g in gates),
     }
+    if "skirt" in m:
+        report["skirt"] = skirt_block(m, lm)
     if record is not None:
         report["smart_agreement"] = {"tolerance_h": opts.get("smart_tol", 0.03), "landmarks": record.pop("agreement")}
         report["smart"] = record
@@ -1154,6 +1397,8 @@ def parser():
     p.add_argument("--symmetry-max", type=float, default=0.02)
     p.add_argument("--no-window-gate", action="store_true")
     p.add_argument("--mitten", action="store_true", help="contract_bones: finger bones do not deform")
+    p.add_argument("--body", choices=("human", "skirt"), default="human",
+                   help="skirt: a long coat, skirt or robe; the legs are followed up under and inside it")
     p.add_argument("--smart", help="an arp_smart.py result (autorig-smart/1) to check and complete the markers")
     p.add_argument("--smart-tol", type=float, default=0.03, help="x H: smart_agreement's agrees, and how far out of its window the AI may confirm a landmark")
     p.add_argument("--selftest", action="store_true")
@@ -1167,7 +1412,7 @@ def _opts(args) -> dict:
     return {"spine_bones": args.spine_bones, "fingers": args.fingers, "adjust": adjust,
             "arm_angle": args.arm_angle, "arm_ratios": args.arm_ratios,
             "symmetry_max": args.symmetry_max, "no_window_gate": args.no_window_gate,
-            "mitten": args.mitten, "smart": read_smart(args.smart) if args.smart else None,
+            "mitten": args.mitten, "body": args.body, "smart": read_smart(args.smart) if args.smart else None,
             "smart_file": args.smart, "smart_tol": args.smart_tol}
 
 
@@ -1473,6 +1718,30 @@ def selftest_knee(ok, opts) -> None:
        and rep["landmarks"]["knee.L"][2] < 0.56)
 
 
+def selftest_skirt(ok, opts) -> None:
+    """The tube body in a skirt to 0.40 x 1.7 m: solid, and open at the hem with the legs inside."""
+    sv, sf = M.body(skirt=0.40)
+    H = float(np.ptp(sv[:, 2]))
+    plain = build_report(sv, sf, opts)
+    ok("skirt, default body: the hip is read at the hem", abs(plain["landmarks"]["hip.L"][2] - 0.70) < 0.03 * H)
+    rep = build_report(sv, sf, dict(opts, body="skirt"))
+    lm, sk = rep["landmarks"], rep["skirt"]
+    ok("skirt route: crotch hidden in a solid skirt, the hip by proportion near the leg tubes' top",
+       sk["crotch_h"] is None and rep["methods"]["hip.L"] == "proportion" and abs(lm["hip.L"][2] - 0.90) < 0.06 * H)
+    ok("skirt route: every window passes, the skirt block is written", rep["pass"] and rep["body"] == "skirt"
+       and {"hem_z", "top_z", "legs", "torso", "half_width"} <= set(sk))
+    V = np.asarray(sv, float)
+    reg = skirt_region(V, sk)
+    hem_z = sk["hem_z"]
+    on_leg = (V[:, 2] < hem_z - 0.01 * H) & (np.abs(np.abs(V[:, 0]) - 0.10) < 0.07)
+    ok("skirt region: the skirt skin, not the hands beside it nor the legs under the hem", reg.sum() > 100
+       and np.abs(V[reg, 0]).max() < 0.3 and not (reg & on_leg).any() and V[reg, 2].max() <= sk["top_z"] + 1e-6)
+    ov, of = M.body(skirt=0.40, open_skirt=True)
+    rep2 = build_report(ov, of, dict(opts, body="skirt"))
+    top = max(z for z, *_ in rep2["skirt"]["legs"]["L"])
+    ok("open skirt: the legs are followed up inside it, past the hem", top > rep2["skirt"]["hem_z"] + 0.05 * H)
+
+
 def selftest_host() -> tuple[int, list, int]:
     checks, failed = 0, []
 
@@ -1597,6 +1866,7 @@ def selftest_host() -> tuple[int, list, int]:
     ok("fixed hand: index and little knuckles apart", np.linalg.norm(fan[0] - fan[1]) > 0.01)
     selftest_smart(ok, v, f, opts, rep)
     selftest_knee(ok, opts)
+    selftest_skirt(ok, opts)
     # files through the CLI
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "body.obj"

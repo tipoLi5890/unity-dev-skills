@@ -2,6 +2,99 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.42.1
+
+A strengthening round, from an end-to-end run on a second character (a gatekeeper in a
+knee-length greatcoat with a ponytail and a peaked cap) and from the 0.42 2D showcase. A long
+coat, a skirt or a robe now has a route through the rig instead of being sent back to the
+drawing. Look-alikes no longer become spring chains, a ponytail can be one, and a collar fused to
+the jaw no longer breaks the head part. In 2D, the background slivers in a crouch, the strap cut
+out with the sleeve, the hidden open mouth and the one-prop street are fixed, each with a gate
+that fails on the 0.42 output.
+
+- **`character-autorig`: the skirt route (`autorig.py all --body skirt`).** A person chooses it at
+  G0 (`game-character-pipeline` routes and start gate gain the row); the default body reports
+  `skirt_hint` when it sees a hem instead of a crotch.
+  - **`mesh_check.py --body skirt`.** The first cut across the midline is the hem; the legs are
+    read under it, a new `skirt_hem` gate needs ≥ 0.08 H of leg showing (a floor-length robe
+    fails: the hand-built route), and `double_shell` is gated outside the skirt zone, the zone's
+    own share reported as `skirt.layer` (a coat over trousers is two sheets by design).
+  - **`arp_markers.py --body skirt`.** Each leg is followed up inside the skirt on the cut's own
+    loops. A crotch found there places the hip as in trousers; a hidden one places it at 1.86 ×
+    the knee's height. A knee cue at the hem's lip or outside 40–65 % of the way (a boot top) is
+    refused. The markers carry `body` and a `skirt` block, which `skirt_region` turns into the
+    skirt's own skin for the three readers below.
+  - **`skirt_bind`** (a contract-stage step): the skirt's skin goes to Hips and both thighs, the
+    thighs rising to 0.85 at the hem and blended left to right across twice the hip width, so no
+    seam runs between the thighs; then the FBX is exported again.
+  - **`deform_gate.py --skirt`: `deform.skirt_tear`.** The share of the skirt's outward edges
+    stretched past 3 × in any sample, ≤ 0.002. A coat on the plain bind tears between the thighs
+    in `leg_raise` while volume and self-intersection stay green. The leg joints' volume patches
+    leave the skirt out.
+  - **`secondary_chains.py --skirt`.** Up to six two-bone hem chains wherever the hem hangs, each
+    hung from the thigh that holds most of its skin and taking its share from that thigh first;
+    no shorts hem is searched under a skirt. The four-influence limit merges only chains on the
+    same parent, so a pose moves the skirt as the bind did.
+  - **Rig exam.** The `skirt` body is rigged on the route, and a new planted fault, `skirt_split`
+    (the skirt split at the midline onto each side's thigh), is expected at `deform.skirt_tear`.
+- **`secondary_chains.py`: look-alikes are no chains.** A back component spanning more than 180°
+  round the spine line wraps the body (a belt against a vented coat back); a hood narrower than
+  0.12 H or a bag narrower than 0.08 H is hair or a strap; a hair cluster whose sides face one
+  way is a plate (a cap brim); a shorts drop on one leg alone is a hem. Each rule has a
+  counterexample in the selftest that is found as the kind it mimics with the rule off. A `hair`
+  marker chain (a ponytail) may skin the neck and back, hangs from Head and gets the Back sphere
+  when it hangs below the neck.
+- **`blender-character-rig` → `part_math.py plan`: a covered neck and hanging hair.** A neck ring
+  that goes on below the band no wider, with loops nested in it (a stand collar fused to the
+  jaw), is reported as `anchor.neck.covered` with a warning: the seam goes under the collar, the
+  column is dropped from the keep masks without growing (grown, it took the mouth), and the side
+  views put the neck on the nape. Hair hanging below the cut outside the neck (a ponytail) is
+  kept in the head views (`views.hanging`, `hang_<view>.png`).
+- **`comfyui-asset-generation` → `part_views.py`.** `prompt_hint_back` is the back view's own
+  hint (a cap's band, a ponytail); a view that keeps hanging hair is told to keep it over the
+  neck. **`--accept VIEW:SEED --accepted-by NAME`**: a person signs off a near miss already
+  redrawn from the same guide (within fixed near-miss limits, recorded in `views.accepted` with
+  the redraw's hash); the gates keep `pass: false` with `accepted`, and a farther miss is
+  refused. `schemas/parts-1.json` gains these fields.
+- **`layer_split.py`.** The meshes cover every solid pixel (dropped triangles given back, corner
+  vertices added): new gate `split.mesh_cover` (0 pixels left out). `sleeve_fill` repaints what
+  lies over the sleeve and is not sleeve (a strap, a buckle, drawstrings), gated at ≤ 0.25 of the
+  arm (`split.sleeve_fill`). The torso is cut back from the eyes and mouth, gated by
+  `split.swap_visible` (≥ 0.9 of each swap's change still shows); `fill.changed` catches a fill
+  that changed nothing.
+- **`scene_layers.py`: `scene.props_whole`** (≥ 2 props clear of the frame), so Shuffle has more
+  than one prop to deal.
+- **`unity-2d-animation` → `AutoRig2D.cs`.** A rig file's mesh must cover 99.95 % of its layer
+  (pixel centres, no slack; was 98 % within one pixel). A new pose gate skins the prefab on the
+  CPU in the standard poses: no solid pixel undrawn at rest, no seam opening at a bending joint,
+  every limb joint covered. Two new EditMode tests: a rig-file layer with no sprite is a problem,
+  and the pose gate passes the rig and catches a mesh with triangles cut out.
+  `auto-rig-2d.md` says to frame a run capture on the whole cycle, not the rest pose.
+- **On the gatekeeper.** mesh_check: `legs_separated` 0.731 → 1.0, `double_shell` 0.252 → 0.161,
+  hem at 0.315 H. Markers: the hip read at the hem (0.335 H, outside its window) → the crotch
+  found inside the coat at 0.465 H, hip 0.485 H. Deform: `skirt_tear` 0.0045 on the plain bind
+  (25 edges over 3 × in `leg_raise`, worst 5.1 ×) → 0, deep squat's worst edge 1.7 ×;
+  `cross_side_weight` 0.035 → 0.013 with no bone holding the other side. Six hem chains found
+  where none were, and six false chains (bag, hood, cap brim, three shorts) gone. The head part's
+  front view passes on default settings and the back with its own hint; the profiles are near
+  misses for a person to sign off.
+- **On the courier runner.** The detectors find exactly the chains they found before, the head
+  plan is identical, and the 2D split leaves 0 uncovered pixels (was 3,467 front, 2,879 side); in
+  Unity the open mouth changes 1,093 px against the closed one (was 172); EditMode 11/11 (the
+  auto-rig). `fine` and the ship track both exit 0 with the same chains. Their deformation
+  readings move only where the AI's own markers moved between runs: on `fine` the face (body
+  markers identical; `jaw_open` takes self-intersection p95 from 0.067 to 0.072), on the ship
+  track the elbows and fingers by up to 4 mm (volume loss 0.304 → 0.310, p95 0.034 → 0.036).
+- **Rig exam.** The `skirt` body goes from a true fail (hip 0.10 H off, read at the hem) to a
+  true pass (hip and pelvis 0.02 H off); the other eight bodies and the reference read exactly as
+  before. All 22 planted faults are caught (eight on the new skirt base) and the three controls
+  pass.
+- **Still open.** On the gatekeeper the skirt route is clean in every run (no tear, no other
+  side's skin held), but the elbow passes its volume gate only through the repair, which raises
+  `elbow_120`'s self-intersection from 0.074 to 0.104; with the AI's finger placement in
+  `fist` varying between runs, `self_intersection_p95` lands either side of 0.08, so some runs stop
+  at deform. The limit is unchanged.
+
 ## 0.42.0
 
 Layered 2D characters and scenes. A drawing of a character becomes a PSB with one layer per

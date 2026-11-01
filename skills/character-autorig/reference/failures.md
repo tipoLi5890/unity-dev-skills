@@ -5,7 +5,9 @@ measures and its limit: `reference/gates.md`.
 
 | What failed | Fix |
 |---|---|
-| `legs_separated` (mesh_check) | the legs are one tube or a long garment: regenerate the views with a gap between the legs, or the mesh; no marker helps |
+| `legs_separated` (mesh_check) | the legs are one tube: regenerate the views with a gap between the legs, or the mesh; no marker helps. A long coat, skirt or robe (the report's `skirt_hint`): the skirt route, `autorig.py all --body skirt` (`reference/gates.md`) |
+| `skirt_hem` (`--body skirt`) | no hem, or under 0.08 H of leg shows below it (a floor-length robe): the hand-built route, or views with the legs showing |
+| `markers.windows` hip at a hem (`crotch_h` 0.25–0.40, a coat or skirt in the pictures) | the hem read as the crotch: `--body skirt`, never `--adjust` the hip to pass |
 | `arms_separated` | arms glued to the ribs, held against the body, or a T-pose: regenerate in an A-pose with the arms 30–60° down and clear of the torso |
 | `double_shell` | a same-facing inner twin, or two skins pressed together: regenerate. A back-to-back inward-facing inner shell does not fail it (`inner_shell`): keep it, the deformation gate reads the outer skin |
 | `markers.windows` | with stage `smart`'s file, a landmark at most 0.03 H outside whose AI marker sits inside the window passes (`confirmed_by`); hair raising the head top is the usual case (`reference/arp-ai.md`). Still failing: proportions this route was not made for, hand-built route |
@@ -14,6 +16,7 @@ measures and its limit: `reference/gates.md`.
 | a marker looks off in the pictures | `--adjust` with that marker's position (`reference/markers.md`), run again, look again |
 | the knee sits on a hem, a boot top or a knee pad in the pictures | the notes name the knee's cue. A hem only shows as a step when the girth jumps 10 % within 1 % of the leg; a softer cuff can still read as the narrowing. `--adjust` both knees to the crease (`reference/markers.md`, the knee) |
 | `deform.joints_measured` names LowerLeg on legs in shorts | the knee marker may sit near the hem: check it in the pictures and move it to the crease (`--adjust`) before touching the mesh |
+| `deform.skirt_tear` | the skirt's skin holds a seam (one thigh per side, Hips beside a thigh): rerun `autorig.py contract` on the skirt route (its `skirt_bind`); on the chained rig, a chain taking a thigh's weight must hang from that thigh |
 | `arp.spine_bones` | the rig holds a different number of spine bones than Count − 1 asked for: run `scripts/tests/test_arp_pipeline.py` on this Blender and add-on before trusting the rig |
 | `arp.refs_placed` | the markers name a reference bone the preset lacks, or a roll from `ref_rolls` did not hold; regenerate the markers file |
 | `arp.face_added` | the add-on added no face or ear bones on the head: read `probe`'s operator properties for this version, or rig without the face (markers without `--smart`, or `smart` without `--facial`) |

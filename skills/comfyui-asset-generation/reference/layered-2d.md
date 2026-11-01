@@ -68,6 +68,8 @@ The five fills:
   and the whole head for the eyes and mouth.
 - `fill.iou`: the silhouettes agree in that zone, ≥ 0.95.
 - `fill.inside`: a head fill stays inside the source silhouette, ≤ 0.03.
+- `fill.changed`: the closed-eyes and open-mouth fills change ≥ 1 % of the head box by more
+  than 40. This only catches a fill that changed nothing; `split.swap_visible` checks the swap.
 
 A failing fill retries the next of `--seeds`. The armless fill usually widens the jacket into
 the gaps beside the arms. That is expected, because `split` clips it to the source.
@@ -89,6 +91,10 @@ a sleeve is coloured as the jacket.
     (front view). In a side view, it is where the two arms' axes meet.
   - A capsule from the joint to the hand, with a round cap, takes the upper arm over the body.
     Any sleeve left over beside it joins the arm.
+  - **Sleeve:** where the arm crosses the body, whatever lies over it there and is not in the
+    forearm's palette (a strap, a buckle, a drawstring) or is a thick dark stroke is repainted
+    from the sleeve around it. Otherwise the strap is cut out with the arm and swings with it.
+    The side view's far arm is left alone, since it only keeps what shows.
   - **Wrist:** the narrowest cross-section at 50–80 % of the arm. The elbow is halfway.
 - **Torso:**
   - The armless fill, clipped to the source.
@@ -105,6 +111,8 @@ a sleeve is coloured as the jacket.
   - The bald fill is the head, and the hair is what differs from it.
   - The eyes and mouth are the patches their fills changed. Each patch is written twice, once
     from the source and once from the fill, as a swap pair.
+  - The torso is drawn over the head, so it is cut back from the eyes and mouth; on a hooded
+    figure the neck row sits at mouth height and would otherwise hide the open mouth.
 - **Overlap:** each lower layer runs `--overlap` px (22 by default) under the one above it at a
   joint.
 
@@ -141,6 +149,9 @@ Layer names are the contract, top to bottom:
 | `split.names` | the view's full set, unique and non-empty |
 | `split.limbs` | two arms and two legs |
 | `split.shoulder_notch` | where an arm moves away, a 12 px closing adds ≤ 0.1 % of the silhouette, and ≥ 0.7 of the uncovered edge is outlined |
+| `split.mesh_cover` | 0 solid layer pixels left outside every triangle of the layer's mesh. An uncovered edge wedge shows as a background sliver in every pose |
+| `split.sleeve_fill` | ≤ 0.25 of an arm's over-body pixels repainted. `composite_px40` leaves the repainted pixels out |
+| `split.swap_visible` | ≥ 0.9 of each swap's changed pixels still show in the stack with the swap on. Eyes under hair are exempt |
 
 `pose.png` shows the rest pose and both arms raised 120°. Look at the shoulders: the gates see
 notches and missing outline, not every odd shape.
@@ -184,6 +195,7 @@ python3 $S/scene_layers.py gate street.png --layers-dir street/raw --out street 
 | `scene.coverage` | ≥ 0.99 |
 | `scene.alpha_clean` | ≤ 0.03 interior semi-transparency per layer. A ghost layer fails. |
 | `scene.depth_order` | where a back and a front layer overlap, the source matches the front one on ≥ 0.6 of the pixels |
+| `scene.props_whole` | ≥ 2 props clear of the left and right edges. The parallax rig leaves a prop cut by the frame out of its shuffle, and one prop can only repeat: draw the concept with every prop inside it |
 
 ## 4. PSD and PSB without Photoshop
 

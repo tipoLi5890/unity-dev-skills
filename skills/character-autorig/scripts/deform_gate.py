@@ -11,7 +11,7 @@ usage (Blender, headless):
     blender -b --factory-startup -P deform_gate.py -- --selftest
 options: [--map REPORT_OR_ROLE_MAP.json] [--poses all|arms_up,deep_squat,...|all,jaw_open] [--steps 2]
          [--volume-max 0.35] [--intersect-p95 0.08] [--cross-side-max 0.05] [--hinge-blend-min 0.03]
-         [--out REPORT.json] [--render DIR]
+         [--skirt MARKERS.json] [--tear-stretch 3.0] [--tear-max 0.002] [--out REPORT.json] [--render DIR]
 
 Bones are named by the humanoid contract (`unity-rigged-character` -> humanoid-contract.md).
 `--map` reads either a contract_map.py report (its `retarget_map`, contract bone -> rig bone) or a
@@ -89,6 +89,14 @@ Gates (each failing one makes exit 2):
                                   least >= --hinge-blend-min (0.03). Zero is a hard seam: a rigid skin keeps
                                   its volume and its self-intersection can stay under the limit on a slim body;
                                   no elbow or knee to read (value null) fails
+  deform.skirt_tear               with --skirt (an arp_markers --body skirt report): on the skirt's own skin
+                                  (arp_markers.skirt_region: the hem band up to the hip + 0.06 H, off the legs),
+                                  every outward edge's posed length over its rest length in every sample; the
+                                  share of those edges stretched past --tear-stretch (3.0) x <= --tear-max
+                                  (0.002). A skirt split between the thighs, or held by Hips beside skin on a
+                                  thigh, opens along that seam in deep_squat and leg_raise: a few edges stretch
+                                  many times while a blended skirt spreads the stretch. Volume and
+                                  self-intersection do not see it.
 
 Report: {tool, armature, mesh, height, triangles, outward_triangles, inward_triangles, poses: {name: {samples: [{t, new_intersections, moved,
 ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the pose turns), skipped?}}, volume_loss_max {value, pose,
@@ -484,9 +492,10 @@ def outward(v_rest, tri, wall: float = 0.01, spread: float = 70.0, ids=None, rou
     return side > 0
 
 
-def joint_regions(rig: Rig, v_rest, tri, rotated) -> tuple[dict, dict]:
+def joint_regions(rig: Rig, v_rest, tri, rotated, skirt=None) -> tuple[dict, dict]:
     """Per rotated body bone, the triangles within half the shorter adjoining span (joint to joint) of
-    its head, when they wrap around the joint (signed cone volume >= half the unsigned one at rest)."""
+    its head, when they wrap around the joint (signed cone volume >= half the unsigned one at rest).
+    `skirt` (bool per vertex): a skirt's own skin is not a leg joint's (UpperLeg, LowerLeg) skin."""
     regions, skipped = {}, {}
     for contract in rotated:
         if any(contract.startswith(f) for f in FINGERS) or contract == "Jaw":
@@ -495,6 +504,8 @@ def joint_regions(rig: Rig, v_rest, tri, rotated) -> tuple[dict, dict]:
         parent = next((c for c, n in rig.name.items() if bone.parent is not None and n == bone.parent.name), None)
         lengths = [rig.span(contract)] + ([rig.span(parent)] if parent else [])
         near = np.linalg.norm(v_rest - rig.head[contract], axis=1) <= 0.5 * min(lengths)
+        if skirt is not None and contract.split(".")[0] in ("UpperLeg", "LowerLeg"):
+            near &= ~skirt
         sel = np.nonzero(near[tri].all(axis=1))[0]
         if len(sel) < 8:
             skipped[contract] = "fewer than 8 triangles"
@@ -569,7 +580,27 @@ def skin_readings(rig: Rig, mesh, v_rest) -> dict:
     return {"cross_side": {"band_m": round(band, 4), **cross}, "hinge_blend": blend}
 
 
-def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = True) -> dict:
+def skirt_edges(v_rest, tri, region, height) -> tuple[np.ndarray, np.ndarray]:
+    """(edges (k, 2), rest lengths) of the outward triangles whose both ends lie on the skirt's own skin."""
+    e = np.sort(np.vstack([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]]), axis=1)
+    e = np.unique(e, axis=0)
+    e = e[region[e[:, 0]] & region[e[:, 1]]]
+    rest = np.linalg.norm(v_rest[e[:, 0]] - v_rest[e[:, 1]], axis=1)
+    keep = rest > 1e-4 * height
+    return e[keep], rest[keep]
+
+
+def tear_reading(v, edges, rest, stretch) -> dict:
+    if not len(edges):
+        return {"edges": 0, "over": 0, "share": 0.0, "p99": None, "max": None}
+    r = np.linalg.norm(v[edges[:, 0]] - v[edges[:, 1]], axis=1) / rest
+    over = int((r > stretch).sum())
+    return {"edges": int(len(edges)), "over": over, "share": round(over / len(edges), 5),
+            "p99": round(float(np.percentile(r, 99)), 3), "max": round(float(r.max()), 3)}
+
+
+def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = True, skirt=None,
+             tear_stretch: float = 3.0) -> dict:
     import bpy
     import autorig_blender as A
     apply_pose(rig, [], 0.0)
@@ -581,6 +612,11 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
     outer = outward(v_rest, tri_all, ids=ids) if outer_only else np.ones(len(tri_all), dtype=bool)
     tri = tri_all[outer]
     rest_hits = intersecting(v_rest, tri, ids)
+    region = None
+    if skirt:
+        import arp_markers
+        region = arp_markers.skirt_region(v_rest, skirt)
+    edges, rest_len = skirt_edges(v_rest, tri, region, height) if skirt else (None, None)
     out, renders = {}, {}
     for pose in poses:
         rotations = pose_rotations(rig, pose)
@@ -588,7 +624,7 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
             out[pose] = {"skipped": "the bones this pose turns are not mapped", "samples": []}
             continue
         bent = [c for c, _, _ in rotations]
-        regions, skipped = joint_regions(rig, v_rest, tri, bent)
+        regions, skipped = joint_regions(rig, v_rest, tri, bent, region)
         samples = []
         for k in range(1, steps + 1):
             t = k / steps
@@ -601,6 +637,8 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
             loss = {c: round(1.0 - cone_volume(v, tri[sel])[0] / v0, 4) for c, (sel, v0) in regions.items()}
             samples.append({"t": round(t, 3), "new_intersections": new, "moved": moved,
                             "ratio": round(new / moved, 4) if moved else 0.0, "volume_loss": loss})
+            if skirt:
+                samples[-1]["skirt_tear"] = tear_reading(v, edges, rest_len, tear_stretch)
             if render_dir and k == steps:
                 renders[pose] = A.render_views(render_dir, f"pose_{pose}_", {}, [], size=512, objects=[mesh])
         out[pose] = {"samples": samples, "joints_not_measured": skipped, "bent": bent}
@@ -608,7 +646,11 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
     bpy.context.view_layer.update()
     return {"height": height, "triangles": int(len(tri_all)), "outward_triangles": int(len(tri)),
             "inward_triangles": int(len(tri_all) - len(tri)), "rest_intersecting": len(rest_hits),
-            "poses": out, "renders": renders, "skin": skin_read}
+            "poses": out, "renders": renders, "skin": skin_read,
+            **({"skirt": {"edges": int(len(edges)), "stretch": tear_stretch, "vertices": int(region.sum()),
+                          "band_z": [round(float(skirt["hem_z"]), 4), round(float(skirt["top_z"]), 4)],
+                          "rest_z": [round(float(v_rest[:, 2].min()), 4), round(float(v_rest[:, 2].max()), 4)]}}
+               if skirt else {})}
 
 
 def gates_of(result: dict, poses, args) -> list:
@@ -644,6 +686,15 @@ def gates_of(result: dict, poses, args) -> list:
     blend = sk.get("hinge_blend") or {}
     least = min(blend, key=lambda c: blend[c]["blended"]) if blend else None
     low = round(blend[least]["blended"], 4) if least else None
+    out = []
+    if result.get("skirt") is not None:
+        tears = [(s["skirt_tear"]["share"], pose, s["t"], s["skirt_tear"]) for pose, d in result["poses"].items()
+                 for s in d["samples"] if "skirt_tear" in s]
+        share, pose, t, reading = max(tears, key=lambda w: w[0], default=(0.0, None, None, {}))
+        result["skirt"]["worst"] = {"pose": pose, "t": t, **reading}
+        edges = result["skirt"]["edges"]
+        out.append({"name": "deform.skirt_tear", "value": share, "pose": pose, "limit": args.tear_max,
+                    "pass": bool(edges >= 50 and share <= args.tear_max)})
     return [
         {"name": "deform.volume_loss_max", "value": round(worst[0], 4), "limit": args.volume_max,
          "pass": bool(worst[0] <= args.volume_max)},
@@ -655,7 +706,7 @@ def gates_of(result: dict, poses, args) -> list:
          "limit": {"share": args.cross_side_max, "held": 0}, "pass": bool(cross <= args.cross_side_max and held == 0)},
         {"name": "deform.hinge_blended", "value": low, "joint": least, "limit": args.hinge_blend_min,
          "pass": bool(low is not None and low >= args.hinge_blend_min)},
-    ]
+    ] + out
 
 
 class UsageParser(argparse.ArgumentParser):
@@ -679,6 +730,9 @@ def parser():
     p.add_argument("--intersect-p95", type=float, default=0.08)
     p.add_argument("--cross-side-max", type=float, default=0.05)
     p.add_argument("--hinge-blend-min", type=float, default=0.03)
+    p.add_argument("--skirt", help="an arp_markers.py --body skirt report: gate the skirt's tear")
+    p.add_argument("--tear-stretch", type=float, default=3.0)
+    p.add_argument("--tear-max", type=float, default=0.002)
     p.add_argument("--out")
     p.add_argument("--render")
     p.add_argument("--selftest", action="store_true")
@@ -698,6 +752,12 @@ def _run(args) -> tuple[int, dict]:
     import bpy
     try:
         mapping = read_map(args.map)
+        skirt = None
+        if getattr(args, "skirt", None):
+            with open(args.skirt, encoding="utf-8") as fh:
+                skirt = json.load(fh).get("skirt")
+            if not skirt:
+                raise Refused(f"{args.skirt} carries no skirt (arp_markers.py --body skirt)")
     except (OSError, ValueError, Refused) as exc:
         return 1, {"tool": "deform_gate", "error": str(exc)}
     if args.fbx:
@@ -749,7 +809,8 @@ def _run(args) -> tuple[int, dict]:
         if args.render:
             os.makedirs(args.render, exist_ok=True)
         result = evaluate(rig, mesh, poses, max(1, args.steps), args.render,
-                          outer_only=not getattr(args, "all_triangles", False))
+                          outer_only=not getattr(args, "all_triangles", False), skirt=skirt,
+                          tear_stretch=getattr(args, "tear_stretch", 3.0))
     finally:
         for pb in rig_obj.pose.bones:
             mode, q, e, loc, sc = saved[pb.name]
@@ -938,6 +999,16 @@ def selftest() -> tuple[int, dict]:
         if not cond:
             failed.append(name)
 
+    # the tear reading: a strip of skirt edges stretched evenly to 1.5 x reads no tear; one seam opened 10 x does
+    strip = np.array([[x, 0.0, z] for z in (0.0, 0.1) for x in np.linspace(0, 1, 21)])
+    tri_s = np.array([[i, i + 1, i + 21] for i in range(20)] + [[i + 1, i + 22, i + 21] for i in range(20)])
+    e, rest = skirt_edges(strip, tri_s, np.ones(len(strip), bool), 1.0)
+    even, torn = strip * [1.5, 1, 1], strip.copy()
+    torn[[10, 31], 0] += 0.5
+    torn[np.r_[11:21, 32:42], 0] += 0.5
+    r_even, r_torn = tear_reading(even, e, rest, 3.0), tear_reading(torn, e, rest, 3.0)
+    ok("skirt tear: an even 1.5 x stretch reads none; a seam opened 10 x is a share over --tear-max",
+       r_even["over"] == 0 and r_torn["over"] >= 2 and r_torn["share"] > 0.002 and r_torn["max"] > 9)
     A.clear_scene()
     body, _ = A.build_runner()
     V, F = A.mesh_arrays(body)

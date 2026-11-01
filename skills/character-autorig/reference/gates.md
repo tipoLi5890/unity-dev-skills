@@ -19,7 +19,7 @@ sparse accessors are refused: decompress them, or export an OBJ from Blender.
 
 | Gate | Measures | Default | Fails on |
 |---|---|---|---|
-| `legs_separated` | share of the cuts in the leg band (0.12–0.38 H) holding a part wholly left of the midline, one wholly right, and none across it | ≥ 0.9 | both legs in one tube, a long skirt or robe |
+| `legs_separated` | share of the cuts in the leg band (0.12–0.38 H) holding a part wholly left of the midline, one wholly right, and none across it | ≥ 0.9 | both legs in one tube; a long coat, skirt or robe (take `--body skirt`, below) |
 | `arms_separated` | longest run of consecutive cuts in the arm band (0.50–0.74 H) with a part wholly outside the torso on both sides | ≥ 0.05 H | an arm glued along the ribs, arms held against the body, a T-pose |
 | `double_shell` | share of the surface with another sheet parallel to it (normals within 60°) within 0.006 H along its normal, facing the same way or facing it from in front, from 6000 area-weighted samples | ≤ 0.25 | an outer skin over a same-facing inner twin (near 0.5 or above), two skins pressed together |
 
@@ -39,7 +39,24 @@ sparse accessors are refused: decompress them, or export an OBJ from Blender.
 
 **On failure, regenerate; do not rig.** A fused limb cannot be fixed by markers or weights: the
 skin between the arm and the ribs stretches with every arm swing. Go back to the views (the arms
-30–60° down and clear, a gap between the legs) or to the 3D generation.
+30–60° down and clear, a gap between the legs) or to the 3D generation. A long garment is not a
+fused limb: when the report carries `skirt_hint`, rig it on the skirt route.
+
+**The skirt route (`--body skirt`)** — a long coat, a skirt, a robe: one part across the midline
+from a hem at 0.22–0.42 H up, the legs apart under it. Chosen by a person (`autorig.py all
+--body skirt`); the default body reports `skirt_hint` (the hem's height, the hem at least 1.15 x
+the legs' span) instead of reading the hem as a crotch.
+
+| Gate | Measures | Default | Fails on |
+|---|---|---|---|
+| `legs_separated` | as above, in the band from 0.12 H up to 0.02 H under the hem | ≥ 0.9 | legs fused under the hem |
+| `skirt_hem` | a hem was found, and the legs show under it for ≥ 0.08 H of the band | found | a floor-length robe (no leg to mark: the hand-built route) |
+| `double_shell` | as above, over the surface outside the skirt zone (the hem to 0.55 H) | ≤ 0.25 | a twin shell on the body |
+
+The skirt zone's own share is reported as `skirt.layer`, not gated: a coat over trousers is two
+sheets there by design (a knee-length greatcoat reads about 0.38 inside the zone, 0.16 outside).
+The markers then follow the legs inside the skirt (`reference/markers.md`), `autorig.py` binds
+the skirt off the thighs' seam, and the deform gate reads its tear (`deform.skirt_tear`, below).
 
 ## deform_gate.py — six extremes
 
@@ -124,6 +141,15 @@ them before reading a pass.
 the value lists the ones never measured. A hinge the volume gate cannot read is a failure, not a
 pass at 0.0: an opening at the joint, too few triangles there, or a mesh that faces inward.
 
+**`deform.skirt_tear`** (with `--skirt MARKERS`, the skirt route's markers): on the skirt's own
+skin (the hem band up to the hip + 0.06 H, inside the body's box at each height, off the legs'
+followed loops: `arp_markers.skirt_region`), every outward edge's posed length over its rest length
+in every sample; the share of those edges stretched past 3 x (`--tear-stretch`) ≤ 0.002
+(`--tear-max`). A coat skinned by the bind alone parts between the thighs or rides one thigh in
+`deep_squat` and `leg_raise`: a few edges stretch five to fifty times while volume and
+self-intersection stay green. A skirt blended across the thighs spreads its stretch (p99 near 1.5,
+no edge past 3). The leg joints' volume patches leave the skirt's skin out (it is not the knee's).
+
 **`deform.poses`**: every requested pose was applied. Under `--poses all` the fist may be skipped on a rig
 without finger bones; named in `--poses`, a skipped fist fails, and so does `jaw_open` when the map
 names no Jaw. `autorig.py` names `jaw_open` when the markers carry the face and the contract maps a
@@ -148,6 +174,7 @@ alone; look at that pose first.
 | a whole limb moves with the wrong pose | weights on the wrong side's bone | rebind; check `markers.symmetry` and the sides gate of the contract |
 | `deform.cross_side_weight` fails | a limb's skin holds weight on the other side's limb bones | the repair ladder moves it to the mirrored bones past the band (`reference/arp-pipeline.md`); still failing: rebind |
 | `deform.hinge_blended` fails | a hard seam: no vertex at that elbow or knee shares the two bones | rebind, or smooth the weights over the joint |
+| `deform.skirt_tear` fails | the skirt follows one thigh on each side, or Hips beside a thigh: a seam in its weights | `autorig.py contract` (its `skirt_bind`) on the skirt route; on the chained rig, chains that take a thigh's weight without hanging from it |
 
 **Two readings of the bind at rest** (no pose is needed, so a defect no pose bends is still seen; both
 are in the report's `skin`). A bone belongs to the contract bone it is mapped to, or else to the first

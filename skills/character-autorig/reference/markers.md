@@ -68,6 +68,31 @@ neither is used. With no cue
 say which cue each side took (`L knee: valley at 0.492 of ankle -> hip`). The knee's X and Y are the
 section's centre.
 
+## The skirt route (`--body skirt`)
+
+A long coat, a skirt or a robe hides the crotch: the first cut that crosses the midline is the
+hem, and a hip read at hem + 0.02 H sits at the knees (a knee-length greatcoat: hip 0.335 H, the
+window starts at 0.42). With `--body skirt` (`autorig.py all --body skirt`) that cut is the hem,
+and:
+
+| Step | Method |
+|---|---|
+| legs inside | from 0.06 H under the hem, each leg is followed up on the cut's **own loops** (no hole filled, so a trouser leg inside a coat is a loop of its own): on its side, overlapping its loop below (box IoU ≥ 0.3), under 1.8 x its area (the skirt around it is larger) |
+| crotch | where both legs end within 0.02 H of each other in one loop across the midline, no wider than 1.25 x their span and under 1.6 x their areas together: measured, hip = crotch + 0.02 H, X and Y of the leg's loop just under it |
+| crotch hidden | a leg runs into the skirt (a solid skirt): the hip on the leg's centre line (fitted on its loops above mid-shin) at 1.86 x the knee's height over the sole (adult anthropometry, hip 0.530 H, knee 0.285 H), the knee read again on the new line; with no knee cue, 0.50 H (proportion) |
+| knee | as above, on the leg's own section at each station (a loop over 1.8 x the station below is the skirt, not the leg); a cue within 0.02 H of the hem is the hem's lip, and one outside 40–65 % of the way a boot top: neither is the knee, and the knee falls back to 52 % |
+
+The markers carry `body: "skirt"` and `skirt` {hem_h, hem_z, crotch_h, hip_from, hip_z, top_z
+(hip + 0.06 H), midline_x, half_width, legs {L, R: [z, x, y, r] per followed loop}, torso (the
+body's box per cut, the parts centred within the hem's reach of the midline)}. The top-level
+`crotch_h` is then the crotch found inside the skirt, or null when it is hidden (never the hem).
+`arp_markers.skirt_region` turns it into the skirt's own skin: rest z from 0.06 H under the hem to
+`top_z`, inside that box (an arm or a hand beside the coat is not skirt) and off the legs' loops.
+The bind (`autorig.py` skirt_bind), `deform_gate.py --skirt` and `secondary_chains.py --skirt` all
+read it. On a knee-length greatcoat the legs show inside the coat and the crotch is measured
+(0.465 H, hip 0.485 H); the knee's narrowing at the hem lip and the boot top's are both refused, so
+the knee is a proportion. Check the pictures: a person may still `--adjust` a knee to the crease.
+
 **Both sides are measured apart.** Each sided marker is found on +X and on −X, the right one
 mirrored and compared (`asymmetry_m`), and the two averaged into one mirrored pair. Gate
 `markers.symmetry`: the largest difference ≤ 0.02 H (3.4 cm on a 1.7 m body), over the markers no
