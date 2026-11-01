@@ -39,11 +39,11 @@ by up to 2 %, so a seed always gives the same cast.
 | Body | What it tests | Expected |
 |---|---|---|
 | `standard` | adult proportions, arms 45°, fingers apart | every stage passes |
-| `chibi` | a big head and short limbs, mitten hands | stops at `mesh_check`'s bands and the marker windows (the hand-built route) |
-| `heavy` | a wide torso and thick limbs, arms 50° | every stage passes |
+| `chibi` | a big head and short limbs, mitten hands; run with `--body chibi` | every stage passes on the chibi route (without it, `mesh_check`'s bands and the windows refuse it) |
+| `heavy` | a wide torso and thick limbs, arms 50° | thick thighs meet below the hip joints, so crotch + 0.02 H reads the hip low and the shoulder sits out on the thick arm: `markers.limb_ratio` fails the short thigh (`true_fail`, not a false pass) |
 | `thin` | slim limbs, arms 55° | every stage passes |
 | `long_limbs` | longer arms and legs, arms 30° | every stage passes |
-| `mitten` | the standard body with fused fingers | `fingers.mode` `fixed` |
+| `mitten` | the standard body with fused fingers | `fingers.mode` `fixed`, `mitten_bind`, the `mitten` pose |
 | `spiky_hair` | hair that raises the top of the mesh | the windows read the hair as height |
 | `skirt` | a solid skirt over the crotch, hem at 0.40 of 1.7 m; run with `--body skirt` | without it, the crotch read at the hem; with it, the crotch hidden and the hip placed from the knee |
 | `asym` | arms a few degrees apart, one knee and shoulder a few mm higher | within the symmetry gate |
@@ -63,8 +63,9 @@ by up to 2 %, so a seed always gives the same cast.
 ## Running and scoring
 
 `run` calls `autorig.py all exam/runs/NAME exam/cast/NAME.glb --name NAME --height H --no-smart`, with
-H the body's own height. The prep then only grounds and centres the mesh, and the scorer moves the
-truth the same way. When a run stops before the markers (a chibi), the exam measures the markers
+H the body's own height (`--body skirt` or `--body chibi` for the bodies built as one). `faults`
+re-measures a base's markers on its own body route and gates its weight faults with the base's poses. The prep then only grounds and centres the mesh, and the scorer moves the
+truth the same way. When a run stops before the markers, the exam measures the markers
 anyway with `--no-window-gate` (`rig/NAME.markers_only.json`). Those landmarks are scored, but the
 case can never count as a pass.
 
@@ -86,7 +87,7 @@ what the stages did:
 |---|---|
 | `true_pass` | correct, and every stage passed (after a repair that passed) |
 | `false_fail` | correct, but a gate failed that the case does not expect |
-| `expected_fail` | failed only the gates the case expects (the chibi) |
+| `expected_fail` | failed only the gates the case expects (`expect_fail` in its truth) |
 | `true_fail` | a joint out of tolerance, and a gate failed |
 | `false_pass` | a joint out of tolerance, and every gate passed: the worst outcome |
 | `stopped` | the pipeline stopped for a reason the case does not expect |
@@ -113,6 +114,7 @@ the result with `deform_gate.py`.
 | `leg_smear` | half of the left leg's weight on the right leg's bones | `deform.cross_side_weight` |
 | `elbow_blend`, `knee_blend` | the joint's weight split 50/50 between its two bones within 0.6 of the shorter span | `deform.volume_loss_max` |
 | `rigid` | every vertex on its heaviest bone alone | `deform.hinge_blended` (or the self-intersection gate) |
+| `mitten_split` | a mitten base only (`fingers.mode` `fixed`, not a reference): each Middle phalanx's weight back on the nearest of the four chains, four strips as a plain bind leaves a mitten | `deform.mitten_tear` |
 | `skirt_split` | a skirt base only (planted when its markers carry `skirt`): the skirt's own skin on Hips and the thigh of its own side, the thigh's share rising to 1 at the hem, switching sides at the midline (a plain bind's long coat) | `deform.skirt_tear` |
 | `none` | the base FBX unchanged (the control) | none: a failure here is a false fail |
 
@@ -133,8 +135,8 @@ margin both ways; rerun the faults and the controls before retuning one.
 
 **Defects the gates do not catch.** Look at the renders for this:
 
-- A mitten read as four fingers. The split is read from random surface samples, and a mitten's
-  sample gaps can mimic four parts. The fist on such a hand is then gated as fingers.
+- Fingers modelled apart but pressed together read as `detected` when the surface does cut into four
+  loops; the pictures show it.
 
 **The volume check** (`summary.volume`) compares two readings: the largest gated loss of the good
 rigs (true passes after any repair, the accepted references, the `none` controls) and the smallest

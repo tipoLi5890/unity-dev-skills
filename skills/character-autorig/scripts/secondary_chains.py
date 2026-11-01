@@ -41,7 +41,8 @@ with the body height H; any of them replaced by a marker chain, reference/second
               BL, FR, R, BR), each live when the skin 0.012 H above the edge stands >= 0.004 H
               further out than the skin below it and the bag does not cover it; at least four
               live, else no hem; one one-bone chain per live sector, neighbours fading to zero
-              towards a dead one
+              towards a dead one; the sectors blend round one ring and share its skin (a region each
+              would leave the last sector nothing)
   hem, --skirt (an arp_markers --body skirt report: a long coat, a skirt, a robe) the hem is the markers'
               one, wherever it hangs: the skirt's own skin (arp_markers.skirt_region) in six sectors round
               the hips, a sector live with >= 30 vertices within 0.03 H of the hem; one two-bone chain per
@@ -54,8 +55,8 @@ with the body height H; any of them replaced by a marker chain, reference/second
               covers the thighs)
   shorts_hem  per leg, the largest drop of the median skin radius around the thigh axis (hip to
               knee and on), kept when the radius above is >= 1.35 x and >= 0.01 H more than below
-              (a thigh tapering to the knee is not a hem); 3 one-bone chains (front, outer, back);
-              the inner side fades to zero. Both legs find it within SHORTS_PAIR x H of each other, or
+              (a thigh tapering to the knee is not a hem); 3 one-bone chains (front, outer, back), one
+              ring per leg; the inner side fades to zero. Both legs find it within SHORTS_PAIR x H of each other, or
               neither leg gets a chain (one leg alone is a skirt's or a coat's hem: detect.shorts.unpaired)
   hair        head-dominant skin outside the face cone; the farthest fifth from the head centre
               clustered by direction (k-means, at most 6, merged under 25 degrees); a cluster is a
@@ -671,7 +672,7 @@ def detect_hem(body, taken, skip=()):
         share[idx, 0] = s
         parent = pick_parent(body, share[:, 0], ["Hips", "Spine"])
         out.append(chain_dict(nm, "hem", joints, share, parent, source_bones(body, ["Hips", "Spine", "Chest"]),
-                              az=a))
+                              az=a, ring="hem"))
     return out, info
 
 
@@ -813,7 +814,7 @@ def detect_shorts(body, taken, skip=()):
             share = np.zeros((len(co), 1))
             share[idx, 0] = s
             out.append(chain_dict(nm, "shorts_hem", np.array([j0, j1]), share, ul,
-                                  list(fam), side=S.lower(), az=ang))
+                                  list(fam), side=S.lower(), az=ang, ring=f"shorts{S}"))
     hems = {S: info[f"shorts{S}"]["z"] for S in ("L", "R") if "z" in (info.get(f"shorts{S}") or {})}
     if len(hems) == 1 or (len(hems) == 2 and abs(hems["L"] - hems["R"]) > SHORTS_PAIR * H):
         # shorts end on both legs at one height; a drop on one leg alone is a skirt's or a coat's hem
@@ -940,7 +941,7 @@ def detect_all(body, kinds, markers=None, required=(), skirt=None):
     taken = np.zeros(len(body.co), bool)
     chains, info, missing = [], {}, []
 
-    rings = {}     # chains blended round one ring (the skirt's hem) share their skin with each other
+    rings = {}     # chains blended round one ring (a hem, a skirt's hem, one leg's shorts) share their skin
 
     def take(ch):
         reg = ch["share"].sum(1) > 0
@@ -2114,7 +2115,15 @@ def selftest(a):
     found = rep["detect"].get("found", {})
     spec = json.load(open(out, encoding="utf-8")) if os.path.exists(out) else {}
     shorts = [c for c in spec.get("chains", []) if c["kind"] == "shorts_hem"]
+    live = sorted(s["name"] for s in rep["detect"].get("hem_sectors", []) if s["live"])
+    rv = {c["name"]: c.get("region_vertices") for c in rep.get("chains", [])}
+    swap = {"L": "R", "R": "L"}
+    twin = lambda n: "shorts" + swap[n[6]] + n[7:] if n.startswith("shorts") else n[:-1] + swap[n[-1]]
     checks.update({
+        "shell: every live hem sector is a chain (the ring shares its blend, none dropped) and each sector's skin "
+        "mirrors its twin's, the hem's and the shorts'":
+            len(live) >= 4 and sorted(found.get("hem", [])) == live and not rep["detect"].get("dropped_empty")
+            and all(rv.get(n) and rv.get(n) == rv.get(twin(n)) for n in live + found.get("shorts_hem", [])),
         "shell: the armature found from the mesh's modifier, exit 0, every gate green":
             code == 0 and rep["armature"] == "ShellRig" and all(g["pass"] for g in rep["gates"]),
         "shell: no hood, one bag, a hem ring of >= 4, 3 shorts chains per leg, >= 3 hair chains":

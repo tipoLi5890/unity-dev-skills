@@ -24,8 +24,14 @@ Every picture follows these rules:
     the crotch.
   - The split finds the arms as islands of their own below the armpit, so an arm drawn against
     the body cannot be cut from it.
-- **Nothing held, nothing crossing:** no prop in a hand, no arm across the chest, no scarf or
-  long hair over a joint. A bag sits on the hip, away from the hands.
+- **Nothing crossing:** no arm across the chest, no scarf or long hair over a joint. A bag sits
+  on the hip, away from the hands.
+- **A held prop** (a pole, a spear, a shield) is cut as a layer of its own with `layer_split.py
+  fills --props`, so it may cross the body. Its arm must still stand clear:
+  - Hold it out in front, the arm stretched forward at chest height. A prop held low at the hip
+    pulls the arm onto the body, and asking for a gap does not undo that.
+  - A shield goes on the far arm, behind the body's far side; the split fills the far arm behind it.
+  - The whole prop inside the frame.
 - **Neutral face:** eyes open, mouth closed, looking along the view. The blink and talk frames
   are edits of this one.
 - **Even lighting:** flat or two-tone shading and the same outline weight all round. The split
@@ -57,6 +63,20 @@ below the shorts, both feet flat. Face in profile: one eye visible and open, cal
 expression, mouth closed. Nothing held; the bag sits on the far hip behind the body. Whole
 character in frame, nothing cropped, centered, filling about 85% of the image height. Portrait
 image. No cast or contact shadow, no ground plane, no text. Flat solid #FF00FF background.
+```
+
+A courier-run street guard (an enemy, facing the runner), with the same preamble and the runner
+as Picture 1:
+
+```text
+Subject: ONE enemy character, a city street guard, drawn in a strict SIDE VIEW, full profile,
+facing LEFT. His NEAR arm is stretched FORWARD to the left, almost straight, at chest height, with
+clear empty background between the whole arm and the jacket below the armpit; that hand grips a
+long wooden guard pole near its middle, the pole running from its front end raised ahead of the
+hand back through the hand and diagonally down ACROSS the front of his jacket and hips, the back
+end low behind his legs. His FAR arm carries a round riot shield strapped to the forearm, behind
+the body's far side. Legs in an open stride, a clear gap between them. One eye visible and open,
+mouth closed. Whole character, pole and shield in frame. Flat solid #FF00FF background.
 ```
 
 **Several renders:** a call can return more than one image (`codex_generate.py` exits 5). Pick

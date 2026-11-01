@@ -24,7 +24,7 @@ so every clip made for any contract character plays on it.
 | "Markers are off": how each marker is found from slices, the windows, the front/side pictures for a person, `--adjust`, the output file | `reference/markers.md` |
 | "Elbow collapses when bent", "skin pokes through in a squat", or any failed gate | `reference/failures.md`; the elbow/knee weight repair in `reference/arp-pipeline.md` |
 | "The hood, bag, hem or hair should swing": spring-chain bones for a fused shell, `secondary/1` for Unity | `reference/secondary-chains.md`; the Unity side: `unity-rigged-character` → `reference/secondary-motion.md` |
-| No add-on, or a chibi outside the marker windows: the hand-built fallback from the markers | [Which route](#which-route); `reference/hand-built-route.md` |
+| No add-on, or a body no route's windows fit: the hand-built fallback from the markers | [Which route](#which-route); `reference/hand-built-route.md` |
 | Auto-Rig Pro's other ops (probe, retarget clips onto its controls) | `blender-retarget` → `reference/arp-route.md` |
 | The contract skeleton, role maps, Unity Avatar | `unity-rigged-character` → `reference/humanoid-contract.md` |
 
@@ -108,7 +108,7 @@ The contract report's `retarget_map` feeds `deform_gate.py --map` and `blender-r
 | Take Auto-Rig Pro (default) when | Take the hand-built route when |
 |---|---|
 | the add-on is installed and its probe finds `append_arp`, `match_to_rig`, `bind_to_rig`, `arp_export_fbx_panel` | the add-on is absent, or Match/bind fails on the Blender in use |
-| adult proportions: every marker inside its window, or confirmed by the AI | a marker outside its window: a chibi, a giant head, short limbs |
+| every marker inside its body's windows (adult, `--body skirt`, `--body chibi`), or confirmed by the AI | a marker outside them |
 | one body mesh, limbs clear of the torso | (both need stage 1 to pass: no route rigs fused limbs well) |
 
 **Check the Blender version first.** Auto-Rig Pro lists support up to Blender 5.1. On any newer
@@ -122,11 +122,11 @@ modules and gates it the same way (`reference/hand-built-route.md`).
 
 ## Fingers
 
-`arp_markers.py --fingers auto` (default) finds index to little where the hand splits into four
-parts across its length; the thumb, and every finger when the hand does not split (a mitten,
+`arp_markers.py --fingers auto` (default) finds index to little where the hand's surface cuts into
+four loops; the thumb, and every finger when the hand does not split (a mitten,
 fingers together, too few triangles), use a fixed hand shape scaled to wrist → fingertip and
 turned to the hand's own plane. `fingers.mode` says which. A mitten character keeps its finger
-bones (every clip still binds), drops `--min-fingers` in stage 5 and the `fist` pose in stage 7.
+bones; stage 5 drops `--min-fingers` and folds them onto Middle (`mitten_bind`), stage 7 swaps `fist` for `mitten`.
 With stage 2, Go!'s finger references replace a `fixed` hand (`fingers.mode` `ai`, their own rolls).
 
 ## Upgrade track — after the demo, decided by a person

@@ -3,9 +3,9 @@
 
 usage (in this order; `all` runs them one after another):
     autorig.py prep     OUT GLB [--name NAME] [--height 1.75] [--hair HAIR.glb] [--eyes EYES.glb] -> OUT/NAME.glb, .blend
-    autorig.py check    OUT [--name NAME] [--body human|skirt]      -> rig/NAME.mesh.json
+    autorig.py check    OUT [--name NAME] [--body human|skirt|chibi] -> rig/NAME.mesh.json
     autorig.py smart    OUT [--name NAME] [--facial] [--fingers 5|4] -> rig/NAME.smart.json, rig/NAME_smart.blend
-    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] [--body human|skirt] -> rig/NAME.markers.json
+    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] [--body human|skirt|chibi] -> rig/NAME.markers.json
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
     autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json [rig/NAME.bind.json]
     autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
@@ -22,9 +22,11 @@ its AI files are there; only then arp_smart.py runs the add-on's AI on NAME.blen
 (--fingers, --facial or --no-facial; it quits by itself). markers: arp_markers.py --mesh NAME (--adjust FILE
 when given; --preview-dir
 rig/markers/ unless --no-render; --smart rig/NAME.smart.json whenever smart wrote it, passed or not: the
-markers read its gates one by one and take only what passed; never with --no-smart).
-arp: blender-retarget brt_arp op pipeline (--resolution N: the bind's resolution), the rig saved as
-rig/NAME_arp.blend, the Unity FBX in export/.
+markers read its gates one by one and take only what passed; never with --no-smart). A failed smart adds exit 2
+to `all`, except smart.fingers alone on a hand the markers read as fingers.mode fixed (both say mitten).
+arp: blender-retarget brt_arp op pipeline (--resolution N: the bind's resolution), then hand_reach (each hand's
+weight kept within HAND_REACH x wrist -> hand_tip of its bones over the skin, exported again when it changed
+anything), the rig saved as rig/NAME_arp.blend, the Unity FBX in export/.
 contract: unity-rigged-character contract_map.py map --map arp --require contract, --min-fingers 30 unless the
 markers say fingers.mode fixed (a mitten; `ai` counts as found).
 
@@ -37,7 +39,8 @@ band's top to SKIRT_LEG_MAX at the hem and split left/right by a smoothstep acro
 seam between the thighs), feathered into the bind over the band's top SKIRT_FEATHER x H; then the FBX is exported
 again. A bind that fails a gate stops the run. deform and secondary get --skirt rig/NAME.markers.json: the
 deform gate reads the skirt's tear, the chains find its hem. deform: deform_gate.py on the FBX with the
-contract's retarget_map (--render rig/poses/ unless --no-render; without fist when fingers.mode is fixed; with
+contract's retarget_map (--render rig/poses/ unless --no-render; mitten instead of fist when fingers.mode is
+fixed; --body chibi when the markers say chibi; with
 jaw_open when deform_gate knows that pose, the markers carry the face and the contract maps a Jaw).
 secondary (last, after the repair; --no-secondary skips it): secondary_chains.py on the rig to take on (the
 passing repair's repair/aN/NAME_arp.blend, else rig/NAME_arp.blend; run alone, the newest autorig.deform.json or
@@ -68,12 +71,13 @@ refuses (exit 1) when the probe finds no add-on or AI files.
 
 Repair ladder (deform, on unless --no-repair): when the only failing gate is deform.volume_loss_max and every
 joint over the limit is an elbow (LowerArm.*) or a knee (LowerLeg.*), each attempt opens rig/NAME_arp.blend,
-moves weight across that hinge with brt_weights (one snapshot, then per side: below the joint the upper bones'
-weight to the lower bone, above it the lower bones' weight to the upper bone, amount 1.0, a narrow band at the
-crease left blended; the elbow masked off the torso), runs brt_arp op export and saves a copy into repair/aN/,
-then gates that FBX again. The bands come from the markers (the joint's height, the shoulder's width), scaled
-with the height. Next attempt: a hinge that only now fails is added; volume held but self-intersection failed
--> amount 0.9; anything else stops. deform.cross_side_weight failing (alone or with that hinge loss) adds a
+snapshots the weights (brt_weights) and moves weight across that hinge (hinge_transfer, per side: below the
+joint the upper bones' weight to the lower bone, above it the lower bones' weight to the upper bone, amount 1.0, a
+narrow band at the crease left blended; the elbow masked off the torso), runs brt_arp op export and saves a copy
+into repair/aN/, then gates that FBX again. The bands come from the markers, measured along the limb from the
+plane square to it at the joint (shoulder -> elbow -> wrist, hip -> knee -> ankle; a world-Z band cuts a sloping
+arm on a slant), scaled with the height. Next attempt: a hinge that only now fails is added; volume held but
+self-intersection failed -> the next of AMOUNTS (0.8, then 0.6: a softer hand-over); anything else stops. deform.cross_side_weight failing (alone or with that hinge loss) adds a
 cross-side move to the attempt: the bones the report's skin.cross_side names give their weight past its band_m
 on the other side to their mirrored twins (brt_weights, share reach; --cross-side, --cross-band); still failing
 after it stops the ladder (rebind). The limits are never changed. A finer bind and a moved marker are not
@@ -113,7 +117,7 @@ MAC_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 WIN_BLENDER_GLOB = r"C:\Program Files\Blender Foundation\Blender*\blender.exe"
 STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform", "secondary")
 STOP_ON_GATE = {"check", "markers", "arp", "deform"}   # a later stage cannot use what these failed to make
-STOP_STEPS = {"parts_bind", "eyes_bind", "skirt_bind"}   # a failed bind leaves the FBX without the part: deform would gate the wrong file
+STOP_STEPS = {"parts_bind", "eyes_bind", "skirt_bind", "mitten_bind"}   # a failed bind leaves the FBX without the part: deform would gate the wrong file
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 DEFORM_POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")   # deform_gate.POSES
 SMART_KILL = 600 + 60 + 120       # arp_smart's --timeout, its watchdog's margin, then the window is killed
@@ -122,16 +126,17 @@ HINGE_OF = {"LowerArm": "elbow", "LowerLeg": "knee"}
 HINGE_BONES = {"elbow": ("UpperArm", "LowerArm"), "knee": ("UpperLeg", "LowerLeg")}
 # the repair bands, metres for a 1.75 m character relative to the joint marker's height, scaled with the height
 REF_H = 1.75
-BAND_SNAPSHOT = (-0.149, -0.129, 0.121, 0.141)
 BAND_BELOW = (-0.119, -0.089, -0.019, -0.004)
 BAND_ABOVE = (0.004, 0.019, 0.091, 0.121)
 ELBOW_MASK = (0.015, 0.045)                       # past the shoulder marker's |x|: 0 inside, full past
-AMOUNTS = (1.0, 0.9)
+AMOUNTS = (1.0, 0.8, 0.6)
 CROSS = "deform.cross_side_weight"
 CROSS_BAND = 0.5          # deform_gate.CROSS_BAND: x the hip half-width either side of the Hips is left alone
 MAX_ATTEMPTS = 3
 SKIRT_LEG_MAX = 0.85      # skirt_bind: the thighs' share at the hem (the rest stays on Hips)
 SKIRT_FEATHER = 0.03      # skirt_bind: x H under the band's top over which the new weights blend into the bind
+HAND_REACH = 1.0          # arp: x wrist -> hand_tip, how far over the skin a hand's bones may hold weight
+HAND_CORE = 0.2           # arp: x wrist -> hand_tip, skin this close to a hand bone is the hand's own
 MANUAL_RUNGS = ("by hand, one at a time, each gated again (autorig.py deform): a finer bind (autorig.py arp OUT "
                 "--resolution, brt_arp pipeline 'resolution' one step up), then the joint marker moved to the "
                 "crease (autorig.py markers OUT --adjust FILE, arp_markers.py --adjust); never a looser limit "
@@ -199,7 +204,7 @@ class Ctx:
                   "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json",
                   "hair": o / f"{n}_hair.glb", "bind": o / "rig" / f"{n}.bind.json",
                   "eyes": o / f"{n}_eyes.glb", "eyes_bind": o / "rig" / f"{n}.eyes_bind.json",
-                  "skirt_bind": o / "rig" / f"{n}.skirt_bind.json"}
+                  "skirt_bind": o / "rig" / f"{n}.skirt_bind.json", "mitten_bind": o / "rig" / f"{n}.mitten_bind.json"}
         sec = o / "secondary"
         self.f.update({"sec_dir": sec, "sec_blend": sec / f"{n}_sec.blend", "sec_fbx": sec / f"{n}.fbx",
                        "sec_skeleton": sec / f"{n}.skeleton.json", "sec_json": sec / f"{n}.secondary.json",
@@ -342,6 +347,13 @@ def is_skirt(c: Ctx, a=None) -> bool:
     return (read_json(c.f["markers"]) or {}).get("body") == "skirt"
 
 
+def chibi_arg(c: Ctx, a=None) -> list:
+    """--body chibi for deform_gate when this run or the markers say chibi (its arms_up and elbow poses)."""
+    if getattr(a, "body", "human") == "chibi" or (read_json(c.f["markers"]) or {}).get("body") == "chibi":
+        return ["--body", "chibi"]
+    return []
+
+
 def skirt_arg(c: Ctx, a=None) -> list:
     return ["--skirt", c.f["markers"]] if is_skirt(c, a) else []
 
@@ -383,7 +395,7 @@ def plan(c: Ctx, stage: str, a) -> list:
                      f["prep"], logs / "prep.log", kind="inner")]
     if stage == "check":
         need(c, f["glb"], "prep")
-        body = ["--body", "skirt"] if a.body == "skirt" else []
+        body = ["--body", a.body] if a.body in ("skirt", "chibi") else []
         return [step("check", py_cmd(c, HERE / "mesh_check.py", f["glb"], "--out", f["mesh"], *body), f["mesh"],
                      logs / "check.log", kind="python")]
     if stage == "smart":
@@ -405,7 +417,7 @@ def plan(c: Ctx, stage: str, a) -> list:
         prev = [] if a.no_render else ["--preview-dir", f["previews"]]
         c.markers_smart = smart_args(c, a)
         adj = ["--adjust", Path(os.path.abspath(a.adjust))] if a.adjust else []
-        adj += ["--body", "skirt"] if a.body == "skirt" else []
+        adj += ["--body", a.body] if a.body in ("skirt", "chibi") else []
         return [step("markers", blender_cmd(c, HERE / "arp_markers.py", "--mesh", c.name, "--out", f["markers"],
                                             *c.markers_smart, *adj, *prev, blend=f["blend"]), f["markers"],
                      logs / "markers.log")]
@@ -437,6 +449,12 @@ def plan(c: Ctx, stage: str, a) -> list:
                                                         "--save", f["arp_blend"], "--report", f["skirt_bind"],
                                                         blend=f["arp_blend"], factory=False),
                               f["skirt_bind"], logs / "skirt_bind.log", kind="inner"))
+        if fingers_fixed(c) or (c.dry and getattr(a, "mitten_dry", False)):   # a mitten: one chain bends it whole
+            steps.append(step("mitten_bind", blender_cmd(c, SELF, "_inside", "mitten", "--contract", f["contract"],
+                                                         "--fbx", f["fbx"], "--save", f["arp_blend"],
+                                                         "--report", f["mitten_bind"], blend=f["arp_blend"],
+                                                         factory=False),
+                              f["mitten_bind"], logs / "mitten_bind.log", kind="inner"))
         return steps
     if stage == "deform":
         need(c, f["fbx"], "arp"); need(c, f["contract"], "contract")
@@ -467,7 +485,8 @@ def deform_step(c: Ctx, name, fbx, out, render, logs, contract=None) -> dict:
     poses = ["--poses", chosen] if chosen else []
     rend = ["--render", render] if render else []
     return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", contract or c.f["contract"],
-                                  *poses, *rend, *skirt_arg(c, c.args), "--out", out), out, logs / f"{name}.log")
+                                  *poses, *rend, *skirt_arg(c, c.args), *chibi_arg(c, c.args), "--out", out), out,
+                logs / f"{name}.log")
 
 
 def cross_arg(cross: dict | None, band=None) -> list:
@@ -556,19 +575,59 @@ def next_rung(base: dict, attempts: list) -> dict | None:
     return None
 
 
+HINGE_ENDS = {"elbow": ("shoulder", "wrist"), "knee": ("hip", "ankle")}
+HINGE_RADIUS = 0.5        # x the shorter of the two segments: the skin the hand-over reaches round the limb's axis
+
+
 def repair_regions(markers: dict, hinge: str) -> dict:
-    """The world-Z bands (and, for an elbow, the |x| mask that keeps the torso out) around a hinge, from the
-    markers: the joint's height (mean of both sides), the shoulder's width, scaled with the character's height."""
+    """The bands around a hinge, measured along the limb from the markers, scaled with the character's height:
+    per side the joint, the seam's normal (the mean of the upper and the lower segment's directions) and the radius
+    round the limb's axis; `below` and `above` the distances from the seam (fade in, full, full, fade out) where
+    the hand-over runs, the crease between them left blended; for an elbow the |x| mask that keeps the torso out."""
+    import numpy as np
     lm = markers["landmarks"]
     s = float(markers.get("height") or REF_H) / REF_H
-    z = (lm[f"{hinge}.L"][2] + lm[f"{hinge}.R"][2]) / 2.0
-    band = lambda offs: [round(z + o * s, 3) for o in offs]
+    top, end = HINGE_ENDS[hinge]
+    sides = {}
+    for S in ("L", "R"):
+        j, a, b = (np.asarray(lm[f"{k}.{S}"], dtype=float) for k in (hinge, top, end))
+        du, dl = (j - a) / np.linalg.norm(j - a), (b - j) / np.linalg.norm(b - j)
+        n = (du + dl) / np.linalg.norm(du + dl)
+        sides[S] = {"joint": [round(float(x), 4) for x in j], "normal": [round(float(x), 4) for x in n],
+                    "radius": round(HINGE_RADIUS * float(min(np.linalg.norm(j - a), np.linalg.norm(b - j))), 4)}
     mask = None
     if hinge == "elbow":
         sx = (abs(lm["shoulder.L"][0]) + abs(lm["shoulder.R"][0])) / 2.0
         mask = {"inner": round(sx + ELBOW_MASK[0] * s, 3), "outer": round(sx + ELBOW_MASK[1] * s, 3)}
-    return {"joint_z": round(z, 4), "snapshot": band(BAND_SNAPSHOT), "below": band(BAND_BELOW),
-            "above": band(BAND_ABOVE), "mask": mask}
+    return {"below": [round(-o * s, 4) for o in reversed(BAND_BELOW)], "above": [round(o * s, 4) for o in BAND_ABOVE],
+            "mask": mask, "sides": sides}
+
+
+def hinge_transfer(V, W, up_cols, lo_cols, joint, normal, below, above, amount: float, radius: float, mask=None):
+    """The hinge's hand-over (numpy, no Blender), measured along the limb: s = (V - joint) . normal, the normal the
+    mean of the upper and the lower bone's directions (so the seam is the plane square to the limb at the joint, on
+    an arm held at any angle). Where s lies in `below` (four distances: fade in, full, full, fade out) the upper
+    bones' weight moves to the first lower bone, where -s lies in `above` the lower bones' weight to the first upper
+    bone, `amount` x the band x `mask` (per vertex, 1 without one), only within `radius` of the limb's axis. A
+    world-Z band would cut a sloping arm on a slant: one side of the sleeve handed over above the crease, the other
+    below it. Returns (W, vertices changed)."""
+    import numpy as np
+    W = np.array(W, dtype=float)
+    rel = np.asarray(V, dtype=float) - np.asarray(joint, dtype=float)
+    n = np.asarray(normal, dtype=float) / max(float(np.linalg.norm(normal)), 1e-12)
+    s = rel @ n
+    r = np.linalg.norm(rel - np.outer(s, n), axis=1)
+    sm = lambda a, b, x: (lambda y: y * y * (3 - 2 * y))(np.clip((x - a) / max(b - a, 1e-12), 0.0, 1.0))
+    band = lambda x, q: sm(q[0], q[1], x) * (1.0 - sm(q[2], q[3], x))
+    m = (r <= radius) * (np.ones(len(W)) if mask is None else np.asarray(mask, dtype=float))
+    changed = np.zeros(len(W), bool)
+    for t, frm, to in ((band(s, below) * m, up_cols, lo_cols[0]), (band(-s, above) * m, lo_cols, up_cols[0])):
+        take = amount * t[:, None] * W[:, frm]
+        moved = take.sum(1)
+        W[:, frm] -= take
+        W[:, to] += moved
+        changed |= moved > 1e-9
+    return W, int(changed.sum())
 
 
 def hinge_bones(retarget_map: dict, hinge: str, side: str, deform: set) -> tuple[list, list]:
@@ -729,9 +788,9 @@ def parser() -> Parser:
         if s in ("smart", "markers", "all"):
             p.add_argument("--no-smart", action="store_true", help="no Auto-Rig Pro AI: slice markers alone")
         if s in ("check", "markers", "all"):
-            p.add_argument("--body", choices=("human", "skirt"), default="human",
+            p.add_argument("--body", choices=("human", "skirt", "chibi"), default="human",
                            help="skirt: a long coat, skirt or robe (the legs read under its hem, the skirt bound "
-                                "off the thighs' seam)")
+                                "off the thighs' seam); chibi: a big head on short limbs (its own bands and windows)")
         if s in ("markers", "all"):
             p.add_argument("--adjust", help="arp_markers.py --adjust: JSON {marker: [x, y, z]} a person placed")
         if s in ("arp", "all"):
@@ -841,6 +900,10 @@ def main(argv=None, osname=None, env=None) -> int:
     except OSError as exc:   # the Blender or Python executable is missing
         out.update({"steps": done, "ok": False, "exit_code": 1, "error": f"{type(exc).__name__}: {exc}"})
         return _emit(c, a, out, 1)
+    mitten_agrees = (smart_rc == 2 and c.smart == "failed" and c.smart_why == ["smart.fingers"]
+                     and "markers" in stages and fingers_fixed(c) is True)
+    if mitten_agrees:   # the AI found no fingers where the slices read a closed hand: both say mitten
+        smart_rc = 0
     rc = rc if rc == 1 else max(rc, smart_rc)
     out["steps"] = done
     out["smart"] = {"result": c.smart or "not_run",
@@ -848,6 +911,9 @@ def main(argv=None, osname=None, env=None) -> int:
                     "markers_used_it": bool(c.markers_smart)}
     if c.smart_why:
         out["smart"]["why"] = c.smart_why
+    if mitten_agrees:
+        out["smart"]["mitten"] = ("smart.fingers failed and the markers read fingers.mode fixed: the "
+                                  "AI and the slices agree the hand is a mitten, so it adds no exit 2")
     if c.smart in ("failed", "skipped") and "markers" in stages and not a.no_smart:
         out["smart"]["note"] = ("the markers took what passed in the AI's report, slices for the rest"
                                 if c.markers_smart else "the markers came from slices alone")
@@ -911,7 +977,7 @@ def _emit(c, a, out, code) -> int:
 # --- inside Blender: prep, arp, repair ------------------------------------------------------------------------------
 def inside(argv: list) -> None:
     p = argparse.ArgumentParser(prog="autorig.py _inside")
-    p.add_argument("what", choices=("prep", "arp", "repair", "skirt"))
+    p.add_argument("what", choices=("prep", "arp", "repair", "skirt", "mitten"))
     for k in ("glb", "name", "save", "report", "mesh", "markers", "fbx", "contract", "hinges", "backup_dir",
               "cross_side"):
         p.add_argument("--" + k.replace("_", "-"))
@@ -919,7 +985,8 @@ def inside(argv: list) -> None:
     p.add_argument("--cross-band", type=float); p.add_argument("--resolution", type=int)
     a = p.parse_args(argv)
     try:
-        rep, code = {"prep": _in_prep, "arp": _in_arp, "repair": _in_repair, "skirt": _in_skirt}[a.what](a)
+        rep, code = {"prep": _in_prep, "arp": _in_arp, "repair": _in_repair, "skirt": _in_skirt,
+                     "mitten": _in_mitten}[a.what](a)
     except Exception as exc:   # noqa: BLE001 — every failure is reported, exit 1
         import traceback
         rep, code = {"ok": False, "error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}, 1
@@ -953,6 +1020,12 @@ def _in_arp(a):
     r = brt_arp.run({"op": "pipeline", "mesh": a.mesh, "markers": a.markers, "fbx": a.fbx, "report_path": a.report,
                      **({"resolution": a.resolution} if a.resolution else {})})
     if report_passed(r):
+        r["hand_reach"] = _in_hand_reach(bpy, bpy.data.objects.get(a.mesh), a.markers)
+        if r["hand_reach"].get("vertices"):        # the bind changed: the FBX again, with the pipeline's settings
+            x = brt_arp.run({"op": "export", "armature": r["hand_reach"]["armature"], "fbx": a.fbx})
+            r["gates"].append({"name": "arp.hand_reach_export", "value": bool(report_passed(x)), "limit": True,
+                               "pass": bool(report_passed(x))})
+            r["pass"] = r["ok"] = all(g.get("pass") is True for g in r["gates"])
         Path(a.save).parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=a.save)
     refused = any(g.get("name") == "arp.precondition" and gate_failed(g) for g in r.get("gates", []))
@@ -989,21 +1062,41 @@ def _in_repair(a):
         if reg["mask"]:
             base.update(axis="X", mask=reg["mask"])
         h = log["hinges"][hinge] = {"regions": reg, "ops": {}}
-        h["ops"]["snapshot"] = short(brt_weights.run({**base, "op": "snapshot", "z_band": reg["snapshot"],
-                                                      "overwrite": True}))
+        h["ops"]["snapshot"] = short(brt_weights.run({**base, "op": "snapshot", "overwrite": True}))
         if not h["ops"]["snapshot"].get("ok"):
             return {"ok": False, "error": f"{hinge}: snapshot failed", **log}, 1
+        import numpy as np
+        groups = [g for g in mesh.vertex_groups if g.name in deform]
+        col = {g.name: k for k, g in enumerate(groups)}
+        gi = {g.index: k for k, g in enumerate(groups)}
+        V = np.array([tuple(mesh.matrix_world @ v.co) for v in mesh.data.vertices], dtype=float)
+        W = np.zeros((len(V), len(groups)))
+        for v in mesh.data.vertices:
+            for ge in v.groups:
+                if ge.group in gi:
+                    W[v.index, gi[ge.group]] = ge.weight
+        W0 = W.copy()
+        m = reg["mask"]
+        xm = None if m is None else np.clip((np.abs(V[:, 0]) - m["inner"]) / (m["outer"] - m["inner"]), 0.0, 1.0)
+        xm = None if xm is None else xm * xm * (3 - 2 * xm)
         for side in ("l", "r"):
             up, lo = hinge_bones(rmap, hinge, side, deform)
-            if not up or not lo:
-                return {"ok": False, "error": f"{hinge}.{side}: no deform bones ({up}, {lo})", **log}, 1
+            if not up or not lo or any(b not in col for b in up + lo[:1]):
+                return {"ok": False, "error": f"{hinge}.{side}: no deform bones with weights ({up}, {lo})", **log}, 1
             h["bones_" + side] = {"upper": up, "lower": lo}
-            for key, band, frm, to in (("below", reg["below"], up, [lo[0]]), ("above", reg["above"], lo, [up[0]])):
-                r = short(brt_weights.run({**base, "op": "transfer", "z_band": band, "from_bones": frm,
-                                           "to_bones": to, "amount": a.amount}))
-                h["ops"][f"{key}_{side}"] = r
-                if not r.get("ok"):
-                    return {"ok": False, "error": f"{hinge}.{side} {key}: transfer failed", **log}, 1
+            sd = reg["sides"][side.upper()]
+            W, n = hinge_transfer(V, W, [col[b] for b in up], [col[b] for b in lo if b in col], sd["joint"],
+                                  sd["normal"], reg["below"], reg["above"], a.amount, sd["radius"], xm)
+            h["ops"][f"transfer_{side}"] = {"changed_vertices": n, "ok": n > 0}
+            if not n:
+                return {"ok": False, "error": f"{hinge}.{side}: the hand-over changed no vertex", **log}, 1
+        rows = np.nonzero(np.abs(W - W0).max(axis=1) > 1e-9)[0]
+        for k, g in enumerate(groups):
+            idx = rows[(W0[rows, k] > 0) | (W[rows, k] > 0)]
+            if len(idx):
+                g.remove([int(i) for i in idx])
+                for i in idx[W[idx, k] > 1e-6]:
+                    g.add([int(i)], float(W[i, k]), 'REPLACE')
     Path(a.fbx).parent.mkdir(parents=True, exist_ok=True)
     x = brt_arp.run({"op": "export", "armature": rig.name, "fbx": a.fbx})
     passed = bool(report_passed(x))
@@ -1011,6 +1104,127 @@ def _in_repair(a):
     log["export_failed_gates"] = [g.get("name") for g in x.get("gates", []) if gate_failed(g)]
     bpy.ops.wm.save_as_mainfile(filepath=a.save, copy=True)
     return {"ok": passed, **log}, 0 if passed else 1
+
+
+def hand_reach(V, edges, W, cols, segments, reach: float, core: float, tol: float = 1e-6):
+    """A hand's weight kept on its own skin (numpy, no Blender). Rows of W (vertices x deform groups) holding weight
+    of the bones in `cols` (one hand and its fingers) farther than `reach` from those bones lose it, the rest of the
+    row rescaled to 1 (a row with nothing else keeps it). The distance runs over the mesh edges (V welded at seams)
+    from the hand's own skin: every vertex within `core` of one of `segments` (the bones, head to tail), and the
+    vertex nearest each bone's middle. A piece of the mesh that walk never reaches is measured straight to the
+    nearest bone. A bind's bleed from a hand hanging beside a coat or a thigh is near in space and far over the
+    skin. Returns (W, {vertices, kept_whole, removed_max, removed_sum})."""
+    import heapq
+    import numpy as np
+    W = np.array(W, dtype=float)
+    held = W[:, cols].sum(1) > 0
+    info = {"vertices": 0, "kept_whole": 0, "removed_max": 0.0, "removed_sum": 0.0}
+    if not held.any() or not len(segments):
+        return W, info
+    scale = float(np.ptp(V, axis=0).max()) or 1.0
+    _, ids = np.unique(np.round(V / (tol * scale)), axis=0, return_inverse=True)
+    ids = ids.reshape(-1)
+    n = int(ids.max()) + 1
+    pos = np.zeros((n, 3))
+    pos[ids] = V
+    e = ids[np.asarray(edges, dtype=np.int64).reshape(-1, 2)]
+    e = np.unique(np.sort(e[e[:, 0] != e[:, 1]], axis=1), axis=0)
+    both = np.concatenate([e, e[:, ::-1]])
+    order = np.argsort(both[:, 0], kind="stable")
+    both = both[order]
+    length = np.linalg.norm(pos[both[:, 0]] - pos[both[:, 1]], axis=1)
+    start = np.searchsorted(both[:, 0], np.arange(n + 1))
+    seg = np.asarray(segments, dtype=float).reshape(-1, 2, 3)
+
+    def to_bones(Q):
+        best = np.full(len(Q), np.inf)
+        for a, b in seg:
+            ab = b - a
+            t = np.clip((Q - a) @ ab / max(float(ab @ ab), 1e-12), 0.0, 1.0)
+            best = np.minimum(best, np.linalg.norm(Q - (a + t[:, None] * ab), axis=1))
+        return best
+    near = to_bones(pos)
+    dist = np.where(near <= core, 0.0, np.inf)
+    for a, b in seg:
+        k = int(np.linalg.norm(pos - (a + b) / 2, axis=1).argmin())
+        dist[k] = 0.0
+    heap = [(float(dist[k]), int(k)) for k in np.nonzero(np.isfinite(dist))[0]]
+    heapq.heapify(heap)
+    nbr, ln = both[:, 1].tolist(), length.tolist()
+    st = start.tolist()
+    dl = dist.tolist()
+    while heap:
+        d0, k = heapq.heappop(heap)
+        if d0 > dl[k]:
+            continue
+        for j in range(st[k], st[k + 1]):
+            m, nd = nbr[j], d0 + ln[j]
+            if nd < dl[m]:
+                dl[m] = nd
+                heapq.heappush(heap, (nd, m))
+    dist = np.array(dl)
+    lone = ~np.isfinite(dist)
+    dist[lone] = near[lone]
+    far = held & (dist[ids] > reach)
+    for i in np.nonzero(far)[0]:
+        took = float(W[i, cols].sum())
+        rest = float(W[i].sum()) - took
+        if rest <= 1e-6:
+            info["kept_whole"] += 1
+            continue
+        W[i, cols] = 0.0
+        W[i] /= rest
+        info["vertices"] += 1
+        info["removed_max"] = max(info["removed_max"], round(took, 4))
+        info["removed_sum"] = round(info["removed_sum"] + took, 4)
+    return W, info
+
+
+def _in_hand_reach(bpy, mesh, markers_path) -> dict:
+    """hand_reach on the bound mesh, per side: Auto-Rig Pro's hand.l / hand.r and every deform bone under it,
+    the reach HAND_REACH x the markers' wrist -> hand_tip. Changes the vertex groups in place."""
+    import numpy as np
+    if mesh is None:
+        return {"error": "no mesh"}
+    rig = next((m.object for m in mesh.modifiers if m.type == 'ARMATURE' and m.object is not None), None)
+    if rig is None:
+        return {"error": "the mesh is not bound"}
+    lm = json.loads(Path(markers_path).read_text(encoding="utf-8")).get("landmarks") or {}
+    deform = [b.name for b in rig.data.bones if b.use_deform]
+    groups = [g for g in mesh.vertex_groups if g.name in deform]
+    gi = {g.index: k for k, g in enumerate(groups)}
+    V = np.array([tuple(mesh.matrix_world @ v.co) for v in mesh.data.vertices], dtype=float)
+    W = np.zeros((len(V), len(groups)))
+    for v in mesh.data.vertices:
+        for ge in v.groups:
+            if ge.group in gi:
+                W[v.index, gi[ge.group]] = ge.weight
+    E = np.array([tuple(e.vertices) for e in mesh.data.edges], dtype=np.int64).reshape(-1, 2)
+    out = {"armature": rig.name, "reach_x_hand": HAND_REACH, "vertices": 0, "sides": {}}
+    W0 = W.copy()
+    for s in ("l", "r"):
+        hand = rig.data.bones.get(f"hand.{s}")
+        wrist, tip = lm.get(f"wrist.{s.upper()}"), lm.get(f"hand_tip.{s.upper()}")
+        if hand is None or wrist is None or tip is None:
+            out["sides"][s] = {"skipped": "no hand.%s bone or no wrist/hand_tip marker" % s}
+            continue
+        bones = [hand] + [b for b in hand.children_recursive if b.use_deform]
+        cols = [k for k, g in enumerate(groups) if g.name in {b.name for b in bones if b.use_deform}]
+        mw = rig.matrix_world
+        segs = [(np.array(mw @ b.head_local), np.array(mw @ b.tail_local)) for b in bones]
+        size = float(np.linalg.norm(np.subtract(tip, wrist)))
+        W, info = hand_reach(V, E, W, cols, segs, HAND_REACH * size, HAND_CORE * size)
+        out["sides"][s] = {"reach_m": round(HAND_REACH * size, 4), "bones": len(cols), **info}
+        out["vertices"] += info["vertices"]
+    rows = np.nonzero(np.abs(W - W0).max(axis=1) > 1e-9)[0]
+    for k, g in enumerate(groups):
+        idx = rows[(W0[rows, k] > 0) | (W[rows, k] > 0)]
+        if not len(idx):
+            continue
+        g.remove([int(i) for i in idx])
+        for i in idx[W[idx, k] > 1e-6]:
+            g.add([int(i)], float(W[i, k]), 'REPLACE')
+    return out
 
 
 def skirt_weights(V, W, cols: dict, sk: dict, region) -> np.ndarray:
@@ -1105,6 +1319,81 @@ def _in_skirt(a):
     return {"ok": ok, "pass": ok, "gates": gates, **log}, 0 if ok else 2
 
 
+MITTEN_FOLD = ("Index", "Ring", "Little")    # mitten_bind: these chains' weight goes to Middle, phalanx by phalanx
+
+
+def mitten_weights(W, groups: list, owner: dict) -> tuple:
+    """mitten_bind's weights (numpy, no Blender): every column whose contract owner is Index/Ring/Little{i}.{s}
+    adds into Middle{i}.{s}'s column and is emptied, so the mitten follows one chain; the thumb, the hand and the
+    rest stay. (W, {from group: to group}); a side without a Middle column keeps its chains."""
+    import numpy as np
+    W = np.array(W, dtype=float)
+    col = {owner.get(g): k for k, g in enumerate(groups) if owner.get(g)}
+    moved = {}
+    for k, g in enumerate(groups):
+        o = owner.get(g) or ""
+        base, _, side = o.partition(".")
+        if base[:-1] in MITTEN_FOLD and base[-1:] in "123" and side:
+            to = col.get(f"Middle{base[-1]}.{side}")
+            if to is None:
+                continue
+            W[:, to] += W[:, k]
+            W[:, k] = 0.0
+            moved[g] = groups[to]
+    return W, moved
+
+
+def _in_mitten(a):
+    """mitten_bind: a mitten's four finger chains folded onto Middle (mitten_weights), the FBX exported again."""
+    import bpy
+    import numpy as np
+    sys.path.insert(0, str(BRT))
+    import brt_arp
+    rmap = json.loads(Path(a.contract).read_text(encoding="utf-8")).get("retarget_map") or {}
+    first = lambda n: n[0] if isinstance(n, list) else n
+    rev = {first(b): r for r, b in rmap.items() if first(b)}
+    skip = lambda o: o.get("parts_hair") or o.name.split(".")[0] in ("Hair", "Eye") or o.name.startswith("Eye")
+    bound = [(o, m.object) for o in bpy.data.objects if o.type == 'MESH' and not skip(o)
+             for m in o.modifiers if m.type == 'ARMATURE' and m.object is not None and m.object.type == 'ARMATURE']
+    if not bound:
+        return {"ok": False, "error": "no mesh is bound to an armature in this file"}, 1
+    mesh, rig = max(bound, key=lambda t: len(t[0].data.vertices))
+    owner = {}
+    for b in rig.data.bones:            # a deform bone's contract owner: itself, else the first mapped parent
+        q = b
+        while q is not None and q.name not in rev:
+            q = q.parent
+        if b.use_deform and q is not None:
+            owner[b.name] = rev[q.name]
+    groups = [g.name for g in mesh.vertex_groups]
+    gi = {g.index: k for k, g in enumerate(mesh.vertex_groups)}
+    n = len(mesh.data.vertices)
+    W = np.zeros((n, len(groups)))
+    for v in mesh.data.vertices:
+        for ge in v.groups:
+            W[v.index, gi[ge.group]] = ge.weight
+    missing = [r for r in ("Middle1.L", "Middle1.R") if r not in rev.values() or
+               not any(owner.get(g) == r for g in groups)]
+    if missing:
+        return {"ok": False, "error": f"no weighted {missing} on {mesh.name}: no chain to fold the mitten onto"}, 1
+    W2, moved = mitten_weights(W, groups, owner)
+    touched = np.nonzero(np.abs(W2 - W).sum(axis=1) > 1e-9)[0]
+    for k, name in enumerate(groups):
+        g = mesh.vertex_groups[name]
+        g.remove([int(i) for i in touched])
+        for i in touched[W2[touched, k] > 1e-6]:
+            g.add([int(i)], float(W2[i, k]), 'REPLACE')
+    gates = [{"name": "mitten.folded", "value": len(moved), "limit": ">= 1", "pass": bool(moved)}]
+    Path(a.fbx).parent.mkdir(parents=True, exist_ok=True)
+    x = brt_arp.run({"op": "export", "armature": rig.name, "fbx": a.fbx})
+    gates.append({"name": "mitten.export", "value": bool(report_passed(x)), "limit": True, "pass": bool(report_passed(x))})
+    bpy.ops.wm.save_as_mainfile(filepath=a.save)
+    ok = all(g["pass"] for g in gates)
+    return {"ok": ok, "pass": ok, "gates": gates, "mesh": mesh.name, "armature": rig.name, "moved": moved,
+            "vertices": int(len(touched)), "export_failed_gates": [g.get("name") for g in x.get("gates", [])
+                                                                   if gate_failed(g)]}, 0 if ok else 2
+
+
 def mirror_bone(name: str) -> str:
     """The other side's twin of a bone name (.l/.r, .L/.R, _l/_r, _L/_R at the end), else the name itself."""
     for a, b in ((".l", ".r"), (".L", ".R"), ("_l", "_r"), ("_L", "_R")):
@@ -1183,7 +1472,10 @@ elif script == "arp_markers.py":
     rep.update(fingers={"mode": os.environ.get("FAKE_FINGERS", "auto")}, height=1.75,
                landmarks={"elbow.L": [0.37, 0.07, 1.09901], "elbow.R": [-0.37, 0.07, 1.09901],
                           "knee.L": [0.17, 0.08, 0.49875], "knee.R": [-0.17, 0.08, 0.49875],
-                          "shoulder.L": [0.20523, 0.1, 1.33], "shoulder.R": [-0.20523, 0.1, 1.33]})
+                          "shoulder.L": [0.20523, 0.1, 1.33], "shoulder.R": [-0.20523, 0.1, 1.33],
+                          "wrist.L": [0.538, 0.04, 0.868], "wrist.R": [-0.538, 0.04, 0.868],
+                          "hip.L": [0.1, 0.07, 0.86], "hip.R": [-0.1, 0.07, 0.86],
+                          "ankle.L": [0.2, 0.1, 0.09], "ankle.R": [-0.2, 0.1, 0.09]})
 elif script == "inside_arp":
     fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
 elif script == "inside_repair":
@@ -1389,6 +1681,13 @@ def selftest() -> int:
                   == ["_inside", "skirt"] and "--factory-startup" not in sb and sb[sb.index("-P") - 1].endswith("_arp.blend")
                   and all(c_[c_.index("--skirt") + 1] == mk for c_ in (ss["deform"], ss["secondary"], ss["secondary_deform"]))
                   and "--skirt" not in steps["deform"] and "--body" not in steps["check"], steps=list(ss))
+            _, rc, _ = go(["all", str(out), str(glb), "--body", "chibi", "--dry-run"], osname, {"BLENDER": bl})
+            cs = {s_["name"]: s_["cmd"] for s_ in rc.get("steps", [])}
+            check(f"{osname}: --body chibi reaches mesh_check, the markers and every deform gate (its poses); no "
+                  "skirt_bind, no --skirt", list(cs) == order and cs["check"][cs["check"].index("--body") + 1] == "chibi"
+                  and cs["markers"][cs["markers"].index("--body") + 1] == "chibi"
+                  and all(c_[c_.index("--body") + 1] == "chibi" for c_ in (cs["deform"], cs["secondary_deform"]))
+                  and not any("--skirt" in c_ for c_ in cs.values()) and "--body" not in steps["deform"], steps=list(cs))
             _, r7, _ = go(["all", str(out), str(glb), "--adjust", "adj.json", "--resolution", "8", "--dry-run"], osname,
                           {"BLENDER": bl})
             s7 = {s["name"]: s["cmd"] for s in r7.get("steps", [])}
@@ -1411,9 +1710,23 @@ def selftest() -> int:
         _, rc_, _ = go(["contract", str(mo), "--dry-run"], None, {"BLENDER": "B"})
         _, rd_, _ = go(["deform", str(mo), "--dry-run"], None, {"BLENDER": "B"})
         cc, dc = rc_["steps"][0]["cmd"], rd_["steps"][0]["cmd"]
-        check("mitten: contract without --min-fingers, deform without fist (both, repair gate too)",
-              "--min-fingers" not in cc and dc[dc.index("--poses") + 1] == NO_FIST
-              and NO_FIST in rd_["repair_example"][1]["cmd"] and rd_["name"] == "Runner")
+        mb = [st for st in rc_["steps"] if st["name"] == "mitten_bind"]
+        check("mitten: contract without --min-fingers then mitten_bind (inside Blender, on the arp blend); deform "
+              "with the mitten pose instead of fist (both, repair gate too)",
+              "--min-fingers" not in cc and dc[dc.index("--poses") + 1] == NO_FIST + ",mitten"
+              and NO_FIST + ",mitten" in rd_["repair_example"][1]["cmd"] and rd_["name"] == "Runner"
+              and len(mb) == 1 and mb[0]["cmd"][mb[0]["cmd"].index("--") + 1:][:2] == ["_inside", "mitten"]
+              and mb[0]["cmd"][mb[0]["cmd"].index("-P") - 1].endswith("_arp.blend"), steps=[st["name"] for st in rc_["steps"]])
+        # mitten_weights: Index/Ring/Little phalanx i folded onto Middle i, the thumb and the hand kept
+        own = {"h": "Hand.L", "t1": "Thumb1.L", "i1": "Index1.L", "m1": "Middle1.L", "r2": "Ring2.L", "m2": "Middle2.L",
+               "l1": "Little1.L", "x": None}
+        grp = list(own)
+        W0 = [[0.2, 0.1, 0.3, 0.2, 0.0, 0.0, 0.2, 0.0], [0.0, 0.0, 0.0, 0.0, 0.6, 0.4, 0.0, 0.0]]
+        W1, moved = mitten_weights(W0, grp, own)
+        check("mitten_weights: each finger's phalanx onto Middle's, rows keep their sum, thumb and hand untouched",
+              [round(x, 6) for x in W1[0]] == [0.2, 0.1, 0.0, 0.7, 0.0, 0.0, 0.0, 0.0]
+              and [round(x, 6) for x in W1[1]] == [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+              and moved == {"i1": "m1", "r2": "m2", "l1": "m1"}, W1=[list(r) for r in W1], moved=moved)
         code, r, _ = go(["deform", str(td / "nowhere"), "--name", "X"], None, {"BLENDER": "B"})
         check("deform before arp is refused before anything runs, exit 1", code == 1 and "missing" in r.get("error", ""))
         # 2. finding Blender
@@ -1442,6 +1755,31 @@ def selftest() -> int:
               and np.allclose(W1[hem, 0], 1 - SKIRT_LEG_MAX, atol=0.02) and abs(W1[front, 1][0] - W1[front, 2][0]) < 1e-6
               and np.abs(np.diff(lam)).max() < 0.1
               and np.allclose(W1[top], W0[top] / W0[top].sum(1, keepdims=True)))
+        # hand_reach: a hand bone's weight on a coat beside the hand (near in space, far over the skin) goes
+        path = [(x, 0.0, 1.0) for x in np.linspace(0.0, 0.2, 11)] + [(0.2, 0.0, z) for z in np.linspace(1.05, 2.0, 20)] \
+            + [(x, 0.0, 2.0) for x in np.linspace(0.15, -0.2, 8)] + [(-0.2, 0.0, z) for z in np.linspace(1.95, 1.0, 20)] \
+            + [(x, 0.05, 1.0) for x in np.linspace(-0.15, 0.1, 6)]
+        Vh = np.array(path + [(0.1, 0.0, 0.97), (0.1, 0.0, 0.5)])     # two loose pieces: a cuff, a far scrap
+        Eh = np.array([(i, i + 1) for i in range(len(path) - 1)])
+        Wh = np.zeros((len(Vh), 2))
+        Wh[:11, 0] = 1.0
+        Wh[11:, 1] = 1.0
+        coat, cuff, scrap = len(path) - 1, len(path), len(path) + 1
+        Wh[[coat, cuff, scrap], 0] = 0.1
+        Wh2, hi = hand_reach(Vh, Eh, Wh, [0], [((0.0, 0.0, 1.0), (0.2, 0.0, 1.0))], 0.2, 0.04)
+        check("hand_reach: the coat 5 cm from the hand but 3 m round over the skin and a loose scrap 0.5 m away lose the "
+              "hand's weight; the hand and a loose cuff 3 cm from its bone keep it; rows sum to 1",
+              Wh2[coat, 0] == 0 and Wh2[scrap, 0] == 0 and np.isclose(Wh2[coat, 1], 1.0) and Wh2[cuff, 0] == 0.1
+              and (Wh2[:11, 0] == 1).all() and hi["vertices"] == 2, info=hi)
+        # hinge_transfer on an arm sloping at 45 degrees: the hand-over follows the limb, not world Z
+        n45 = np.array([1.0, 0.0, -1.0]) / np.sqrt(2)
+        Va = np.array([0.05 * n45 + (0.03, 0, 0.03), -0.05 * n45 + (0.03, 0, 0.03), 0.05 * n45 + (0.0, 0.3, 0.0)])
+        Wa = np.array([[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]])
+        Wa2, na = hinge_transfer(Va, Wa, [0], [1], (0, 0, 0), n45, [0.004, 0.019, 0.089, 0.119],
+                                 [0.004, 0.019, 0.091, 0.121], 1.0, 0.1)
+        check("hinge_transfer: on a 45-degree arm a point 5 cm down the forearm but level with the joint goes to the lower "
+              "bone, one 5 cm up the upper arm to the upper bone; skin beyond the radius is left alone",
+              np.allclose(Wa2[0], [0, 1]) and np.allclose(Wa2[1], [1, 0]) and np.allclose(Wa2[2], [0.5, 0.5]) and na == 2)
         check("posix: the macOS app when not on PATH", default_blender("posix", {}, none, lambda p: p == MAC_BLENDER,
                                                                        lambda g: []) == MAC_BLENDER)
         check("$BLENDER wins over PATH", default_blender("nt", {"BLENDER": "B"}, lambda n: "P") == "B")
@@ -1486,10 +1824,12 @@ def selftest() -> int:
               next_rung(elbow, [{**a1, "report": rep({"LowerLeg.R": 0.36})}]) == {
                   "hinges": ["elbow", "knee"], "amount": 1.0, "cross_side": {}, "cross_band": None,
                   "why": "now also volume loss at LowerLeg.R"})
-        r09 = next_rung(elbow, [{**a1, "report": rep({"LowerArm.R": 0.30}, si=0.09)}])
-        check("volume held, self-intersection rose: amount 0.9, then stop",
-              r09 and r09["amount"] == 0.9 and next_rung(elbow, [{**a1, "report": {}}, {**r09, "report": rep(
-                  {"LowerArm.R": 0.30}, si=0.09)}]) is None)
+        sir = lambda: rep({"LowerArm.R": 0.30}, si=0.09)
+        r08 = next_rung(elbow, [{**a1, "report": sir()}])
+        r06 = next_rung(elbow, [{**a1, "report": {}}, {**r08, "report": sir()}]) if r08 else None
+        check("volume held, self-intersection rose: amount 0.8, then 0.6, then stop",
+              r08 and r08["amount"] == 0.8 and r06 and r06["amount"] == 0.6
+              and next_rung(elbow, [{**a1, "report": {}}, {**r08, "report": {}}, {**r06, "report": sir()}]) is None)
         check("never more than MAX_ATTEMPTS", next_rung(elbow, [{**a1, "report": rep({"LowerLeg.R": 0.4})}] * MAX_ATTEMPTS) is None)
         def crossed(r, bones=("foot.l", "toes_01.l"), share=0.0144, held=336):
             return {**r, "skin": {"cross_side": {"band_m": 0.062, "L": {"share": 0.0, "held": 0, "bones": {}},
@@ -1522,16 +1862,23 @@ def selftest() -> int:
         check("the limit is read from the report, never changed", classify(lim40)["passed"] and not classify(lim40)["over"])
         mk = {"height": 1.75, "landmarks": {"elbow.L": [0.37175, 0.07, 1.09901], "elbow.R": [-0.37175, 0.07, 1.09901],
                                             "shoulder.L": [0.20523, 0.1, 1.33], "shoulder.R": [-0.20523, 0.1, 1.33],
-                                            "knee.L": [0.175, 0.08, 0.49875], "knee.R": [-0.175, 0.08, 0.49875]}}
+                                            "wrist.L": [0.53827, 0.04, 0.86802], "wrist.R": [-0.53827, 0.04, 0.86802],
+                                            "hip.L": [0.1, 0.07, 0.86], "hip.R": [-0.1, 0.07, 0.86],
+                                            "knee.L": [0.175, 0.08, 0.49875], "knee.R": [-0.175, 0.08, 0.49875],
+                                            "ankle.L": [0.2, 0.1, 0.09], "ankle.R": [-0.2, 0.1, 0.09]}}
         e = repair_regions(mk, "elbow")
-        check("elbow bands from the markers: the documented runner bands and mask",
-              e["below"] == [0.98, 1.01, 1.08, 1.095] and e["above"] == [1.103, 1.118, 1.19, 1.22]
-              and e["snapshot"] == [0.95, 0.97, 1.22, 1.24] and e["mask"] == {"inner": 0.22, "outer": 0.25}, e=e)
+        nL = np.array(e["sides"]["L"]["normal"])
+        check("elbow bands from the markers, along the limb: the hand-over 0.004-0.119 below the seam and 0.004-0.121 "
+              "above it, the seam square to the arm (its normal down the arm, mirrored on the right), the runner's mask",
+              e["below"] == [0.004, 0.019, 0.089, 0.119] and e["above"] == [0.004, 0.019, 0.091, 0.121]
+              and e["mask"] == {"inner": 0.22, "outer": 0.25} and e["sides"]["L"]["joint"] == [0.3718, 0.07, 1.099]
+              and nL[0] > 0.5 and nL[2] < -0.5 and np.allclose(e["sides"]["R"]["normal"], nL * [-1, 1, 1], atol=1e-4)
+              and 0.1 < e["sides"]["L"]["radius"] < 0.2, e=e)
         k_ = repair_regions(mk, "knee")
         small = repair_regions({**mk, "height": 0.875}, "elbow")
-        check("a knee has no X mask; the offsets scale with the height",
-              k_["mask"] is None and k_["below"][3] == round(0.49875 - 0.004, 3)
-              and abs((small["above"][3] - 1.09901) - 0.121 / 2) < 1e-3, k=k_, small=small)
+        check("a knee has no X mask, its seam square to the leg; the offsets scale with the height",
+              k_["mask"] is None and k_["sides"]["L"]["normal"][2] < -0.9 and small["above"][3] == round(0.121 / 2, 4),
+              k=k_, small=small)
         rm = {"UpperArm.L": "arm_stretch.l", "LowerArm.L": "forearm_stretch.l", "UpperLeg.R": "thigh_stretch.r",
               "LowerLeg.R": "leg_stretch.r"}
         dfm = {"arm_stretch.l", "arm_twist.l", "forearm_stretch.l", "thigh_stretch.r", "leg_stretch.r", "leg_twist.r"}
@@ -1585,7 +1932,7 @@ def selftest() -> int:
               and (run_dir / "autorig.all.json").exists() and "\u4e2d" not in err)
         check("all: the attempt lists hinges, amount, bands, the gate values; the result points at repair/a1",
               att and att[0]["hinges"] == ["elbow"] and att[0]["amount"] == 1.0
-              and att[0]["regions"]["elbow"]["below"] == [0.98, 1.01, 1.08, 1.095]
+              and att[0]["regions"]["elbow"]["below"] == [0.004, 0.019, 0.089, 0.119]
               and att[0]["volume_loss_max"]["value"] == 0.3492 and att[0]["self_intersection_p95"] == 0.05
               and r["repair"]["files"]["fbx"].endswith(os.path.join("repair", "a1", "Runner.fbx")), att=att)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-secondary"],
@@ -1608,8 +1955,8 @@ def selftest() -> int:
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"],
                                  FAKE_DEFORM={"a1": ["LowerArm.R", 0.30, 0.09], "a2": ["LowerArm.R", 0.33, 0.07]})
         rp = r.get("repair") or {}
-        check("all: intersections rose at 1.0, 0.9 passes on attempt 2, exit 0",
-              code == 0 and [x["amount"] for x in rp.get("attempts", [])] == [1.0, 0.9], rp=rp)
+        check("all: intersections rose at 1.0, 0.8 passes on attempt 2, exit 0",
+              code == 0 and [x["amount"] for x in rp.get("attempts", [])] == [1.0, 0.8], rp=rp)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-repair"])
         check("--no-repair: the deform gate's exit 2 stands", code == 2 and "repair" not in r and ran == chain)
         code, r, err, ran = real(["deform", str(run_dir), "--name", "Runner"], FAKE_DEFORM={"a0": ["Spine", 0.4, 0.04]})
@@ -1684,6 +2031,12 @@ def selftest() -> int:
               and r["smart"]["result"] == "failed" and r["smart"]["why"] == ["smart.fingers"]
               and r["smart"]["note"].startswith("the markers took what passed"), code=code, ran=ran, smart=r.get("smart"))
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
+                                 FAKE_SMART="fail", FAKE_FINGERS="fixed")
+        check("smart.fingers failed on a hand the markers read as fixed (a mitten): both agree, exit 0, the "
+              "summary says so; mitten_bind ran",
+              code == 0 and r["smart"]["result"] == "failed" and r["smart"]["why"] == ["smart.fingers"]
+              and "mitten" in r["smart"] and "inside_mitten" in ran, code=code, ran=ran, smart=r.get("smart"))
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], FAKE_DEFORM=clean,
                                  FAKE_SMART="error")
         check("smart wrote no report (an error): all goes on to the end, the markers without --smart, exit 2",
               code == 2 and ran == chain + SEC and "--smart" not in trace_argv("arp_markers.py")
@@ -1752,8 +2105,11 @@ def selftest() -> int:
         (ai / "rig" / "Runner.contract.json").write_text(json.dumps({"retarget_map": {"Head": "head.x"}}))
         _, rd_, _ = go(["deform", str(ai), "--dry-run"], None, {"BLENDER": "B"})
         check("a face but no Jaw in the contract: no jaw_open", "--poses" not in rd_["steps"][0]["cmd"])
-        check("deform poses: all by default; a mitten drops fist; a face adds jaw_open only when known",
+        check("deform poses: all by default; a mitten drops fist (and takes the mitten pose when deform_gate knows "
+              "it); a face adds jaw_open only when known",
               deform_poses(DEFORM_POSES, False, False) is None and deform_poses(DEFORM_POSES, True, False) == NO_FIST
+              and deform_poses(DEFORM_POSES + ("jaw_open", "mitten"), True, False) == NO_FIST + ",mitten"
+              and deform_poses(DEFORM_POSES + ("jaw_open", "mitten"), False, False) is None
               and deform_poses(DEFORM_POSES, False, True) is None
               and deform_poses(DEFORM_POSES + ("jaw_open",), True, True) == NO_FIST + ",jaw_open"
               and deform_poses(DEFORM_POSES + ("jaw_open",), False, True) == "all,jaw_open"

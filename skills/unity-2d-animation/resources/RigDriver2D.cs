@@ -1,5 +1,5 @@
 // RigDriver2D.cs — procedural motion for a layered character that AutoRig2D rigged: breathing
-// idle, blinks, talking, and a run cycle drawn for a front or a side view, plus an optional 2D
+// idle, blinks, talking, a run cycle drawn for a front or a side view, a poke attack, plus an optional 2D
 // spring on hair, bags and tails. Every pose is an offset from the bind pose read at Bind(), and
 // a bone the rig does not have is skipped, so a sheet with fewer layers still plays.
 //
@@ -23,7 +23,7 @@ namespace UnityDev.Rig2D
     public sealed class RigDriver2D : MonoBehaviour
     {
         public enum View { Front, Side }
-        public enum Motion { None, Idle, Talk, Run }
+        public enum Motion { None, Idle, Talk, Run, Attack }
 
         public View view = View.Front;
         public Motion motion = Motion.Idle;
@@ -31,6 +31,8 @@ namespace UnityDev.Rig2D
         [Min(0f)] public float speed = 1f;
         [Tooltip("Seconds per run cycle (two steps).")] [Min(0.1f)] public float stride = 0.55f;
         [Min(0.1f)] public float breathPeriod = 2.4f;
+        [Tooltip("Seconds per attack: wind-up, poke, hold, recover.")] [Min(0.2f)] public float attackPeriod = 1.1f;
+        [Tooltip("The arm that pokes: near (side view) or R / L (front view).")] public string attackSide = "near";
 
         [Header("Face")]
         public bool blink = true;
@@ -134,6 +136,7 @@ namespace UnityDev.Rig2D
                 case Motion.Idle: Idle(t); break;
                 case Motion.Talk: Idle(t); Talk(t); break;
                 case Motion.Run: if (view == View.Side) RunSide(t); else RunFront(t); break;
+                case Motion.Attack: Idle(t); Attack(t); break;
             }
             if (mouthOpen >= 0f) SetMouth(mouthOpen > 0.35f);
             else if (motion != Motion.Talk) SetMouth(false);
@@ -226,6 +229,36 @@ namespace UnityDev.Rig2D
             // the upper arm swings a little behind the body, the forearm stays folded up
             Rot("shoulder_" + side, -f * (18f * Mathf.Sin(ph) + 6f));
             Rot("elbow_" + side, f * (65f - 10f * Mathf.Sin(ph)));
+        }
+
+        /// <summary>A poke with whatever the attacking hand holds (a prop layer bound to it moves
+        /// with it): the arm draws back with the elbow folding, then thrusts forward with the body
+        /// leaning in, holds, and recovers; the wrist turns against the arm so the held prop keeps
+        /// its angle. Phase 0..1 per attackPeriod; 0.52..0.65 is the hit.</summary>
+        public void Attack(float t)
+        {
+            float f = view == View.Side ? (facesRight ? 1f : -1f) : 1f;
+            float a = AttackCurve(Mathf.Repeat(t / attackPeriod, 1f));
+            string s = attackSide;
+            float sh = f * (a > 0f ? 20f : 16f) * a, el = f * 32f * Mathf.Max(-a, 0f);
+            Rot("shoulder_" + s, sh);
+            Rot("elbow_" + s, el);
+            Rot("wrist_" + s, -0.85f * (sh + el));     // the hand keeps its angle: a thrust, not a swing
+            Rot("chest", -f * 5f * a);
+            Rot("neck", f * 2.5f * a);
+            Move("hips", new Vector2(f * 0.025f * a, -0.006f * Mathf.Abs(a)));
+            foreach (string k in SideKeys())               // the off arm tucks in a little on the poke
+                if (k != s) { Rot("shoulder_" + k, f * 6f * a); Rot("elbow_" + k, f * 4f * Mathf.Max(a, 0f)); }
+        }
+
+        /// <summary>-1 drawn back .. +1 extended: ease back to -1 by 0.4, snap to +1 by 0.52, hold to
+        /// 0.65, ease home by 1.</summary>
+        public static float AttackCurve(float p)
+        {
+            if (p < 0.4f) return -Mathf.SmoothStep(0f, 1f, p / 0.4f);
+            if (p < 0.52f) { float u = (p - 0.4f) / 0.12f; return -1f + 2f * (1f - (1f - u) * (1f - u)); }
+            if (p < 0.65f) return 1f;
+            return 1f - Mathf.SmoothStep(0f, 1f, (p - 0.65f) / 0.35f);
         }
 
         // Extreme poses for judging weights (front view).

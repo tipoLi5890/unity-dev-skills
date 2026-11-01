@@ -135,7 +135,9 @@ missing, an operator not registered, no window, a timeout). `autorig.py all` nev
 `smart`. Without the add-on or its AI files the probe skips the window and the exit code is
 unchanged. A smart that fails makes the run's exit 2 and the run goes on: the markers stage gets
 `--smart` whenever the window wrote a report, passed or not, and takes only what passed in it (a
-failed face still leaves the AI's fingers); with no report it goes on from slices alone. `smart` run
+failed face still leaves the AI's fingers); with no report it goes on from slices alone. One
+exception: `smart.fingers` failing alone on a hand the markers read as `fingers.mode` `fixed` (the AI
+and the slices agree on a mitten) adds no exit 2. `smart` run
 on its own without the AI refuses (exit 1) and names the probe's failed gate.
 
 ## How the markers stage uses it: `arp_markers.py --smart`

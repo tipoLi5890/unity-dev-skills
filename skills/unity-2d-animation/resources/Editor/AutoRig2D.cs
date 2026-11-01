@@ -31,6 +31,7 @@
 // Renaming a layer makes it a new sprite with no rig: re-run this after any rename.
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -394,7 +395,7 @@ namespace UnityDev.Rig2D
         // ------------------------------------------------------------------ pose gate
 
         /// <summary>The standard poses (front: rest, arm up, head turn, crouch, all three; side:
-        /// rest and four phases of the run) skinned on the CPU as SpriteSkin does (bone
+        /// rest, four phases of the run, and with a held prop the attack drawn back and at the hit) skinned on the CPU as SpriteSkin does (bone
         /// localToWorld x bind pose), rasterised one cell per document pixel and masked by each
         /// sprite's alpha, so no player loop or GPU is needed. Counts background cells inside the
         /// silhouette: at rest, solid layer pixels no triangle draws; in a pose, cells a 2-cell
@@ -431,14 +432,21 @@ namespace UnityDev.Rig2D
                 {
                     poses.Add(("rest", () => { }));
                     for (int q = 0; q < 4; q++) { float t = q * 0.25f * drv.stride; poses.Add(("run" + q, () => drv.RunSide(t))); }
+                    // a held prop (prop_<name>_X) attacks: the poke drawn back and at the hit
+                    if (layers.Keys.Any(k => k.StartsWith("prop_", StringComparison.OrdinalIgnoreCase)))
+                        foreach (float p in new[] { 0.4f, 0.58f }) poses.Add(("attack" + p.ToString("0.00", CultureInfo.InvariantCulture), () => drv.Attack(p * drv.attackPeriod)));
                 }
                 else
                     poses.AddRange(new (string, Action)[] { ("rest", () => { }), ("armup", drv.PoseArmUp), ("headturn", drv.PoseHeadTurn),
                         ("crouch", drv.PoseCrouch), ("combo", () => { drv.PoseArmUp(); drv.PoseHeadTurn(); drv.PoseCrouch(); }) });
                 foreach (var (name, set) in extra) poses.Add((name, () => set(drv)));
                 var shots = new List<(string name, List<(Vector2 a, Vector2 b, Vector2 c, Vector2 ua, Vector2 ub, Vector2 uc)> tris, List<(string, Vector2)> joints)>();
+                // a joint is a seam only where art hangs on both sides of it: a hidden arm (bones, no
+                // layers) or a prop on the forearm alone has nothing there to part
+                var weighted = new HashSet<Transform>(skins.SelectMany(k => k.boneTransforms ?? new Transform[0]).Where(t => t != null));
                 Transform[] limbJoints = inst.GetComponentsInChildren<Transform>(true)
-                    .Where(t => t.GetComponent<SpriteRenderer>() == null && t.parent != null && LimbJoints.Any(j => t.name.StartsWith(j))).ToArray();
+                    .Where(t => t.GetComponent<SpriteRenderer>() == null && t.parent != null && LimbJoints.Any(j => t.name.StartsWith(j))
+                                && weighted.Contains(t) && weighted.Contains(t.parent)).ToArray();
                 // where the parent puts each joint: a part pulled off its joint leaves this spot bare
                 drv.ResetPose();
                 Vector3[] jointRest = limbJoints.Select(t => t.localPosition).ToArray();

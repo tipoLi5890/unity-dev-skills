@@ -3,10 +3,10 @@
 write the strips, the props and a layered PSD for parallax.
 
   scene_layers.py run  SCENE.png --out DIR [--layers 4] [--max-size 1024] [--prompt TEXT]
-                       [--seed 1] [--names sky,road,skyline,shops,props] [--server URL]
-                       [--scroll sky=0.04,skyline=0.15,shops=0.45,road=1,props=1.35]
+                       [--seed 1] [--names sky,skyline,shops,road,props] [--server URL]
+                       [--scroll sky=0.04,skyline=0.15,shops=0.45,road=1,props=1.35] [--no-ground-cut]
   scene_layers.py gate SCENE.png --layers-dir DIR_WITH_PNGS --out DIR [--names ...] [--scroll ...]
-  scene_layers.py --selftest          offline: ordering, band split, gates, the template
+  scene_layers.py --selftest          offline: ordering, band and ground splits, gates, the template
 
 `run` submits templates/qwen_image_layered_api.json (the official graph: 20 steps, cfg 2.5,
 euler/simple, shift 1; LatentCut drops the composite frame) after an empty queue, downloads the
@@ -18,6 +18,9 @@ depth; it does not split a character into body parts (layer_split.py does that).
   order    the layers as returned, back to front; an empty layer (< 0.5 % opaque) is dropped.
   split    a layer with a full-width transparent band of at least --band rows is cut in two at
            the band (sky above, road below), both at that layer's depth.
+  ground   a strip with a ragged top whose bottom rows are flat (few vertical edges) is cut at
+           the top of that flat band: the shopfronts above, the road below, both at that depth,
+           so each gets its own --scroll (--no-ground-cut keeps it whole).
   names    --names gives the final layers back to front, after the splits; default layer0, ...
   props    the front layer's islands (>= --prop-min px) are also written one by one as
            props/<name>_<i>.png with their box: place them as sprites in the level; never tile
@@ -28,6 +31,7 @@ depth; it does not split a character into body parts (layer_split.py does that).
            9..246; a ghost layer) <= 0.03;
            scene.depth_order: where a back and a front layer both cover a pixel, the source
            matches the front one on >= 0.6 of those pixels, per pair with >= 400 shared px;
+           scene.ground_split: no strip left holding a built band and the ground under it;
            scene.props_whole (props mode): props clear of the left and right edges >= 2, since
            a cut prop is left out of the shuffle and one prop can only repeat. Ask the concept
            for several separate objects inside the frame, and try another --seed when the model
@@ -206,11 +210,66 @@ def band_split(L, band: int):
     return [up, lo]
 
 
+GROUND_MIN = 0.06     # share of the canvas height a ground band must span to be cut off
+
+
+def ground_cut(L, H):
+    """The row where a strip's built part ends and its ground begins, or None. Qwen-Image-Layered
+    can return the shopfronts and the road as one layer; they scroll at different speeds. A
+    façade row is busy (many horizontal colour steps), a road or pavement row is nearly flat. The
+    cut is the top of the flat band that reaches the layer's bottom, taken when that band spans
+    >= GROUND_MIN of the canvas, the layer above it has a ragged top (roofs, a skyline), and the
+    rows above are at least three times as busy."""
+    np = _np()
+    from scipy import ndimage as ndi
+    al = L[..., 3] > 127
+    rows = np.nonzero(al.any(1))[0]
+    if len(rows) < 0.2 * H:
+        return None
+    y0, y1 = int(rows[0]), int(rows[-1])
+    occ = al.mean(1)
+    if occ[y1] < 0.98 or y1 < H - 1 - 0.02 * H:
+        return None                                    # the strip does not run to the bottom
+    # vertical edges that persist over a few rows (windows, doors, posts), not the model's grain;
+    # the median over 16 column blocks, so a prop or two on the road do not make its rows busy
+    sm = np.stack([ndi.uniform_filter(L[..., k], size=(9, 3)) for k in range(3)], -1)
+    gx = np.abs(np.diff(sm, axis=1)).max(-1)
+    both = al[:, 1:] & al[:, :-1]
+    bz = ((gx > 24) & both).astype(np.float32)
+    w = max(bz.shape[1] // 16, 1)
+    busy = np.median(np.stack([bz[:, i * w:(i + 1) * w].mean(1) for i in range(16)], 1), 1)
+    busy = ndi.median_filter(busy, size=9, mode="nearest")
+    full = np.nonzero(occ >= 0.98)[0]
+    if not len(full):
+        return None
+    top = int(full[0])
+    if top - y0 < 0.03 * H:
+        return None                                    # a flat top edge: nothing stands on the ground
+    ref = float(np.percentile(busy[y0:y1 + 1], 75))
+    flat = np.zeros(H, bool)
+    flat[top:y1 + 1] = (busy[top:y1 + 1] < max(0.25 * ref, 0.01)) & (busy[top:y1 + 1] < 0.05)
+    y = y1
+    while y > top and flat[y]:
+        y -= 1
+    y_g = y + 1
+    if y1 + 1 - y_g < GROUND_MIN * H or y_g - y0 < 0.1 * H or ref < 0.05:
+        return None
+    return {"row": int(y_g), "ground_rows": int(y1 + 1 - y_g), "busy_above": round(ref, 3),
+            "busy_ground": round(float(np.median(busy[y_g:y1 + 1])), 3)}
+
+
+def cut_at(L, y):
+    up, lo = L.copy(), L.copy()
+    up[y:, :, 3] = 0
+    lo[:y, :, 3] = 0
+    return [up, lo]
+
+
 def gate(name, value, limit, ok, **extra):
     return {"name": name, "value": value, "limit": limit, "pass": bool(ok), **extra}
 
 
-def analyse(source, layers, names=None, band=16, max_error=8.0, prop_min=400, props=True):
+def analyse(source, layers, names=None, band=16, max_error=8.0, prop_min=400, props=True, ground=True):
     """source: float RGBA/RGB array; layers: back to front float RGBA, same size as each other.
     Returns (named layers, gates, props list)."""
     np = _np()
@@ -226,15 +285,18 @@ def analyse(source, layers, names=None, band=16, max_error=8.0, prop_min=400, pr
             dropped.append(i)
             continue
         kept.append(L)
-    final = []
-    for L in kept:
-        final.extend(band_split(L, band))
-    depth_of = []
-    d = 0
-    for L in kept:
-        n = len(band_split(L, band))
-        depth_of += [d] * n
-        d += 1
+    final, depth_of = [], []
+    last = len(kept) - 1
+    for d, L in enumerate(kept):
+        parts = band_split(L, band)
+        if ground and (d != last or not props):    # the shopfronts off the road: their own speed
+            cut = []
+            for P in parts:
+                g = ground_cut(P, H)
+                cut.extend(cut_at(P, g["row"]) if g else [P])
+            parts = cut
+        final.extend(parts)
+        depth_of += [d] * len(parts)
     if names and len(names) != len(final):
         raise ValueError(f"--names lists {len(names)} layers; the scene has {len(final)} after splits")
     names = names or [f"layer{i}" for i in range(len(final))]
@@ -263,6 +325,10 @@ def analyse(source, layers, names=None, band=16, max_error=8.0, prop_min=400, pr
             worst = min(worst, share)
     gates.append(gate("scene.depth_order", round(worst, 3), 0.6, worst >= 0.6, pairs=pairs))
     gates.append(gate("scene.layers", len(final), 2, len(final) >= 2, dropped_empty=dropped))
+    # one strip holding both the built band and the ground under it scrolls them at one speed
+    mixed = {n: g for k, (n, L) in enumerate(zip(names, final))
+             if not (props and k == len(final) - 1) and (g := ground_cut(L, H))}
+    gates.append(gate("scene.ground_split", len(mixed), 0, not mixed, mixed=mixed))
     prop_list = []
     if props and final:
         from scipy import ndimage as ndi
@@ -372,7 +438,7 @@ def cmd_gate(scene: Path, pngs: list, out: Path, a) -> int:
         return 1
     try:
         named, gates, props, comp = analyse(load_rgba(scene), layers, names, a.band, a.max_error,
-                                            a.prop_min, not a.no_props)
+                                            a.prop_min, not a.no_props, not a.no_ground_cut)
     except ValueError as e:
         print(f"scene_layers.py: {e}", file=sys.stderr)
         return 1
@@ -435,6 +501,19 @@ def selftest() -> int:
             doc["layers"][-1]["tile"] is False and doc["layers"][0]["tile"] is True and rep["schema"] == "gate/1"
         checks["scroll_written"] = doc["layers"][0].get("scroll") == 0.04 and \
             doc["layers"][-1].get("scroll") == 1.35 and "scroll" not in doc["layers"][1]
+    shops = np.zeros_like(src)                                      # shopfronts and the road in ONE layer
+    for x0, x1, top in ((0, 70, 40), (70, 140, 52), (140, 200, 46)):
+        shops[top:96, x0:x1] = (170, 90, 70, 255)
+        shops[top + 4:92, x0:x1][:, (np.arange(x1 - x0) // 4) % 3 == 0] = (40, 60, 90, 255)   # windows
+    shops[96:] = (80, 80, 92, 255)                                  # the road, flat
+    src5 = over([sky, shops, near])
+    named5, gates5, _, _ = analyse(src5, [sky, shops, near], None)
+    g5 = next(x for x in gates5 if x["name"] == "scene.ground_split")
+    cut = [n for n, L, _ in named5 if (L[..., 3] > 127).any()]
+    _, gates6, _, _ = analyse(src5, [sky, shops, near], None, ground=False)
+    checks["ground_cut"] = g5["pass"] and len(named5) == len(named) + 1 and \
+        abs(int(np.nonzero((named5[3][1][..., 3] > 127).any(1))[0][0]) - 96) <= 4 and len(cut) == len(named5)
+    checks["ground_mixed_caught"] = not next(x for x in gates6 if x["name"] == "scene.ground_split")["pass"]
     try:
         parse_scroll("sky")
         checks["scroll_refused"] = False
@@ -478,6 +557,8 @@ def main(argv=None) -> int:
         p.add_argument("--max-error", type=float, default=8.0)
         p.add_argument("--prop-min", type=int, default=400, help="px; smaller islands stay in the strip only")
         p.add_argument("--no-props", action="store_true", help="the front layer is a strip, not props")
+        p.add_argument("--no-ground-cut", action="store_true",
+                       help="keep a strip whole even when it holds a built band and the ground under it")
         p.add_argument("--scroll", help="name=S,... scroll speed per final layer, written to scene.json")
         if name == "run":
             p.add_argument("--layers", type=int, default=4)

@@ -6,7 +6,7 @@
 > markers feed them and how the result reaches the same gates.
 
 Take this route when Auto-Rig Pro is not installed, when its Match or bind fails on the Blender in
-use, or when a marker falls outside its window (a chibi, a large head, short limbs). It builds the
+use, or when a marker falls outside every route's windows (adult, skirt, chibi). It builds the
 contract skeleton directly, so no role map is needed afterwards.
 
 ## Steps

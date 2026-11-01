@@ -122,6 +122,18 @@ and put the same `licence` on the `record`. It refuses `not_bound` when no mesh 
 weight of the rig. The skeleton is the pipeline's, so the contract report and its `retarget_map`
 stay valid; run `contract_map.py` again only if bones changed.
 
+## A hand's weight on the skin beside it: `autorig.py arp`
+
+The voxel bind can leave a hand hanging beside a coat or a thigh holding a little of that skin
+(a thumb tip's weight on a greatcoat's back): curling the fingers then drags the coat, and the fist and elbow poses count those folds as self-intersections, more or fewer with
+where the AI put the thumb. After the pipeline passes, `autorig.py arp` keeps each side's hand
+(`hand.l` and every deform bone under it) on its own skin (`hand_reach`): the distance runs over
+the mesh's edges from the skin within `HAND_CORE` (0.2) × wrist → hand_tip of those bones, and
+a vertex farther than `HAND_REACH` (1.0) × wrist → hand_tip loses the hand's weight, the rest of
+its row rescaled; a piece of the mesh the walk never reaches (a separate cuff) is measured
+straight to the bones. Changed vertices mean one more `export` (gate `arp.hand_reach_export`);
+the arp report's `hand_reach` lists them per side.
+
 ## An elbow or knee that loses volume: gate, repair, re-export, re-gate
 
 `deform_gate.py` reports `deform.volume_loss_max` at `LowerArm.*` (elbow) or `LowerLeg.*` (knee)
@@ -134,9 +146,13 @@ gates; no rung loosens a limit:
    elbow or a knee. Each attempt opens `rig/<Name>_arp.blend`, runs the transfers below for that
    hinge on both sides at amount 1.0, `brt_arp` `export`, saves a copy into `repair/aN/` and gates
    that FBX. Next attempt: a hinge that only now fails is added at the same amount; volume held but
-   `deform.self_intersection_p95` failed → amount 0.9; anything else ends the ladder with exit 2
-   and every attempt listed. The bands come from the markers: the joint's marker height (both sides'
-   mean), and for an elbow a mask from the shoulder marker's |x|, the offsets scaled with the height.
+   `deform.self_intersection_p95` failed → amount 0.8, then 0.6; anything else ends the ladder with
+   exit 2 and every attempt listed. The bands come from the markers, measured along the limb from
+   the plane square to it at the joint (`repair_regions`: its normal the mean of shoulder → elbow and
+   elbow → wrist, or hip → knee and knee → ankle), and for an elbow a mask from the shoulder
+   marker's |x|, the offsets scaled with the height. A band on world Z cuts an arm held at 45° on a
+   slant, one side of a thick sleeve handed over above the crease, and that side folds into the
+   upper arm in `elbow_120`.
    `deform.cross_side_weight` failing (alone or with that volume loss) is a rung too: the report's
    `skin.cross_side` names the other side's bones holding each side's skin, and past its `band_m`
    from the midline (faded in from half of it) each one's weight there goes in full to its mirrored
@@ -158,38 +174,23 @@ is why it is the first rung. The weight repair, step by step:
    the contract report's `retarget_map` (`UpperArm.L` → `arm_stretch.l`, `LowerArm.L` →
    `forearm_stretch.l`). Twist bones are deform on some rigs and not others: list the rig's
    deform bones and keep only those; `brt_weights` refuses a bone that is not deform.
-3. **Probe** the region with the bones before changing anything: Z bands around the joint's marker
-   height (`elbow.L` z from the markers file), and for an elbow `axis: "X"` with
-   `mask: {inner, outer}` just outside the torso's half width, so the torso never changes
-   (`inner` < `outer`: 0 inside `inner`, full past `outer`). A knee needs no X mask.
-4. **One snapshot** covering both bands, then **two transfers per side**: in the band below the
-   joint (forearm or shin side) the upper bone's weight moves to the lower bone; in the band above
-   it, the lower bone's weight moves to the upper bone. Leave a narrow band at the crease itself
-   blended. Four-value bands fade each end.
+3. **Regions** from the markers: `autorig.repair_regions(markers, "elbow")` gives per side the
+   joint, the seam's normal and the radius round the limb's axis, the two bands as distances from
+   the seam, and for an elbow the |x| mask just outside the torso's half width (0 inside `inner`,
+   full past `outer`), so the torso never changes. A knee needs no X mask.
+4. **A snapshot** (`brt_weights` `snapshot`, with the elbow's mask), then **two transfers per side**
+   (`autorig.hinge_transfer` on the mesh's weights): in the band below the seam (forearm or shin
+   side) the upper bones' weight moves to the lower bone; in the band above it, the lower bones'
+   weight moves to the upper bone. A narrow band at the crease itself stays blended; four-value
+   bands fade each end.
 5. **`brt_arp` `export`**, then **`deform_gate.py` again** on the new file. `restore` puts the
    snapshot back if the gate reads worse.
 
-```python
-import brt_weights, brt_arp
-base = {"mesh": "Runner", "armature": "RunnerRig", "axis": "X", "mask": {"inner": 0.22, "outer": 0.25},
-        "backup_path": "rig/runner_elbows.npz"}
-brt_weights.run({**base, "op": "snapshot", "z_band": [0.95, 0.97, 1.22, 1.24]})
-for s in ("l", "r"):
-    brt_weights.run({**base, "op": "transfer", "z_band": [0.98, 1.01, 1.08, 1.095], "amount": 1.0,
-                     "from_bones": [f"arm_stretch.{s}", f"arm_twist.{s}"], "to_bones": [f"forearm_stretch.{s}"]})
-    brt_weights.run({**base, "op": "transfer", "z_band": [1.103, 1.118, 1.19, 1.22], "amount": 1.0,
-                     "from_bones": [f"forearm_stretch.{s}", f"forearm_twist.{s}"],
-                     "to_bones": [f"arm_stretch.{s}"]})
-brt_arp.run({"op": "export", "armature": "RunnerRig", "fbx": "export/Runner.fbx"})
-# then: blender -b -P deform_gate.py -- --fbx export/Runner.fbx --map rig/runner.contract.json ...
-```
-
-The numbers are the runner's (elbow at z 1.10, shoulder marker at |x| 0.205, torso half width
-under 0.22); read your own from the markers and the probe, or from the `regions` that
-`autorig.py` lists for each attempt in its summary. A sharper hand-over keeps more volume but folds more: watch
+`autorig.py`'s `_inside repair` is that recipe (`--hinges elbow --amount 1.0`); its summary lists the
+`regions` of each attempt. A sharper hand-over keeps more volume but folds more: watch
 `deform.self_intersection_p95` in `elbow_120` move the other way, and look at its render. The whole
 amount (1.0) hands each band over completely and leaves the crease band blended; take it down
-toward 0.9 when the intersections climb. When the two gates cannot both pass, go back to the
+toward 0.8 or 0.6 when the intersections climb. When the two gates cannot both pass, go back to the
 marker and the views, not a looser limit.
 
 ## The stages by hand

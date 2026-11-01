@@ -24,6 +24,8 @@ for `deform_gate.py --armature RIG --mesh MESH --map CONTRACT.json`. FAULT is on
   skirt_split (--skirt: the base's arp_markers --body skirt report) the skirt's own skin (arp_markers.skirt_region)
               on Hips and the thigh of its own side, the thigh's share rising to 1 at the hem and switching
               sides at the midline: a skirt torn between the thighs, as a plain bind leaves a long coat
+  mitten_split (a mitten base: autorig's mitten_bind folded it onto Middle) each Middle phalanx's weight given back
+              to the nearest of the four chains' same phalanx: four strips, as a plain bind leaves a mitten
 Bones come from the contract report's retarget_map (an exporter's twist twin, `_stretch` -> `_twist`, counts
 with its bone). The report names the armature and mesh in the saved file.
 
@@ -47,7 +49,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 SCHEMA = "exam/1"
-FAULTS = ("none", "leg_smear", "elbow_blend", "knee_blend", "rigid", "skirt_split")
+FAULTS = ("none", "leg_smear", "elbow_blend", "knee_blend", "rigid", "skirt_split", "mitten_split")
 FINGER_NAMES = ("index", "middle", "ring", "little")
 
 # Body parameters, metres for a 1.7 m adult; `scale` sets the final size. Every body starts from STANDARD.
@@ -57,8 +59,7 @@ STANDARD = dict(scale=1.75 / 1.7, leg=1.0, torso=1.0, girth=1.0, limb=1.0, arm=1
 CAST = {
     "standard":   dict(),
     "chibi":      dict(scale=1.0 / 1.7, leg=0.45, torso=0.75, head=2.1, arm=0.62, limb=1.25, girth=1.15,
-                       neck=0.4, hands="mitten", foot=1.1,
-                       expect_fail=["legs_separated", "arms_separated", "markers.windows"]),
+                       neck=0.4, hands="mitten", foot=1.1, body="chibi"),   # rigged with --body chibi
     "heavy":      dict(girth=1.45, limb=1.35, arm_deg=(50.0, 50.0)),
     "thin":       dict(girth=0.78, limb=0.72, arm_deg=(55.0, 55.0)),
     "long_limbs": dict(leg=1.12, arm=1.15, torso=0.95, arm_deg=(30.0, 30.0)),
@@ -479,6 +480,36 @@ def apply_fault(rig, mesh, rmap: dict, fault: str, skirt=None) -> dict:
         W[sel, cols["UpperLeg.R"]] = np.where(left, 0.0, alpha)
         touched |= sel
         info["skirt_vertices"] = int(sel.sum())
+    elif fault == "mitten_split":
+        first = lambda n: n[0] if isinstance(n, list) else n
+        tails = {b.name: np.array(rig.matrix_world @ b.tail_local) for b in rig.data.bones}
+        info["strips"] = {}
+        for side in ("L", "R"):
+            for i in (1, 2, 3):
+                chain = {f: first(rmap.get(f"{f}{i}.{side}")) for f in ("Index", "Middle", "Ring", "Little")}
+                if chain["Middle"] not in names or not all(b in deform for b in chain.values()):
+                    raise ValueError(f"mitten_split: no Middle{i}.{side} weights or finger bones")
+                for b in chain.values():        # a folded chain's group may not have survived the export
+                    if b not in names:
+                        mesh.vertex_groups.new(name=b)
+                        names.append(b)
+                        W = np.hstack([W, np.zeros((len(W), 1))])
+                cm = names.index(chain["Middle"])
+                sel = W[:, cm] > 1e-6
+                d = []
+                for f, b in chain.items():      # distance to each finger's phalanx segment
+                    a, t = heads[b], tails[b]
+                    ab = t - a
+                    u = np.clip(((V[sel] - a) @ ab) / max(float(ab @ ab), 1e-12), 0, 1)
+                    d.append(np.linalg.norm(V[sel] - (a + u[:, None] * ab), axis=1))
+                pick = np.argmin(np.array(d), axis=0)
+                idx = np.nonzero(sel)[0]
+                w = W[idx, cm].copy()
+                W[idx, cm] = 0.0
+                for k, b in enumerate(chain.values()):
+                    W[idx[pick == k], names.index(b)] += w[pick == k]
+                touched[idx] = True
+                info["strips"][f"{i}.{side}"] = [int((pick == k).sum()) for k in range(4)]
     elif fault != "none":
         raise ValueError(f"unknown fault {fault!r}; known {list(FAULTS)}")
     if touched.any():

@@ -25,7 +25,9 @@ table, and what each route hands Unity: `reference/routes.md`. In short:
   `character-autorig`, clips from `humanoid-motion` or a pack retarget.
 - **A long coat, skirt or robe** over a standard body: the skirt route (`autorig.py all --body
   skirt`), the legs still apart and showing under the hem in S1.
-- **A custom or Q-version body** (short limbs, a large head, ears, a tail, mitten hands):
+- **A chibi** (a big head about a third of the height, short thick limbs, mitten hands): the chibi
+  route (`autorig.py all --body chibi`), arms clear of the big head and legs apart in S1.
+- **A custom body** (ears, a tail, proportions no route's windows fit):
   `character-autorig`'s hand-built route when the body still maps to the contract, else
   `blender-character-rig`'s positional skinning; motion through `humanoid-motion` (two cameras) or keyed.
 - **One clip pack supplies every motion**: the fit route, the pack's skeleton fitted to the mesh.

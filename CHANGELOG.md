@@ -2,6 +2,85 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.42.2
+
+A strengthening round from a third character, a chibi courier mascot (a head a third of its
+height, short thick limbs, mitten gloves, a satchel), from the gatekeeper's runs and from a 2D
+street-guard enemy holding a pole and a shield. A chibi now has its own route through the rig
+instead of the hand-built fallback, a mitten bends as one piece, a hand no longer drags a coat,
+and in 2D a held prop is a layer of its own that rides its hand through a new attack.
+
+- **`character-autorig`: the chibi route (`autorig.py all --body chibi`).** Chosen by a person at
+  G0 (`game-character-pipeline` routes and start gate gain the row); the gates' limits are the
+  same, the bands and windows follow the body type, and an adult body on this route fails them.
+  - **`mesh_check.py --body chibi`.** The crotch is searched from 0.10 H, `legs_separated` reads
+    0.06 H up to under it and `arms_separated` 0.35–0.65 H. Fused legs still fail.
+  - **`arp_markers.py --body chibi`.** Its own windows (shoulder 0.45–0.72 H, neck 0.50–0.78 H, …)
+    and arm ratios; the hip is the crotch plus the leg's half-width, the shoulder sits at the
+    torso's edge, the ankle where a big shoe starts, and the neck and head base split the short
+    neck in thirds.
+  - **`deform_gate.py --body chibi`.** `arms_up` stops 45° from vertical and `elbow_120` bends
+    90°: past that the mittens enter the head and a thick forearm meets the upper arm.
+  - **Short thick hinges.** An elbow or knee whose patch holds fewer than 8 triangles reaches 1.25 ×
+    the nearest skin, but only when that skin sits around the joint (an opening at the joint
+    stays unmeasured); one whose patch does not wrap (a shorts hem's lining) keeps the limb's own
+    skin within 1.3 × its radius.
+- **Mittens.** Fingers count only where the hand's surface cuts into four loops (`hand_loops`),
+  so a mitten no longer reads as four fingers. `mitten_bind` (contract stage) folds Index, Ring
+  and Little onto Middle; a new `mitten` pose (Middle 40°, the thumb 20°) replaces `fist` and adds
+  `deform.mitten_tear`. `smart.fingers` failing alone on a hand the markers read as `fixed` (the
+  AI and the slices agree on a mitten) adds no exit 2 to `all`.
+- **`hand_reach`** (arp stage): a hand's or finger's weight farther than 1.0 × the hand's length
+  over the skin is removed, and the FBX exported again (`arp.hand_reach_export`): a thumb tip held
+  the gatekeeper's coat back 0.4 m away, so a fist dragged the coat.
+- **The elbow and knee repair** measures its bands along the limb, from the plane square to it at
+  the joint (a world-Z band cut a sloping arm on a slant); the amounts go 1.0 → 0.8 → 0.6.
+- **`markers.limb_ratio`**: a thigh shorter than 0.85 × the shin fails (a hip read low at a heavy
+  body's crotch); the arm and the upper bound stay 0.5–2.0.
+- **`secondary_chains.py`.** The hem's sectors and each leg's shorts chains share one ring's
+  skin, so no sector is dropped and the regions mirror.
+- **Rig exam.** The `chibi` body is rigged on its route; a new planted fault, `mitten_split` (the
+  mitten back on four strips), is expected at `deform.mitten_tear`; `faults` re-measures a base's
+  markers on its own body route and gates it with the base's poses.
+- **`layer_split.py`: held props.** `fills --props "pole=…;shield=…"` (one `noprop_<name>` and one
+  `prop_<name>` fill per prop, a thin prop painted out along its track when the edit re-poses the
+  arm) makes each prop the layer `prop_<name>_<side>`, bound to a hand (`name@near|far|R|L` to
+  choose) and stacked where it recomposites best; `--only` redoes single fills, `split --far-arm
+  hidden` gives a shielded far arm bones but no layers. New gates `split.prop_layer`,
+  `split.sleeve_own` (an armband is kept, not painted out) and `split.head_pivot` (the head pivots
+  at the bottom of the neck skin and carries its chin). An arm held out level is cut too.
+- **`scene_layers.py`: `scene.ground_split`.** Shopfronts and road returned as one layer are cut
+  at the top of the flat ground band (`--no-ground-cut` keeps them whole).
+- **`unity-2d-animation`.** `RigDriver2D` gains `Motion.Attack` (a poke: drawn back, thrust,
+  hold, recover, the wrist turned so the prop keeps its angle); `Rig2DLayout` binds a
+  `prop_<name>_X` layer to `wrist_X`; `AutoRig2D`'s pose gate adds the attack's draw-back and hit
+  when a prop layer exists and checks only joints with art on both sides. A new EditMode test.
+- **`codex-visual` → `layered-2d-source.md`.** How to draw a held prop (out in front at chest
+  height; a prop held at the hip pulls the arm onto the body) and the street-guard brief.
+- **On the mascot.** The default rules refuse it (legs 0.81, arms 0.01; hip, shoulder and neck
+  outside their windows); on the chibi route every stage passes. Deform before the chibi poses
+  and hinge readings: `arms_up` 0.189, `elbow_120` 0.140, the knee unmeasured; after: volume loss
+  0.049, self-intersection p95 0.043, the knee read. `mitten_tear` 0.0024 on the plain bind → 0
+  (worst edge 4–5 × → under 1.9 ×). `autorig.py all` exits 0 (was 2 on `smart.fingers`).
+- **On the gatekeeper.** `hand_reach` cleans 1,600–2,300 vertices a run; on one rig `fist` 0.111
+  → 0.059 and p95 0.098 → 0.068. Four runs: three pass (repair at 0.8, p95 0.075), one exhausts
+  the ladder (p95 0.082) where the AI's finger placement curls the fingertips into the palm; on
+  0.42.1 the run stopped at deform.
+- **On the street guard.** The 0.42.1 split failed it (recomposite IoU 0.773); all 13 gates now
+  pass (IoU 0.998), the props left drawn in the body (shield 0.999, pole 0.729) → 0.001, and in Unity 16/16 layers rig
+  with every pose inside its hole limit.
+- **On the courier runner.** `fine` and the ship track exit 0 with the same chains (ship p95
+  0.036 → 0.030, 198 vertices cleaned by `hand_reach`); the head pivot goes from the chin to the
+  neck (0.11 / 0.28 → 1.43 / 1.24 eye-to-mouth distances under the mouth); EditMode 12/12.
+- **Rig exam** against 0.42.1: `chibi` expected fail → true pass (worst joint 0.30 H → 0.016 H),
+  `heavy` false pass → true fail (`markers.limb_ratio`, its thigh 0.79 × the shin), joints p95
+  0.065 → 0.037; the other bodies read as before. All 38 planted faults are caught (16 on the new
+  chibi and mitten bases) and the five controls pass.
+- **Still open.** One gatekeeper run in four fails `fist` after the repair; the heavy body's hip
+  and shoulder are still placed wrong (now caught); a hip satchel is not found by the bag
+  detector and a cap's crown can read as hair (a marker file covers both); in 2D the shield's
+  part hidden under the near arm is missing, so a thin gap shows in the attack.
+
 ## 0.42.1
 
 A strengthening round, from an end-to-end run on a second character (a gatekeeper in a

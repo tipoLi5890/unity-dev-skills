@@ -14,7 +14,7 @@ usage (host Python, numpy only; no pictures):
     python3 arp_markers.py runner.glb [--up y|z] --out markers.json
 options: [--spine-bones 3] [--fingers auto|fixed] [--adjust ADJUST.json] [--arm-angle 30,60]
          [--arm-ratios 0.42,0.75] [--no-window-gate] [--symmetry-max 0.02] [--mitten]
-         [--smart NAME.smart.json] [--smart-tol 0.03] [--body human|skirt]
+         [--smart NAME.smart.json] [--smart-tol 0.03] [--body human|skirt|chibi]
 self-tests:
     python3 arp_markers.py --selftest                       (tube body, numpy only)
     blender -b --factory-startup -P arp_markers.py -- --selftest   (metaball runner, pictures)
@@ -58,6 +58,16 @@ SKIRT_FROM under it on the cut's own loops (skirt_legs); a crotch inside the ski
 above, a hidden one places it at HIP_KNEE x the knee's height (skirt_hip); a knee cue at the hem's lip
 or outside SKIRT_KNEE_BAND is refused. The report adds body and `skirt` (skirt_block), which
 skirt_region turns into the skirt's own skin for the bind, deform_gate and secondary_chains.
+--body chibi (a big head, a third of H or more, on short limbs; chosen at G0): its own windows
+(CHIBI_WINDOWS) and these rules, the gates' limits unchanged. The crotch is searched from 0.10 H; the hip
+is the crotch + the leg's half-width just under it (thick thighs meet a thigh's radius below the hip
+joints); the ankle is the highest cut under the shin's narrowest whose depth reaches CHIBI_FOOT_DEPTH x
+the shin's (where a big shoe starts); the arm is followed down to 0.2 H and its shoulder sits where its axis crosses the torso's edge at the
+armpit (a thick arm joins there, not half its radius outside), the wrist is a narrowing within
+CHIBI_WRIST_BAND of shoulder -> hand_tip, else CHIBI_ARM_RATIOS (0.36, 0.66: a mitten a third of the arm);
+the neck is the narrowest central cut from the shoulder up to CHIBI_NECK_REACH x H, and the shoulder ->
+neck gap is split in thirds: neck_base at one third, head_base at two. The spine keeps the contract's
+three bones, split evenly over the short torso.
 `--adjust` {marker: [x, y, z]} replaces measured markers after measuring (a person moved them); the
 proportion spine points follow an adjusted pelvis or neck_base (each by its share of both ends' moves).
 An adjusted side marker (a .L or .R name) leaves the symmetry gate: a person placed it and its
@@ -122,9 +132,11 @@ Gates (each failing one makes exit 2):
                       over the markers not adjusted (see --adjust).
   markers.arm_angle   the upper arm (shoulder -> elbow) below horizontal, inside --arm-angle
                       (30-60 degrees: the contract's A-pose).
-  markers.limb_ratio  per side, shoulder -> elbow over elbow -> wrist and hip -> knee over knee -> ankle
-                      inside 0.5-2.0: one segment twice the other is a joint off its place (an elbow
-                      moved toward the wrist), not a style. Adjusted markers are gated too.
+  markers.limb_ratio  per side, shoulder -> elbow over elbow -> wrist inside 0.5-2.0 and hip -> knee over
+                      knee -> ankle inside THIGH_MIN (0.85)-2.0: one segment twice the other is a joint off
+                      its place (an elbow moved toward the wrist), not a style; a thigh shorter than 0.85 x
+                      the shin is a hip read low at a heavy body's crotch (thick thighs meet below the hip
+                      joints): move it with --adjust. Adjusted markers are gated too.
   markers.finger_lengths  the shortest finger phalanx (joint to joint, every finger with landmarks)
                       >= 0.01 x wrist -> hand_tip: a chain collapsed onto its base bends nothing.
   markers.previews    (Blender, with --preview-dir) both pictures are on disk.
@@ -168,8 +180,18 @@ HAND_REF = 0.37          # Auto-Rig Pro's hand reference bone, wrist toward the 
 WINDOWS = {"ankle": (0.02, 0.13), "knee": (0.22, 0.36), "hip": (0.42, 0.60),
            "shoulder": (0.72, 0.88), "neck": (0.78, 0.93)}
 LIMB_RATIO = (0.5, 2.0)    # upper over lower segment of each arm and leg: neither twice the other
+THIGH_MIN = 0.85           # hip -> knee over knee -> ankle: adult thighs about the shin's length (0.245 / 0.246 H);
+                           # under this the hip sits low (thick thighs meet below the hip joints)
 PHALANX_MIN = 0.01         # x wrist -> hand_tip: the shortest finger phalanx
 SIDED = ("shoulder", "elbow", "wrist", "hand_tip", "hip", "knee", "ankle", "ball", "toe_tip", "heel")
+# --body chibi: a body 2-4.5 heads tall (the head 0.22-0.50 of H), chosen at G0, never to rescue a failed window
+CHIBI_WINDOWS = {"ankle": (0.02, 0.16), "knee": (0.10, 0.30), "hip": (0.22, 0.42),
+                 "shoulder": (0.45, 0.72), "neck": (0.50, 0.78)}
+CHIBI_ARM_RATIOS = (0.36, 0.66)   # elbow, wrist of shoulder -> hand_tip: a mitten is a third of a short arm
+CHIBI_WRIST_BAND = (0.52, 0.80)   # of shoulder -> hand_tip: a narrowing here is the wrist
+CHIBI_NECK_REACH = 0.15           # x H above the shoulder: the neck's narrowest cut lies under the head
+CHIBI_FOOT_DEPTH = 1.3            # the ankle: where the leg's depth reaches this x the shin's (a big shoe)
+CHIBI_ARM_FROM = 0.2              # x H: short arms are followed down to here
 
 
 class Refused(Exception):
@@ -214,6 +236,20 @@ def leg_rows(prof, s, crotch_h):
     mid = prof["midline_x"]
     rows = [(c, _leg_part(c, mid, s)) for c in prof["cuts"] if 0.02 <= c["h"] < crotch_h - 0.005]
     return [(c, p) for c, p in rows if p is not None]
+
+
+def chibi_ankle(prof, crotch_h) -> float:
+    """--body chibi: the highest cut under the shin's narrowest (both legs' least area in 0.03-0.20 H) whose
+    depth, both legs averaged, reaches CHIBI_FOOT_DEPTH x the depth there: where a big shoe starts."""
+    rows = {s: {c["h"]: p for c, p in leg_rows(prof, s, crotch_h)} for s in (1, -1)}
+    hs = sorted(set(rows[1]) & set(rows[-1]))
+    if len(hs) < 6:
+        raise Refused("no leg parts below the crotch to measure (run mesh_check first)")
+    band = [h for h in hs if 0.03 <= h <= 0.20] or hs
+    shin = min(band, key=lambda h: rows[1][h]["area"] + rows[-1][h]["area"])
+    depth = lambda h: (float(np.ptp(rows[1][h]["y"])) + float(np.ptp(rows[-1][h]["y"]))) / 2
+    under = [h for h in hs if h < shin and depth(h) >= CHIBI_FOOT_DEPTH * depth(shin)]
+    return max(under) if under else shin
 
 
 def ankle_height(prof, crotch_h) -> float:
@@ -625,7 +661,7 @@ def skirt_region(V, skirt, margin=0.006):
     return band & ~leg
 
 
-def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None):
+def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None, chibi=False):
     """One side's markers (s = +1 left, -1 right) with their methods."""
     H, mid, z0 = prof["height"], prof["midline_x"], float(V[:, 2].min())
     cuts = prof["cuts"]
@@ -638,7 +674,8 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         # hip: X and Y of the leg just below the crotch
         below = [lp for lp in legs if lp[0]["h"] <= crotch_h - 0.02] or legs
         c, p = below[-1]
-        hip_h = crotch_h + 0.02
+        # a chibi's thick thighs meet a thigh's radius under the hip joints: the leg's half-width there
+        hip_h = crotch_h + (0.5 * float(np.ptp(p["x"])) / H if chibi else 0.02)
         out["hip"], how["hip"] = np.array([p["cx"], p["cy"], z0 + hip_h * H]), "measured"
         kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"])
     else:
@@ -680,7 +717,7 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
     # a cap or a shoulder pad above the armpit makes a short run of its own)
     runs, track, armpit = [], [], None
     for c in reversed(cuts):
-        if c["h"] < 0.3 or c["h"] > 0.95:
+        if c["h"] < (CHIBI_ARM_FROM if chibi else 0.3) or c["h"] > 0.95:
             continue
         torso = _central(c, mid)
         outside = []
@@ -726,7 +763,8 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         raise Refused("no arm vertices along the arm axis")
     r_arm = float(np.median(perp[arm & (np.abs(along) < 0.1 * H)])) if (arm & (np.abs(along) < 0.1 * H)).any() \
         else 0.025 * H
-    t = (edge + s * 0.5 * r_arm - centre[0]) / d[0]
+    # the joint half an arm radius outside the torso's edge; a chibi's thick arm joins at the edge itself
+    t = (edge + s * (0.0 if chibi else 0.5) * r_arm - centre[0]) / d[0]
     shoulder = centre + t * d
     out["shoulder"], how["shoulder"] = shoulder, "measured"
     rel = V - shoulder
@@ -736,7 +774,7 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
     tip_t = float(along[arm].max())
     out["hand_tip"], how["hand_tip"] = shoulder + tip_t * d, "measured"   # on the axis, as far as the arm goes
     w_r = arm_ratios[1]
-    stations = np.linspace(0.66, 0.84, 10)
+    stations = np.linspace(*(CHIBI_WRIST_BAND if chibi else (0.66, 0.84)), 10)
     radius = []
     for f in stations:
         sel = arm & (np.abs(along - f * tip_t) < 0.01 * H)
@@ -828,19 +866,47 @@ def detect_fingers(points, wrist, frame):
     return found, None
 
 
+HAND_LOOP_STATIONS = np.round(np.arange(0.40, 1.01, 0.02), 3)   # of wrist -> hand_tip
+HAND_LOOP_MIN = 0.05     # x the hand's length: a loop shorter than this round is a sliver, not a finger
+
+
+def hand_loops(V, F, wrist, frame, stations=HAND_LOOP_STATIONS) -> list:
+    """Per station (a fraction of the hand's length), how many closed loops the mesh cuts across the hand:
+    the surface itself, not samples of it, so a mitten's sample gaps cannot read as fingers."""
+    x, y, z, L = frame
+    R = np.array([y, z, x])
+    Vh = (V - wrist) @ R.T
+    near = (Vh[:, 2] > -0.1 * L) & (Vh[:, 2] < 1.1 * L) & (np.hypot(Vh[:, 0], Vh[:, 1]) < 0.6 * L)
+    keep = near[F].all(axis=1)
+    _, weld = np.unique(np.round(V / (1e-6 * L)), axis=0, return_inverse=True)
+    weld = weld.reshape(-1)
+    f, fw = F[keep], weld[F[keep]]
+    n = len(V)
+    a, b = fw[:, [0, 1, 2]], fw[:, [1, 2, 0]]
+    tri = (Vh[f], np.minimum(a, b) * n + np.maximum(a, b))
+    out = []
+    for u in stations:
+        loops = _loops(tri, u * L)
+        out.append(sum(1 for P in loops if len(P) >= 3 and
+                       float(np.linalg.norm(np.diff(P, axis=0), axis=1).sum()) >= HAND_LOOP_MIN * L))
+    return out
+
+
 def measure(V, F, opts) -> dict:
     """Every marker of the body, both sides measured, compared and mirrored."""
     prof = M.profile(V, F, step=0.01, cell=0.008)
     H, mid, z0 = prof["height"], prof["midline_x"], float(V[:, 2].min())
     notes = []
-    crotch_h = M.crotch(prof)
+    chibi = opts.get("body") == "chibi"
+    crotch_h = M.crotch(prof, M.CHIBI_CROTCH_FROM) if chibi else M.crotch(prof)
     if crotch_h is None:
         raise Refused("no crotch: the legs never part (run mesh_check)")
     skirt = skirt_legs(V, F, prof, crotch_h, notes) if opts.get("body") == "skirt" else None
     sides = {}
-    ankle_h = ankle_height(prof, crotch_h)
+    ankle_h = chibi_ankle(prof, crotch_h) if chibi else ankle_height(prof, crotch_h)
+    ratios = opts.get("arm_ratios") or (CHIBI_ARM_RATIOS if chibi else (0.42, 0.75))
     for s in (1, -1):
-        sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, opts["arm_ratios"], notes, skirt=skirt)
+        sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, ratios, notes, skirt=skirt, chibi=chibi)
     lm, how, asym = {}, {}, {}
     for name in SIDED:
         pl, pr = sides[1][0][name], sides[-1][0][name]
@@ -864,7 +930,8 @@ def measure(V, F, opts) -> dict:
     lm["pelvis"] = np.array([mid, mid_depth(hip[2]), hip[2]])
     shoulder_z = float(lm["shoulder.L"][2])
     top_z = float(V[:, 2].max())
-    rows = [c for c in prof["cuts"] if shoulder_z - z0 <= (c["h"] * H) <= 0.95 * H and _central(c, mid)]
+    reach = (shoulder_z - z0 + CHIBI_NECK_REACH * H) if chibi else 0.95 * H
+    rows = [c for c in prof["cuts"] if shoulder_z - z0 <= (c["h"] * H) <= reach and _central(c, mid)]
     if not rows:
         raise Refused("no central part above the shoulders")
     widths = [np.ptp(_central(c, mid)["x"]) for c in rows]
@@ -884,10 +951,12 @@ def measure(V, F, opts) -> dict:
             how["chin"] = "measured"
     neck_z = float(lm["neck"][2])
     base_z = neck_z + (0.35 * (chin_z - neck_z) if chin_z and chin_z > neck_z else 0.02 * H)
+    if chibi:   # the head sits on the shoulders: the gap up to the neck's narrowest split in thirds
+        base_z = shoulder_z + (2 / 3) * (neck_z - shoulder_z)
     lm["head_base"] = np.array([mid, mid_depth(base_z), base_z])
     top_part = central_at(top_z - 0.06 * H)
     lm["head_top"] = np.array([mid, (top_part["y"][0] + top_part["y"][1]) / 2 if top_part else lm["neck"][1], top_z])
-    nb_z = max(shoulder_z, neck_z - 0.03 * H)
+    nb_z = shoulder_z + (neck_z - shoulder_z) / 3 if chibi else max(shoulder_z, neck_z - 0.03 * H)
     lm["neck_base"] = np.array([mid, mid_depth(nb_z), nb_z])
     for name in ("pelvis", "head_base", "head_top", "neck_base"):
         how[name] = "measured"
@@ -911,6 +980,12 @@ def measure(V, F, opts) -> dict:
         if near.sum() >= 20:
             pts, _ = M.surface_samples(V, F[near], 4000)
             detected, reason = detect_fingers(pts, lm["wrist.L"], frames[".L"])
+            if detected:    # the samples' four lanes must be four loops of the surface too (else a mitten)
+                counts = hand_loops(V, F, lm["wrist.L"], frames[".L"])
+                if sum(c >= 4 for c in counts) < 2:
+                    detected = None
+                    reason = (f"the samples part into four lanes but the surface never cuts into four loops "
+                              f"(at most {max(counts, default=0)}): a mitten, or fingers held together")
         else:
             reason = "too few hand triangles"
         if detected:
@@ -1245,7 +1320,8 @@ def merge_smart(V, m: dict, smart: dict, opts: dict, adjusted: set) -> tuple[dic
     elif g.get("smart.fingers") is not True or smart["count"] < 1:
         record["notes"].append("smart.fingers did not pass: the fixed hand stays")
     else:
-        got, why = _merge_fingers(V, m, smart, adjusted, opts.get("arm_ratios") or (0.42, 0.75))
+        got, why = _merge_fingers(V, m, smart, adjusted, opts.get("arm_ratios") or (
+            CHIBI_ARM_RATIOS if opts.get("body") == "chibi" else (0.42, 0.75)))
         if why:
             record["notes"].append(why + ": the fixed hand stays")
         else:
@@ -1304,7 +1380,8 @@ def build_report(V, F, opts) -> dict:
     rolls = {name: round(float(ref["roll"]), 5) for name, ref in sorted(taken.items())}
     spec = contract_bones(m, opts["spine_bones"], samples, mitten=opts.get("mitten", False))
     out_window, ai_window, outside_by = {}, {}, {}
-    for name, (lo, hi) in WINDOWS.items():
+    wins = CHIBI_WINDOWS if opts.get("body") == "chibi" else WINDOWS
+    for name, (lo, hi) in wins.items():
         h = (float(lm[name + ".L"][2] if name + ".L" in lm else lm[name][2]) - z0) / H
         if not lo <= h <= hi:
             out_window[name] = round(h, 3)
@@ -1314,13 +1391,13 @@ def build_report(V, F, opts) -> dict:
                 ai_window[name] = round(float(twin[2] - z0) / H, 3)
     # the AI confirms a near miss only: each landmark out by at most --smart-tol, its AI twin inside
     near = opts.get("smart_tol", 0.03)
-    confirmed = bool(out_window) and all(n in ai_window and WINDOWS[n][0] <= ai_window[n] <= WINDOWS[n][1]
+    confirmed = bool(out_window) and all(n in ai_window and wins[n][0] <= ai_window[n] <= wins[n][1]
                                          and outside_by[n] <= near for n in out_window)
     adjusted = {n[:-2] for n in (opts.get("adjust") or {}) if n.endswith((".L", ".R"))}
     accepted = {k: v for k, v in m["asymmetry"].items() if k in adjusted}
     asym = max((v for k, v in m["asymmetry"].items() if k not in adjusted), default=0.0)
     a_lo, a_hi = opts["arm_angle"]
-    windows = gate("markers.windows", out_window, {k: list(v) for k, v in WINDOWS.items()},
+    windows = gate("markers.windows", out_window, {k: list(v) for k, v in wins.items()},
                    not out_window or opts["no_window_gate"] or confirmed)
     if ai_window:
         windows.update(ai=ai_window, outside_by=outside_by, near_miss_max=near)
@@ -1333,8 +1410,9 @@ def build_report(V, F, opts) -> dict:
                   asym <= opts["symmetry_max"] * H),
              gate("markers.arm_angle", round(arm_angle, 2), [a_lo, a_hi], a_lo <= arm_angle <= a_hi)]
     ratios, phalanx = proportions(lm)
-    gates += [gate("markers.limb_ratio", ratios, list(LIMB_RATIO),
-                   all(LIMB_RATIO[0] <= v <= LIMB_RATIO[1] for v in ratios.values())),
+    lim = {"arm": list(LIMB_RATIO), "leg": [THIGH_MIN, LIMB_RATIO[1]]}
+    gates += [gate("markers.limb_ratio", ratios, lim,
+                   all(lim[k.split(".")[0]][0] <= v <= lim[k.split(".")[0]][1] for k, v in ratios.items())),
               gate("markers.finger_lengths", phalanx, PHALANX_MIN, phalanx is None or phalanx >= PHALANX_MIN)]
 
     def r(p):
@@ -1393,12 +1471,14 @@ def parser():
     p.add_argument("--fingers", choices=("auto", "fixed"), default="auto")
     p.add_argument("--adjust", help="JSON {marker: [x, y, z]} applied after measuring")
     p.add_argument("--arm-angle", type=_pair, default=(30.0, 60.0))
-    p.add_argument("--arm-ratios", type=_pair, default=(0.42, 0.75))
+    p.add_argument("--arm-ratios", type=_pair, default=None, help="elbow, wrist of shoulder -> hand_tip "
+                   "(default 0.42,0.75; 0.36,0.66 with --body chibi)")
     p.add_argument("--symmetry-max", type=float, default=0.02)
     p.add_argument("--no-window-gate", action="store_true")
     p.add_argument("--mitten", action="store_true", help="contract_bones: finger bones do not deform")
-    p.add_argument("--body", choices=("human", "skirt"), default="human",
-                   help="skirt: a long coat, skirt or robe; the legs are followed up under and inside it")
+    p.add_argument("--body", choices=("human", "skirt", "chibi"), default="human",
+                   help="skirt: a long coat, skirt or robe; the legs are followed up under and inside it. "
+                        "chibi: a big head on short limbs, with its own windows (CHIBI_WINDOWS)")
     p.add_argument("--smart", help="an arp_smart.py result (autorig-smart/1) to check and complete the markers")
     p.add_argument("--smart-tol", type=float, default=0.03, help="x H: smart_agreement's agrees, and how far out of its window the AI may confirm a landmark")
     p.add_argument("--selftest", action="store_true")
@@ -1742,6 +1822,36 @@ def selftest_skirt(ok, opts) -> None:
     ok("open skirt: the legs are followed up inside it, past the hem", top > rep2["skirt"]["hem_z"] + 0.05 * H)
 
 
+def selftest_chibi(ok, opts) -> None:
+    """The chibi tube body (mesh_check.chibi_body): the adult windows refuse it, its own route reads it; an adult
+    body on the chibi route fails the chibi windows (the route is a body type, not a looser gate)."""
+    cv, cf = M.chibi_body()
+    plain = build_report(cv, cf, opts)
+    ok("chibi, default body: markers.windows fails", not next(g for g in plain["gates"] if g["name"] == "markers.windows")["pass"])
+    rep = build_report(cv, cf, dict(opts, body="chibi", arm_ratios=None))
+    lm, H = rep["landmarks"], rep["height"]
+    h = lambda k: (lm[k][2] - rep["ground_z"]) / H
+    ok("chibi route: every gate passes, body chibi, the chibi windows reported", rep["pass"] and rep["body"] == "chibi"
+       and next(g for g in rep["gates"] if g["name"] == "markers.windows")["limit"]["neck"] == list(CHIBI_WINDOWS["neck"]))
+    ok("chibi route: the hip a leg's radius over the crotch (legs end at 0.27 + r 0.05), the neck under the head, "
+       "neck_base and head_base a third and two thirds of the way from the shoulder",
+       abs(lm["hip.L"][2] - 0.31) < 0.03 and h("neck") < 0.80 and abs(lm["neck_base"][2] - (lm["shoulder.L"][2] +
+       (lm["neck"][2] - lm["shoulder.L"][2]) / 3)) < 1e-4 and lm["neck_base"][2] < lm["head_base"][2] < lm["neck"][2])
+    av, af = M.body()
+    adult = build_report(av, af, dict(opts, body="chibi", arm_ratios=None))
+    ok("adult body on the chibi route: the chibi windows fail it",
+       not next(g for g in adult["gates"] if g["name"] == "markers.windows")["pass"])
+    # hand_loops: four finger tubes cut into four loops, a mitten into one
+    L = 0.18
+    frame = (np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0]), L)
+    fingers = M.assemble([M.tube((0.0, 0, 0), (0.09, 0, 0), 0.02, rx=0.02, ry=0.045)] +
+                         [M.tube((0.07, y, 0), (L, y, 0), 0.008) for y in (-0.03, -0.01, 0.01, 0.03)])
+    mitten = M.assemble([M.tube((0.0, 0, 0), (L, 0, 0), 0.02, rx=0.02, ry=0.045)])
+    fl, ml = hand_loops(*fingers, np.zeros(3), frame), hand_loops(*mitten, np.zeros(3), frame)
+    ok("hand_loops: four apart fingers cut into four loops (five over the palm's end), a mitten into one",
+       min(fl[-10:]) == 4 and max(ml) == 1)
+
+
 def selftest_host() -> tuple[int, list, int]:
     checks, failed = 0, []
 
@@ -1788,6 +1898,11 @@ def selftest_host() -> tuple[int, list, int]:
     shift = {"elbow.L": (el + (wr - el) / np.linalg.norm(wr - el) * 0.05 * H).tolist()}
     ok("an elbow 0.05 H toward the wrist (adjusted, mirrored) fails markers.limb_ratio",
        not gate_of(build_report(v, f, dict(opts, adjust=shift)), "markers.limb_ratio")["pass"])
+    hp, kn, an = np.array(lm["hip.L"]), np.array(lm["knee.L"]), np.array(lm["ankle.L"])
+    low = (kn + (hp - kn) * 0.8 * np.linalg.norm(an - kn) / np.linalg.norm(hp - kn)).tolist()
+    ratio_low = build_report(v, f, dict(opts, adjust={"hip.L": low}))
+    ok("a hip read low (the thigh 0.8 x the shin, a heavy body's crotch) fails markers.limb_ratio",
+       not gate_of(ratio_low, "markers.limb_ratio")["pass"] and ratio_low["gates"] is not rep["gates"])
     i0, i1 = np.array(lm["index0.L"]), np.array(lm["index1.L"])
     step = (i1 - i0) / np.linalg.norm(i1 - i0) * 0.0005
     collapse = {f"index{i}.L": (i0 + step * i).tolist() for i in (1, 2, 3)}
@@ -1867,6 +1982,7 @@ def selftest_host() -> tuple[int, list, int]:
     selftest_smart(ok, v, f, opts, rep)
     selftest_knee(ok, opts)
     selftest_skirt(ok, opts)
+    selftest_chibi(ok, opts)
     # files through the CLI
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "body.obj"

@@ -93,6 +93,36 @@ read it. On a knee-length greatcoat the legs show inside the coat and the crotch
 (0.465 H, hip 0.485 H); the knee's narrowing at the hem lip and the boot top's are both refused, so
 the knee is a proportion. Check the pictures: a person may still `--adjust` a knee to the crease.
 
+## The chibi route (`--body chibi`)
+
+A big head (a third of H or more) on a short body with short, thick limbs and mitten hands is a body
+type a person picks at G0, like the skirt: `autorig.py all --body chibi` passes it to `mesh_check`,
+`arp_markers` and `deform_gate`. The default windows refuse such a body (its shoulder sits near
+0.6 H); the chibi route has its own windows and placement rules, and every gate keeps its limit.
+
+| Marker | Rule on the chibi route |
+|---|---|
+| crotch | as above, searched from 0.10 H up (short legs part low) |
+| hip | the crotch + the leg's half-width just under it: thick thighs meet a thigh's radius below the hip joints |
+| ankle | the highest cut under the shin's narrowest whose depth reaches 1.3 x the shin's: where a big shoe starts |
+| knee | as above (cue, else 52 % of ankle → hip) |
+| shoulder | where the arm's axis crosses the torso's edge at the armpit (a thick arm joins there, not half its radius outside); the arm is followed down to 0.2 H |
+| wrist, elbow | a narrowing within 0.52–0.80 of shoulder → hand_tip, else 0.66; the elbow at 0.36 / 0.66 of shoulder → wrist (a mitten is a third of a short arm) |
+| neck | the narrowest central cut from the shoulder up to 0.15 H above it (under the head, never inside it) |
+| neck_base, head_base | a third and two thirds of the way from the shoulder to the neck's narrowest: the head sits on the shoulders |
+| spine | the contract's three bones, split evenly over the short torso |
+
+| Marker | Chibi window (fraction of H) |
+|---|---|
+| ankle | 0.02–0.16 |
+| knee | 0.10–0.30 |
+| hip | 0.22–0.42 |
+| shoulder | 0.45–0.72 |
+| neck | 0.50–0.78 (the head 0.22–0.50 of H: 2 to 4.5 heads tall) |
+
+An adult body on the chibi route fails these windows, and a chibi fails the adult ones: pick the
+route from the concept at G0, never to rescue a failed window.
+
 **Both sides are measured apart.** Each sided marker is found on +X and on −X, the right one
 mirrored and compared (`asymmetry_m`), and the two averaged into one mirrored pair. Gate
 `markers.symmetry`: the largest difference ≤ 0.02 H (3.4 cm on a 1.7 m body), over the markers no
@@ -117,9 +147,12 @@ gating, for a known-odd body a person has looked at.
 30–60° by default (`--arm-angle`), the contract's A-pose. A T-pose never gets this far: no arm part
 hangs clear of the torso, and the call refuses (exit 1).
 
-**Segments.** `markers.limb_ratio`: per side, shoulder → elbow over elbow → wrist and hip → knee over
-knee → ankle, each inside 0.5–2.0. One segment twice the other is a joint off its place (an elbow
-moved toward the wrist), not a style. `markers.finger_lengths`: the shortest
+**Segments.** `markers.limb_ratio`: per side, shoulder → elbow over elbow → wrist inside 0.5–2.0,
+hip → knee over knee → ankle inside 0.85–2.0. One segment twice the other is a joint off its place
+(an elbow moved toward the wrist), not a style. An adult's thigh is about the shin's length (hip
+joint to knee 0.245 H, knee to ankle 0.246 H); a thigh under 0.85 of the shin is a hip read low at
+a heavy body's crotch, where thick thighs meet a thigh's radius below the hip joints (the rig
+exam's `heavy`): place the hip with `--adjust`. `markers.finger_lengths`: the shortest
 finger phalanx, joint to joint, ≥ 0.01 × wrist → hand_tip; a chain collapsed onto its base bends
 nothing. Both read adjusted and AI markers too.
 
@@ -138,7 +171,10 @@ so the index side faces −Y. `L` = |hand_tip − wrist|.
   from 0.40 L; in each cut the samples are split along y at gaps over 0.015 L. Where two cuts in a
   row hold exactly four parts, those are index, middle, ring and little (by y), each tracked to the
   last cut it reaches; the knuckle sits 0.06 L before the split, and the joints divide knuckle →
-  tip as the fixed shape does. `fingers.mode` is `detected`.
+  tip as the fixed shape does. The surface must agree: the mesh itself, cut across the hand at the
+  same stations, has to fall into four or more closed loops (each at least 0.05 L round) at two of
+  them, else the four lanes were a mitten's sample gaps and the hand is `fixed`. `fingers.mode` is
+  `detected`.
 - **Fixed shape** (`--fingers fixed`, or when no cut splits into four): knuckles at 0.49–0.51 L,
   fingertips at 0.78 (little) to 1.0 L (middle), with a slight curl toward the palm, scaled to L
   and turned into the hand frame. `fingers.reason` says why detection was not used.
@@ -151,6 +187,10 @@ so the index side faces −Y. `L` = |hand_tip − wrist|.
   leaves the forearm, short of the slices' 0.75, and an elbow left at 0.42 of shoulder → hand_tip
   would shorten the forearm by about a quarter, and the elbow gate reads that short span. A finger
   the AI did not fit (the add-on's four-finger hand has no index) keeps the fixed shape.
+- A `fixed` hand on Auto-Rig Pro's bind is a mitten: `autorig.py`'s `mitten_bind` folds Index,
+  Ring and Little phalanx i onto Middle i (the thumb keeps its own), so one chain bends the mitten
+  whole and an animation that moves the fingers one by one cannot tear it (`reference/gates.md`,
+  `deform.mitten_tear`).
 - `--mitten` keeps the 30 finger bones in `contract_bones` but makes them non-deforming, so a
   hand without finger geometry skins to `Hand` in the hand-built route. The contract still holds
   every finger bone; Auto-Rig Pro binds its own fingers either way.

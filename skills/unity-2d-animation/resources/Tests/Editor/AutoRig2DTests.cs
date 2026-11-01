@@ -213,6 +213,44 @@ namespace UnityDev.Rig2D.Tests
         }
 
         [Test]
+        public void HeldPropRidesItsWristAndTheAttackPokesForward()
+        {
+            var bones = new Dictionary<string, Bone2D>
+            {
+                ["hips"] = new Bone2D("hips", "", new Vector2(0, 0), new Vector2(0, 10)),
+                ["wrist_near"] = new Bone2D("wrist_near", "elbow_near", new Vector2(60, 40), new Vector2(70, 40)),
+                ["wrist_far"] = new Bone2D("wrist_far", "elbow_far", new Vector2(-60, 40), new Vector2(-70, 40)),
+            };
+            // a pole whose centroid sits by the hips: the layer's side, not distance, picks the bone
+            var pole = new Layer2D { name = "prop_pole_near", rect = new RectInt(-2, -2, 4, 4), mask = Enumerable.Repeat(true, 16).ToArray() };
+            CollectionAssert.AreEqual(new[] { "wrist_near" }, Rig2DLayout.PartBones(pole, bones));
+            Assert.AreEqual(0f, RigDriver2D.AttackCurve(0f), 1e-4f);
+            Assert.AreEqual(-1f, RigDriver2D.AttackCurve(0.4f), 1e-3f);
+            Assert.AreEqual(1f, RigDriver2D.AttackCurve(0.58f), 1e-4f);
+            Assert.AreEqual(0f, RigDriver2D.AttackCurve(0.999f), 1e-3f);
+
+            GameObject go = Spawn(_result.variant);
+            var drv = go.GetComponent<RigDriver2D>();
+            drv.view = RigDriver2D.View.Side;
+            drv.facesRight = true;
+            drv.motion = RigDriver2D.Motion.Attack;
+            drv.attackSide = "L";
+            drv.Bind();
+            Transform sh = Bone(go, "shoulder_L");
+            Quaternion s0 = sh.localRotation;
+            float Turn() => Mathf.DeltaAngle(0, (Quaternion.Inverse(s0) * sh.localRotation).eulerAngles.z);
+            drv.Evaluate(0.4f * drv.attackPeriod);
+            float back = Turn();
+            drv.Evaluate(0.58f * drv.attackPeriod);
+            float hit = Turn();
+            Assert.Less(back, -10f, "the arm draws back first");
+            Assert.Greater(hit, 15f, "then pokes forward, toward the facing");
+            drv.facesRight = false;
+            drv.Evaluate(0.58f * drv.attackPeriod);
+            Assert.Less(Turn(), -15f, "art facing left pokes to the left");
+        }
+
+        [Test]
         public void SpringStaysFiniteAndInsideItsLimit()
         {
             GameObject go = Spawn(_result.variant);

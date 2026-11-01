@@ -78,7 +78,8 @@ into its own chain, so a pose moves the skirt as the bind did and the Blender ga
 No shorts hem is searched under a skirt.
 
 **Weights.** A chain's share ramps from 0 at its root to its maximum along it, feathered at the
-region border and blended between neighbours of a ring. It is taken from the chain's parent first,
+region border and blended between neighbours of a ring (a jacket's hem, a skirt's hem, each leg's
+shorts): a ring's chains share its skin, so no sector loses its blend to the one before it. It is taken from the chain's parent first,
 then from the region's other source bones in proportion; limb bones never give to a torso chain.
 Every vertex keeps at most 4 weights summing to 1. Outside the regions nothing changes. The bag's
 share fades smoothly from 0.012 H outside its bulge to 0.04 H inside it: on a fused shell the bag's

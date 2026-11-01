@@ -51,11 +51,13 @@ Both are on the same canvas.
   and the key field degrades. The blank face is one edit (hair, eyes, brows and mouth removed
   together), not the bald head edited again.
 
-The five fills:
+The fills:
 
 | Fill | Input | Used for |
 |---|---|---|
-| `noarms` | the whole canvas | the torso under the arms |
+| `noarms` | the whole canvas | the torso under the arms (and without the held props) |
+| `noprop_<name>` (`--props`) | the whole canvas | the body with that prop removed: the hand empty, what it covered drawn whole. One per prop: an edit asked to remove two removes one |
+| `prop_<name>` (`--props`) | the whole canvas | that prop alone and complete, the character removed: its hidden parts |
 | `bald` | the head crop | the head layer; brows complete under the fringe |
 | `eyes_closed` | the head crop | the blink swap |
 | `mouth_open` | the head crop | the talk swap; Cubism's mouth inside |
@@ -86,7 +88,9 @@ a sleeve is coloured as the jacket.
   - **Ankle:** each leg's narrowest row near its bottom.
   - **Armpit:** the first row with three runs.
 - **Arms:**
-  - Below the armpit, each arm is an island of its own.
+  - Below the armpit, each arm is an island of its own. An arm held out level (no island under
+    an armpit row) is the part of the silhouette that sticks out of the torso fill, and its
+    shoulder sits on that arm's axis.
   - **Shoulder joint:** 27 % of the way from the neck to the crotch, on the armless fill's edge
     (front view). In a side view, it is where the two arms' axes meet.
   - A capsule from the joint to the hand, with a round cap, takes the upper arm over the body.
@@ -94,6 +98,8 @@ a sleeve is coloured as the jacket.
   - **Sleeve:** where the arm crosses the body, whatever lies over it there and is not in the
     forearm's palette (a strap, a buckle, a drawstring) or is a thick dark stroke is repainted
     from the sleeve around it. Otherwise the strap is cut out with the arm and swings with it.
+    A band of the sleeve's own (an armband or a badge: it spans the arm and stops at the arm's
+    edge instead of running on across the body) is kept.
     The side view's far arm is left alone, since it only keeps what shows.
   - **Wrist:** the narrowest cross-section at 50–80 % of the arm. The elbow is halfway.
 - **Torso:**
@@ -113,6 +119,27 @@ a sleeve is coloured as the jacket.
     from the source and once from the fill, as a swap pair.
   - The torso is drawn over the head, so it is cut back from the eyes and mouth; on a hooded
     figure the neck row sits at mouth height and would otherwise hide the open mouth.
+  - **Head pivot:** the bottom of the neck skin under the mouth (the face's skin, followed past
+    the jaw line to the collar, at most 1.2 eye-to-mouth distances down), or the chin when no
+    neck shows. The chin and neck go to the head layer, with a margin under the torso, so a
+    turned head carries its chin. The narrowest row only decides where the torso layer starts:
+    under a hood it is at mouth height.
+- **Held props** (`fills --props "pole=the long wooden guard pole;shield=the round shield"`):
+  - The body is cut from the source with each prop replaced by its `noprop_<name>` fill, so the arms,
+    hands and legs behind a pole are whole.
+  - Each prop is the layer `prop_<name>_<side>`: its visible pixels from the source, the parts
+    the body hides from its `prop_<name>` fill. It is bound rigidly to the hand or forearm whose
+    layer it touches most, or to the side named as `name@near|far|R|L`, and goes at the depth
+    where the stack recomposites the source best.
+  - Run the fills one prop at a time; an edit asked to remove two removes one. A thin prop
+    whose removal fill re-poses the arm (no more than 40 px thick) is painted out along its
+    track from the pixels around it instead. A prop whose `prop_<name>` fill fails keeps only
+    what shows. `fills --only noprop_pole` redoes one fill.
+  - **A far arm behind a shield** (`split --far-arm hidden`, chosen by a person): the far arm
+    gets its bones but no layers, so a shield bound to it moves with it and no remnant of the
+    shield is cut as an arm.
+  - The arm still has to stand clear of the body. A prop held low at the hip pulls the arm
+    onto the body; draw it held out in front (`codex-visual` → `reference/layered-2d-source.md`).
 - **Overlap:** each lower layer runs `--overlap` px (22 by default) under the one above it at a
   joint.
 
@@ -126,6 +153,7 @@ Layer names are the contract, top to bottom:
 - `_R` and `_L` are the character's own right and left, so `_R` is on screen left.
 - `_near` is the limb in front, toward the facing direction.
 - `eyes_closed` and `mouth_open` are written hidden.
+- With `--props`, a `prop_<name>_<side>` layer per prop joins the stack where it recomposites best.
 - **A renamed layer loses its rig in Unity.** Never rename one; if you must, run the auto-rig
   again.
 
@@ -147,11 +175,14 @@ Layer names are the contract, top to bottom:
 | `split.alpha_clean` | ≤ 0.01: semi-transparent pixels 3 px or more inside a layer |
 | `split.joint_overlap` | ≥ half of `--overlap` px at every joint |
 | `split.names` | the view's full set, unique and non-empty |
-| `split.limbs` | two arms and two legs |
+| `split.limbs` | two arms and two legs (a hidden far arm counts by its bones) |
 | `split.shoulder_notch` | where an arm moves away, a 12 px closing adds ≤ 0.1 % of the silhouette, and ≥ 0.7 of the uncovered edge is outlined |
 | `split.mesh_cover` | 0 solid layer pixels left outside every triangle of the layer's mesh. An uncovered edge wedge shows as a background sliver in every pose |
 | `split.sleeve_fill` | ≤ 0.25 of an arm's over-body pixels repainted. `composite_px40` leaves the repainted pixels out |
+| `split.sleeve_own` | ≤ 0.05 of a sleeve's own band (armband, badge) repainted |
 | `split.swap_visible` | ≥ 0.9 of each swap's changed pixels still show in the stack with the swap on. Eyes under hair are exempt |
+| `split.head_pivot` | the head bone's pivot ≥ 0.5 eye-to-mouth distances below the mouth and above the armpit, and ≤ 0.05 of the chin and neck skin drawn by the torso |
+| `split.prop_layer` | `--props`: each prop is a layer bound to one bone; ≤ 0.1 of its pixels still drawn in its colours by the body layers under it, ≤ 0.02 left with nothing behind it |
 
 `pose.png` shows the rest pose and both arms raised 120°. Look at the shoulders: the gates see
 notches and missing outline, not every odd shape.
@@ -160,14 +191,15 @@ notches and missing outline, not every odd shape.
 
 - **Front view:** for a portrait, a dialogue bust or a top-down game.
 - **Side view:** for a side-scroller's run. A front view running in place reads weakly.
-- **Draw limbs apart:** arms clear of the body below the armpit, legs apart, nothing held.
+- **Draw limbs apart:** arms clear of the body below the armpit, legs apart. A held prop needs
+  `--props`, and its arm held out clear of the body.
 
 ## 3. A scene (Qwen-Image-Layered)
 
 ```bash
 python3 $S/scene_layers.py run street.png --out street --layers 4 --max-size 1024 --seed 5 \
-  --names sky,road,skyline,shops,props --prompt "A flat cel-shaded side-scrolling street: ..."
-python3 $S/scene_layers.py gate street.png --layers-dir street/raw --out street --names sky,road,skyline,shops,props \
+  --names sky,skyline,shops,road,props --prompt "A flat cel-shaded side-scrolling street: ..."
+python3 $S/scene_layers.py gate street.png --layers-dir street/raw --out street --names sky,skyline,shops,road,props \
   --scroll sky=0.04,skyline=0.15,shops=0.45,road=1,props=1.35
 ```
 
@@ -177,7 +209,11 @@ python3 $S/scene_layers.py gate street.png --layers-dir street/raw --out street 
   - Use the fp8mixed weights: the bf16 file is larger than a 32 GB card.
 - **Order:** layers come back back to front. An empty layer is dropped.
 - **Band split:** a layer with a full-width transparent band of at least `--band` rows is cut in
-  two. Typically that is sky above and road below. `--names` names the layers after this split.
+  two. Typically that is sky above and road below. `--names` names the layers after both splits.
+- **Ground cut:** the model can return the shopfronts and the road as one layer. A strip with a
+  ragged top whose bottom rows are flat (few vertical edges: the median over column blocks, so a
+  prop on the road does not count) is cut at the top of that flat band, so the shopfronts and
+  the road scroll at their own speeds. `--no-ground-cut` keeps it whole.
 - **Props:** the front layer's islands are also written one by one as `props/<name>_<i>.png`,
   each with its box.
   - `scene.json` marks that layer `role: props, tile: false`.
@@ -195,6 +231,7 @@ python3 $S/scene_layers.py gate street.png --layers-dir street/raw --out street 
 | `scene.coverage` | ≥ 0.99 |
 | `scene.alpha_clean` | ≤ 0.03 interior semi-transparency per layer. A ghost layer fails. |
 | `scene.depth_order` | where a back and a front layer overlap, the source matches the front one on ≥ 0.6 of the pixels |
+| `scene.ground_split` | no strip left holding a built band over a flat ground band |
 | `scene.props_whole` | ≥ 2 props clear of the left and right edges. The parallax rig leaves a prop cut by the frame out of its shuffle, and one prop can only repeat: draw the concept with every prop inside it |
 
 ## 4. PSD and PSB without Photoshop

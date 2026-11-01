@@ -58,6 +58,12 @@ sheets there by design (a knee-length greatcoat reads about 0.38 inside the zone
 The markers then follow the legs inside the skirt (`reference/markers.md`), `autorig.py` binds
 the skirt off the thighs' seam, and the deform gate reads its tear (`deform.skirt_tear`, below).
 
+**The chibi route (`--body chibi`)** — a big head on short limbs, chosen by a person at G0. The
+bands follow the body type, the limits do not: the crotch is searched from 0.10 H, `legs_separated`
+reads 0.06 H up to 0.02 H under it, `arms_separated` reads 0.35–0.65 H (the hands of a short arm
+hang near 0.35–0.45 H, the armpit near 0.55 H). The report adds `chibi` {crotch_h, leg_band,
+arm_band}. Fused legs or arms still fail it.
+
 ## deform_gate.py — six extremes
 
 ```bash
@@ -90,9 +96,16 @@ skeleton, so they fit any arm angle and hand orientation:
 | `fist` | each finger phalanx 60° toward the palm, the thumb's 30°; skipped without finger bones |
 | `leg_raise` | the left thigh 90° forward, knee straight |
 | `elbow_120` | both forearms 120° toward the front |
+| `mitten` | only when named (autorig.py names it instead of `fist` on a `fixed` hand): Middle1–3 40° toward the palm, the thumb's 20°, the other fingers at rest; adds `deform.mitten_tear` |
 | `jaw_open` | the Jaw 20° down; only when named (`--poses all,jaw_open`), for a rig with a face; the self-intersection gate covers it, the volume gate does not |
 
 Each pose is sampled at `--steps` fractions (default 2: half and full); `--poses` picks a subset.
+
+**`--body chibi`** (`autorig.py` passes it when the markers say chibi): `arms_up` stops 45° from
+vertical and `elbow_120` bends 90°. Past that a chibi's mitten enters its own head, and a forearm
+about twice its radius long meets the upper arm (two limbs of radius r touch r / tan(half the inner
+angle) from the hinge, the whole forearm at 120°). Every limit stays; the rig exam's chibi base still
+catches each planted fault.
 
 **The outward-facing skin.** Both measures read the skin, not an inner shell behind it. Per
 triangle at rest: it *sees out* when a ray from it (its normal and six directions 70° around it)
@@ -120,7 +133,13 @@ averages two rotations shrinks the skin toward the joint (a 50/50 blend at a 120
 joints, where the patch is a tube around the joint. Shoulders and hips are reported as
 `ball_joint_loss_max` and not gated: their patch mixes torso and limb, and an arm overhead reads
 as a loss there for any skin. A joint whose patch does not wrap around it, or holds fewer than 8
-triangles, is listed in `joints_not_measured`. An elbow or knee there fails
+triangles, is listed in `joints_not_measured`. Two fallbacks read an elbow or knee that would
+otherwise be lost, and change no patch that already reads: one with fewer than 8 triangles (a short
+thick limb whose skin lies past half its span) takes 1.25 x the distance to the nearest skin instead,
+when that skin sits around the joint (an opening at the joint leaves it along the limb, still unmeasured);
+one that does not wrap (a hem across a short leg's knee, its lining facing in) keeps the triangles
+within 1.3 x the limb's own radius from the bone's axis (the median of the quarter nearest the
+joint), and is read when those wrap. An elbow or knee there fails
 `deform.joints_measured` (below); for the other joints, check that list before reading a pass: on a torso
 wider than half a spine bone the spine joints have no triangles inside the patch, so `torso_twist`
 and the spine in `deep_squat` are judged by the self-intersection gate and their renders only.
@@ -155,10 +174,15 @@ without finger bones; named in `--poses`, a skipped fist fails, and so does `jaw
 names no Jaw. `autorig.py` names `jaw_open` when the markers carry the face and the contract maps a
 Jaw.
 
-**A mitten in a fist.** Auto-Rig Pro binds finger bones to a mitten hand too, and a mitten folds
-into itself when its phalanges close, so the fist alone can fail the intersection gate on a sound
-bind. When `arp_markers.py` reported `fingers.mode` `fixed`, gate the other five poses:
-`--poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120`.
+**A mitten.** Auto-Rig Pro binds its four finger chains to a mitten too, one strip each, and a
+mitten folds into itself in a fist. When `arp_markers.py` reported `fingers.mode` `fixed`,
+`autorig.py` folds the chains onto Middle (`mitten_bind`) and gates
+`--poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120,mitten`.
+
+**`deform.mitten_tear`** (when the `mitten` pose ran): the skirt tear's reading on the hands' own
+skin (vertices Hand and the finger bones hold ≥ 0.5 of), same limits. A mitten left on four strips
+opens between them when only Middle bends (about 1 % of its edges past 3 x, the worst near 5 x);
+folded onto one chain it bends whole (no edge past 2 x).
 
 **Reading a failure.** The report names the pose and joint of the worst loss and the pose of the
 worst intersection ratio. `--render` writes a front and a side picture per pose of the gated mesh
@@ -168,7 +192,9 @@ alone; look at that pose first.
 |---|---|---|
 | loss at an elbow or knee | the blend across the joint is wide, or the joint marker sits off the crease | move the marker (`arp_markers.py --adjust`) and rig again, or repair weights at that joint and re-export (`reference/arp-pipeline.md`, the elbow and knee repair) |
 | loss at the waist in `torso_twist` | the whole torso follows one spine bone, or a 50/50 blend over the full length | spread the weights along the three spine bones |
-| intersections in `elbow_120` or `fist` | a hard seam: the skin follows one bone rigidly; in `fist` on a `fingers.mode` `fixed` hand, the mitten itself | smooth the weights over the joint; for the mitten, drop `fist` from `--poses` |
+| intersections in `elbow_120` or `fist` | a hard seam: the skin follows one bone rigidly; in `fist` on a `fingers.mode` `fixed` hand, the mitten itself | smooth the weights over the joint; for the mitten, `mitten` replaces `fist` in `--poses` |
+| intersections in `arms_up` or `elbow_120` on a big-headed, short-limbed body | the mittens enter the head; a thick forearm meets the upper arm | the chibi route (`--body chibi`), chosen at G0 |
+| `deform.mitten_tear` fails | the mitten rides four finger chains, one strip each | `autorig.py contract` (its `mitten_bind`) |
 | intersections in `deep_squat` | thighs crossing the belly or calves into thighs | hip markers too low or too far in; a soft belly touching the thighs is expected, so never loosen the limit for one character |
 | `deform.joints_measured` names an elbow or knee | the patch around the joint has fewer than 8 outward triangles or does not wrap it: an opening, a decimated joint, flipped normals | look at the mesh there (`mesh_check.py`, a picture); fix the mesh, never drop the pose |
 | a whole limb moves with the wrong pose | weights on the wrong side's bone | rebind; check `markers.symmetry` and the sides gate of the contract |

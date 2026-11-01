@@ -12,7 +12,7 @@ usage:
                   [--leg-band 0.12,0.38] [--leg-min-ratio 0.9]
                   [--arm-band 0.50,0.74] [--arm-min-span 0.05]
                   [--shell-gap 0.006] [--shell-max 0.25] [--shell-samples 6000]
-                  [--body human|skirt]
+                  [--body human|skirt|chibi]
     mesh_check.py --selftest
 
 The mesh is read whole (every primitive of every node, node transforms applied). glTF is +Y up and
@@ -60,6 +60,13 @@ The report gains skirt {hem_h, legs_band, hem_width_over_legs, layer}. With the 
 signature (legs apart under a part that crosses the midline from 0.22-0.42 H up, at least 1.15 x
 their span) is reported as skirt_hint: rerun with --body skirt.
 
+--body chibi (a big head, about a third of H or more, on a short body with short limbs; chosen at G0, never
+to rescue a body that failed the default bands). The bands follow the body type, the limits do not change:
+the crotch is searched from CHIBI_CROTCH_FROM (0.10 H) up, legs_separated is read from CHIBI_LEG_FROM (0.06 H)
+up to 0.02 H under that crotch, and arms_separated in CHIBI_ARM_BAND (0.35-0.65 H: the hands of a 30-60
+degree A-pose on short arms hang near 0.35-0.45 H, the armpit near 0.55 H). Both limits stay 0.9 and
+0.05 H. The report gains chibi {crotch_h, leg_band, arm_band}.
+
 Report: {tool, file, body, height, triangles, vertices, midline_x, crotch_h, legs{band, cuts, separated,
 ratio, first_fused_h}, arms{band, cuts, run_h, armpit_h, left, right}, double_shell{ratio, inner_shell,
 samples, gap}, skirt?, skirt_hint?, gates[{name, value, limit, pass}], schema, pass, ok}: a gate/1 report
@@ -89,6 +96,9 @@ SKIRT_MIN_LEGS = 0.08     # x H of leg band that must show under a hem
 SKIRT_TOP = 0.55          # the skirt zone runs from the hem up to here (x H)
 HEM_CLEAR = 0.02          # the legs are read up to this far under the hem (x H)
 HINT_WIDTH = 1.15         # skirt_hint: the hem at least this much wider than the legs under it
+CHIBI_CROTCH_FROM = 0.10  # --body chibi: the crotch is searched from here up (x H; short legs part low)
+CHIBI_LEG_FROM = 0.06     # --body chibi: the leg band's foot (x H), over the shoe soles
+CHIBI_ARM_BAND = (0.35, 0.65)   # --body chibi: hands near 0.35-0.45 H, armpit near 0.55 H
 
 # ------------------------------------------------------------------------------ loading
 
@@ -352,10 +362,10 @@ def legs(prof: dict, band: tuple[float, float]) -> dict:
             "ratio": sep / len(rows) if rows else 0.0, "first_fused_h": fused[0] if fused else None}
 
 
-def crotch(prof: dict) -> float | None:
-    """The lowest cut above 0.2 H from which a part crosses the midline in every cut up to 0.6 H."""
+def crotch(prof: dict, lo: float = 0.2) -> float | None:
+    """The lowest cut above `lo` (0.2 H) from which a part crosses the midline in every cut up to 0.6 H."""
     mid = prof["midline_x"]
-    rows = [(c["h"], any(spans(p, mid) for p in c["parts"])) for c in prof["cuts"] if 0.2 <= c["h"] <= 0.6]
+    rows = [(c["h"], any(spans(p, mid) for p in c["parts"])) for c in prof["cuts"] if lo <= c["h"] <= 0.6]
     for k, (h, _) in enumerate(rows):
         if all(across for _, across in rows[k:]):
             return h
@@ -532,8 +542,13 @@ def check(v: np.ndarray, f: np.ndarray, args) -> dict:
     height = prof["height"]
     body = getattr(args, "body", "human")
     sk = skirt(prof, args) if body == "skirt" else None
-    lg = sk["legs"] if sk else legs(prof, tuple(args.leg_band))
-    am = arms(prof, tuple(args.arm_band), args.step)
+    chibi = None
+    if body == "chibi":     # a big head on short limbs: the bands follow the body type, the limits stay
+        c_h = crotch(prof, CHIBI_CROTCH_FROM)
+        chibi = {"crotch_h": c_h, "leg_band": [CHIBI_LEG_FROM, round(max(CHIBI_LEG_FROM, (c_h or 0.0) - HEM_CLEAR), 5)],
+                 "arm_band": list(CHIBI_ARM_BAND)}
+    lg = sk["legs"] if sk else legs(prof, tuple(chibi["leg_band"] if chibi else args.leg_band))
+    am = arms(prof, tuple(chibi["arm_band"] if chibi else args.arm_band), args.step)
     zone = None
     if sk and sk["hem_h"] is not None:
         zone = (float(v[:, 2].min()) + sk["hem_h"] * height, float(v[:, 2].min()) + SKIRT_TOP * height)
@@ -551,13 +566,15 @@ def check(v: np.ndarray, f: np.ndarray, args) -> dict:
                          "pass": bool(sk["hem_h"] is not None and "why" not in sk)})
     ds["gap"] = round(ds["gap"], 6)
     ok = all(g["pass"] is True for g in gates)
-    crotch_h = crotch(prof)
+    crotch_h = chibi["crotch_h"] if chibi else crotch(prof)
     rep = {"schema": "gate/1", "tool": "mesh_check", "pass": ok, "ok": ok, "body": body, "height": round(height, 6),
            "triangles": int(len(f)), "vertices": int(len(v)), "midline_x": round(prof["midline_x"], 6),
            "crotch_h": crotch_h, "legs": lg, "arms": am, "double_shell": ds, "gates": gates}
     if sk:
         rep["skirt"] = {k: v for k, v in sk.items() if k != "legs"}
         rep["skirt"]["layer"] = ds.get("zone_ratio")
+    elif chibi:
+        rep["chibi"] = chibi
     else:
         hint = skirt_hint(prof, crotch_h, args.leg_band, args.leg_min_ratio)
         if hint:
@@ -596,8 +613,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--shell-gap", type=float, default=0.006)
     p.add_argument("--shell-max", type=float, default=0.25)
     p.add_argument("--shell-samples", type=int, default=6000)
-    p.add_argument("--body", choices=("human", "skirt"), default="human",
-                   help="skirt: a long coat, skirt or robe; the legs are read under its hem")
+    p.add_argument("--body", choices=("human", "skirt", "chibi"), default="human",
+                   help="skirt: a long coat, skirt or robe; the legs are read under its hem. chibi: a big head "
+                        "on short limbs; the bands follow the body type")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -715,6 +733,21 @@ def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip
     return assemble(pieces)
 
 
+def chibi_body() -> tuple[np.ndarray, np.ndarray]:
+    """A 0.76 m chibi of tubes: the head 0.36 of H on a short torso, short thick legs and arms (A-pose 45 deg)."""
+    s45 = math.sqrt(0.5)
+    parts = [((0, 0, 0.24), (0, 0, 0.50), dict(r=0.12, rx=0.12, ry=0.09)),
+             ((0, 0, 0.48), (0, 0, 0.56), dict(r=0.05)),
+             ((0, -0.01, 0.64), (0, -0.01, 0.76), dict(r=0.15))]
+    for x in (0.065, -0.065):
+        parts.append(((x, 0, 0.27), (x * 1.1, 0, 0.04), dict(r=0.05)))
+    for side in (1, -1):
+        a = np.array([side * 0.12, 0, 0.47])
+        parts.append((a, a + 0.24 * np.array([side * s45, 0, -s45]), dict(r=0.04)))
+        parts.append(((side * 0.07, 0.04, 0.03), (side * 0.07, -0.10, 0.03), dict(r=0.03)))
+    return assemble([tube(a, b, **kw) for a, b, kw in parts])
+
+
 def write_obj(path: Path, v: np.ndarray, f: np.ndarray, up: str = "y") -> None:
     w = v if up == "z" else np.c_[v[:, 0], v[:, 2], -v[:, 1]]   # Z-up -> Y-up for the file
     lines = [f"v {x:.6f} {y:.6f} {z:.6f}" for x, y, z in w]
@@ -809,6 +842,16 @@ def selftest() -> int:
         ok("floor-length robe, --body skirt: skirt_hem fails (too little leg shows)", code == 2
            and not gate(rep, "skirt_hem")["pass"] and "floor-length" in rep["skirt"]["why"])
         ok("good body, --body skirt: still passes (the hem is its crotch)", run([str(d / "good.obj"), "--body", "skirt"])[0] == 0)
+        # a chibi: the default bands miss its short legs and arms; --body chibi reads them in its own bands
+        write_obj(d / "chibi.obj", *chibi_body())
+        code, rep = run([str(d / "chibi.obj")])
+        ok("chibi, default body: legs and arms fail the adult bands", code == 2 and not gate(rep, "legs_separated")["pass"]
+           and not gate(rep, "arms_separated")["pass"])
+        code, rep = run([str(d / "chibi.obj"), "--body", "chibi"])
+        ok("chibi, --body chibi: exit 0, the crotch read from 0.10 H, its bands reported", code == 0 and rep["body"] == "chibi"
+           and rep["chibi"]["arm_band"] == list(CHIBI_ARM_BAND) and rep["chibi"]["leg_band"][1] < rep["crotch_h"]
+           and gate(rep, "legs_separated")["limit"] == ">= 0.9")
+        ok("fused legs, --body chibi: still fail", run([str(d / "legs.obj"), "--body", "chibi"])[0] == 2)
         # two plates 4 mm apart: facing each other is gated, back to back is an inner shell
         sq = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], float)
         up_f, down_f = np.array([[0, 1, 2], [0, 2, 3]]), np.array([[0, 2, 1], [0, 3, 2]])

@@ -10,7 +10,8 @@
 1. **Split the scene.** `comfyui-asset-generation` → `scripts/scene_layers.py run` splits a scene
    by depth with Qwen-Image-Layered and gates the result. It writes canvas-sized `<name>.png`
    layers, `scene.json` (back to front), `scene.psd`, and `props/` (each prop of the front layer
-   with its box). `--names sky,road,skyline,shops,props` names the layers after the band split.
+   with its box). `--names sky,skyline,shops,road,props` names the layers after the band split
+   (sky above, road below a transparent band) and the ground cut (shopfronts off the road).
 2. **Give every layer a scroll speed**: `scene_layers.py --scroll sky=0.04,road=1,…` writes it
    into `scene.json`, or pass `-scroll` to the builder. Depth order is not enough: the sky and
    the road come out of one model layer, and only you know which layer is the play line.

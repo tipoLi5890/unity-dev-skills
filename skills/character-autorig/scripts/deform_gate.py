@@ -11,7 +11,8 @@ usage (Blender, headless):
     blender -b --factory-startup -P deform_gate.py -- --selftest
 options: [--map REPORT_OR_ROLE_MAP.json] [--poses all|arms_up,deep_squat,...|all,jaw_open] [--steps 2]
          [--volume-max 0.35] [--intersect-p95 0.08] [--cross-side-max 0.05] [--hinge-blend-min 0.03]
-         [--skirt MARKERS.json] [--tear-stretch 3.0] [--tear-max 0.002] [--out REPORT.json] [--render DIR]
+         [--skirt MARKERS.json] [--tear-stretch 3.0] [--tear-max 0.002] [--body human|chibi]
+         [--out REPORT.json] [--render DIR]
 
 Bones are named by the humanoid contract (`unity-rigged-character` -> humanoid-contract.md).
 `--map` reads either a contract_map.py report (its `retarget_map`, contract bone -> rig bone) or a
@@ -32,12 +33,19 @@ the rest skeleton so they fit any arm angle and any hand orientation:
                on the left, mirrored on the right
   leg_raise    the left thigh 90 degrees forward, knee straight
   elbow_120    both forearms 120 degrees toward the front
+  mitten       (only when named) a mitten hand closing the way an animation moves fingers one by one:
+               Middle1-3 40 degrees toward the palm, the thumb 20, Index, Ring and Little left at rest;
+               it adds deform.mitten_tear. autorig.py names it instead of fist when fingers.mode is fixed
   jaw_open     (only when named: not part of `all`) the Jaw 20 degrees down, for a rig with a face;
                Jaw is a role the map must name (a role map's "Jaw", or a contract_map report's
                retarget_map). The self-intersection gate covers it; the volume gate does not (a
                jaw's patch wraps no joint), and without a mapped Jaw it is skipped, which fails
                deform.poses since it was named. `--poses all,jaw_open` adds it to the six.
 Each pose is sampled at --steps evenly spaced fractions ending at the full pose (default 2: half, full).
+--body chibi (a big head on short thick limbs, chosen at G0; arp_markers --body chibi): arms_up raises the upper
+arms to CHIBI_ARMS_UP (45) degrees from vertical, not 20, and elbow_120 bends the forearms CHIBI_ELBOW (90)
+degrees: above that a chibi's mitten enters its own head, and a forearm about twice its radius long meets the
+upper arm (two limbs of radius r touch r / tan(half the inner angle) from the hinge). Every limit is the same.
 
 Measures, on the outward-facing skin only. An inward-facing inner shell, back to back with the
 skin (some image-to-3D generators always write one; mesh_check reports it as inner_shell), would
@@ -48,7 +56,10 @@ The skin sees out, folds included, and a single skin has no sheet behind it, so 
 triangle. The report gives outward_triangles and inward_triangles.
   volume loss  per rotated body joint (fingers excluded): the skin triangles within half the shorter
                adjoining span of the joint at rest (joint to joint: a split twist/stretch bone counts
-               its whole limb), and the volume they wrap, as the sum of the cones
+               its whole limb; an elbow or knee whose patch holds fewer than 8 triangles, a short thick limb
+               whose skin lies past half its span, takes 1.25 x the distance to the nearest skin instead
+               when that skin sits around the joint rather than along the limb past an opening),
+               and the volume they wrap, as the sum of the cones
                from their vertex centroid, (a - c) . ((b - c) x (d - c)) / 6. loss = 1 - posed / rest.
                A flattened elbow or a candy-wrapper waist loses it; a rigid turn keeps it. A joint
                whose patch does not wrap around it (signed volume under half the unsigned one at
@@ -97,6 +108,10 @@ Gates (each failing one makes exit 2):
                                   thigh, opens along that seam in deep_squat and leg_raise: a few edges stretch
                                   many times while a blended skirt spreads the stretch. Volume and
                                   self-intersection do not see it.
+  deform.mitten_tear              when the mitten pose ran: the same edge reading on the hand's own skin (the
+                                  vertices Hand and the finger bones hold >= 0.5 of): a mitten bound as four
+                                  strips, one per finger chain, opens between them when only Middle bends;
+                                  bound to one chain (autorig.py mitten_bind) it bends whole. Same limits.
 
 Report: {tool, armature, mesh, height, triangles, outward_triangles, inward_triangles, poses: {name: {samples: [{t, new_intersections, moved,
 ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the pose turns), skipped?}}, volume_loss_max {value, pose,
@@ -127,7 +142,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")
-NAMED_ONLY = ("jaw_open",)       # run when named in --poses, never as part of `all`
+NAMED_ONLY = ("jaw_open", "mitten")   # run when named in --poses, never as part of `all`
 BODY = ("Hips", "Spine", "Chest", "UpperArm.L", "UpperArm.R", "LowerArm.L", "LowerArm.R",
         "UpperLeg.L", "UpperLeg.R", "LowerLeg.L", "LowerLeg.R")
 FINGERS = ("Thumb", "Index", "Middle", "Ring", "Little")
@@ -136,6 +151,10 @@ FINGERS = ("Thumb", "Index", "Middle", "Ring", "Little")
 GATED = ("LowerArm", "LowerLeg", "Spine", "Chest", "UpperChest", "Hand", "Foot")
 # hinge joints the volume gate must reach whenever a requested pose bends them
 HINGES = ("LowerArm", "LowerLeg")
+HINGE_SKIN_REACH = 1.25   # a hinge patch with too few triangles reaches this x its nearest skin (a short thick limb)
+HEM_RADIUS = 1.3          # a hinge patch that does not wrap: keep the skin within this x the limb's own radius
+CHIBI_ARMS_UP = 45.0      # --body chibi: arms_up stops this many degrees from vertical (default 20)
+CHIBI_ELBOW = 90.0        # --body chibi: elbow_120 bends this far (default 120)
 CENTRE = ("Root", "Hips", "Spine", "Chest", "UpperChest", "Neck", "Head")
 # a side's limb: these contract bones (fingers by name) and the bones below each; the Shoulder sits by the midline
 LIMBS = ("UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot", "Toes") + FINGERS
@@ -294,10 +313,11 @@ class Rig:
 def pose_rotations(rig: Rig, pose: str) -> list[tuple[str, np.ndarray, float]]:
     """[(contract bone, world axis, degrees)] for one pose, read off the rest skeleton."""
     out = []
+    chibi = getattr(rig, "body", "human") == "chibi"
     if pose == "arms_up":
         for s in ("L", "R"):
             d = rig.d(f"UpperArm.{s}")
-            angle = math.degrees(math.acos(np.clip(d @ UP, -1, 1))) - 20
+            angle = math.degrees(math.acos(np.clip(d @ UP, -1, 1))) - (CHIBI_ARMS_UP if chibi else 20)
             out.append((f"UpperArm.{s}", _toward(d, UP), angle))
             if rig.has(f"Shoulder.{s}"):
                 out.append((f"Shoulder.{s}", _toward(rig.d(f"Shoulder.{s}"), UP), 15))
@@ -327,7 +347,17 @@ def pose_rotations(rig: Rig, pose: str) -> list[tuple[str, np.ndarray, float]]:
         out.append(("UpperLeg.L", _toward(rig.d("UpperLeg.L"), FWD), 90))
     elif pose == "elbow_120":
         for s in ("L", "R"):
-            out.append((f"LowerArm.{s}", _toward(rig.d(f"LowerArm.{s}"), FWD), 120))
+            out.append((f"LowerArm.{s}", _toward(rig.d(f"LowerArm.{s}"), FWD), CHIBI_ELBOW if chibi else 120))
+    elif pose == "mitten":
+        for s, sign in (("L", 1.0), ("R", -1.0)):
+            if not rig.has(f"Hand.{s}", f"Index1.{s}", f"Little1.{s}", f"Middle1.{s}"):
+                continue
+            h = rig.head[f"Hand.{s}"]
+            palm = -_unit(np.cross(rig.head[f"Index1.{s}"] - h, rig.head[f"Little1.{s}"] - h) * sign)
+            for f, deg in (("Middle", 40), ("Thumb", 20)):
+                for i in (1, 2, 3):
+                    if rig.has(f"{f}{i}.{s}"):
+                        out.append((f"{f}{i}.{s}", _toward(rig.d(f"{f}{i}.{s}"), palm), deg))
     elif pose == "jaw_open" and rig.has("Jaw"):
         out.append(("Jaw", _toward(rig.d("Jaw"), -UP), 20))
     return out
@@ -503,14 +533,37 @@ def joint_regions(rig: Rig, v_rest, tri, rotated, skirt=None) -> tuple[dict, dic
         bone = rig.obj.data.bones[rig.name[contract]]
         parent = next((c for c, n in rig.name.items() if bone.parent is not None and n == bone.parent.name), None)
         lengths = [rig.span(contract)] + ([rig.span(parent)] if parent else [])
-        near = np.linalg.norm(v_rest - rig.head[contract], axis=1) <= 0.5 * min(lengths)
+        dist = np.linalg.norm(v_rest - rig.head[contract], axis=1)
+        keep = np.ones(len(v_rest), dtype=bool)
         if skirt is not None and contract.split(".")[0] in ("UpperLeg", "LowerLeg"):
-            near &= ~skirt
-        sel = np.nonzero(near[tri].all(axis=1))[0]
+            keep = ~skirt
+        sel = np.nonzero(((dist <= 0.5 * min(lengths)) & keep)[tri].all(axis=1))[0]
+        if len(sel) < 8 and contract.split(".")[0] in HINGES and len(tri):
+            # a short thick limb: its skin lies past half a span, so the patch reaches 1.25 x the nearest skin,
+            # but only when that skin sits around the joint, not along the limb past an opening at it
+            used = np.unique(tri)
+            near = used[np.argmin(dist[used])]
+            rel = v_rest[near] - rig.head[contract]
+            axial = abs(float(rel @ rig.d(contract)))
+            if np.linalg.norm(rel - (rel @ rig.d(contract)) * rig.d(contract)) >= axial:
+                sel = np.nonzero(((dist <= HINGE_SKIN_REACH * float(dist[near])) & keep)[tri].all(axis=1))[0]
         if len(sel) < 8:
             skipped[contract] = "fewer than 8 triangles"
             continue
         signed, total = cone_volume(v_rest, tri[sel])
+        if signed < 0.5 * total and contract.split(".")[0] in HINGES:
+            # a hem across the patch (shorts at a short leg's knee): keep the limb's own skin, the triangles
+            # within HEM_RADIUS x the radius of the quarter nearest the joint, measured from the bone's axis
+            cen = v_rest[tri[sel]].mean(axis=1)
+            rel = cen - rig.head[contract]
+            ax = rig.d(contract)
+            rad = np.linalg.norm(rel - np.outer(rel @ ax, ax), axis=1)
+            nearest = np.argsort(np.linalg.norm(rel, axis=1))[:max(8, len(sel) // 4)]
+            own = sel[rad <= HEM_RADIUS * float(np.median(rad[nearest]))]
+            if len(own) >= 8:
+                s2, t2 = cone_volume(v_rest, tri[own])
+                if s2 >= 0.5 * t2:
+                    sel, signed, total = own, s2, t2
         if signed < 0.5 * total:
             skipped[contract] = "the skin there does not wrap around the joint"
             continue
@@ -573,7 +626,10 @@ def skin_readings(rig: Rig, mesh, v_rest) -> dict:
             continue
         cu = [j for j, n in enumerate(names) if own.get(n) == up]
         cl = [j for j, n in enumerate(names) if own.get(n) == c]
-        near = np.linalg.norm(v_rest - rig.head[c], axis=1) <= 0.5 * min(rig.span(c), rig.span(up))
+        dist = np.linalg.norm(v_rest - rig.head[c], axis=1)
+        near = dist <= 0.5 * min(rig.span(c), rig.span(up))
+        if near.sum() < 8 and len(dist):        # a short thick limb (joint_regions' fallback)
+            near = dist <= HINGE_SKIN_REACH * float(dist.min())
         u, lo = W[near][:, cu].sum(axis=1), W[near][:, cl].sum(axis=1)
         both = np.minimum(u, lo) >= BLEND_SHARE
         blend[c] = {"blended": round(float(both.mean()), 4) if near.any() else 0.0, "vertices": int(near.sum())}
@@ -617,6 +673,10 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
         import arp_markers
         region = arp_markers.skirt_region(v_rest, skirt)
     edges, rest_len = skirt_edges(v_rest, tri, region, height) if skirt else (None, None)
+    m_edges = None
+    if "mitten" in poses:
+        hand = hand_region(rig, mesh)
+        m_edges, m_rest = skirt_edges(v_rest, tri, hand, height)
     out, renders = {}, {}
     for pose in poses:
         rotations = pose_rotations(rig, pose)
@@ -639,6 +699,8 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
                             "ratio": round(new / moved, 4) if moved else 0.0, "volume_loss": loss})
             if skirt:
                 samples[-1]["skirt_tear"] = tear_reading(v, edges, rest_len, tear_stretch)
+            if pose == "mitten" and m_edges is not None:
+                samples[-1]["mitten_tear"] = tear_reading(v, m_edges, m_rest, tear_stretch)
             if render_dir and k == steps:
                 renders[pose] = A.render_views(render_dir, f"pose_{pose}_", {}, [], size=512, objects=[mesh])
         out[pose] = {"samples": samples, "joints_not_measured": skipped, "bent": bent}
@@ -650,7 +712,17 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
             **({"skirt": {"edges": int(len(edges)), "stretch": tear_stretch, "vertices": int(region.sum()),
                           "band_z": [round(float(skirt["hem_z"]), 4), round(float(skirt["top_z"]), 4)],
                           "rest_z": [round(float(v_rest[:, 2].min()), 4), round(float(v_rest[:, 2].max()), 4)]}}
-               if skirt else {})}
+               if skirt else {}),
+            **({"mitten": {"edges": int(len(m_edges)), "stretch": tear_stretch}} if m_edges is not None else {}),
+            **({"body": rig.body} if getattr(rig, "body", "human") != "human" else {})}
+
+
+def hand_region(rig: Rig, mesh) -> np.ndarray:
+    """The hands' own skin (bool per vertex): Hand and the finger bones (and the bones they own) hold >= 0.5."""
+    W, names = skin_matrix(mesh, rig)
+    own = owners(rig)
+    cols = [j for j, n in enumerate(names) if (own.get(n) or "").split(".")[0].rstrip("123") in ("Hand",) + FINGERS]
+    return W[:, cols].sum(axis=1) >= 0.5 if cols else np.zeros(len(W), dtype=bool)
 
 
 def gates_of(result: dict, poses, args) -> list:
@@ -695,6 +767,13 @@ def gates_of(result: dict, poses, args) -> list:
         edges = result["skirt"]["edges"]
         out.append({"name": "deform.skirt_tear", "value": share, "pose": pose, "limit": args.tear_max,
                     "pass": bool(edges >= 50 and share <= args.tear_max)})
+    if result.get("mitten") is not None:
+        tears = [(s["mitten_tear"]["share"], s["t"], s["mitten_tear"]) for s in
+                 (result["poses"].get("mitten") or {}).get("samples", []) if "mitten_tear" in s]
+        share, t, reading = max(tears, key=lambda w: w[0], default=(0.0, None, {}))
+        result["mitten"]["worst"] = {"t": t, **reading}
+        out.append({"name": "deform.mitten_tear", "value": share, "pose": "mitten", "limit": args.tear_max,
+                    "pass": bool(result["mitten"]["edges"] >= 50 and share <= args.tear_max)})
     return [
         {"name": "deform.volume_loss_max", "value": round(worst[0], 4), "limit": args.volume_max,
          "pass": bool(worst[0] <= args.volume_max)},
@@ -733,6 +812,8 @@ def parser():
     p.add_argument("--skirt", help="an arp_markers.py --body skirt report: gate the skirt's tear")
     p.add_argument("--tear-stretch", type=float, default=3.0)
     p.add_argument("--tear-max", type=float, default=0.002)
+    p.add_argument("--body", choices=("human", "chibi"), default="human",
+                   help="chibi: arms_up to 45 degrees from vertical, elbow_120 to 90 (a big head on short thick limbs)")
     p.add_argument("--out")
     p.add_argument("--render")
     p.add_argument("--selftest", action="store_true")
@@ -787,6 +868,7 @@ def _run(args) -> tuple[int, dict]:
         return len({g.group for v in o.data.vertices for g in v.groups if g.weight > 1e-4})
     mesh = max(meshes, key=lambda o: (bones_weighted(o), len(o.data.vertices)))
     rig = Rig(rig_obj, mapping)
+    rig.body = getattr(args, "body", "human")
     lacking = [b for b in BODY if b not in rig.name]
     if lacking:
         return 1, {"tool": "deform_gate", "error": f"body bones not found on {rig_obj.name!r}: {lacking} "
@@ -1054,6 +1136,22 @@ def selftest() -> tuple[int, dict]:
     ok("half-and-half arm: exit 2, volume fails at the elbow", code == 2 and not gate["deform.volume_loss_max"]["pass"]
        and rep["volume_loss_max"]["joint"] in ("LowerArm.L", "LowerArm.R"))
     ok("pose put back", all(tuple(pb.rotation_quaternion) == (1, 0, 0, 0) for pb in rig_obj.pose.bones))
+    # --body chibi: arms_up stops 45 degrees from vertical (25 short of the default), the elbow bends 90
+    rg = Rig(rig_obj, read_map(None))
+    base = {(c, round(a, 3)) for c, _, a in pose_rotations(rg, "arms_up") if c.startswith("UpperArm")}
+    el = [a for c, _, a in pose_rotations(rg, "elbow_120")]
+    rg.body = "chibi"
+    chb = {(c, round(a + CHIBI_ARMS_UP - 20, 3)) for c, _, a in pose_rotations(rg, "arms_up") if c.startswith("UpperArm")}
+    ok("--body chibi: arms_up 45 degrees from vertical, elbow_120 bends 90; the default 20 and 120 otherwise",
+       base == chb and el == [120, 120] and [a for c, _, a in pose_rotations(rg, "elbow_120")] == [CHIBI_ELBOW] * 2)
+    mit = pose_rotations(rg, "mitten")
+    ok("mitten pose: only Middle (40) and the thumb (20) bend, both hands",
+       {c.split(".")[0][:-1] for c, _, _ in mit} == {"Middle", "Thumb"} and len(mit) == 12
+       and {a for c, _, a in mit if c.startswith("Middle")} == {40} and {a for c, _, a in mit if c.startswith("Thumb")} == {20})
+    code, rep = run(parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name, "--poses", "mitten"]))
+    ok("mitten named: its samples carry the hand's tear, the gate deform.mitten_tear is read",
+       any(g["name"] == "deform.mitten_tear" for g in rep.get("gates", [])) and "mitten_tear" in
+       rep["poses"]["mitten"]["samples"][-1] and rep["mitten"]["edges"] > 0)
     ok("single skin: every triangle faces outward", rep["inward_triangles"] <= 0.01 * rep["triangles"])
     # an inward-facing inner twin 4 mm inside the skin, each vertex with its outer vertex's weights:
     # the outward mask keeps the gate on the skin, as on the single-shell body
