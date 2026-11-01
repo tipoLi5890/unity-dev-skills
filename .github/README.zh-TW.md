@@ -28,8 +28,10 @@
 | 「哨兵隔著牆也看得到跑者。」 | `unity-game-ai` 用距離、角度和一次視線 cast 組出視野錐；一個 journey 證明要先看見，追擊才會開始 |
 | 「第三個拾取物生出來的時候會卡一下。」 | `unity-profiling` 以 90 幀為一個視窗取樣那一刻（中位數、p95、最差值），讀出工作量與 GC 計數器，再比對改動前後 |
 | 「把這張跑者的圖做成能在 Unity 裡跑起來的角色。」 | `game-character-pipeline` 先定好品質目標與路線，再把 S0–S13 各階段——多視角圖、3D、綁骨、動作、匯入——交給各自負責的 skill，每一段都有閘門把關 |
+| 「幫哨兵綁骨，他穿長大衣。」 | `character-autorig` 走裙裝路線：沿著大衣裡的每條腿找到胯下，把大衣的權重分給臀部和兩條大腿，深蹲時大衣若在兩腿之間撕開，綁骨就判定不通過 |
 | 「寫程式之前，先讓我看看這趟送件玩起來是什麼樣子。」 | `unity-game-brief` 依遊戲自己的規則常數做出一段計時的模擬遊玩預覽，每個音效都記錄下來 |
 | 「用這張跑者的靜態圖幫我做一段走路循環。」 | `sprite-from-video` 讓影片模型帶著這張靜態圖原地走路，每一格都依模型實際畫出的那種底色去背，靠量測找出循環點，輸出畫布尺寸一致的逐格圖和 `frames.json` |
+| 「把這張守衛的圖拆成圖層，在 Unity 裡綁好骨。」 | `comfyui-asset-generation` 把圖拆成每個會動的部位一層，補畫手臂擋住的地方；`unity-2d-animation` 替 PSB 寫入骨頭、網格和權重，不必進 Skinning Editor，長棍和盾牌跟著他的手走 |
 | 「幫我裝到 iPhone 上，不要開 Xcode。」 | `unity-ios-build` 跑 headless 建置、過編譯閘門、用你這台 Mac 上現有的簽章資料簽章、以 `devicectl` 安裝，並讀取 App 的 console |
 
 ## 安裝
@@ -46,7 +48,7 @@ claude plugin install unity-dev@unity-dev
 ### 需求
 
 - **必要**：Claude Code 或 Codex；一個 Unity 6 專案；執行腳本需要 Python 3.10 以上，讀取圖片或音訊的腳本另需 NumPy 與 Pillow。
-- **選用，只有資產與角色管線需要**：Blender，版本須是你那一版 Auto-Rig Pro 支援的（`character-autorig` 有說明）；Auto-Rig Pro，作者 Artell 的付費 add-on：請在 [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) 或 [Superhive](https://superhivemarket.com/products/auto-rig-pro) 購買正版授權，這也支持它的開發與後續更新；選用的 AI 檔隨授權提供，一份授權限一台裝置；在 GPU 機器上自架的 ComfyUI；做 2D 美術用的 `codex` CLI；`mesh-texture-paint` 需要的 SciPy。
+- **選用，只有資產與角色管線需要**：Blender，版本須是你那一版 Auto-Rig Pro 支援的（`character-autorig` 有說明）；Auto-Rig Pro，作者 Artell 的付費 add-on：請在 [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) 或 [Superhive](https://superhivemarket.com/products/auto-rig-pro) 購買正版授權，這也支持它的開發與後續更新；選用的 AI 檔隨授權提供，一份授權限一台裝置；在 GPU 機器上自架的 ComfyUI；做 2D 美術用的 `codex` CLI；SciPy，`mesh-texture-paint` 和 `comfyui-asset-generation` 的部件、拆層與場景腳本都需要。
 - **選用，影片用**：ffmpeg，凡是要輸出影片的都需要（預覽、reel、由影片做成的 sprite）。
 - **選用，裝置用**：iOS 需要一台裝有 Xcode 15 以上的 Mac；Android 需要 Android SDK。
 
@@ -140,7 +142,7 @@ claude plugin install unity-dev@unity-dev
 [`character-autorig`](../skills/character-autorig/SKILL.md) →
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
 
-綁骨步驟為背包、帽兜、頭髮、外套下襬和短褲加上骨鏈，並把每條的硬度與身體的位置寫進 `<name>.secondary.json`。在 Unity 裡一個指令就把它們變成彈簧骨，在任何影格率下都保持長度、不穿進身體。
+綁骨步驟為背包、帽兜、頭髮、外套下襬和短褲加上骨鏈（其他角色身上則是腰包、長大衣的下襬或披風），並把每條的硬度與身體的位置寫進 `<name>.secondary.json`。在 Unity 裡一個指令就把它們變成彈簧骨，在任何影格率下都保持長度、不穿進身體。
 
 ### 近看也撐得住的臉和手
 
@@ -154,6 +156,24 @@ claude plugin install unity-dev@unity-dev
 [`character-autorig`](../skills/character-autorig/SKILL.md)
 
 臉部重要的角色，頭部會依概念圖以自己的比例重繪，當成獨立的部件生成，再裝回全身網格上，比例仍以全身為準。頭髮拆成第三個網格，脖子的接縫藏進衣領並對齊膚色，綁骨步驟再把頭髮綁到頭上。要近看手時，每隻手各自生成、手指之間留空，再接進袖口，綁骨時每根手指都找得到；畫上去的眼睛後面放進眼球，跟著眼骨轉動。做遊戲版時，各部件合併成一個網格、一張貼圖圖集，只要一次繪製呼叫。
+
+### 長大衣和 Q 版身材，走同一套綁骨
+
+<div align="center">
+<img src="media/coat.jpg" alt="穿長大衣的哨兵，未上貼圖，做深蹲和高踢腿，各有正面和側面，分成上下兩排。上排：大衣的左右兩半各自跟著自己的大腿，深蹲時兩腿之間裂開，踢腿時被扯開。下排：同樣的姿勢，大衣完整蓋住兩條大腿，下襬跟著抬起的腿走" width="800">
+<p><sub>上：大衣像褲子那樣分配權重，在兩腿之間撕開。下：走裙裝路線，大衣保持完整，下襬跟著每條腿走。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/chibi.jpg" alt="Q 版快遞吉祥物，大頭、戴帽子、連指手套、腰間背著小包：先是上色版，接著是綁骨檢查裡未上貼圖的四個姿勢：雙手高舉、側面深蹲、單膝高抬，以及雙手握起連指手套" width="800">
+<p><sub>頭部佔身高三分之一的 Q 版吉祥物：舉手、深蹲、抬膝、握起連指手套，手套整片一起彎。</sub></p>
+</div>
+
+[`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) →
+[`character-autorig`](../skills/character-autorig/SKILL.md) →
+[`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
+
+身材類型在一開始由人決定。長大衣或裙子走裙裝路線（`--body skirt`）：綁骨會沿著大衣裡的每條腿找到胯下，把大衣的權重分給臀部和兩條大腿，下襬另外加上自己的彈簧骨鏈，大衣若在兩腿之間撕開就判定不通過。Q 版走自己的路線（`--body chibi`），大頭、短脖子、粗四肢各有自己的量測範圍與窗口，門檻不變；連指手套會被當成一整片來讀、一整片來彎。綁骨的每一次改動都要經過一份綁骨考卷評分：已知關節位置的種子身體，加上刻意埋入、每道閘門都必須抓到的錯誤。
 
 ### 自己綁好骨的分層 2D 跑者
 
@@ -174,6 +194,19 @@ claude plugin install unity-dev@unity-dev
 
 圖在你自己的 ComfyUI 上拆成每個會動的部位一層，手臂和頭髮擋住的地方由 Qwen-Image-Edit 補畫，Unity 再替 PSB 寫入骨頭、網格和權重，不必進 Skinning Editor；街景由 Qwen-Image-Layered 依深度拆層（兩者都是 Apache-2.0），做成視差捲動，道具不會和自己的複本並排。同一套圖層也會輸出成 Live2D Cubism 可直接匯入的 PSD，再由人在 Cubism Editor 裡依 Live2D 自己的授權綁定。
 
+### 2D 綁骨上的道具和滑板
+
+<div align="center">
+<img src="media/guard.gif" alt="Unity 裡側面的 2D 街頭守衛，前手握著長棍，後臂掛著圓盾：他在呼吸、揮棍攻擊，接著豎著長棍奔跑，盾牌在手臂後面保持完整" width="339"> <img src="media/skate.gif" alt="Unity 裡側面的 2D 快遞員，戴帽子、穿連帽外套，踩著滑板：後腳蹬地再踩回板上，接著蹲低做出 ollie，滑板帶著兩隻腳一起升起" width="281">
+<p><sub>左：守衛的長棍和盾牌各是獨立圖層，跟著他的手走。右：快遞員的滑板有自己的骨頭，腿部 IK 讓兩隻腳在蹬地和 ollie 時都踩在板上。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md)
+
+道具在拆圖時就先命名。拿在手上的道具成為那隻手上的獨立圖層，被手臂擋住的部分依它自己的形狀補完（圓盾用擬合出的橢圓）；踩在雙腳下的滑板有自己的骨頭，兩段式腿部 IK 讓雙腳一直踩在上面。拆圖有閘門把關（道具不能留下缺口、滑板要在兩隻鞋底下），Unity 裡的姿勢也有：腳不能踩空，也不能陷進地面。
+
 ## 運作方式
 
 ```mermaid
@@ -187,7 +220,7 @@ flowchart LR
 ```
 
 - **從你的描述找到對的方法**。每個 skill 開頭都是一張用白話寫成的症狀表，另有四個「從這裡開始」的 skill 負責分派任何 gameplay、UI、角色或後端需求。
-- **執行的是程式碼，不是建議**。100+ 支 Python 腳本、170+ 個 C# 檔案和 50+ 份範本，直接複製進你的專案，不用照著筆記重打。
+- **執行的是程式碼，不是建議**。130+ 支 Python 腳本、200+ 個 C# 檔案和 50+ 份範本，直接複製進你的專案，不用照著筆記重打。
 - **拿得出證明**。每套方法都以一項你看得到的檢查收尾：probe 快照、journey test、重新匯入的 FBX、裝置 log。
 - **少佔上下文，自成一體**。`SKILL.md` 只負責分派；深入的內容等情境需要時才載入。不需要任何其他 plugin：skill 之間透過各自的 Scope 段落互相交接。少數綁骨與動作腳本會呼叫相鄰 skill 的腳本，清單見 [`tools/cross-skill-deps.txt`](../tools/cross-skill-deps.txt)，這些 skill 要一起安裝。
 
@@ -241,7 +274,7 @@ flowchart LR
 | [`unity-2d-level`](../skills/unity-2d-level/SKILL.md) | 以資料表示的 2D 關卡，附種子生成，會檢查每個拾取物都到得了 |
 | [`unity-2d-grid`](../skills/unity-2d-grid/SKILL.md) | 戰棋與方塊解謎的棋盤邏輯，支援方格、等角與六角網格 |
 | [`unity-tilemap`](../skills/unity-tilemap/SKILL.md) | 畫的時候接不起來的 tile：用你的圖集產出 RuleTile，每個網格各一套 palette |
-| [`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md) | 前後順序畫錯的 sprite，或讓整個畫面變黑的 `Light2D` |
+| [`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md) | 前後順序畫錯的 sprite、讓整個畫面變黑的 `Light2D`，或是視差背景 |
 
 </details>
 
@@ -288,7 +321,7 @@ flowchart LR
 | [`unity-3d-models`](../skills/unity-3d-models/SKILL.md) | 把 3D 模型帶進遊戲，預算在遊戲攝影機下挑選 |
 | [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md) | 在 Unity 裡卡在 T-pose 的綁骨 FBX：匯入、Avatar、Animator 與 gameplay rig |
 | [`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) | 用腳本切 sprite sheet，再把逐格做成可播放的 clip |
-| [`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) | 由 PSB 做出骨骼式 2D 角色，在執行期換造型與裝備 |
+| [`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) | 由 PSB 做出骨骼式 2D 角色，用腳本綁骨，含道具與腿部 IK；在執行期換造型與裝備 |
 | [`unity-2d-pixel-perfect`](../skills/unity-2d-pixel-perfect/SKILL.md) | 畫出來糊掉、攝影機一動就閃爍或出現接縫的像素畫 |
 | [`unity-sprite-atlas`](../skills/unity-sprite-atlas/SKILL.md) | 該共用一次 draw call 的 sprite，用腳本打包成 V2 atlas |
 | [`unity-audio`](../skills/unity-audio/SKILL.md) | 削減音訊的記憶體與 CPU，遊戲聽起來卻不變差；重新匯入前先報告 |
@@ -303,12 +336,12 @@ flowchart LR
 |---|---|
 | [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 從一張圖做出綁骨角色，**從這裡開始**：S0–S13 各階段，每一段都有閘門 |
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | 透過 `codex` 影像模型出 2D 美術，靠一份美術聖經維持風格一致 |
-| [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音樂、音效、影片與 3D 模型，每項各一個 job |
+| [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音樂、音效、影片、3D 模型與分層 2D 美術，每項各一個 job |
 | [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 依概念圖逐一視角重繪生成 3D 模型暗沉的貼圖，網格與 UV 不動 |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 透過生成影片，把一張角色靜態圖變成透明的 sprite 循環動畫 |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` 不適用時在 Blender 裡手工綁骨，再重新匯入 FBX 來證明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把現成的 clip 套到你的 Blender 骨架上，以滑步、抖動與 pop 把關 |
-| [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地替人形角色綁骨，一個指令完成；選用的 AI 偵測會開一個 Blender 視窗 |
+| [`character-autorig`](../skills/character-autorig/SKILL.md) | 用你自己的 Auto-Rig Pro 在本地替人形角色綁骨，長大衣和 Q 版也行，一個指令完成；選用的 AI 偵測會開一個 Blender 視窗 |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 把一個動作做成 clip：從雙機位影片直接解算到骨架上 |
 
 </details>

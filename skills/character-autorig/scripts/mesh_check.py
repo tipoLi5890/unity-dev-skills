@@ -99,6 +99,7 @@ HINT_WIDTH = 1.15         # skirt_hint: the hem at least this much wider than th
 CHIBI_CROTCH_FROM = 0.10  # --body chibi: the crotch is searched from here up (x H; short legs part low)
 CHIBI_LEG_FROM = 0.06     # --body chibi: the leg band's foot (x H), over the shoe soles
 CHIBI_ARM_BAND = (0.35, 0.65)   # --body chibi: hands near 0.35-0.45 H, armpit near 0.55 H
+FEET, MIDLINE_SHIFT = 0.15, 0.02   # the midline from the feet when the extent under 0.4 H is off it by more (x H)
 
 # ------------------------------------------------------------------------------ loading
 
@@ -325,6 +326,9 @@ def profile(v: np.ndarray, f: np.ndarray, step: float = 0.01, cell: float = 0.00
     height = float(v[:, 2].max() - v[:, 2].min())
     low = v[v[:, 2] < 0.4 * height]
     mid = float((low[:, 0].min() + low[:, 0].max()) / 2) if len(low) else float(np.median(v[:, 0]))
+    feet = v[v[:, 2] < v[:, 2].min() + FEET * height]
+    if len(feet) and abs((feet[:, 0].min() + feet[:, 0].max()) / 2 - mid) > MIDLINE_SHIFT * height:
+        mid = float((feet[:, 0].min() + feet[:, 0].max()) / 2)   # a held prop hangs below 0.4 H on one side
     cuts = []
     h = lo + step / 2
     while h < hi:

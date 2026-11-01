@@ -56,8 +56,8 @@ The fills:
 | Fill | Input | Used for |
 |---|---|---|
 | `noarms` | the whole canvas | the torso under the arms (and without the held props) |
-| `noprop_<name>` (`--props`) | the whole canvas | the body with that prop removed: the hand empty, what it covered drawn whole. One per prop: an edit asked to remove two removes one |
-| `prop_<name>` (`--props`) | the whole canvas | that prop alone and complete, the character removed: its hidden parts |
+| `noprop_<name>` (`--props`) | the whole canvas | the body with that prop removed: the hand empty (a board: the feet in the air, soles drawn), what it covered drawn whole. One per prop: an edit asked to remove two removes one |
+| `prop_<name>` (`--props`) | the whole canvas | that prop alone and complete, the character removed: its hidden parts. `fill.alone` fails a fill that kept the character (≤ 0.6 of it still covered); a failed one is left out of the other fills' keep zones by what its removal fill changed |
 | `bald` | the head crop | the head layer; brows complete under the fringe |
 | `eyes_closed` | the head crop | the blink swap |
 | `mouth_open` | the head crop | the talk swap; Cubism's mouth inside |
@@ -133,8 +133,17 @@ a sleeve is coloured as the jacket.
     where the stack recomposites the source best.
   - Run the fills one prop at a time; an edit asked to remove two removes one. A thin prop
     whose removal fill re-poses the arm (no more than 40 px thick) is painted out along its
-    track from the pixels around it instead. A prop whose `prop_<name>` fill fails keeps only
-    what shows. `fills --only noprop_pole` redoes one fill.
+    track from the pixels around it instead. `fills --only noprop_pole` redoes one fill.
+  - **A prop whose `prop_<name>` fill fails is completed from what shows.** The model draws a
+    round shield huge and face-on whatever the prompt says. A round prop (its outline against
+    the background fits an ellipse) becomes the whole ellipse, each hidden pixel copied from a
+    mirror image across the ellipse's axes (a near circle: the picture's upright and level
+    lines) that shows at rest and agrees with its own mirror. Any other prop gets only the
+    bands other layers cut through it, inpainted. Without this, the pole's track across a
+    shield opens as a gap in the attack.
+  - **A board** (`--props "board@feet=the skateboard under his feet"`): the layer `prop_board`
+    on a bone of its own, `board`, a child of hips, with both feet as its contacts. It goes
+    under the near foot and over the far one. `RigDriver2D` plants the feet on it.
   - **A far arm behind a shield** (`split --far-arm hidden`, chosen by a person): the far arm
     gets its bones but no layers, so a shield bound to it moves with it and no remnant of the
     shield is cut as an arm.
@@ -151,9 +160,12 @@ Layer names are the contract, top to bottom:
 | side | `hand_near arm_near torso hair_front eyes_open eyes_closed mouth_closed mouth_open head pelvis foot_near leg_near foot_far leg_far hand_far arm_far` |
 
 - `_R` and `_L` are the character's own right and left, so `_R` is on screen left.
-- `_near` is the limb in front, toward the facing direction.
+- `_near` is the limb drawn over the body. A side view's near arm is the one whose sleeve runs
+  onto the torso (where the picture differs from the armless fill), wherever its hand points;
+  when neither does, the one toward the facing direction. Legs: the one toward the facing
+  direction.
 - `eyes_closed` and `mouth_open` are written hidden.
-- With `--props`, a `prop_<name>_<side>` layer per prop joins the stack where it recomposites best.
+- With `--props`, a `prop_<name>_<side>` layer per prop (`prop_<name>` for a board) joins the stack where it recomposites best.
 - **A renamed layer loses its rig in Unity.** Never rename one; if you must, run the auto-rig
   again.
 
@@ -183,6 +195,8 @@ Layer names are the contract, top to bottom:
 | `split.swap_visible` | ≥ 0.9 of each swap's changed pixels still show in the stack with the swap on. Eyes under hair are exempt |
 | `split.head_pivot` | the head bone's pivot ≥ 0.5 eye-to-mouth distances below the mouth and above the armpit, and ≤ 0.05 of the chin and neck skin drawn by the torso |
 | `split.prop_layer` | `--props`: each prop is a layer bound to one bone; ≤ 0.1 of its pixels still drawn in its colours by the body layers under it, ≤ 0.02 left with nothing behind it |
+| `split.prop_whole` | `--props`: ≤ 0.01 of a prop's pixels are a band another layer cut through it and left empty (the prop on both sides within its own thickness, 8-64 px, along a row, column or diagonal; a round prop inside its ellipse) |
+| `split.prop_contact` | `--props`: a prop under both soles (≥ 0.3 of each) is on the `board` bone with the feet as contacts, never on a hand or one foot |
 
 `pose.png` shows the rest pose and both arms raised 120°. Look at the shoulders: the gates see
 notches and missing outline, not every odd shape.
@@ -192,7 +206,8 @@ notches and missing outline, not every odd shape.
 - **Front view:** for a portrait, a dialogue bust or a top-down game.
 - **Side view:** for a side-scroller's run. A front view running in place reads weakly.
 - **Draw limbs apart:** arms clear of the body below the armpit, legs apart. A held prop needs
-  `--props`, and its arm held out clear of the body.
+  `--props`, and its arm held out clear of the body. A board: both feet flat on the deck in an
+  open stance, a gap between the legs down to the deck, the board seen exactly from the side.
 
 ## 3. A scene (Qwen-Image-Layered)
 

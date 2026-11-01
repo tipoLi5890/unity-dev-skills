@@ -28,8 +28,10 @@
 | 「見張りが壁越しにランナーを見つけてくる」 | `unity-game-ai` が距離・角度・一回の視線キャストから視界コーンを作り、視認してから初めて追跡が始まることを journey で証明します |
 | 「3 個目のピックアップが出るときにカクつく」 | `unity-profiling` がその瞬間を 90 フレームの窓（中央値、p95、最悪値）でサンプリングし、処理量と GC のカウンターを読んで前後を比べます |
 | 「このランナーの絵を、Unity で走るキャラクターにして」 | `game-character-pipeline` がまず品質目標とルートを決め、S0–S13 の各工程（ビュー、3D、リグ、モーション、インポート）を、それぞれを担当する skill へゲート付きで渡します |
+| 「歩哨をリグにして。ロングコートを着ている」 | `character-autorig` がスカートルートを通ります。コートの中の脚を一本ずつ股までたどり、コートのウェイトを腰と両方の太ももに分け、しゃがんで脚の間が裂ければリグを不合格にします |
 | 「コードを書く前に、クーリエランを見せて」 | `unity-game-brief` がゲーム自身のルール定数から時間軸どおりに進む模擬ゲームプレイのプレビューを作り、鳴った音をすべて記録します |
 | 「このランナーの静止画から、歩きのループを作って」 | `sprite-from-video` が動画モデルで静止画をその場で歩かせ、モデルが実際に塗ったキー色に合わせて全フレームを抜き、ループを計測で見つけて、同じキャンバスサイズのフレームと `frames.json` を書き出します |
+| 「この警備員の絵をレイヤーに分けて、Unity でリグにして」 | `comfyui-asset-generation` が動く部位ごとに一枚のレイヤーに切り分け、腕に隠れた部分を描き足します。`unity-2d-animation` が Skinning Editor なしで PSB にボーン、メッシュ、ウェイトを書き込み、棒と盾は手についていきます |
 | 「Xcode は開かずに、iPhone に入れて」 | `unity-ios-build` がヘッドレスビルドとコンパイルゲートを実行し、Mac にあるもので署名して `devicectl` でインストールし、アプリのコンソールを読みます |
 
 ## インストール
@@ -46,7 +48,7 @@ claude plugin install unity-dev@unity-dev
 ### 必要なもの
 
 - **必須**：Claude Code または Codex、Unity 6 のプロジェクト、スクリプト用の Python 3.10 以降（画像や音声を読むスクリプトには NumPy と Pillow も）。
-- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、Auto-Rig Pro（Artell による有料アドオンです。正規ライセンスを [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) または [Superhive](https://superhivemarket.com/products/auto-rig-pro) でお求めください。開発とアップデートの支えになります。オプションの AI ファイルはライセンスに含まれ、1 ライセンスにつき 1 台で使えます）、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI、`mesh-texture-paint` 用の SciPy。
+- **任意**（アセットとキャラクターのパイプラインのみ）：お使いの Auto-Rig Pro のリリースが対応するバージョンの Blender（詳しくは `character-autorig`）、Auto-Rig Pro（Artell による有料アドオンです。正規ライセンスを [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) または [Superhive](https://superhivemarket.com/products/auto-rig-pro) でお求めください。開発とアップデートの支えになります。オプションの AI ファイルはライセンスに含まれ、1 ライセンスにつき 1 台で使えます）、GPU マシン上のセルフホスト ComfyUI、2D アート用の `codex` CLI、`mesh-texture-paint` と `comfyui-asset-generation` のパーツ、レイヤー、シーンのスクリプト用の SciPy。
 - **任意**（動画）：動画を書き出すもの（プレビュー、リール、動画からのスプライト）には ffmpeg。
 - **任意**（デバイス）：iOS には Xcode 15 以降を入れた Mac、Android には Android SDK。
 
@@ -140,7 +142,7 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 [`character-autorig`](../skills/character-autorig/SKILL.md) →
 [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
 
-リグの工程でバッグ、フード、髪、上着の裾、ショートパンツにボーンチェーンを加え、それぞれの硬さと体の位置を `<name>.secondary.json` に書き出します。Unity ではコマンド一つでスプリングボーンになり、どのフレームレートでも長さを保ち、体にめり込みません。
+リグの工程でバッグ、フード、髪、上着の裾、ショートパンツ（ほかのキャラクターでは腰のバッグ、ロングコートの裾、マント）にボーンチェーンを加え、それぞれの硬さと体の位置を `<name>.secondary.json` に書き出します。Unity ではコマンド一つでスプリングボーンになり、どのフレームレートでも長さを保ち、体にめり込みません。
 
 ### 寄っても崩れない顔と手
 
@@ -154,6 +156,24 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 [`character-autorig`](../skills/character-autorig/SKILL.md)
 
 顔が大事なキャラクターでは、頭をコンセプトから頭の大きさで描き直して別の部品として生成し、全身のメッシュに戻すので、比率は全身のままです。髪は三つ目のメッシュとして切り分け、首の継ぎ目は襟の中に隠して肌の色を合わせ、リグの工程で髪を頭に結び付けます。手を近くで見せるときは、両手をそれぞれ指の間をあけて生成し、袖口に差し込むので、リグがすべての指を見つけます。描かれた目の奥には眼球を入れ、目のボーンで回します。ゲーム用には部品を一つのメッシュと一枚のテクスチャアトラスにまとめ、描画は一回で済みます。
+
+### ロングコートとちびキャラも、同じリグで
+
+<div align="center">
+<img src="media/coat.jpg" alt="ロングコートの歩哨、テクスチャなし。深いしゃがみと高い蹴り上げを正面と横から、上下二段で並べたもの。上段：コートの左右がそれぞれ自分の太ももについていき、しゃがむと脚の間で開き、蹴ると引き裂かれる。下段：同じポーズで、コートは両方の太ももを覆ったままつながり、裾が上げた脚についていく" width="800">
+<p><sub>上：ズボンのようにウェイトを付けたコートは太ももの間で裂ける。下：スカートルートではコートがつながったまま、裾がそれぞれの脚についていく。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/chibi.jpg" alt="頭の大きなちびキャラの配達マスコット。帽子、ミトンの手袋、腰のポーチ。まず彩色版、続いてリグ検査のテクスチャなしの四つのポーズ：両腕を上げる、横から見た深いしゃがみ、片膝を高く上げる、両方のミトンを握る" width="800">
+<p><sub>頭が身長の三分の一あるちびマスコット：腕を上げ、深くしゃがみ、膝を上げ、ミトンを握る。ミトンはひとかたまりで曲がります。</sub></p>
+</div>
+
+[`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) →
+[`character-autorig`](../skills/character-autorig/SKILL.md) →
+[`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md)
+
+体型は最初に人が選びます。ロングコートやスカートはスカートルート（`--body skirt`）を通り、リグはコートの中の脚を一本ずつ股までたどり、コートのウェイトを腰と両方の太ももに分け、裾には専用のスプリングチェーンを付け、脚の間でコートが裂ければ不合格にします。ちびキャラは専用のルート（`--body chibi`）で、大きな頭、短い首、太い手足に合わせた範囲とウィンドウを使い、上限は変えません。ミトンはひとかたまりとして読み、ひとかたまりで曲げます。リグへの変更はすべてリグ試験で採点します：関節の位置が分かっているシード付きの体と、各ゲートが必ず捕まえるべき仕込んだ欠陥です。
 
 ### 自分でリグが付く、レイヤー分けした 2D ランナー
 
@@ -174,6 +194,19 @@ Unity の中での作業には、アセットパイプラインや動画のツ�
 
 絵は自分の ComfyUI で動く部位ごとに一枚のレイヤーに切り分けられ、腕や髪に隠れた部分は Qwen-Image-Edit が描き足し、Unity が PSB にボーン、メッシュ、ウェイトを書き込むので Skinning Editor の作業はいらず、通りは Qwen-Image-Layered が奥行きで分けて（どちらも Apache-2.0）視差スクロールにし、小物が自分のコピーと並ぶことはありません。同じレイヤーは Live2D Cubism にそのまま読み込める PSD としても出力され、Live2D のライセンスのもとで人が Cubism Editor でリグを組みます。
 
+### 2D リグに小物とスケートボード
+
+<div align="center">
+<img src="media/guard.gif" alt="Unity で横から見た 2D の街の警備員。前の手に長い棒、後ろの腕に丸い盾。呼吸し、棒を振って攻撃し、棒を立てて走る。盾は腕の後ろで欠けずに残っている" width="339"> <img src="media/skate.gif" alt="Unity で横から見た、帽子とパーカーの 2D 配達員がスケートボードに乗っている。後ろ足で地面を蹴ってボードに戻し、しゃがんでオーリーをすると、両足を乗せたままボードが浮き上がる" width="281">
+<p><sub>左：棒と盾がそれぞれ独立したレイヤーとして手についていく警備員。右：ボードに専用のボーンがあり、脚の IK がプッシュとオーリーの間も両足をボードに乗せておく配達員。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md)
+
+小物は絵を切り分けるときに名前を付けます。手に持つ小物はその手の独立したレイヤーになり、腕に隠れた部分は小物自身の形から補います（丸い盾ならフィットさせた楕円から）。両足の下のボードには専用のボーンが付き、2 ボーンの脚 IK が足をボードに乗せ続けます。切り分けはゲートで確認し（小物に欠けを残さない、ボードは両方の靴底の下）、Unity のポーズも同様です：足がボードを踏み外したり、地面に沈んだりしません。
+
 ## 仕組み
 
 ```mermaid
@@ -187,7 +220,7 @@ flowchart LR
 ```
 
 - **言葉から正しい手順にたどり着きます**。各 skill は平易な言葉で書いた症状の表から始まり、四つの「まずここから」の skill がゲームプレイ・UI・キャラクター・バックエンドの依頼を振り分けます。
-- **助言ではなく、コードを動かします**。100 を超える Python スクリプト、170 を超える C# ファイル、50 を超えるテンプレートを、メモを打ち直す代わりにプロジェクトへコピーして使います。
+- **助言ではなく、コードを動かします**。130 を超える Python スクリプト、200 を超える C# ファイル、50 を超えるテンプレートを、メモを打ち直す代わりにプロジェクトへコピーして使います。
 - **証明します**。手順の最後には、読んで確かめられるチェックがあります：probe スナップショット、journey test、再インポートした FBX、端末のログ。
 - **コンテキストが軽く、自己完結しています**。`SKILL.md` は振り分けるだけで、詳しい内容は状況が必要とするときに読み込まれます。ほかの plugin は要りません。skill 同士は Scope の節を通じて互いに引き継ぎます。リグとモーションの一部のスクリプトは隣の skill のスクリプトを呼び出します。一覧は [`tools/cross-skill-deps.txt`](../tools/cross-skill-deps.txt) にあり、これらの skill は一緒にインストールしてください。
 
@@ -241,7 +274,7 @@ flowchart LR
 | [`unity-2d-level`](../skills/unity-2d-level/SKILL.md) | データとしての 2D レベル。シード生成で、すべてのピックアップに到達できるか確かめる |
 | [`unity-2d-grid`](../skills/unity-2d-grid/SKILL.md) | 正方形・アイソメトリック・ヘックスのグリッドで動く、タクティクスやタイルパズルの盤面ロジック |
 | [`unity-tilemap`](../skills/unity-tilemap/SKILL.md) | 描いてもつながらないタイル。手持ちのシートから RuleTile を作り、グリッドごとにパレットを用意 |
-| [`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md) | 前後が逆に描かれるスプライト、すべてを黒くしてしまう `Light2D` |
+| [`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md) | 前後が逆に描かれるスプライト、すべてを黒くしてしまう `Light2D`、視差背景 |
 
 </details>
 
@@ -288,7 +321,7 @@ flowchart LR
 | [`unity-3d-models`](../skills/unity-3d-models/SKILL.md) | 3D モデルをゲームへ。予算はゲームカメラで見て選ぶ |
 | [`unity-rigged-character`](../skills/unity-rigged-character/SKILL.md) | Unity で T ポーズになるリグ付き FBX：インポート、Avatar、Animator、ゲームプレイ用リグ |
 | [`unity-2d-sprites`](../skills/unity-2d-sprites/SKILL.md) | スクリプトでスライスするスプライトシートと、再生できるクリップにするコマ |
-| [`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) | PSB から作るスケルタル 2D キャラクター。スキンと装備はランタイムで切り替え |
+| [`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) | PSB から作るスケルタル 2D キャラクター。小物と脚 IK も含めスクリプトでリグ付け、スキンと装備はランタイムで切り替え |
 | [`unity-2d-pixel-perfect`](../skills/unity-2d-pixel-perfect/SKILL.md) | ぼける、カメラが動くとちらつく、継ぎ目が出るドット絵 |
 | [`unity-sprite-atlas`](../skills/unity-sprite-atlas/SKILL.md) | 同じドローコールに載せたいスプライトを、スクリプトから V2 アトラスにパック |
 | [`unity-audio`](../skills/unity-audio/SKILL.md) | ゲームの音を悪くせずに、オーディオのメモリと CPU を削る。再インポートの前に報告する |
@@ -303,12 +336,12 @@ flowchart LR
 |---|---|
 | [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 画像からリグ付きキャラクターを作るなら**まずここから**。S0–S13 の各工程に、それぞれゲート |
 | [`codex-visual`](../skills/codex-visual/SKILL.md) | `codex` の画像モデルで作る 2D アート。一冊のアートバイブルでスタイルを保つ |
-| [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 自前の ComfyUI で作る音楽、効果音、動画、3D モデル。それぞれ一つのジョブで |
+| [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 自前の ComfyUI で作る音楽、効果音、動画、3D モデル、レイヤー分けした 2D アート。それぞれ一つのジョブで |
 | [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 生成した 3D モデルのくすんだテクスチャを、コンセプトアートから一視点ずつ塗り直す。メッシュと UV はそのまま |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | キャラクターの静止画一枚を、生成した動画を通して透過スプライトのループにする |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` が合わないときに Blender で手作りするリグ。FBX は再インポートで証明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 既製のクリップを自分の Blender のリグへ。足滑り、ジッター、ポップでゲート |
-| [`character-autorig`](../skills/character-autorig/SKILL.md) | 自分の Auto-Rig Pro で、人型をローカルでリグ付け。コマンド一つで（オプションの AI 検出は Blender のウィンドウを開きます） |
+| [`character-autorig`](../skills/character-autorig/SKILL.md) | 自分の Auto-Rig Pro で、人型をローカルでリグ付け（ロングコートやちびキャラも）。コマンド一つで（オプションの AI 検出は Blender のウィンドウを開きます） |
 | [`humanoid-motion`](../skills/humanoid-motion/SKILL.md) | 動きを一本のクリップに。二台カメラの動画から、骨格へ直接推定する |
 
 </details>

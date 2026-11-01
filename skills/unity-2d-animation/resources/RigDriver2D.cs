@@ -1,6 +1,7 @@
 // RigDriver2D.cs — procedural motion for a layered character that AutoRig2D rigged: breathing
-// idle, blinks, talking, a run cycle drawn for a front or a side view, a poke attack, plus an optional 2D
-// spring on hair, bags and tails. Every pose is an offset from the bind pose read at Bind(), and
+// idle, blinks, talking, a run cycle drawn for a front or a side view, a poke attack, a skateboard
+// push and ollie when the rig has a `board` bone (a prop stood on), plus an optional 2D spring on
+// hair, bags and tails. Every pose is an offset from the bind pose read at Bind(), and
 // a bone the rig does not have is skipped, so a sheet with fewer layers still plays.
 //
 // Copy into a Runtime assembly that references Unity.2D.Animation.Runtime. AutoRig2D's variant
@@ -14,6 +15,7 @@
 // Evaluate(t) and StepSprings(dt) themselves. The spring borrows SpringSolver's ideas (Verlet,
 // rates per 1/60 s converted per substep, carry, a pull to the animated pose, an angle clamp).
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.U2D.Animation;
 
@@ -23,7 +25,7 @@ namespace UnityDev.Rig2D
     public sealed class RigDriver2D : MonoBehaviour
     {
         public enum View { Front, Side }
-        public enum Motion { None, Idle, Talk, Run, Attack }
+        public enum Motion { None, Idle, Talk, Run, Attack, Push, Ollie }
 
         public View view = View.Front;
         public Motion motion = Motion.Idle;
@@ -33,6 +35,12 @@ namespace UnityDev.Rig2D
         [Min(0.1f)] public float breathPeriod = 2.4f;
         [Tooltip("Seconds per attack: wind-up, poke, hold, recover.")] [Min(0.2f)] public float attackPeriod = 1.1f;
         [Tooltip("The arm that pokes: near (side view) or R / L (front view).")] public string attackSide = "near";
+
+        [Header("Board (a `board` bone)")]
+        [Tooltip("Seconds per push: off the deck, down beside the front foot, a sweep back along the ground, home.")]
+        [Min(0.3f)] public float pushPeriod = 1.4f;
+        [Tooltip("Seconds per ollie: crouch, pop, air, land.")] [Min(0.3f)] public float olliePeriod = 1.2f;
+        [Tooltip("The foot that pushes; empty: the one behind (over the tail).")] public string pushSide = "";
 
         [Header("Face")]
         public bool blink = true;
@@ -95,6 +103,7 @@ namespace UnityDev.Rig2D
             }
             _tip = null;
             _eyesState = _mouthState = -1;
+            BindBoard(renderers);
         }
 
         public void ResetPose()
@@ -131,13 +140,19 @@ namespace UnityDev.Rig2D
         public void Evaluate(float t)
         {
             if (motion != Motion.None) ResetPose();
+            if (_board) ResetContacts();
             switch (motion)
             {
                 case Motion.Idle: Idle(t); break;
                 case Motion.Talk: Idle(t); Talk(t); break;
                 case Motion.Run: if (view == View.Side) RunSide(t); else RunFront(t); break;
                 case Motion.Attack: Idle(t); Attack(t); break;
+                case Motion.Push: if (_board) Push(t); else Idle(t); break;
+                case Motion.Ollie: if (_board) Ollie(t); else Idle(t); break;
             }
+            // a board stays on the ground under the feet whatever the body does (not in a run)
+            if (_board && motion != Motion.None && motion != Motion.Run && motion != Motion.Push && motion != Motion.Ollie)
+            { BoardPose(Vector2.zero, 0f, _boardPos0); PlantOnBoard(SideKeys()); }
             if (mouthOpen >= 0f) SetMouth(mouthOpen > 0.35f);
             else if (motion != Motion.Talk) SetMouth(false);
             SetEyes(!blink || !Blinking(t));
@@ -265,6 +280,254 @@ namespace UnityDev.Rig2D
         public void PoseArmUp() { Rot("shoulder_L", 125f); Rot("elbow_L", 20f); Rot("wrist_L", 10f); }
         public void PoseHeadTurn() { Rot("neck", 9f); Move("face", new Vector2(-0.012f, 0)); }
         public void PoseCrouch() { Rot("hip_R", -30f); Rot("knee_R", 55f); Rot("hip_L", 30f); Rot("knee_L", -55f); Rot("shoulder_R", -60f); Rot("elbow_R", -70f); }
+
+        // ------------------------------------------------------------------ board
+
+        Transform _board;
+        Vector3 _boardPos0;
+        Quaternion _boardRot0;
+        Vector2[] _boardCorners = new Vector2[0];              // the board's rest bounds, board space
+        Vector2[] _boardCorners0 = new Vector2[0];             // ... and in the world at rest
+        readonly Dictionary<string, Vector2> _footRest = new Dictionary<string, Vector2>(), _hipRest = new Dictionary<string, Vector2>();
+        readonly Dictionary<string, Vector3> _footOnBoard = new Dictionary<string, Vector3>();
+        readonly Dictionary<string, Quaternion> _footRotOnBoard = new Dictionary<string, Quaternion>();
+        readonly Dictionary<string, Vector2[]> _sole = new Dictionary<string, Vector2[]>(); // ankle space
+        readonly Dictionary<string, Vector2> _legLen = new Dictionary<string, Vector2>();
+        readonly Dictionary<string, float> _kneeSide = new Dictionary<string, float>();
+        readonly List<(SpriteRenderer r, int order)> _pushLayers = new List<(SpriteRenderer, int)>();
+        int _boardOrder;
+        float _groundY;
+
+        /// <summary>After a pose: how far (in character heights) a planted foot misses its spot on
+        /// the deck, how far any sole or the board sinks below the ground, how high the pushing
+        /// sole stays above the ground while it should push (NaN outside that phase), and how high
+        /// the board's lowest point is above the ground.</summary>
+        public float FootMiss { get; private set; }
+        public float SinkBelowGround { get; private set; }
+        public float PushGap { get; private set; } = float.NaN;
+        public float BoardLift { get; private set; }
+        public bool HasBoard => _board != null;
+        /// <summary>The pushing side in use (pushSide, or the foot over the tail).</summary>
+        public string PushKey { get; private set; } = "";
+
+        float Hw => _height * Mathf.Abs(transform.lossyScale.y);
+
+        void BindBoard(SpriteRenderer[] renderers)
+        {
+            _board = _bones.TryGetValue("board", out Transform b) ? b : null;
+            _footOnBoard.Clear(); _footRotOnBoard.Clear(); _sole.Clear(); _legLen.Clear(); _kneeSide.Clear(); _pushLayers.Clear(); _footRest.Clear(); _hipRest.Clear();
+            if (!_board) return;
+            _boardPos0 = _board.position; _boardRot0 = _board.rotation;
+            SpriteRenderer boardR = renderers.FirstOrDefault(r => Skinned(r, _board));
+            Bounds bb = boardR ? boardR.bounds : new Bounds(_board.position + Vector3.down * 0.04f * Hw, new Vector3(0.4f * Hw, 0.08f * Hw, 0));
+            _boardCorners = Corners(bb).Select(c => (Vector2)_board.InverseTransformPoint(c)).ToArray();
+            _boardCorners0 = Corners(bb).Select(c => (Vector2)c).ToArray();
+            _groundY = bb.min.y;
+            _boardOrder = boardR ? boardR.sortingOrder : 0;
+            float f = facesRight ? 1f : -1f;
+            string back = "";
+            foreach (string s in SideKeys())
+            {
+                if (!_bones.TryGetValue("hip_" + s, out Transform hip) || !_bones.TryGetValue("knee_" + s, out Transform knee)
+                    || !_bones.TryGetValue("ankle_" + s, out Transform ankle)) continue;
+                _footOnBoard[s] = _board.InverseTransformPoint(ankle.position);
+                _footRest[s] = ankle.position;
+                _hipRest[s] = hip.position;
+                _footRotOnBoard[s] = Quaternion.Inverse(_board.rotation) * ankle.rotation;
+                _legLen[s] = new Vector2(Vector2.Distance(hip.position, knee.position), Vector2.Distance(knee.position, ankle.position));
+                Vector2 d = ankle.position - hip.position, k = knee.position - hip.position;
+                float cross = d.x * k.y - d.y * k.x;
+                _kneeSide[s] = Mathf.Abs(cross) > 1e-6f * Hw * Hw ? Mathf.Sign(cross) : f;    // straight: knee forward
+                SpriteRenderer footR = renderers.FirstOrDefault(r => r.name.ToLowerInvariant().StartsWith("foot_") && Skinned(r, ankle));
+                Bounds fb = footR ? footR.bounds : new Bounds(ankle.position + Vector3.down * 0.03f * Hw, new Vector3(0.08f * Hw, 0.06f * Hw, 0));
+                _sole[s] = new[] { (Vector2)ankle.InverseTransformPoint(new Vector3(fb.min.x, fb.min.y)), (Vector2)ankle.InverseTransformPoint(new Vector3(fb.max.x, fb.min.y)) };
+                if (back == "" || f * ankle.position.x < f * _bones["ankle_" + back].position.x) back = s;
+            }
+            PushKey = !string.IsNullOrEmpty(pushSide) && _footOnBoard.ContainsKey(pushSide) ? pushSide : back;
+            // the pushing leg goes behind the board while it is off the deck when it is the far one
+            if (PushKey == "far" && boardR)
+                foreach (SpriteRenderer r in renderers)
+                {
+                    string n = r.name.ToLowerInvariant();
+                    if ((n.StartsWith("foot_far") || n.StartsWith("leg_far")) && r.sortingOrder >= _boardOrder) _pushLayers.Add((r, r.sortingOrder));
+                }
+        }
+
+        static bool Skinned(SpriteRenderer r, Transform bone)
+        {
+            var sk = r.GetComponent<SpriteSkin>();
+            return sk != null && sk.boneTransforms != null && sk.boneTransforms.Contains(bone);
+        }
+
+        static IEnumerable<Vector3> Corners(Bounds b)
+        {
+            yield return new Vector3(b.min.x, b.min.y); yield return new Vector3(b.max.x, b.min.y);
+            yield return new Vector3(b.min.x, b.max.y); yield return new Vector3(b.max.x, b.max.y);
+        }
+
+        /// <summary>The board turned by deg about a world pivot and moved by d (world units).</summary>
+        public void BoardPose(Vector2 d, float deg, Vector3 pivot)
+        {
+            if (!_board) return;
+            Quaternion q = Quaternion.Euler(0, 0, deg);
+            _board.rotation = q * _boardRot0;
+            _board.position = pivot + q * (_boardPos0 - pivot) + (Vector3)d;
+        }
+
+        /// <summary>Two-bone IK in the picture plane: turns hip_s and knee_s so ankle_s lands on
+        /// target (world), the knee bending to the side it bends at rest; the foot takes footRot.
+        /// Returns the miss in world units (the target out of the leg's reach).</summary>
+        public float PlantFoot(string s, Vector2 target, Quaternion footRot)
+        {
+            if (!_legLen.TryGetValue(s, out Vector2 len)) return 0f;
+            Transform hip = _bones["hip_" + s], knee = _bones["knee_" + s], ankle = _bones["ankle_" + s];
+            Vector2 H = hip.position, d = target - H;
+            float dist = d.magnitude, l1 = len.x, l2 = len.y;
+            float reach = Mathf.Clamp(dist, Mathf.Abs(l1 - l2) + 1e-5f, l1 + l2 - 1e-5f);
+            float a = Mathf.Acos(Mathf.Clamp((l1 * l1 + reach * reach - l2 * l2) / (2f * l1 * reach), -1f, 1f)) * Mathf.Rad2Deg;
+            Vector2 dir = dist > 1e-6f ? d / dist : Vector2.down;
+            Vector2 kneeAt = H + (Vector2)(Quaternion.Euler(0, 0, _kneeSide[s] * a) * dir) * l1;
+            Aim(hip, (Vector2)knee.position - H, kneeAt - H);
+            Vector2 K = knee.position;
+            Aim(knee, (Vector2)ankle.position - K, target - K);
+            ankle.rotation = footRot;
+            return Vector2.Distance(ankle.position, target);
+        }
+
+        static void Aim(Transform t, Vector2 from, Vector2 to)
+        {
+            if (from.sqrMagnitude < 1e-12f || to.sqrMagnitude < 1e-12f) return;
+            t.rotation = Quaternion.Euler(0, 0, Vector2.SignedAngle(from, to)) * t.rotation;
+        }
+
+        Vector2 OnBoard(string s, float slide = 0f)
+        {
+            Vector3 p = _footOnBoard[s];
+            return _board.TransformPoint(p + Vector3.right * slide * Hw / Mathf.Max(Mathf.Abs(_board.lossyScale.x), 1e-6f));
+        }
+
+        // plants the feet on their deck spots and measures the contacts
+        void PlantOnBoard(IEnumerable<string> feet, float frontSlide = 0f)
+        {
+            float miss = 0f;
+            foreach (string s in feet)
+            {
+                if (!_footOnBoard.ContainsKey(s)) continue;
+                float slide = s == PushKey ? 0f : frontSlide * (facesRight ? 1f : -1f);
+                miss = Mathf.Max(miss, PlantFoot(s, OnBoard(s, slide), _board.rotation * _footRotOnBoard[s]));
+            }
+            FootMiss = Mathf.Max(FootMiss, miss / Hw);
+            Measure();
+        }
+
+        float SoleY(string s)
+        {
+            Transform a = _bones["ankle_" + s];
+            return Mathf.Min(a.TransformPoint(_sole[s][0]).y, a.TransformPoint(_sole[s][1]).y);
+        }
+
+        void Measure()
+        {
+            float low = float.MaxValue;
+            foreach (Vector2 c in _boardCorners) low = Mathf.Min(low, _board.TransformPoint(c).y);
+            BoardLift = (low - _groundY) / Hw;
+            float sink = Mathf.Max(0f, -BoardLift);
+            foreach (string s in _sole.Keys) sink = Mathf.Max(sink, (_groundY - SoleY(s)) / Hw);
+            SinkBelowGround = sink;
+        }
+
+        void ResetContacts()
+        {
+            FootMiss = 0f; SinkBelowGround = 0f; PushGap = float.NaN; BoardLift = 0f;
+            foreach (var (r, order) in _pushLayers) if (r) r.sortingOrder = order;
+        }
+
+        const float MaxPushDip = 0.14f;   // the most the hips drop for a push, in heights
+
+        static float Bump(float u, float a, float b) => u <= a || u >= b ? 0f : Mathf.Sin(Mathf.PI * (u - a) / (b - a));
+        static float Ramp(float u, float a, float b) => Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(a, b, u));
+
+        /// <summary>Riding with pushes: the back foot leaves the deck, comes down beside the front
+        /// foot (the legs cross), sweeps back along the ground past the tail, and swings home while
+        /// the standing knee bends to let it reach; the board stays on the ground. Phase 0..1 per
+        /// pushPeriod; the sole is on the ground for 0.32..0.58.</summary>
+        public void Push(float t)
+        {
+            ResetContacts();
+            float u = Mathf.Repeat(t / pushPeriod, 1f), f = facesRight ? 1f : -1f, Hh = Hw;
+            string ps = PushKey, front = SideKeys().FirstOrDefault(k => k != ps && _footOnBoard.ContainsKey(k));
+            if (string.IsNullOrEmpty(ps) || front == null) { Idle(t); BoardPose(Vector2.zero, 0f, _boardPos0); PlantOnBoard(SideKeys()); return; }
+            Transform hips = _bones.TryGetValue("hips", out Transform h) ? h : null;
+            Vector2 deck = OnBoardRest(ps), frontAt = OnBoardRest(front);
+            float soleUp = _bones["ankle_" + ps].position.y - SoleY(ps);               // ankle above its sole
+            float gy = _groundY + soleUp;                                              // ankle height on the ground
+            float xs = frontAt.x - f * 0.02f * Hh, xe = BoardEnd(-f) - f * 0.12f * Hh; // beside the front foot .. past the tail
+            {   // .. as far as the leg reaches on the ground with the hips at their lowest
+                Vector2 len = _legLen[ps], hip0 = _hipRest[ps];
+                float dy = hip0.y - MaxPushDip * Hh - gy, reach = 0.95f * (len.x + len.y);
+                float dx = reach > Mathf.Abs(dy) ? Mathf.Sqrt(reach * reach - dy * dy) : 0f;
+                xe = f > 0 ? Mathf.Max(xe, hip0.x - dx) : Mathf.Min(xe, hip0.x + dx);
+                xs = f > 0 ? Mathf.Min(xs, hip0.x + dx) : Mathf.Max(xs, hip0.x - dx);
+            }
+            Vector2 target;
+            bool contact = false;
+            if (u < 0.1f || u >= 0.86f) target = deck;
+            else if (u < 0.32f) { float v = Ramp(u, 0.1f, 0.32f); target = Vector2.Lerp(deck, new Vector2(xs, gy), v) + Vector2.up * 0.05f * Hh * Bump(u, 0.1f, 0.32f); }
+            else if (u < 0.58f) { target = new Vector2(Mathf.Lerp(xs, xe, Ramp(u, 0.32f, 0.58f)), gy); contact = true; }
+            else { float v = Ramp(u, 0.58f, 0.86f); target = Vector2.Lerp(new Vector2(xe, gy), deck, v) + Vector2.up * 0.07f * Hh * Bump(u, 0.58f, 0.86f); }
+            // the body: lean in, arms out for balance; the hips drop as far as the pushing leg needs
+            Rot("chest", -f * (4f + 3f * Bump(u, 0.1f, 0.86f)));
+            Rot("neck", f * 3f);
+            foreach (string k in SideKeys()) { Rot("shoulder_" + k, f * (k == ps ? -14f : 10f) * Bump(u, 0.05f, 0.95f)); Rot("elbow_" + k, f * 12f); }
+            if (hips)
+            {
+                Vector2 len = _legLen[ps];
+                float need = 0f;
+                for (int i = 0; i < 4; i++)                 // lower the hips until the foot is in reach
+                {
+                    Move("hips", new Vector2(0f, -need / Hh));
+                    float over = Vector2.Distance(_bones["hip_" + ps].position, target) - 0.97f * (len.x + len.y);
+                    if (over <= 0f) break;
+                    need += over;
+                }
+                need = Mathf.Min(need, MaxPushDip * Hh);
+                Move("hips", new Vector2(0f, -(need + 0.012f * Hh * Bump(u, 0.1f, 0.86f)) / Hh));
+            }
+            BoardPose(Vector2.zero, 0f, _boardPos0);
+            PlantOnBoard(new[] { front });
+            bool off = u >= 0.1f && u < 0.86f;
+            float miss = PlantFoot(ps, target, off ? _boardRot0 * _footRotOnBoard[ps] : _board.rotation * _footRotOnBoard[ps]);
+            if (!off) FootMiss = Mathf.Max(FootMiss, miss / Hh);
+            foreach (var (r, order) in _pushLayers) if (r) r.sortingOrder = off ? order - (order - _boardOrder) - 1 - (r.name.ToLowerInvariant().StartsWith("leg_") ? 1 : 0) : order;
+            Measure();
+            PushGap = contact ? (SoleY(ps) - _groundY) / Hh : float.NaN;
+        }
+
+        Vector2 OnBoardRest(string s) => _footRest[s];
+
+        // the board's end at rest toward dir (+1: +x)
+        float BoardEnd(float dir) => dir > 0 ? _boardCorners0.Max(c => c.x) : _boardCorners0.Min(c => c.x);
+
+        /// <summary>An ollie: crouch, the tail pops (the board tips nose up about the tail on the
+        /// ground) as the body springs, the board rises under the tucked feet and levels, falls,
+        /// and the knees take the landing. Both feet stay planted; the front one slides up the
+        /// deck on the pop. Phase 0..1 per olliePeriod; in the air 0.36..0.74.</summary>
+        public void Ollie(float t)
+        {
+            ResetContacts();
+            float u = Mathf.Repeat(t / olliePeriod, 1f), f = facesRight ? 1f : -1f;
+            float crouch = 0.06f * (Ramp(u, 0f, 0.24f) - Ramp(u, 0.24f, 0.34f)) + 0.07f * (Ramp(u, 0.74f, 0.8f) - Ramp(u, 0.84f, 1f));
+            float lift = 0.2f * Bump(u, 0.34f, 0.76f);
+            float tip = f * (20f * Bump(u, 0.24f, 0.46f) - 5f * Bump(u, 0.52f, 0.74f));
+            float body = 0.04f * Bump(u, 0.28f, 0.5f) + 0.75f * lift;           // the knees tuck at the top
+            Move("hips", new Vector2(0f, body - crouch));
+            Rot("chest", -f * (6f * Ramp(u, 0f, 0.24f) * (1f - Ramp(u, 0.3f, 0.5f)) + 3f));
+            foreach (string k in SideKeys()) { Rot("shoulder_" + k, f * (k == PushKey ? -1f : 1f) * 35f * Bump(u, 0.2f, 0.8f)); Rot("elbow_" + k, f * 20f * Bump(u, 0.2f, 0.8f)); }
+            // the tail stays on the ground through the pop: the board turns about the tail's lowest corner
+            Vector3 pivot = new Vector3(BoardEnd(-f), _groundY, 0f);
+            BoardPose(Vector2.up * lift * Hw, tip, pivot);
+            PlantOnBoard(SideKeys(), 0.035f * Bump(u, 0.24f, 0.62f));
+        }
 
         // ------------------------------------------------------------------ spring
 

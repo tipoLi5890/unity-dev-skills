@@ -5,7 +5,8 @@ and the gates. Writes the layer PNGs, a psd_write.py manifest and rig2d.json (ri
 
   layer_split.py fills CONCEPT.png --view front|side [--facing right|left] --out FILLS_DIR
                        [--seeds 1,2,3] [--hint TEXT] [--cubism] [--server URL]
-                       [--props "pole=the long wooden pole;shield=the round shield"] [--only a,b]
+                       [--props "pole=the long wooden pole;shield@far=the round shield"] [--only a,b]
+                       (name@near|far|L|R: the arm that holds it; name@feet: stood on, a board)
   layer_split.py split KEYED.png --fills FILLS_DIR/fills.json --out OUT_DIR [--overlap 22]
                        [--psb NAME.psb]
   layer_split.py --selftest          offline: synthetic front and side figures, gates, template
@@ -24,16 +25,19 @@ with the painted key colour and scaled to 1024 (a non-square input drifts the ge
   mouth_open    the head crop: mouth open
   face_blank    (--cubism) the head crop: hair, eyes, brows and mouth removed in ONE edit
   prop_<name>   (--props, first) the whole canvas: only that held prop, complete, in place
-  noprop_<name> (--props) the whole canvas: that prop removed, the hand empty, what it covered
-                drawn whole (one per prop: an edit asked to remove two removes one); noarms also
+  noprop_<name> (--props) the whole canvas: that prop removed, the hand empty (a board: the feet
+                in the air, soles drawn), what it covered drawn whole (one per prop: an edit
+                asked to remove two removes one); noarms also
                 removes them
 Each result is keyed (key_unmix.py --edge tint) and placed back on the canvas. Gates per fill,
 in the zone that must not change (noarms: the head and lower legs; bald, face_blank: the chin and
 collar; eyes, mouth: the whole head): fill.aligned (75th percentile |RGB|) <= 12; fill.iou (the
 silhouettes there) >= 0.95; fill.inside (head fills: outside the source silhouette grown 4 px)
 <= 0.03; fill.changed (eyes_closed, mouth_open: share of the head changed by more than 40) >= 0.01;
-prop_<name>: fill.inside <= 0.03 and fill.present >= 0.2 % of the canvas; noprop_<name>: fill.removed
-(the prop's pixels changed) >= 0.7; noarms and noprop_<name> leave the props out of their keep zones. The head
+prop_<name>: fill.inside <= 0.03, fill.present >= 0.2 % of the canvas and fill.alone (the share of the
+character it still covers) <= 0.6; noprop_<name>: fill.removed
+(the prop's pixels changed) >= 0.7; noarms and noprop_<name> leave the props out of their keep zones
+(a prop whose own fill failed: what its removal fill changed). The head
 box is found without the props. --only redoes the named fills and keeps the rest.
 A failing fill retries the next seed. The armless fill may widen the clothes into the
 gaps beside the arms: split clips it to the source. Writes FILLS_DIR/fills.json, the placed
@@ -53,9 +57,12 @@ fills, source_keyed.png and head_crop/*.png (1024 px crops for cubism_psd.py's e
              or dark and wider than two outlines, are repainted from the sleeve around them, so
              they stay on the torso when the arm swings. The wrist is the narrowest
              cross-section at 50-80 %, the elbow halfway. Front: _R is the character's right
-             (screen left), _L its left. Side: _near is the limb forward in the facing
-             direction, _far the one behind; the far arm keeps what shows and is swept on under
-             the torso to the shoulder.
+             (screen left), _L its left. Side: _near is the arm whose sleeve is drawn over the
+             body (>= 400 px where the picture differs from the armless fill, joined to its island;
+             the other has at most half that), its shoulder at the top of that sleeve, the far one
+             half a width inside where its arm goes behind the body; when
+             neither is, the limb forward in the facing direction; the far arm keeps what shows
+             and is swept on under the torso to the shoulder.
   torso      the armless fill clipped to the source; where an arm hides the torso's side, a
              straight segment bridges the visible edge above and below; the shoulder is rounded
              and outlined in the source's outline colour where the new edge has none, so a raised
@@ -69,7 +76,12 @@ fills, source_keyed.png and head_crop/*.png (1024 px crops for cubism_psd.py's e
   props      (fills with --props) the body is cut from the source with the props replaced by the
              noprop_<name> fills; each prop is the layer prop_<name>_<side> (visible pixels from the
              source, hidden ones from its own fill), rigid on the hand or forearm it touches most,
-             at the depth where the stack recomposites the source best.
+             at the depth where the stack recomposites the source best. When its own fill failed,
+             what is hidden is completed: a round prop (its outline against the background fits
+             an ellipse within 3 % over 2 rad) becomes the whole ellipse, each hidden pixel copied
+             from a mirror image that shows at rest; any other prop gets the bands other layers
+             cut through it inpainted. A prop stood on (name@feet) is the layer prop_<name> on a
+             bone of its own, `board`, a child of hips, with both feet as its contacts.
   overlap    each lower layer runs --overlap px under the one above at its joint.
   rig        bones in image pixels (y down), a Delaunay mesh per part that draws every pixel of
              its layer (a triangle the edge test drops is given back when it holds one),
@@ -87,7 +99,11 @@ moves away, the body left behind has no notch (closing with a 12 px disc adds <=
 silhouette) and its exposed edge is outlined (>= 0.7 of that edge as dark as the source outline);
 split.head_pivot: the pivot >= 0.5 eye-to-mouth distances below the mouth and above the armpit, and
 the torso draws <= 0.05 of the chin and neck skin; split.prop_layer (--props): each prop is a layer
-on one bone, the body under it keeps <= 0.1 of its pixels in its colours and leaves <= 0.02 bare.
+on one bone, the body under it keeps <= 0.1 of its pixels in its colours and leaves <= 0.02 bare;
+split.prop_whole: no band another layer cut through a prop is left empty (pixels with the prop on
+both sides within its thickness, 8-64 px, along a row, column or diagonal; a round prop inside its
+ellipse) <= 0.01 of its pixels; split.prop_contact: a prop under both soles (>= 0.3 of each) is on
+the `board` bone with the feet as contacts, never on a hand or one foot.
 
 Exit codes: 0 done (gates passed); 1 usage error or a refused input; 2 a gate failed (outputs
 are still written, to look at); 3 a server or job failure.
@@ -130,6 +146,9 @@ PROMPTS = {
     "noprops": "Picture 1 shows a 2D character holding {what}. Redraw the same image with {what} completely "
                "removed: the hands stay where they are as empty gripping hands, and the arms, body, clothing, "
                "legs and feet are drawn complete and closed where they were covered. Everything else stays. ",
+    "noprops_feet": "Picture 1 shows a 2D character standing on {what}. Redraw the same image with {what} "
+                    "completely removed: the feet stay exactly where they are, in the air, with the whole shoes "
+                    "and their soles drawn; the legs, body, arms, clothing and everything else stay. ",
     "prop": "Picture 1 shows a 2D character with {what}. Redraw the image showing ONLY {what}, whole and "
             "complete, its hidden parts drawn too, in exactly the same place, size and angle: it covers "
             "the same pixels as in Picture 1 plus its hidden part; do not enlarge it, centre it or turn it "
@@ -328,7 +347,7 @@ def hem_row(B, T, y0, y1):
 SHOULDER = 0.27        # the shoulder joint's row, as a share of neck -> crotch
 
 
-def find_arms(A, S, T, L, view, facing, ov):
+def find_arms(A, S, T, L, view, facing, ov, Tf=None):
     """Each arm: below the armpit row (the first with three runs) it is an island of its own,
     which gives the hand's tip and the width. The shoulder joint sits SHOULDER of the way from the
     neck to the crotch on the armless fill's edge (front view), or where the two arms' axes meet
@@ -430,9 +449,88 @@ def find_arms(A, S, T, L, view, facing, ov):
             sides["R" if g["Tip"][0] < L["x_mid"] else "L"] = g
     else:
         fwd = 1 if facing == "right" else -1
-        for name, g in zip(("near", "far"), sorted(arms, key=lambda g: -fwd * (g["Tip"][0] - L["x_mid"]))):
+        order = sorted(arms, key=lambda g: -fwd * (g["Tip"][0] - L["x_mid"]))
+        over = arm_over(arms, A, S, T, Tf) if Tf is not None and len(arms) == 2 and not level else None
+        if over is not None:
+            L["arm_over"] = [int(v) for v in over]
+            hi, lo = max(over), min(over)
+            if hi >= ARM_OVER_MIN and lo <= 0.5 * hi:
+                # the near arm is the one drawn over the body (its sleeve runs onto the torso; the
+                # far one starts at the torso's edge), wherever its hand points; its shoulder sits
+                # at the top of that sleeve, on its axis, half a width inside the cap
+                gn = arms[int(np.argmax(over))]
+                order = [gn] + [g for g in arms if g is not gn]
+                J = gn["J_over"] - 0.5 * gn["w"] * gn["u"]
+                reshape_arm(gn, J, A, L, xx, yy, PP)
+                for g in order[1:]:               # the far shoulder: where its own arm goes behind the
+                    c, ua = axes[next(i for i, x in enumerate(arms) if x is g)]     # body, half a width in
+                    cy, cx_ = np.nonzero(g["core"])
+                    t0 = float(((np.c_[cx_, cy] - c) @ ua).min())
+                    reshape_arm(g, c + (t0 - 0.5 * g["w"]) * ua, A, L, xx, yy, PP)
+        for name, g in zip(("near", "far"), order):
             sides[name] = g
     return sides
+
+
+ARM_OVER_MIN = 400        # px of sleeve drawn over the body: below this neither arm is in front
+
+
+def arm_over(arms, A, S, T, Tf):
+    """Per arm (side view): the pixels inside the armless silhouette where the picture differs from
+    the armless fill and that join the arm's own island, within one arm width of its axis: the
+    sleeve drawn over the body. Sets g["J_over"], that sleeve's far end on the axis."""
+    np, ndi = _np(), _ndi()
+    diff = (np.abs(S[..., :3] - Tf[..., :3]).max(-1) > 40) & A & T & (Tf[..., 3] > 127)
+    diff = ndi.binary_opening(diff, iterations=1)          # outlines redrawn a pixel off are not a sleeve
+    H, W = A.shape
+    yy, xx = np.mgrid[:H, :W]
+    out = []
+    for g in arms:
+        lab, _ = ndi.label(diff | g["core"])
+        ids = np.unique(lab[g["core"]])
+        comp = np.isin(lab, ids[ids > 0]) & diff
+        c = g["core"]
+        cy, cx = np.nonzero(c)
+        c0 = np.array([cx.mean(), cy.mean()])
+        u = -g["u"]                                        # from the hand toward the shoulder
+        nrm = np.array([-u[1], u[0]])
+        tt = (xx - c0[0]) * u[0] + (yy - c0[1]) * u[1]
+        ss = (xx - c0[0]) * nrm[0] + (yy - c0[1]) * nrm[1]
+        band = comp & (np.abs(ss) <= g["w"]) & (tt > 0)
+        out.append(float(band.sum()))
+        if band.any():
+            t95 = float(np.percentile(tt[band], 95))
+            g["J_over"] = c0 + t95 * u
+        else:
+            g["J_over"] = g["J"].copy()
+    return out
+
+
+def reshape_arm(g, J, A, L, xx, yy, PP):
+    """The arm's capsule, wrist and tip again from a new shoulder joint J (as find_arms does)."""
+    np, ndi = _np(), _ndi()
+    core, w = g["core"], g["w"]
+    cy, cx_ = np.nonzero(core)
+    d = np.hypot(cx_ - J[0], cy - J[1])
+    Tip = np.array([cx_[np.argmax(d)], cy[np.argmax(d)]], float)
+    u = (Tip - J) / max(np.linalg.norm(Tip - J), 1e-6)
+    nrm = np.array([-u[1], u[0]])
+    tt, ss = (PP - J) @ u, (PP - J) @ nrm
+    t1 = float(np.linalg.norm(Tip - J))
+    cap = (tt < 0) & (np.hypot(xx - J[0], yy - J[1]) > 0.62 * w)
+    capsule = (np.abs(ss) <= 0.5 * w + 3) & (tt >= -0.62 * w) & (tt <= t1 + 2) & ~cap
+    mask = ((A & capsule & (yy > L["y_neck"])) | core)
+    mask = largest(ndi.binary_closing(mask, structure=disk(2)) & A)
+    tm, sm = tt[mask], ss[mask]
+    best, tW = 1e9, 0.65 * t1
+    for a_ in np.linspace(0.5 * t1, 0.8 * t1, 16):
+        sel = np.abs(tm - a_) < max(2.0, 0.02 * t1)
+        if sel.sum() > 5:
+            wv = float(np.percentile(sm[sel], 97) - np.percentile(sm[sel], 3))
+            if wv < best:
+                best, tW = wv, float(a_)
+    Wr = J + tW * u
+    g.update(J=np.asarray(J, float), E=(J + Wr) / 2, W=Wr, Tip=Tip, u=u, tW=tW, tt=tt, ss=ss, full=mask)
 
 
 def finish_arms(geo, A, S, torso, taken, view, ov):
@@ -631,7 +729,7 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22, far_arm="show
     ov = int(overlap)
     yy, xx = np.mgrid[:H, :W]
     sd = ("R", "L") if view == "front" else ("near", "far")
-    geo = find_arms(A, S, T, L, view, facing, ov)
+    geo = find_arms(A, S, T, L, view, facing, ov, Tfill)
     hidden = {}
     if far_arm == "hidden" and view == "side" and "near" in geo and "far" not in geo:
         # chosen by a person: the far arm is wholly behind the body (or a shield). It gets bones,
@@ -796,6 +894,18 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22, far_arm="show
     out.mkdir(parents=True, exist_ok=True)
     if P:
         order = place_props(P, parts, order, geo, S0, A0, view, hidden, fills.get("prop_sides") or {})
+        for name, v in P.items():         # a prop stood on: its bone runs along the deck from the
+            if parts[v["layer"]].get("side") != "feet":           # middle to the front end
+                continue
+            m = parts[v["layer"]]["mask"]
+            ys, xs = np.nonzero(m)
+            cx = float(xs.mean())
+            col = np.nonzero(m[:, int(round(cx))])[0]
+            y_deck = float(col.min()) if len(col) else float(ys.min())
+            x_end = float(xs.min() if facing == "left" else xs.max())
+            bone(STOOD_BONE, "hips", (cx, y_deck), (x_end, y_deck))
+            v["contacts"] = [f"foot_{k}" for k in legs]
+            parts[v["layer"]]["contacts"] = v["contacts"]
     layers = {}
     bidx = {b["name"]: i for i, b in enumerate(bones)}
     rig_parts, manifest_layers = [], []
@@ -872,6 +982,8 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22, far_arm="show
                       notch["notch_share"] <= 0.001 and notch["outlined"] >= 0.7, **notch))
     if P:
         gates.append(prop_gate(layers, present, parts, P, S0))
+        gates.append(prop_whole_gate(layers, P, A0))
+        gates.append(prop_contact_gate(layers, parts, P))
     gates.append(sleeve_own(layers, S, A, sd, geo))
     head_hy = next(b["hy"] for b in bones if b["name"] == "head")
     gates.append(head_pivot_gate(layers, head_hy, piv, L.get("y_armpit", L["y_crotch"])))
@@ -882,7 +994,9 @@ def split(src_path: Path, fills_path: Path, out: Path, overlap=22, far_arm="show
            "swaps": [{"category": "eyes", "labels": ["open", "closed"], "layers": ["eyes_open", "eyes_closed"]},
                      {"category": "mouth", "labels": ["closed", "open"], "layers": ["mouth_closed", "mouth_open"]}],
            "joints": [{"name": k, "x": float(v[0]), "y": float(v[1])} for k, v in joints.items()],
-           "landmarks": {k: (float(v) if not isinstance(v, int) else v) for k, v in L.items() if v is not None}}
+           "props": [{"layer": v["layer"], "bones": parts[v["layer"]]["bones"], "contacts": v.get("contacts") or []}
+                     for v in P.values() if v.get("layer") in layers],
+           "landmarks": {k: (float(v) if not isinstance(v, (int, list)) else v) for k, v in L.items() if v is not None}}
     (out / "rig2d.json").write_text(json.dumps(rig), encoding="utf-8")
     man = {"width": W_, "height": H_, "ids": "ids.json", "layers": manifest_layers}
     (out / "manifest.json").write_text(json.dumps(man, indent=1), encoding="utf-8")
@@ -912,7 +1026,7 @@ def body_without_props(S, A, NPs, isos):
     # removal fill changed that no other prop explains, and shows only its visible part.
     for name, iso in sorted(isos.items(), key=lambda kv: (NPs[kv[0]] is None, kv[1] is None)):
         NP = NPs[name]
-        region = None
+        region, info = None, None
         if NP is None:                    # its removal fill failed (re-posed the arm): a thin prop's
             if iso is None:               # track is inpainted from round it instead
                 raise Refused(f"prop {name!r}: neither its own fill nor its removal fill passed")
@@ -938,8 +1052,10 @@ def body_without_props(S, A, NPs, isos):
                 near = ndi.binary_dilation(main, iterations=40)
                 sz = ndi.sum(vis, lab, range(1, n + 1))
                 vis = np.isin(lab, [k + 1 for k in range(n) if sz[k] >= 0.02 * main.sum() and (near & (lab == k + 1)).any()])
-            full = vis.copy()
-            iso = np.zeros(S.shape, np.float32)
+            # its own fill failed: what other layers hid of it is completed from what shows
+            # (a round prop by its mirror across the fitted outline's axes), or it would open as
+            # a gap the moment the prop or the layer across it moves
+            full, iso, info = complete_prop(vis, S, A)
         else:
             im = ndi.binary_opening(iso[..., 3] > 127, iterations=2)
             if im.any():
@@ -955,7 +1071,206 @@ def body_without_props(S, A, NPs, isos):
         out[region] = NP[region]
         out[region & ~npA, 3] = 0
         P[name] = {"vis": vis, "iso": iso, "full": full, "np": NP}
+        if info:
+            P[name]["fit"] = info.pop("_fit", None)
+            P[name]["completion"] = info
     return out, P
+
+
+PROP_GAP_MAX = 0.01       # share of a held prop's pixels: what other layers cut out of it, left empty
+
+
+def prop_gaps(m, A, reach=None):
+    """The pixels inside the character that the prop `m` has on both sides within `reach` px along
+    a row, a column or a diagonal: a band another layer cut through it (a pole across a shield, an
+    arm over a board). Reach defaults to the prop's own thickness, 8-64 px, so a thin prop's bend
+    is not a gap."""
+    np, ndi = _np(), _ndi()
+    if not m.any():
+        return np.zeros_like(m)
+    if reach is None:
+        reach = int(np.clip(2 * ndi.distance_transform_edt(m).max(), 8, 64))
+    ys, xs = np.nonzero(m)
+    p = reach + 1
+    y0, y1, x0, x1 = max(ys.min() - p, 0), ys.max() + p + 1, max(xs.min() - p, 0), xs.max() + p + 1
+    c = np.pad(m[y0:y1, x0:x1], p)
+    gap = np.zeros_like(c)
+    for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        fw, bw = np.zeros_like(c), np.zeros_like(c)
+        for k in range(1, reach + 1):
+            fw |= np.roll(c, (-k * dy, -k * dx), (0, 1))
+            bw |= np.roll(c, (k * dy, k * dx), (0, 1))
+        gap |= fw & bw
+    out = np.zeros_like(m)
+    out[y0:y1, x0:x1] = gap[p:-p, p:-p]
+    return out & A & ~m
+
+
+def fit_ellipse(xs, ys):
+    """Direct least-squares ellipse (Halir-Flusser): centre, semi-axes (a >= b), angle of a, or None."""
+    np = _np()
+    mx, my, sc = xs.mean(), ys.mean(), max(xs.std(), ys.std(), 1e-6)
+    x, y = (xs - mx) / sc, (ys - my) / sc
+    D1 = np.c_[x * x, x * y, y * y]
+    D2 = np.c_[x, y, np.ones_like(x)]
+    S1, S2, S3 = D1.T @ D1, D1.T @ D2, D2.T @ D2
+    try:
+        T = -np.linalg.solve(S3, S2.T)
+        M = S1 + S2 @ T
+        M = np.array([M[2] / 2, -M[1], M[0] / 2])
+        w, v = np.linalg.eig(M)
+    except np.linalg.LinAlgError:
+        return None
+    v = np.real(v)
+    cond = 4 * v[0] * v[2] - v[1] ** 2
+    if not (cond > 0).any():
+        return None
+    a1 = v[:, np.argmax(cond > 0)]
+    A_, B, C = a1
+    Dd, E, F = T @ a1
+    den = B * B - 4 * A_ * C
+    if den >= 0:
+        return None
+    cx = (2 * C * Dd - B * E) / den
+    cy = (2 * A_ * E - B * Dd) / den
+    num = 2 * (A_ * E * E + C * Dd * Dd - B * Dd * E + den * F)
+    root = np.sqrt((A_ - C) ** 2 + B * B)
+    try:
+        ax1 = -np.sqrt(num * (A_ + C + root)) / den
+        ax2 = -np.sqrt(num * (A_ + C - root)) / den
+    except FloatingPointError:
+        return None
+    if not (np.isfinite(ax1) and np.isfinite(ax2)) or ax1 <= 0 or ax2 <= 0:
+        return None
+    th = 0.5 * np.arctan2(-B, C - A_)
+    a, b = max(ax1, ax2), min(ax1, ax2)
+    if ax2 > ax1:
+        th += np.pi / 2
+    return np.array([cx * sc + mx, cy * sc + my]), a * sc, b * sc, th
+
+
+ROUND_FIT_MAX = 0.03      # a round prop: its outline within 3 % of the fitted ellipse
+ROUND_ARC_MIN = 2.0       # radians of that outline seen against the background
+
+
+MIRROR_AGREE = 45         # blurred colour a pixel and its mirror image may differ by and agree
+
+
+def mirror_fill(S, seen, todo, fit):
+    """Each pixel of `todo` copied from the nearest of its three mirror images (across the
+    symmetry line, across the line at right angles to it, through the centre) that lies in
+    `seen`, eroded 2 px; what no mirror reaches is inpainted from round it."""
+    np, ndi = _np(), _ndi()
+    c, a, b, t = fit
+    H, W = seen.shape
+    iso = np.zeros(S.shape, np.float32)
+    src_ok = ndi.binary_erosion(seen, iterations=2)
+    ct, st = np.cos(t), np.sin(t)
+
+    def mirrors(px, py):
+        u, v = (px - c[0]) * ct + (py - c[1]) * st, -(px - c[0]) * st + (py - c[1]) * ct
+        for su, sv in ((1, -1), (-1, 1), (-1, -1)):
+            mx = np.rint(c[0] + su * u * ct - sv * v * st).astype(int)
+            my = np.rint(c[1] + su * u * st + sv * v * ct).astype(int)
+            inb = (mx >= 0) & (mx < W) & (my >= 0) & (my < H)
+            yield np.where(inb, mx, 0), np.where(inb, my, 0), inb
+    # a pixel that shows is a source only when one of its mirrors that also shows agrees with it
+    # (or none shows): something drawn over the prop at rest (a jacket edge the removal fill moved)
+    # is not copied round the prop
+    blur = np.stack([ndi.gaussian_filter(S[..., k] * (S[..., 3] / 255), 2) for k in range(3)], -1)
+    sy_, sx_ = np.nonzero(src_ok)
+    agree, any_seen = np.zeros(len(sy_), bool), np.zeros(len(sy_), bool)
+    for mx, my, inb in mirrors(sx_, sy_):
+        sn = inb & seen[my, mx]
+        any_seen |= sn
+        agree |= sn & (np.abs(blur[sy_, sx_] - blur[my, mx]).max(-1) <= MIRROR_AGREE)
+    src_ok[sy_[any_seen & ~agree], sx_[any_seen & ~agree]] = False
+    ty, tx = np.nonzero(todo)
+    best = np.full(len(ty), np.inf)
+    sy, sx = np.zeros(len(ty), int), np.zeros(len(ty), int)
+    for mx, my, inb in mirrors(tx, ty):
+        okk = inb & src_ok[my, mx]
+        dist = np.hypot(mx - tx, my - ty)
+        better = okk & (dist < best)
+        best[better], sy[better], sx[better] = dist[better], my[better], mx[better]
+    got = np.isfinite(best)
+    iso[ty[got], tx[got]] = S[sy[got], sx[got]]
+    iso[ty[got], tx[got], 3] = 255
+    left = todo.copy()
+    left[ty[got], tx[got]] = False
+    if left.any():
+        pic = np.zeros_like(S)
+        pic[src_ok] = S[src_ok]
+        pic[todo & ~left] = iso[todo & ~left]
+        iso[left] = inpaint_track(pic, left)[left]
+        iso[left, 3] = 255
+    return iso, int(got.sum()), int(left.sum())
+
+
+def complete_prop(vis, S, A):
+    """A held prop whose own fill failed shows only its visible pixels. The hidden ones it needs
+    when it moves are completed here. A round prop (a shield, a wheel, a disc: its outline against
+    the background fits an ellipse within ROUND_FIT_MAX over ROUND_ARC_MIN radians) becomes the
+    whole ellipse, each hidden pixel copied from a mirror image (mirror_fill; place_props redoes
+    it from what still shows once the layers above it are known); any other prop gets only the
+    gaps other layers cut through it (prop_gaps), inpainted from round them.
+    Returns (full mask, picture of the hidden pixels, info)."""
+    np, ndi = _np(), _ndi()
+    iso = np.zeros(S.shape, np.float32)
+    info = {"method": "none", "added_px": 0}
+    if not vis.any():
+        return vis.copy(), iso, info
+    H, W = vis.shape
+    op = ndi.binary_opening(vis, iterations=2)
+    core = largest(op) if op.any() else vis
+    rim = core & ~ndi.binary_erosion(core) & ndi.binary_dilation(~A, iterations=2)
+    ys, xs = np.nonzero(rim)
+    full = None
+    if len(xs) >= 40:
+        keep = np.ones(len(xs), bool)
+        fit = None
+        for _ in range(4):                # trim what is not the outline (an edit's crumb, a strap)
+            fit = fit_ellipse(xs[keep].astype(float), ys[keep].astype(float))
+            if fit is None:
+                break
+            c, a, b, th = fit
+            R = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
+            uv = (np.c_[xs - c[0], ys - c[1]]) @ R
+            res = np.abs(np.hypot(uv[:, 0] / a, uv[:, 1] / b) - 1)
+            keep = res < max(3 * np.median(res[keep]), 0.01)
+        if fit is not None and keep.sum() >= 30:
+            c, a, b, th = fit
+            ang = np.sort(np.arctan2(uv[keep, 1] / b, uv[keep, 0] / a))
+            arc = 2 * np.pi - np.diff(np.r_[ang, ang[0] + 2 * np.pi]).max()
+            p90 = float(np.percentile(res[keep], 90))
+            yy, xx = np.mgrid[:H, :W]
+            u = (xx - c[0]) * np.cos(th) + (yy - c[1]) * np.sin(th)
+            v = -(xx - c[0]) * np.sin(th) + (yy - c[1]) * np.cos(th)
+            ell = (u / a) ** 2 + (v / b) ** 2 <= 1.0
+            info.update(fit=[round(float(c[0]), 1), round(float(c[1]), 1), round(float(a), 1), round(float(b), 1),
+                             round(float(np.degrees(th)), 1)], arc=round(float(arc), 2), fit_p90=round(p90, 4),
+                        outline_kept=round(float(keep.mean()), 3))
+            if p90 <= ROUND_FIT_MAX and keep.mean() >= 0.7 and arc >= ROUND_ARC_MIN and b >= 0.2 * a \
+                    and ell.sum() <= 3 * vis.sum() and (vis & ell).sum() >= 0.8 * vis.sum():
+                full = ell & (A | vis)
+                seen = vis & ell
+                # a near circle's axes are not told by its outline: the picture's upright and
+                # level lines are its symmetry lines (the three mirrors span both)
+                t = th if a >= 1.1 * b else 0.0
+                iso, n_m, n_i = mirror_fill(S, seen, full & ~seen, (c, a, b, t))
+                info.update(method="mirror", axis_deg=round(float(np.degrees(t)), 1),
+                            added_px=int((full & ~seen).sum()), mirrored_px=n_m, inpainted_px=n_i)
+                info["_fit"] = (c, a, b, t)
+    if full is None:                       # not round: only the bands cut through it
+        gap = prop_gaps(vis, A)
+        full = vis | gap
+        if gap.any():
+            pic = np.zeros_like(S)
+            pic[vis] = S[vis]
+            iso[gap] = inpaint_track(pic, gap)[gap]
+            iso[gap, 3] = 255
+        info.update(method="gaps" if gap.any() else "none", added_px=int(gap.sum()))
+    return full, iso, info
 
 
 PROP_INPAINT_MAX = 40     # px: a prop this thin can be inpainted when its removal fill fails
@@ -988,6 +1303,36 @@ def inpaint_track(S, todo):
     return out
 
 
+STOOD_BONE = "board"       # the bone of a prop stood on (--props name@feet=...): skateboard, snowboard
+
+
+def _prop_depth(lay, mask, parts, order, S0, A0, near_i):
+    """The stack with `lay` inserted where the layers recomposite the source best; among the best
+    (within 0.5 % of the prop's pixels), the place nearest near_i (its hand, or the far foot)."""
+    np, ndi = _np(), _ndi()
+    ys, xs = np.nonzero(ndi.binary_dilation(mask, iterations=8))
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    crop = lambda a: a[y0:y1, x0:x1]
+
+    def stack_err(ordr):
+        ls_ = []
+        for n in reversed(ordr):
+            p = parts.get(n)
+            if p is None or p.get("hidden"):
+                continue
+            a = np.zeros(crop(S0).shape, np.float32)
+            m = crop(p["mask"])
+            a[m] = crop(p["img"])[m]
+            ls_.append(a)
+        c = over(ls_)
+        dd = np.abs(c[..., :3] * (c[..., 3:4] / 255) - crop(S0)[..., :3] * (crop(S0)[..., 3:4] / 255)).max(-1)
+        return int(((dd > 40) & ((c[..., 3] > 127) | crop(A0))).sum())
+    cands = [(stack_err(order[:i] + [lay] + order[i:]), i, order[:i] + [lay] + order[i:]) for i in range(len(order) + 1)]
+    err = min(c[0] for c in cands)
+    ok = [c for c in cands if c[0] <= err + 0.005 * mask.sum()]
+    return min(ok, key=lambda c: abs(c[1] - near_i))[2]
+
+
 def place_props(P, parts, order, geo, S0, A0, view, hidden_arms=None, sides=None):
     """Each held prop becomes the layer prop_<name>_<side>: its visible pixels from the source, its hidden
     ones (inside the silhouette, behind the body) from its own fill, bound rigidly to the hand or
@@ -999,11 +1344,16 @@ def place_props(P, parts, order, geo, S0, A0, view, hidden_arms=None, sides=None
         hidden = full & ~vis & A0
         img = S0.copy()
         img[hidden] = v["iso"][hidden]
-        img[..., 3] = np.where(vis | hidden, 255, 0)
         mask = vis | hidden
+        img[..., 3] = np.where(mask, 255, 0)
         near = ndi.binary_dilation(vis, iterations=6)
         best, side, bone = -1, None, None
         want = (sides or {}).get(name)
+        if want == "feet":                # stood on: a bone of its own, the feet planted on it
+            lay = v["layer"] = f"prop_{name}"
+            parts[lay] = {"mask": mask, "img": img, "bones": [STOOD_BONE], "side": "feet"}
+            order = _prop_depth(lay, mask, parts, order, S0, A0, order.index("foot_far") if "foot_far" in order else len(order))
+            continue
         for k, g in geo.items():
             if want and k != want:
                 continue
@@ -1026,35 +1376,21 @@ def place_props(P, parts, order, geo, S0, A0, view, hidden_arms=None, sides=None
             side, bone = k, f"hand_{k}"
         lay = v["layer"] = f"prop_{name}_{side}"
         parts[lay] = {"mask": mask, "img": img, "bones": [bone], "side": side}
-        # the depth: try it above each layer and keep the one that recomposites the source best
-        ys, xs = np.nonzero(ndi.binary_dilation(mask, iterations=8))
-        y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-        crop = lambda a: a[y0:y1, x0:x1]
-
-        def stack_err(ordr):
-            ls_ = []
-            for n in reversed(ordr):
-                p = parts.get(n)
-                if p is None or p.get("hidden"):
-                    continue
-                a = np.zeros(crop(S0).shape, np.float32)
-                m = crop(p["mask"])
-                a[m] = crop(p["img"])[m]
-                ls_.append(a)
-            c = over(ls_)
-            dd = np.abs(c[..., :3] * (c[..., 3:4] / 255) - crop(S0)[..., :3] * (crop(S0)[..., 3:4] / 255)).max(-1)
-            return int(((dd > 40) & ((c[..., 3] > 127) | crop(A0))).sum())
-        cands = []
-        for i in range(len(order) + 1):
-            o2 = order[:i] + [lay] + order[i:]
-            cands.append((stack_err(o2), i, o2))
-        err = min(c[0] for c in cands)
-        # among the best (within 0.5 % of the prop), the one nearest its hand in the stack
-        # (a hidden arm is the bottom of a side view's stack)
+        # a hidden arm is the bottom of a side view's stack
         hand_i = order.index(f"hand_{side}") if f"hand_{side}" in order else \
             (len(order) if side in (hidden_arms or {}) else 0)
-        ok = [c for c in cands if c[0] <= err + 0.005 * mask.sum()]
-        order = min(ok, key=lambda c: abs(c[1] - hand_i))[2]
+        order = _prop_depth(lay, mask, parts, order, S0, A0, hand_i)
+        if v.get("fit"):                  # a mirrored prop: copy only from what shows at rest, so
+            above = np.zeros_like(mask)   # the body the layers above draw over it is not copied
+            for n in order[:order.index(lay)]:
+                if n in parts and not parts[n].get("hidden"):
+                    above |= parts[n]["mask"]
+            seen = vis & full & ~above
+            todo = full & ~seen
+            iso, n_m, n_i = mirror_fill(S0, seen, todo, v["fit"])
+            img[todo] = iso[todo]
+            img[..., 3] = np.where(mask, 255, 0)
+            v.setdefault("completion", {}).update(added_px=int(todo.sum()), mirrored_px=n_m, inpainted_px=n_i)
     return order
 
 
@@ -1080,6 +1416,62 @@ def prop_gate(layers, present, parts, P, S0):
         ok &= has and baked <= PROP_BAKED_MAX and holes <= PROP_HOLE_MAX and len(bones) == 1
     worst = max((x.get("baked", 1.0) for x in per.values()), default=1.0)
     return gate("split.prop_layer", round(worst, 4), PROP_BAKED_MAX, ok, per_prop=per, hole_max=PROP_HOLE_MAX)
+
+
+def prop_whole_gate(layers, P, A0):
+    """split.prop_whole: no held prop has a band cut through it by another layer and left empty
+    (prop_gaps, as a share of its pixels <= PROP_GAP_MAX; a round prop's within its ellipse): the
+    band opens as a gap the moment the prop or the layer across it moves."""
+    per, worst = {}, 0.0
+    for name, v in P.items():
+        lay = v.get("layer", f"prop_{name}")
+        if lay not in layers:
+            continue
+        m = layers[lay][..., 3] > 8
+        if v.get("fit"):                  # a round prop: its disc (a sleeve edge past it is not a gap)
+            m &= v["full"]
+        g = prop_gaps(m, A0)
+        share = float(g.sum() / max(int(m.sum()), 1))
+        per[lay] = {"gap_px": int(g.sum()), "share": round(share, 4), **(v.get("completion") or {})}
+        worst = max(worst, share)
+    return gate("split.prop_whole", round(worst, 4), PROP_GAP_MAX, worst <= PROP_GAP_MAX, per_prop=per)
+
+
+def under_feet(prop, foot):
+    """The share of a foot's sole (its bottom row of pixels, column by column) with the prop
+    within 6 px below it: 1 when the foot stands on the prop."""
+    np = _np()
+    cols = np.nonzero(foot.any(0))[0]
+    if not len(cols):
+        return 0.0
+    hit = 0
+    for x in cols:
+        yb = int(np.nonzero(foot[:, x])[0].max())
+        hit += bool(prop[yb + 1:yb + 7, x].any() or prop[max(yb - 2, 0):yb + 1, x].any())
+    return hit / len(cols)
+
+
+STOOD_MIN = 0.3           # share of each sole over the prop: the prop is stood on
+
+
+def prop_contact_gate(layers, parts, P):
+    """split.prop_contact: a prop under both feet (STOOD_MIN of each sole over it) is a board: it
+    is on a bone of its own (STOOD_BONE) with the feet as its contacts, so a driver can plant them
+    on it; bound rigidly to a hand or a foot it would fly with that limb (a push lifts one foot
+    off the deck, an ollie tips the board under both)."""
+    per, ok = {}, True
+    for name, v in P.items():
+        lay = v.get("layer", f"prop_{name}")
+        if lay not in layers:
+            continue
+        m = layers[lay][..., 3] > 8
+        soles = {f: round(under_feet(m, layers[f][..., 3] > 8), 3) for f in layers if f.startswith("foot_")}
+        stood = len(soles) >= 2 and all(x >= STOOD_MIN for x in soles.values())
+        bones = parts[lay]["bones"]
+        good = not stood or (bones == [STOOD_BONE] and sorted(v.get("contacts") or []) == sorted(soles))
+        per[lay] = {"soles": soles, "stood_on": stood, "bones": bones, "contacts": v.get("contacts") or []}
+        ok &= good
+    return gate("split.prop_contact", int(ok), 1, ok, per_prop=per, stood_min=STOOD_MIN)
 
 
 HEAD_PIVOT_MIN = 0.5      # the head pivot sits this many eye-to-mouth distances below the mouth
@@ -1619,6 +2011,8 @@ def keep_zone(name, A, box):
     return inbox
 
 
+PROP_ALONE_MAX = 0.6      # share of the character a prop's own fill may still cover: more is the
+                          # character kept, and as a keep-zone mask it would hide every other fill
 PROP_REMOVED_MIN = 0.7    # share of a prop's pixels its removal fill must change
 
 
@@ -1642,12 +2036,14 @@ def fill_gates(name, fill, S, A, box, ignore=None):
     widen into the gaps beside the arms; split clips it to the source."""
     np, ndi = _np(), _ndi()
     fA = fill[..., 3] > 127
-    if name.startswith("prop_"):          # the prop alone: inside the source, and drawn at all
-        grown = ndi.binary_dilation(A, iterations=4)
+    if name.startswith("prop_"):          # the prop alone: inside the source, drawn at all, and
+        grown = ndi.binary_dilation(A, iterations=4)          # without the character round it
         inside = float((fA & ~grown).sum() / max(fA.sum(), 1))
         share = float(fA.mean())
+        alone = float((fA & A).sum() / max(A.sum(), 1))
         return [gate("fill.inside", round(inside, 4), 0.03, inside <= 0.03),
-                gate("fill.present", round(share, 4), 0.002, share >= 0.002)]
+                gate("fill.present", round(share, 4), 0.002, share >= 0.002),
+                gate("fill.alone", round(alone, 4), PROP_ALONE_MAX, alone <= PROP_ALONE_MAX)]
     kz = keep_zone(name, A, box)
     if ignore is not None:                # where a held prop was: the fill removed it on purpose
         kz = kz & ~ignore
@@ -1689,9 +2085,9 @@ def parse_props(text):
         k, eq, v = kv.partition("=")
         k = k.strip().lower()
         k, at, side = k.partition("@")
-        if at:                            # name@side: the person says which arm holds it
-            if side not in ("near", "far", "l", "r"):
-                raise ValueError(f"--props side must be near, far, L or R, got {side!r}")
+        if at:                            # name@side: the person says which arm holds it, or
+            if side not in ("near", "far", "l", "r", "feet"):          # feet: it is stood on
+                raise ValueError(f"--props side must be near, far, L, R or feet, got {side!r}")
             SIDES[k] = side.upper() if side in ("l", "r") else side
         if not eq or not k.isidentifier() or not v.strip():
             raise ValueError(f"--props wants name=description;..., got {kv!r}")
@@ -1724,7 +2120,8 @@ def cmd_fills(a) -> int:
     jobs = []
     for k, v in props.items():            # first: each prop's own fill gates its removal fill
         jobs += [(f"prop_{k}", [0, 0, W, H], PROMPTS["prop"].format(what=v)),
-                 (f"noprop_{k}", [0, 0, W, H], PROMPTS["noprops"].format(what=v) + hint)]
+                 (f"noprop_{k}", [0, 0, W, H],
+                  PROMPTS["noprops_feet" if SIDES.get(k) == "feet" else "noprops"].format(what=v) + hint)]
     jobs.append(("noarms", [0, 0, W, H], PROMPTS["noarms_" + a.view] + gone + hint))
     jobs += [(k, "HEAD", PROMPTS[k]) for k in ("bald", "eyes_closed", "mouth_open")]
     if a.cubism:
@@ -1789,9 +2186,12 @@ def cmd_fills(a) -> int:
                 import scipy.ndimage as ndi_
                 ign = np.zeros_like(A)
                 for k in (props if name == "noarms" else [name[len("noprop_"):]]):
-                    pf = out / f"prop_{k}.png"
+                    pf, nf = out / f"prop_{k}.png", out / f"noprop_{k}.png"
                     if pf.is_file() and doc["fills"].get(f"prop_{k}", {}).get("pass"):
                         ign |= load(pf)[..., 3] > 127
+                    elif name == "noarms" and nf.is_file() and doc["fills"].get(f"noprop_{k}", {}).get("pass"):
+                        nfa = load(nf)             # its own fill failed: where its removal changed the picture
+                        ign |= A & ((np.abs(nfa[..., :3] - S[..., :3]).max(-1) > 40) | (nfa[..., 3] <= 127))
                 pm, ign = ign, ndi_.binary_dilation(ign, iterations=8)
             gs = fill_gates(name, placed, S, A, box, ign)
             if name.startswith("noprop_"):
@@ -2048,6 +2448,8 @@ def selftest() -> int:
             checks["props_side"] = False
         except ValueError:
             pass
+        checks["props_side"] &= parse_props("board@feet=a skateboard") == {"board": "a skateboard"} and \
+            SIDES.get("board") == "feet"
     finally:
         SIDES.clear()
         SIDES.update(keep)
@@ -2062,6 +2464,41 @@ def selftest() -> int:
         g["14"]["inputs"]["steps"] == 4 and g["14"]["inputs"]["seed"] == 5
     im, sq = pad_square(np.zeros((300, 200, 3), np.float32), [0, 0, 200, 300], np.array([255, 0, 255.0]), size=64)
     checks["square_pad"] = im.size == (64, 64) and sq == (-50, 0, 300)
+    # a round shield half behind a body, a pole across it: what shows is completed by its mirror
+    yy, xx = np.mgrid[:240, :240]
+    disc = (xx - 100) ** 2 + (yy - 120) ** 2 <= 70 ** 2
+    body = (xx > 130) & (yy > 20) & (yy < 230)
+    pole = np.abs((xx - 40) - (yy - 30)) < 9
+    S = np.zeros((240, 240, 4), np.float32)
+    S[disc] = (40, 50, 90, 255)
+    S[disc & (np.hypot(xx - 100, yy - 120) > 60)] = (240, 200, 20, 255)          # the rim
+    S[disc & (np.abs(yy - 120) < 6)] = (120, 70, 30, 255)                        # a level strap
+    S[body] = (60, 120, 200, 255)
+    S[pole & (yy < 230)] = (230, 170, 100, 255)
+    A_ = S[..., 3] > 127
+    vis = disc & ~body & ~(pole & (yy < 230))
+    gaps0 = float(prop_gaps(vis, A_).sum() / vis.sum())
+    full, iso, info = complete_prop(vis, S, A_)
+    lay = vis | full
+    rim_hidden = disc & body & (np.hypot(xx - 100, yy - 120) > 62)
+    checks["round_prop_completed"] = gaps0 > PROP_GAP_MAX and info["method"] == "mirror" and \
+        float(prop_gaps(lay, A_).sum()) / lay.sum() <= PROP_GAP_MAX and (full & disc).sum() >= 0.97 * disc.sum() \
+        and float(np.abs(iso[rim_hidden][:, :3] - (240, 200, 20)).max(-1).mean()) < 30
+    # a prop's own fill that kept the character fails fill.alone
+    fa = {g["name"]: g["pass"] for g in fill_gates("prop_x", S.copy(), S, A_, [0, 0, 240, 240])}
+    checks["prop_fill_alone"] = fa["fill.alone"] is False
+    # a board under both feet: on its own bone with the feet as contacts, never on a hand
+    fl = np.zeros((240, 240, 4), np.float32)
+    feet = {"foot_near": fl.copy(), "foot_far": fl.copy()}
+    feet["foot_near"][180:200, 150:190] = 255
+    feet["foot_far"][180:200, 50:90] = 255
+    bd = fl.copy()
+    bd[200:210, 30:210] = 255
+    lays = dict(feet, prop_board=bd)
+    Pb = {"board": {"layer": "prop_board", "contacts": ["foot_near", "foot_far"]}}
+    good = prop_contact_gate(lays, {"prop_board": {"bones": [STOOD_BONE]}}, Pb)
+    bad = prop_contact_gate(lays, {"prop_board": {"bones": ["hand_near"]}}, {"board": {"layer": "prop_board"}})
+    checks["stood_prop_contact"] = good["pass"] and not bad["pass"]
     ok = all(checks.values())
     print(json.dumps({"checks": checks, "pass": ok}))
     return 0 if ok else 2

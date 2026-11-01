@@ -93,7 +93,7 @@ skeleton, so they fit any arm angle and hand orientation:
 | `arms_up` | both upper arms to 20° from vertical; the shoulders 15° after them |
 | `deep_squat` | thighs 100° forward, knees 120°, spine and chest 10° forward each |
 | `torso_twist` | spine, chest and upper chest 20° each about their own axis (60° in all) |
-| `fist` | each finger phalanx 60° toward the palm, the thumb's 30°; skipped without finger bones |
+| `fist` | each finger phalanx 60° toward the palm, the thumb's 30°; Index–Little turn about the knuckle line (Index1 → Little1), so a finger placed a few degrees off parallel curls in its own plane instead of swinging its tip across the palm into the thumb; skipped without finger bones |
 | `leg_raise` | the left thigh 90° forward, knee straight |
 | `elbow_120` | both forearms 120° toward the front |
 | `mitten` | only when named (autorig.py names it instead of `fist` on a `fixed` hand): Middle1–3 40° toward the palm, the thumb's 20°, the other fingers at rest; adds `deform.mitten_tear` |
@@ -136,7 +136,8 @@ as a loss there for any skin. A joint whose patch does not wrap around it, or ho
 triangles, is listed in `joints_not_measured`. Two fallbacks read an elbow or knee that would
 otherwise be lost, and change no patch that already reads: one with fewer than 8 triangles (a short
 thick limb whose skin lies past half its span) takes 1.25 x the distance to the nearest skin instead,
-when that skin sits around the joint (an opening at the joint leaves it along the limb, still unmeasured);
+when that skin sits around the joint (an opening at the joint leaves it along the limb, still unmeasured;
+`deform.hinge_blended` reads the same patch and skips the same joint, `hinge_reach`);
 one that does not wrap (a hem across a short leg's knee, its lining facing in) keeps the triangles
 within 1.3 x the limb's own radius from the bone's axis (the median of the quarter nearest the
 joint), and is read when those wrap. An elbow or knee there fails
@@ -149,8 +150,9 @@ A gain (a negative loss, common at a knee bent 120°) is reported and not gated.
 sharing no vertex with it (vertices welded by position: a glTF or FBX splits them at UV seams, and
 two triangles meeting at a seam touch, they do not cross) in the pose and did not at rest (Blender's BVH overlap), divided by the
 outward triangles that moved (a vertex more than 0.1 % of the height). A double shell or an accessory that already
-crosses the body at rest is not counted again. Gated, `deform.self_intersection_p95` ≤ 0.08 over
-every sample. The denominator is the whole moved region, so a seam at one joint is diluted: a hard
+crosses the body at rest is not counted again, nor is a held prop's skin (`--prop`, passed when the markers
+found one: inside its slices and rigid on the hand, as a separate object; reported as `prop`). Gated,
+`deform.self_intersection_p95` ≤ 0.08 over every sample. The denominator is the whole moved region, so a seam at one joint is diluted: a hard
 skin (each vertex following only its heaviest bone) can pass this gate on a normally proportioned
 body. The elbow volume loss and the `elbow_120` and `deep_squat` renders are what catch it; look at
 them before reading a pass.

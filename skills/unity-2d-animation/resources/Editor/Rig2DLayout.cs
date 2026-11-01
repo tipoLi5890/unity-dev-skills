@@ -23,6 +23,8 @@
 //   hair* bag* tail* scarf* cape* ponytail* ribbon*   <layer>_pivot, hung from the item's top
 //                                            (hair from neck, the rest from hips/chest/neck)
 //   prop_<name>_X (a held prop)              wrist_X, rigid: it moves with that hand
+//   prop_<name>  (stood on: no side)         board (a child of hips, from a rig file), rigid;
+//                                            RigDriver2D plants the feet on it
 //   anything else                            rigid to the nearest bone
 using System;
 using System.Collections.Generic;
@@ -345,6 +347,7 @@ namespace UnityDev.Rig2D
                 want.AddRange(new[] { "hip_" + s, "knee_" + s });
             else if (s != "" && n.StartsWith("foot_")) want.AddRange(new[] { "knee_" + s, "ankle_" + s });
             else if (s != "" && n.StartsWith("prop_")) want.Add("wrist_" + s);
+            else if (n.StartsWith("prop_")) want.Add("board");
             var have = want.Where(b => !string.IsNullOrEmpty(b) && bones.ContainsKey(b)).Distinct().ToList();
             if (have.Count == 0) have.Add(Nearest(bones.Values, layer.Centroid).name);
             return have.ToArray();

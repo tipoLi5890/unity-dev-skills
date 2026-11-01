@@ -58,6 +58,7 @@ character's own left and right, so `_R` is on screen left) or `_near` / `_far` i
 | `foot_X` | `knee_X`, `ankle_X` |
 | `hair*`, `bag*`, `tail*`, `scarf*`, `cape*`, `ponytail*`, `ribbon*` | its own `<layer>_pivot`, hung from the item's top: hair from `neck`, anything else from `hips`, `chest` or `neck` |
 | `prop_<name>_X` (a held prop: a pole, a shield) | `wrist_X`, rigid, so it moves with that hand. A rig file can bind it to `elbow_X` instead |
+| `prop_<name>` (stood on: a board) | `board`, a child of `hips`, rigid; the bone comes from a rig file (`layer_split.py --props name@feet=...`), from the layers alone it rides the nearest bone. `RigDriver2D` keeps it on the ground and plants the feet on it |
 | anything else | the nearest bone, rigid |
 
 **Bones are named after joints, never after a part.** The importer renames a bone that shares
@@ -91,11 +92,16 @@ sprites.
   whatever it leaves out, and a thin wedge cut off an edge shows as a background sliver in
   every pose, so a mesh below that line is replaced by a grid mesh, with a note.
 - **Pose gate:** the prefab is skinned on the CPU in the standard poses (front: rest, arm up,
-  head turn, crouch, all three; side: rest and four phases of the run, and with a `prop_` layer
-  the attack drawn back and at the hit). At rest no solid layer
+  head turn, crouch, all three; side: rest and four phases of the run, with a `prop_<name>_X`
+  layer the attack drawn back and at the hit, and with a `board` bone riding, five phases of the
+  push and five of the ollie). At rest no solid layer
   pixel may be drawn by no triangle (0.05 % of the silhouette at most). Posed, the background
   cells a small closing fills inside the silhouette may grow by at most 0.2 % over rest, and a
   small disc round each elbow, wrist, hip, knee and ankle stays 97 % covered.
+- **Contact gate (a board):** in every skate pose a planted foot lands within 0.01 heights of
+  its spot on the deck (the leg reaches), no sole and no board corner sinks more than 0.006
+  below the ground, the pushing sole is within 0.01 of the ground while it pushes, and a riding
+  board stays down. The report lists `contacts` per pose: miss, sink, push gap, board lift.
 
 **From the layers** (no rig file, or `-rig2dJson none`):
 
@@ -164,7 +170,8 @@ skipped, so a sheet without hands still plays.
 
 | Field | Does |
 |---|---|
-| `motion` | `Idle`: breath, sway. `Talk`: idle plus mouth swaps at 8 Hz and a nod. `Run`. `Attack`: a poke. `None`: leaves the bones to an Animator; blink, mouth and springs still run |
+| `motion` | `Idle`: breath, sway. `Talk`: idle plus mouth swaps at 8 Hz and a nod. `Run`. `Attack`: a poke. `Push`, `Ollie`: on a board. `None`: leaves the bones to an Animator; blink, mouth and springs still run |
+| `pushPeriod`, `olliePeriod`, `pushSide` | A rig with a `board` bone. The board stays where it was bound and the feet are planted on it by two-bone IK (each knee bends the way it bends at rest), in every motion but the run. `Push`: the foot over the tail (or `pushSide`) leaves the deck, comes down beside the front foot (the legs cross; a far leg passes behind the near one and the board), sweeps back along the ground as far as the leg reaches, and swings home; the hips drop as far as that foot needs. `Ollie`: crouch, the board tips nose up about the tail on the ground as the body springs, rises under the tucked feet and levels, falls, and the knees take the landing; the front foot slides up the deck. `FootMiss`, `SinkBelowGround`, `PushGap` and `BoardLift` report the last pose's contacts |
 | `attackPeriod`, `attackSide` | Seconds per attack, and the arm that pokes (`near`, or `R` / `L`). The arm draws back with the elbow folding (to 0.4 of the period), thrusts forward with the body leaning in (0.52), holds the hit (to 0.65) and recovers. The wrist turns against the arm, so a prop bound to that hand keeps its angle and pokes |
 | `view`, `facesRight` | `Front`: the run in place, knees lifting outward. `Side`: the thighs swing about the hip, the knee folds most in mid-swing, the foot stays near level, each arm swings against its leg, the body leans and bobs. Facing flips the side view for art drawn facing −x. Flip the root, never a bone |
 | `stride`, `breathPeriod`, `speed` | Seconds per run cycle (two steps), seconds per breath, time scale |

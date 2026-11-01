@@ -6,7 +6,8 @@
 // the layer's own alpha, opens no hole and keeps the shoulder covered; the side run moves the
 // legs in opposite phase; the spring on the bag stays finite and inside its angle limit; the pose
 // gate passes the rig and fails a torso mesh with triangles missing; the rig.json reader flips y and
-// normalises weights; and a rig-file layer the PSB lacks is a problem.
+// normalises weights; a rig-file layer the PSB lacks is a problem; and on a board the push and the
+// ollie keep the feet planted, the push foot on the ground and the board down while riding.
 //
 // Drop into an Editor test assembly (UNITY_INCLUDE_TESTS) that references the assemblies holding
 // AutoRig2D.cs, Rig2DLayout.cs, SpriteLibraryBuilder.cs and RigDriver2D.cs, plus
@@ -248,6 +249,76 @@ namespace UnityDev.Rig2D.Tests
             drv.facesRight = false;
             drv.Evaluate(0.58f * drv.attackPeriod);
             Assert.Less(Turn(), -15f, "art facing left pokes to the left");
+        }
+
+        // a side-view skater as bare bones (no art: the driver's fallbacks size the board and soles):
+        // hips with two bent legs and a board under them
+        GameObject Skater()
+        {
+            var root = new GameObject("Skater2D");
+            _made.Add(root);
+            Transform B(string n, Transform parent, Vector2 at)
+            {
+                var t = new GameObject(n).transform;
+                t.SetParent(parent, false);
+                t.position = at;
+                return t;
+            }
+            Transform hips = B("hips", root.transform, new Vector2(0f, 0.95f));
+            B("chest", hips, new Vector2(0f, 1.3f));
+            foreach (var (s, x) in new[] { ("near", 0.12f), ("far", -0.12f) })
+            {
+                Transform hip = B("hip_" + s, hips, new Vector2(0.4f * x, 0.95f));
+                Transform knee = B("knee_" + s, hip, new Vector2(x + 0.06f, 0.52f));
+                Transform ankle = B("ankle_" + s, knee, new Vector2(x, 0.12f));
+                B("toe_" + s, ankle, new Vector2(x + 0.08f, 0.1f));
+            }
+            B("board", hips, new Vector2(0f, 0.08f));
+            return root;
+        }
+
+        [Test]
+        public void BoardKeepsTheFeetPlantedThroughThePushAndTheOllie()
+        {
+            var board = new Layer2D { name = "prop_board", rect = new RectInt(-20, -4, 40, 8), mask = Enumerable.Repeat(true, 320).ToArray() };
+            CollectionAssert.AreEqual(new[] { "board" }, Rig2DLayout.PartBones(board, new Dictionary<string, Bone2D>
+            {
+                ["hips"] = new Bone2D("hips", "", Vector2.zero, Vector2.up),
+                ["board"] = new Bone2D("board", "hips", Vector2.zero, Vector2.right),
+                ["ankle_near"] = new Bone2D("ankle_near", "knee_near", new Vector2(5, 0), new Vector2(8, 0)),
+            }), "a prop with no side rides the board bone");
+            GameObject go = Skater();
+            var drv = go.AddComponent<RigDriver2D>();
+            drv.view = RigDriver2D.View.Side;
+            drv.facesRight = true;
+            drv.Bind();
+            Assert.IsTrue(drv.HasBoard);
+            Assert.AreEqual("far", drv.PushKey, "the foot over the tail pushes");
+            Transform b = Bone(go, "board"), near = Bone(go, "ankle_near"), far = Bone(go, "ankle_far");
+            Vector3 b0 = b.position, n0 = near.position, f0 = far.position;
+            float nearestX = float.MaxValue;
+            foreach (float u in new[] { 0.05f, 0.2f, 0.32f, 0.4f, 0.5f, 0.57f, 0.7f, 0.9f })
+            {
+                drv.Push(u * drv.pushPeriod);
+                Assert.Less(Vector3.Distance(b.position, b0), 1e-4f, "the board stays on the ground at " + u);
+                Assert.Less(Vector3.Distance(near.position, n0), 0.01f, "the front foot stays on the deck at " + u);
+                Assert.LessOrEqual(drv.FootMiss, AutoRig2D.MaxFootMiss, "u " + u);
+                Assert.LessOrEqual(drv.SinkBelowGround, AutoRig2D.MaxSink, "u " + u);
+                if (u >= 0.32f && u <= 0.58f) Assert.LessOrEqual(drv.PushGap, AutoRig2D.MaxPushGap, "the push foot is on the ground at " + u);
+                else Assert.IsNaN(drv.PushGap);
+                nearestX = Mathf.Min(nearestX, Mathf.Abs(far.position.x - n0.x));
+            }
+            Assert.Less(nearestX, 0.03f, "the pushing foot comes down beside the front foot (the legs cross)");
+            drv.Push(0.95f * drv.pushPeriod);
+            Assert.Less(Vector3.Distance(far.position, f0), 0.01f, "home on the tail");
+            drv.Ollie(0.5f * drv.olliePeriod);
+            Assert.Greater(drv.BoardLift, 0.1f, "the board is in the air at the top");
+            Assert.LessOrEqual(drv.FootMiss, AutoRig2D.MaxFootMiss, "both feet stay on the board in the air");
+            drv.Ollie(0.3f * drv.olliePeriod);
+            Assert.Greater(Vector2.SignedAngle(Vector2.right, b.right), 5f, "the pop tips the nose up");
+            Assert.LessOrEqual(drv.SinkBelowGround, AutoRig2D.MaxSink, "the tail does not dig into the ground");
+            drv.ResetPose();
+            Assert.Less(Vector3.Distance(b.position, b0), 1e-5f);
         }
 
         [Test]

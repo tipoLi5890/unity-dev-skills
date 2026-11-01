@@ -25,7 +25,9 @@ H (top minus sole) unless it says "of the way" (ankle -> hip); every position is
 
 How each marker is found (methods are reported per marker: measured, proportion, adjusted):
   crotch      the lowest slice above 0.2 H from which one part crosses the midline up to 0.6 H.
-  hip         crotch + 0.02 H; X and Y from the leg part just below the crotch.
+  hip         crotch + the leg's half-width just below it (at least 0.02 H: thick thighs meet a thigh's
+              radius under the hip joints); X and Y from that leg part. Over a measured knee the thigh is
+              at most THIGH_MAX (1.1) x the shin: shorts widen the leg at the crotch, and the hip is lowered.
   ankle       the lowest slice between 0.03 and 0.13 H whose leg area is within 5 % of the least
               there (where the foot's flare ends); both legs' areas summed, one height for both.
   knee        per leg, on sections across the hip -> ankle line (every 1 % of its length; girth is
@@ -38,7 +40,8 @@ How each marker is found (methods are reported per marker: measured, proportion,
   ball, toe_tip, heel   the foot's vertices below the ankle: the front-most point is the toe tip,
               the rearmost the heel, the ball 70 % of the way from heel to toe.
   shoulder    the arm part's centroids below the armpit lie on the arm's axis; the shoulder is that
-              axis where it is half the arm's radius outside the torso's edge at the armpit slice.
+              axis where it is SHOULDER_OUT (a quarter) of the arm's radius outside the torso's edge at the armpit
+              slice (a heavy chest there reaches past the joint).
   hand_tip    the arm vertex farthest along the axis. elbow and wrist at --arm-ratios (0.42, 0.75)
               of shoulder -> hand_tip; the wrist moves to a narrowing of the arm within 0.66-0.84
               when there is one, and the elbow keeps 0.42 / 0.75 of shoulder -> wrist (so does it
@@ -60,10 +63,10 @@ or outside SKIRT_KNEE_BAND is refused. The report adds body and `skirt` (skirt_b
 skirt_region turns into the skirt's own skin for the bind, deform_gate and secondary_chains.
 --body chibi (a big head, a third of H or more, on short limbs; chosen at G0): its own windows
 (CHIBI_WINDOWS) and these rules, the gates' limits unchanged. The crotch is searched from 0.10 H; the hip
-is the crotch + the leg's half-width just under it (thick thighs meet a thigh's radius below the hip
-joints); the ankle is the highest cut under the shin's narrowest whose depth reaches CHIBI_FOOT_DEPTH x
-the shin's (where a big shoe starts); the arm is followed down to 0.2 H and its shoulder sits where its axis crosses the torso's edge at the
-armpit (a thick arm joins there, not half its radius outside), the wrist is a narrowing within
+is the crotch + the leg's half-width just under it, with no floor or cap; the ankle is the highest cut
+under the shin's narrowest whose depth reaches CHIBI_FOOT_DEPTH x the shin's (where a big shoe starts); the
+arm is followed down to 0.2 H and its shoulder sits where its axis crosses the torso's edge at the
+armpit (a thick arm joins there, not SHOULDER_OUT of its radius outside), the wrist is a narrowing within
 CHIBI_WRIST_BAND of shoulder -> hand_tip, else CHIBI_ARM_RATIOS (0.36, 0.66: a mitten a third of the arm);
 the neck is the narrowest central cut from the shoulder up to CHIBI_NECK_REACH x H, and the shoulder ->
 neck gap is split in thirds: neck_base at one third, head_base at two. The spine keeps the contract's
@@ -182,8 +185,13 @@ WINDOWS = {"ankle": (0.02, 0.13), "knee": (0.22, 0.36), "hip": (0.42, 0.60),
 LIMB_RATIO = (0.5, 2.0)    # upper over lower segment of each arm and leg: neither twice the other
 THIGH_MIN = 0.85           # hip -> knee over knee -> ankle: adult thighs about the shin's length (0.245 / 0.246 H);
                            # under this the hip sits low (thick thighs meet below the hip joints)
+THIGH_MAX = 1.1            # the hip read from the crotch sits no higher above a measured knee than this x the shin
+HIP_ABOVE_CROTCH = 0.02    # x H: the least the hip sits over the crotch (a thin leg's half-width can be less)
+SHOULDER_OUT = 0.25        # x the arm's radius: the shoulder outside the torso's edge at the armpit (a heavy chest
+                           # there reaches past the joint, so not half a radius out)
 PHALANX_MIN = 0.01         # x wrist -> hand_tip: the shortest finger phalanx
 SIDED = ("shoulder", "elbow", "wrist", "hand_tip", "hip", "knee", "ankle", "ball", "toe_tip", "heel")
+ARM_MARKERS = ("shoulder", "elbow", "wrist", "hand_tip")
 # --body chibi: a body 2-4.5 heads tall (the head 0.22-0.50 of H), chosen at G0, never to rescue a failed window
 CHIBI_WINDOWS = {"ankle": (0.02, 0.16), "knee": (0.10, 0.30), "hip": (0.22, 0.42),
                  "shoulder": (0.45, 0.72), "neck": (0.50, 0.78)}
@@ -192,6 +200,7 @@ CHIBI_WRIST_BAND = (0.52, 0.80)   # of shoulder -> hand_tip: a narrowing here is
 CHIBI_NECK_REACH = 0.15           # x H above the shoulder: the neck's narrowest cut lies under the head
 CHIBI_FOOT_DEPTH = 1.3            # the ankle: where the leg's depth reaches this x the shin's (a big shoe)
 CHIBI_ARM_FROM = 0.2              # x H: short arms are followed down to here
+PROP_RETRIES = 2       # arm search: vertical tracks set aside (a held prop beside the arm) before refusing
 
 
 class Refused(Exception):
@@ -602,7 +611,7 @@ def _leg_line(track, z_lo):
 
 def skirt_hip(V, F, prof, s, skirt, ankle):
     """(hip, method, knee t, knee cue) on the skirt route. A crotch inside the skirt places the hip as in
-    trousers (crotch + 0.02 H, X and Y of the leg's loop just under it). A hidden one: the hip on the leg's
+    trousers (crotch + the leg loop's radius just under it, at least 0.02 H; X and Y of that loop). A hidden one: the hip on the leg's
     centre line at HIP_KNEE x the knee's height over the sole when a knee shows (read twice, the knee again
     on the new line), else at HIP_PROPORTION x H with the knee at its proportion. A knee cue within
     HEM_PINCH of the hem is the hem's lip, and one outside SKIRT_KNEE_BAND of the way a boot top: neither
@@ -613,7 +622,8 @@ def skirt_hip(V, F, prof, s, skirt, ankle):
     avoid = (hem_z - HEM_PINCH * H, hem_z + HEM_PINCH * H)
     if skirt["crotch_h"] is not None:
         below = [t for t in track if t[0] <= z0 + (skirt["crotch_h"] - 0.02) * H] or track
-        hip = np.array([below[-1][1], below[-1][2], z0 + (skirt["crotch_h"] + 0.02) * H])
+        # as in trousers: thick thighs meet a thigh's radius under the hip joints (at least HIP_ABOVE_CROTCH)
+        hip = np.array([below[-1][1], below[-1][2], z0 + (skirt["crotch_h"] + max(HIP_ABOVE_CROTCH, below[-1][3] / H)) * H])
         kt, cue = knee_on_leg(V, F, hip, ankle, cont=True, avoid_z=avoid, band=SKIRT_KNEE_BAND)
         return hip, "measured", kt, cue
     fx, fy = _leg_line(track, ankle[2] + 0.5 * (hem_z - ankle[2]))
@@ -674,8 +684,9 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         # hip: X and Y of the leg just below the crotch
         below = [lp for lp in legs if lp[0]["h"] <= crotch_h - 0.02] or legs
         c, p = below[-1]
-        # a chibi's thick thighs meet a thigh's radius under the hip joints: the leg's half-width there
-        hip_h = crotch_h + (0.5 * float(np.ptp(p["x"])) / H if chibi else 0.02)
+        # thick thighs meet a thigh's radius under the hip joints: the leg's half-width there (at least 0.02 H)
+        half = 0.5 * float(np.ptp(p["x"])) / H
+        hip_h = crotch_h + (half if chibi else max(HIP_ABOVE_CROTCH, half))
         out["hip"], how["hip"] = np.array([p["cx"], p["cy"], z0 + hip_h * H]), "measured"
         kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"])
     else:
@@ -695,6 +706,12 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         sec = min(secs, key=lambda r: abs(r["t"] - kt)) if secs else None
         sec = sec if sec is not None and abs(sec["t"] - kt) <= 0.02 else None
     out["knee"] = sec["centre"] if sec is not None else out["ankle"] + kt * (out["hip"] - out["ankle"])
+    shin = float(out["knee"][2] - out["ankle"][2])
+    if skirt is None and not chibi and how["knee"] == "measured" and out["hip"][2] - out["knee"][2] > THIGH_MAX * shin:
+        # a wide hem at the crotch (shorts, a coat's lip) widened the leg: the thigh no longer than THIGH_MAX x the shin
+        out["hip"] = np.array([out["hip"][0], out["hip"][1], out["knee"][2] + THIGH_MAX * shin])
+        notes.append(f"{tag} hip: lowered to {THIGH_MAX:.2f} x the shin above the knee (the leg's half-width at "
+                     f"the crotch put it higher)")
     # foot: vertices below the ankle, near this leg
     ax = out["ankle"]
     foot = V[(V[:, 2] < ax[2]) & (np.abs(V[:, 0] - ax[0]) < 0.08 * H)]
@@ -715,42 +732,64 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         how[name] = "measured"
     # arm: centroids of the part outside the torso, from the armpit down (the longest run wins:
     # a cap or a shoulder pad above the armpit makes a short run of its own)
-    runs, track, armpit = [], [], None
-    for c in reversed(cuts):
-        if c["h"] < (CHIBI_ARM_FROM if chibi else 0.3) or c["h"] > 0.95:
-            continue
-        torso = _central(c, mid)
-        outside = []
-        if torso is not None:
-            edge = torso["x"][1] if s > 0 else torso["x"][0]
-            outside = [p for p in c["parts"] if (p["x"][0] > edge if s > 0 else p["x"][1] < edge)]
-        pick = None
-        if outside and not track:
-            pick = min(outside, key=lambda p: abs(p["cx"] - edge))
-            armpit = (c, torso)
-        elif outside:
-            last = track[-1]
-            pick = min(outside, key=lambda p: math.hypot(p["cx"] - last[0], c["z"] - last[2]))
-            if math.hypot(pick["cx"] - last[0], c["z"] - last[2]) > 0.08 * H:
-                pick = None
-        if pick is None:
-            if track:
-                runs.append((track, armpit))
-            track, armpit = [], None
-            continue
-        track.append((pick["cx"], pick["cy"], c["z"], pick["area"]))
-    if track:
-        runs.append((track, armpit))
-    track, armpit = max(runs, key=lambda r: len(r[0])) if runs else ([], None)
+    seen = {}
+
+    def arm_track(skip):
+        runs, track, armpit = [], [], None
+        for c in reversed(cuts):
+            if c["h"] < (CHIBI_ARM_FROM if chibi else 0.3) or c["h"] > 0.95:
+                continue
+            torso = _central(c, mid)
+            outside = []
+            if torso is not None:
+                edge = torso["x"][1] if s > 0 else torso["x"][0]
+                outside = [p for p in c["parts"] if (p["x"][0] > edge if s > 0 else p["x"][1] < edge)
+                           and id(p) not in skip]
+            pick = None
+            if outside and not track:
+                pick = min(outside, key=lambda p: abs(p["cx"] - edge))
+                armpit = (c, torso)
+            elif outside:
+                last = track[-1]
+                pick = min(outside, key=lambda p: math.hypot(p["cx"] - last[0], c["z"] - last[2]))
+                if math.hypot(pick["cx"] - last[0], c["z"] - last[2]) > 0.08 * H:
+                    pick = None
+            if pick is None:
+                if track:
+                    runs.append((track, armpit))
+                track, armpit = [], None
+                continue
+            track.append((pick["cx"], pick["cy"], c["z"], pick["area"], id(pick)))
+            seen[id(pick)] = pick
+        if track:
+            runs.append((track, armpit))
+        return max(runs, key=lambda r: len(r[0])) if runs else ([], None)
+
+    def axis_of(track):
+        P = np.array([t[:3] for t in track])
+        w = np.array([t[3] for t in track])
+        centre = (P * w[:, None]).sum(0) / w.sum()
+        _, _, vt = np.linalg.svd((P - centre) * np.sqrt(w)[:, None])
+        d = _unit(vt[0])
+        return (-d if d[2] > 0 else d), centre
+
+    skip = set()
+    for _ in range(PROP_RETRIES + 1):
+        track, armpit = arm_track(skip)
+        if armpit is None or len(track) < 4:
+            break
+        d, centre = axis_of(track)
+        if abs(d[0]) >= 0.2:
+            break
+        # a part hanging straight down beside the arm (a held shield, a board) ran its own vertical track from
+        # above the armpit: set its slices aside and follow the arm again
+        notes.append(f"{'L' if s > 0 else 'R'} arm: a vertical track of {len(track)} slices from "
+                     f"{track[0][2] - z0:.3f} m set aside (a held prop beside the arm?); the arm searched again")
+        out.setdefault("_prop", []).extend({"z": float(t[2]), "x": list(seen[t[4]]["x"]), "y": list(seen[t[4]]["y"])}
+                                           for t in track)
+        skip |= {t[4] for t in track}
     if armpit is None or len(track) < 4:
         raise Refused("no arm part hangs clear of the torso (fused arms or a T-pose: run mesh_check)")
-    P = np.array([t[:3] for t in track])
-    w = np.array([t[3] for t in track])
-    centre = (P * w[:, None]).sum(0) / w.sum()
-    _, _, vt = np.linalg.svd((P - centre) * np.sqrt(w)[:, None])
-    d = _unit(vt[0])
-    if d[2] > 0:
-        d = -d
     if abs(d[0]) < 0.2:
         raise Refused("the arm axis is nearly vertical: arms held against the body")
     c_top, torso = armpit
@@ -763,8 +802,8 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         raise Refused("no arm vertices along the arm axis")
     r_arm = float(np.median(perp[arm & (np.abs(along) < 0.1 * H)])) if (arm & (np.abs(along) < 0.1 * H)).any() \
         else 0.025 * H
-    # the joint half an arm radius outside the torso's edge; a chibi's thick arm joins at the edge itself
-    t = (edge + s * (0.0 if chibi else 0.5) * r_arm - centre[0]) / d[0]
+    # the joint SHOULDER_OUT of an arm radius outside the torso's edge; a chibi's thick arm joins at the edge itself
+    t = (edge + s * (0.0 if chibi else SHOULDER_OUT) * r_arm - centre[0]) / d[0]
     shoulder = centre + t * d
     out["shoulder"], how["shoulder"] = shoulder, "measured"
     rel = V - shoulder
@@ -907,6 +946,16 @@ def measure(V, F, opts) -> dict:
     ratios = opts.get("arm_ratios") or (CHIBI_ARM_RATIOS if chibi else (0.42, 0.75))
     for s in (1, -1):
         sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, ratios, notes, skirt=skirt, chibi=chibi)
+    prop = [s for s in (1, -1) if sides[s][0].get("_prop")]
+    if len(prop) == 2:     # nothing to mirror from: arms down the sides (or a prop in each hand) are no arm to read
+        raise Refused("both arms read vertical first (arms held against the body, or a prop in each hand): "
+                      "run mesh_check; attach props after the rig")
+    if len(prop) == 1:    # a held prop on one side: that arm's slices run into it; the other arm, mirrored, is the arm
+        ps = prop[0]
+        for name in ARM_MARKERS:
+            sides[ps][0][name], sides[ps][1][name] = mirror(sides[-ps][0][name]), sides[-ps][1][name]
+        notes.append(f"{'L' if ps > 0 else 'R'} arm: shoulder, elbow, wrist and hand tip mirrored from the "
+                     f"{'R' if ps > 0 else 'L'} arm (a held prop on this side)")
     lm, how, asym = {}, {}, {}
     for name in SIDED:
         pl, pr = sides[1][0][name], sides[-1][0][name]
@@ -970,18 +1019,19 @@ def measure(V, F, opts) -> dict:
     for s, side in ((1, ".L"), (-1, ".R")):
         frames[side] = hand_frame(V, lm["wrist" + side], lm["hand_tip" + side], s)
     detected = None
+    free = ".R" if prop == [1] else ".L"      # fingers are read on a hand that holds nothing
     if opts["fingers"] == "auto":
-        x, y, z, L = frames[".L"]
+        x, y, z, L = frames[free]
         tri = V[F]
         cen = tri.mean(axis=1)
-        rel = cen - lm["wrist.L"]
+        rel = cen - lm["wrist" + free]
         along = rel @ x
         near = (along > 0) & (along < 1.1 * L) & (np.linalg.norm(rel - np.outer(along, x), axis=1) < 0.6 * L)
         if near.sum() >= 20:
             pts, _ = M.surface_samples(V, F[near], 4000)
-            detected, reason = detect_fingers(pts, lm["wrist.L"], frames[".L"])
+            detected, reason = detect_fingers(pts, lm["wrist" + free], frames[free])
             if detected:    # the samples' four lanes must be four loops of the surface too (else a mitten)
-                counts = hand_loops(V, F, lm["wrist.L"], frames[".L"])
+                counts = hand_loops(V, F, lm["wrist" + free], frames[free])
                 if sum(c >= 4 for c in counts) < 2:
                     detected = None
                     reason = (f"the samples part into four lanes but the surface never cuts into four loops "
@@ -997,7 +1047,7 @@ def measure(V, F, opts) -> dict:
         shape = fixed_hand(lm["wrist" + side], frames[side])
         if detected:
             for f, pts in detected.items():
-                shape[f] = pts if s > 0 else [mirror(p) for p in pts]
+                shape[f] = pts if side == free else [mirror(p) for p in pts]
         hand[side] = shape
         for f, pts in shape.items():
             for j, p in enumerate(pts):
@@ -1009,6 +1059,8 @@ def measure(V, F, opts) -> dict:
     if skirt is not None:
         out["crotch_h"] = skirt["crotch_h"]
         out["skirt"] = skirt
+    if len(prop) == 1:
+        out["prop"] = {"side": "L" if prop[0] > 0 else "R", "slices": sides[prop[0]][0]["_prop"]}
     return out
 
 
@@ -1436,6 +1488,9 @@ def build_report(V, F, opts) -> dict:
     }
     if "skirt" in m:
         report["skirt"] = skirt_block(m, lm)
+    if "prop" in m:     # the held prop's slices (world metres): autorig's hand_reach keeps them on the hand, rigid
+        report["prop"] = {"side": m["prop"]["side"], "step": round(0.01 * H, 5), "slices": [
+            {"z": round(p["z"], 5), "x": r(p["x"]), "y": r(p["y"])} for p in m["prop"]["slices"]]}
     if record is not None:
         report["smart_agreement"] = {"tolerance_h": opts.get("smart_tol", 0.03), "landmarks": record.pop("agreement")}
         report["smart"] = record
@@ -1798,12 +1853,33 @@ def selftest_knee(ok, opts) -> None:
        and rep["landmarks"]["knee.L"][2] < 0.56)
 
 
+def selftest_hip(ok, opts) -> None:
+    """The hip over the crotch: thick thighs meeting low (a heavy body) and shorts widening the leg at the crotch."""
+    knee = [(0.05, 0.036, 0.036, 0.036), (0.44, 0.042, 0.042, 0.042), (0.53, 0.050, 0.062, 0.046),
+            (0.62, 0.046, 0.046, 0.046), (0.70, 0.060, 0.060, 0.060), (0.95, 0.13, 0.13, 0.13)]
+    v, f = _leg_body(knee)
+    o = dict(opts, no_window_gate=True)
+    rep, m = build_report(v, f, o), measure(v, f, o)
+    hip = rep["landmarks"]["hip.L"][2] - m["ground_z"]
+    lim = next(g for g in rep["gates"] if g["name"] == "markers.limb_ratio")
+    ok("thick thighs meeting low: the hip a thigh's half-width over the crotch (over 0.04 H), the thigh about the "
+       "shin, markers.limb_ratio passes", hip - m["crotch_h"] * m["height"] > 0.04 * m["height"] and lim["pass"]
+       and not any("hip: lowered" in n for n in rep["notes"]))
+    v, f = _leg_body(CALF_HEM)          # shorts to 0.60 as wide as the thigh's top: the crotch's leg is the hem's
+    rep = build_report(v, f, o)
+    lm = rep["landmarks"]
+    ok(f"shorts at the crotch: the hip no higher than {THIGH_MAX} x the shin over the measured knee, noted",
+       lm["hip.L"][2] - lm["knee.L"][2] <= THIGH_MAX * (lm["knee.L"][2] - lm["ankle.L"][2]) + 1e-4
+       and any(n.startswith("L hip: lowered") for n in rep["notes"]))
+
+
 def selftest_skirt(ok, opts) -> None:
     """The tube body in a skirt to 0.40 x 1.7 m: solid, and open at the hem with the legs inside."""
     sv, sf = M.body(skirt=0.40)
     H = float(np.ptp(sv[:, 2]))
     plain = build_report(sv, sf, opts)
-    ok("skirt, default body: the hip is read at the hem", abs(plain["landmarks"]["hip.L"][2] - 0.70) < 0.03 * H)
+    ok("skirt, default body: the hip is read from the hem (its leg's half-width over it), far under the legs' top",
+       0.68 < plain["landmarks"]["hip.L"][2] < 0.68 + 0.06 * H)
     rep = build_report(sv, sf, dict(opts, body="skirt"))
     lm, sk = rep["landmarks"], rep["skirt"]
     ok("skirt route: crotch hidden in a solid skirt, the hip by proportion near the leg tubes' top",
@@ -1820,6 +1896,14 @@ def selftest_skirt(ok, opts) -> None:
     rep2 = build_report(ov, of, dict(opts, body="skirt"))
     top = max(z for z, *_ in rep2["skirt"]["legs"]["L"])
     ok("open skirt: the legs are followed up inside it, past the hem", top > rep2["skirt"]["hem_z"] + 0.05 * H)
+    # a crotch measured inside the skirt: the hip a thigh's radius over it, as in trousers (an armoured guard's tunic)
+    prof, ank = M.profile(sv, sf), np.array([0.1, 0.0, 0.08])
+    z0 = float(np.asarray(sv)[:, 2].min())
+    legs = lambda r: {1: [[z0 + h * H, 0.1, 0.0, r] for h in np.arange(0.30, 0.49, 0.01)]}
+    thick = skirt_hip(sv, sf, prof, 1, {"crotch_h": 0.5, "hem_h": 0.4, "legs": legs(0.09)}, ank)[0]
+    thin = skirt_hip(sv, sf, prof, 1, {"crotch_h": 0.5, "hem_h": 0.4, "legs": legs(0.01)}, ank)[0]
+    ok("skirt route, crotch inside the skirt: the hip the leg loop's radius over it (0.09 m), at least 0.02 H",
+       abs(thick[2] - (z0 + 0.5 * H + 0.09)) < 1e-6 and abs(thin[2] - (z0 + 0.52 * H)) < 1e-6)
 
 
 def selftest_chibi(ok, opts) -> None:
@@ -1850,6 +1934,53 @@ def selftest_chibi(ok, opts) -> None:
     fl, ml = hand_loops(*fingers, np.zeros(3), frame), hand_loops(*mitten, np.zeros(3), frame)
     ok("hand_loops: four apart fingers cut into four loops (five over the palm's end), a mitten into one",
        min(fl[-10:]) == 4 and max(ml) == 1)
+
+
+def selftest_prop(ok, opts) -> None:
+    """A shield held beside the left hand, standing from above the armpit to under the hand: its slices make a
+    vertical track of their own. Without the retry the left arm is that track (refused, vertical axis); with it the
+    arm is found, the left arm is the right one mirrored, the slices are reported as the prop, and the midline
+    and the fingers come from the body, not the shield."""
+    global PROP_RETRIES
+    v, f = M.assemble([M.body(), M.tube((0.67, 0, 1.42), (0.67, 0, 0.64), 0.15, rx=0.015, ry=0.15)])
+    plain_v, plain_f = M.body()
+    base = build_report(plain_v, plain_f, opts)
+    saved = PROP_RETRIES
+    try:
+        PROP_RETRIES = 0
+        build_report(v, f, opts)
+        before = "passed"
+    except Refused as e:
+        before = str(e)
+    finally:
+        PROP_RETRIES = saved
+    rep = build_report(v, f, opts)
+    lm = rep["landmarks"]
+    ok("a held shield beside the left arm: without the retry the arm is the shield's vertical track (refused); "
+       "with it every gate passes, the prop is the left side's, the arm markers match the body without the shield",
+       "vertical" in before and rep["pass"] and rep.get("prop", {}).get("side") == "L"
+       and len(rep["prop"]["slices"]) >= 10 and abs(rep["midline_x"]) < 0.01
+       and all(np.linalg.norm(np.subtract(lm[k], base["landmarks"][k])) < 0.01 * rep["height"]
+               for k in ("shoulder.L", "wrist.L", "hand_tip.L", "shoulder.R"))
+       and any("mirrored from the R arm" in n for n in rep["notes"]))
+    prof = M.profile(v, f)
+    saved = M.MIDLINE_SHIFT
+    try:
+        M.MIDLINE_SHIFT = 1.0
+        off = M.profile(v, f)["midline_x"]
+    finally:
+        M.MIDLINE_SHIFT = saved
+    ok("the midline from the feet when a held prop pulls the extent under 0.4 H off them (with the rule off it "
+       "is off by more than 0.05 H)", abs(prof["midline_x"]) < 0.01 and abs(off) > 0.05 * prof["height"])
+    v2, f2 = M.assemble([M.body(), M.tube((0.67, 0, 1.42), (0.67, 0, 0.64), 0.15, rx=0.015, ry=0.15),
+                         M.tube((-0.67, 0, 1.42), (-0.67, 0, 0.64), 0.15, rx=0.015, ry=0.15)])
+    try:
+        build_report(v2, f2, opts)
+        both = "passed"
+    except Refused as e:
+        both = str(e)
+    ok("a vertical track beside both arms: nothing to mirror from, refused as arms held against the body",
+       "both arms read vertical" in both)
 
 
 def selftest_host() -> tuple[int, list, int]:
@@ -1981,8 +2112,10 @@ def selftest_host() -> tuple[int, list, int]:
     ok("fixed hand: index and little knuckles apart", np.linalg.norm(fan[0] - fan[1]) > 0.01)
     selftest_smart(ok, v, f, opts, rep)
     selftest_knee(ok, opts)
+    selftest_hip(ok, opts)
     selftest_skirt(ok, opts)
     selftest_chibi(ok, opts)
+    selftest_prop(ok, opts)
     # files through the CLI
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "body.obj"

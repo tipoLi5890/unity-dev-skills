@@ -32,6 +32,9 @@ Every picture follows these rules:
     pulls the arm onto the body, and asking for a gap does not undo that.
   - A shield goes on the far arm, behind the body's far side; the split fills the far arm behind it.
   - The whole prop inside the frame.
+- **A board** (a skateboard, `--props board@feet=...`): seen exactly from the side, both feet flat
+  on the deck in an open stance, a gap between the legs down to the deck, the deck about as long
+  as the legs. Arms out for balance, clear of the body.
 - **Neutral face:** eyes open, mouth closed, looking along the view. The blink and talk frames
   are edits of this one.
 - **Even lighting:** flat or two-tone shading and the same outline weight all round. The split

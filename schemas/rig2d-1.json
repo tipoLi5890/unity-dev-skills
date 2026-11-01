@@ -55,6 +55,19 @@
       }
     },
     "joints": {"type": "array", "items": {"type": "object", "required": ["name", "x", "y"]}},
+    "props": {
+      "description": "Each prop layer, its bone, and for a prop stood on (a board on the `board` bone) the foot layers planted on it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["layer", "bones"],
+        "properties": {
+          "layer": {"type": "string", "minLength": 1},
+          "bones": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "contacts": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
     "landmarks": {"type": "object"}
   }
 }

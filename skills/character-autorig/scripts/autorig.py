@@ -25,8 +25,9 @@ rig/markers/ unless --no-render; --smart rig/NAME.smart.json whenever smart wrot
 markers read its gates one by one and take only what passed; never with --no-smart). A failed smart adds exit 2
 to `all`, except smart.fingers alone on a hand the markers read as fingers.mode fixed (both say mitten).
 arp: blender-retarget brt_arp op pipeline (--resolution N: the bind's resolution), then hand_reach (each hand's
-weight kept within HAND_REACH x wrist -> hand_tip of its bones over the skin, exported again when it changed
-anything), the rig saved as rig/NAME_arp.blend, the Unity FBX in export/.
+weight kept within HAND_REACH x wrist -> hand_tip of its bones over the skin; a held prop the markers found is
+that hand's alone, rigid, its fingers folded onto it; exported again when it changed anything), the rig saved as
+rig/NAME_arp.blend, the Unity FBX in export/. deform then gets --prop rig/NAME.markers.json.
 contract: unity-rigged-character contract_map.py map --map arp --require contract, --min-fingers 30 unless the
 markers say fingers.mode fixed (a mitten; `ai` counts as found).
 
@@ -137,6 +138,7 @@ SKIRT_LEG_MAX = 0.85      # skirt_bind: the thighs' share at the hem (the rest s
 SKIRT_FEATHER = 0.03      # skirt_bind: x H under the band's top over which the new weights blend into the bind
 HAND_REACH = 1.0          # arp: x wrist -> hand_tip, how far over the skin a hand's bones may hold weight
 HAND_CORE = 0.2           # arp: x wrist -> hand_tip, skin this close to a hand bone is the hand's own
+PROP_ARM_CLEAR = 0.45     # arp: x wrist -> hand_tip, a held prop's slices keep the arm's skin this close to its bones
 MANUAL_RUNGS = ("by hand, one at a time, each gated again (autorig.py deform): a finer bind (autorig.py arp OUT "
                 "--resolution, brt_arp pipeline 'resolution' one step up), then the joint marker moved to the "
                 "crease (autorig.py markers OUT --adjust FILE, arp_markers.py --adjust); never a looser limit "
@@ -358,6 +360,12 @@ def skirt_arg(c: Ctx, a=None) -> list:
     return ["--skirt", c.f["markers"]] if is_skirt(c, a) else []
 
 
+def prop_arg(c: Ctx) -> list:
+    """--prop rig/NAME.markers.json when the markers found a held prop (deform_gate leaves its rigid skin out of the
+    self-intersection count, as it would a separate object)."""
+    return ["--prop", c.f["markers"]] if (read_json(c.f["markers"]) or {}).get("prop") else []
+
+
 def has_jaw(c: Ctx) -> bool:
     """The markers carry the face (facial true) and the contract maps a Jaw bone."""
     m, k = read_json(c.f["markers"]) or {}, read_json(c.f["contract"]) or {}
@@ -485,7 +493,8 @@ def deform_step(c: Ctx, name, fbx, out, render, logs, contract=None) -> dict:
     poses = ["--poses", chosen] if chosen else []
     rend = ["--render", render] if render else []
     return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", contract or c.f["contract"],
-                                  *poses, *rend, *skirt_arg(c, c.args), *chibi_arg(c, c.args), "--out", out), out,
+                                  *poses, *rend, *skirt_arg(c, c.args), *chibi_arg(c, c.args), *prop_arg(c),
+                                  "--out", out), out,
                 logs / f"{name}.log")
 
 
@@ -1106,18 +1115,38 @@ def _in_repair(a):
     return {"ok": passed, **log}, 0 if passed else 1
 
 
-def hand_reach(V, edges, W, cols, segments, reach: float, core: float, tol: float = 1e-6):
+def prop_region(V, prop: dict, arm_segments, arm_radius: float):
+    """The held prop's skin (numpy): vertices inside one of the markers' prop slices (arp_markers sets a vertical
+    track beside the arm aside: each slice's box, its height +- half the slice step), less the arm's own skin
+    (within arm_radius of the upper arm and forearm bones, head to tail)."""
+    import numpy as np
+    V = np.asarray(V, dtype=float)
+    inside = np.zeros(len(V), bool)
+    half = 0.5 * float(prop.get("step", 0.018)) + 1e-9
+    for sl in prop.get("slices", []):
+        (x0, x1), (y0, y1) = sl["x"], sl["y"]
+        inside |= (np.abs(V[:, 2] - sl["z"]) <= half) & (V[:, 0] >= x0) & (V[:, 0] <= x1) & \
+            (V[:, 1] >= y0) & (V[:, 1] <= y1)
+    for a, b in np.asarray(arm_segments, dtype=float).reshape(-1, 2, 3):
+        ab = b - a
+        t = np.clip((V - a) @ ab / max(float(ab @ ab), 1e-12), 0.0, 1.0)
+        inside &= np.linalg.norm(V - (a + t[:, None] * ab), axis=1) > arm_radius
+    return inside
+
+
+def hand_reach(V, edges, W, cols, segments, reach: float, core: float, tol: float = 1e-6, keep=None):
     """A hand's weight kept on its own skin (numpy, no Blender). Rows of W (vertices x deform groups) holding weight
     of the bones in `cols` (one hand and its fingers) farther than `reach` from those bones lose it, the rest of the
     row rescaled to 1 (a row with nothing else keeps it). The distance runs over the mesh edges (V welded at seams)
     from the hand's own skin: every vertex within `core` of one of `segments` (the bones, head to tail), and the
     vertex nearest each bone's middle. A piece of the mesh that walk never reaches is measured straight to the
     nearest bone. A bind's bleed from a hand hanging beside a coat or a thigh is near in space and far over the
-    skin. Returns (W, {vertices, kept_whole, removed_max, removed_sum})."""
+    skin. Rows in `keep` (a held prop's skin, rigid on the hand) are left alone. Returns (W, {vertices, kept_whole,
+    removed_max, removed_sum})."""
     import heapq
     import numpy as np
     W = np.array(W, dtype=float)
-    held = W[:, cols].sum(1) > 0
+    held = (W[:, cols].sum(1) > 0) & (True if keep is None else ~np.asarray(keep, bool))
     info = {"vertices": 0, "kept_whole": 0, "removed_max": 0.0, "removed_sum": 0.0}
     if not held.any() or not len(segments):
         return W, info
@@ -1213,9 +1242,26 @@ def _in_hand_reach(bpy, mesh, markers_path) -> dict:
         mw = rig.matrix_world
         segs = [(np.array(mw @ b.head_local), np.array(mw @ b.tail_local)) for b in bones]
         size = float(np.linalg.norm(np.subtract(tip, wrist)))
-        W, info = hand_reach(V, E, W, cols, segs, HAND_REACH * size, HAND_CORE * size)
+        keep = None
+        prop = json.loads(Path(markers_path).read_text(encoding="utf-8")).get("prop") or {}
+        if prop.get("side", "").lower() == s and hand.use_deform:
+            # a held prop: its skin rigid on the hand bone (the 2D rig's prop rides its hand), never stripped
+            arm = [b for b in rig.data.bones if b.use_deform and b.name.split(".")[-1] == s
+                   and b.name.split("_")[0] in ("arm", "forearm")]
+            asegs = [(np.array(mw @ b.head_local), np.array(mw @ b.tail_local)) for b in arm]
+            keep = prop_region(V, prop, asegs, PROP_ARM_CLEAR * size)
+            hc = next(k for k, g in enumerate(groups) if g.name == hand.name)
+            W[keep] = 0.0
+            W[keep, hc] = 1.0
+            fc = [k for k in cols if k != hc]     # the gripping fingers ride the hand too: a fist would close them
+            folded = int((W[:, fc].sum(1) > 0).sum())   # into the rigid prop
+            W[:, hc] += W[:, fc].sum(1)
+            W[:, fc] = 0.0
+            out["prop"] = {"side": s, "bone": hand.name, "vertices": int(keep.sum()), "fingers_folded": folded,
+                           "arm_bones": [b.name for b in arm]}
+        W, info = hand_reach(V, E, W, cols, segs, HAND_REACH * size, HAND_CORE * size, keep=keep)
         out["sides"][s] = {"reach_m": round(HAND_REACH * size, 4), "bones": len(cols), **info}
-        out["vertices"] += info["vertices"]
+        out["vertices"] += info["vertices"] + (int(keep.sum()) + folded if keep is not None else 0)
     rows = np.nonzero(np.abs(W - W0).max(axis=1) > 1e-9)[0]
     for k, g in enumerate(groups):
         idx = rows[(W0[rows, k] > 0) | (W[rows, k] > 0)]
@@ -1771,6 +1817,18 @@ def selftest() -> int:
               "hand's weight; the hand and a loose cuff 3 cm from its bone keep it; rows sum to 1",
               Wh2[coat, 0] == 0 and Wh2[scrap, 0] == 0 and np.isclose(Wh2[coat, 1], 1.0) and Wh2[cuff, 0] == 0.1
               and (Wh2[:11, 0] == 1).all() and hi["vertices"] == 2, info=hi)
+        # a held prop (arp_markers' prop slices): its skin stays on the hand, rigid, where hand_reach strips it
+        prop = {"side": "L", "step": 0.02, "slices": [{"z": float(z), "x": [0.05, 0.15], "y": [-0.01, 0.06]}
+                                                      for z in np.arange(0.4, 0.9, 0.02)]}
+        keep = prop_region(Vh, prop, [((-0.5, 0.0, 1.6), (0.0, 0.0, 1.0))], 0.06)
+        Wk = Wh.copy()
+        Wk[keep] = 0.0
+        Wk[keep, 0] = 1.0
+        Wk2, _ = hand_reach(Vh, Eh, Wk, [0], [((0.0, 0.0, 1.0), (0.2, 0.0, 1.0))], 0.2, 0.04, keep=keep)
+        check("held prop: the skin inside its slices (the far scrap under the hand) is the hand's alone and hand_reach "
+              "keeps it there; the arm's skin and the coat beside it are not the prop; without the prop it is stripped",
+              keep[scrap] and not keep[coat] and not keep[:11].any() and Wk2[scrap, 0] == 1.0 and Wh2[scrap, 0] == 0
+              and Wk2[coat, 0] == 0, info={"prop": int(keep.sum())})
         # hinge_transfer on an arm sloping at 45 degrees: the hand-over follows the limb, not world Z
         n45 = np.array([1.0, 0.0, -1.0]) / np.sqrt(2)
         Va = np.array([0.05 * n45 + (0.03, 0, 0.03), -0.05 * n45 + (0.03, 0, 0.03), 0.05 * n45 + (0.0, 0.3, 0.0)])

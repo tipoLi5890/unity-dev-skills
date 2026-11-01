@@ -40,7 +40,7 @@ by up to 2 %, so a seed always gives the same cast.
 |---|---|---|
 | `standard` | adult proportions, arms 45°, fingers apart | every stage passes |
 | `chibi` | a big head and short limbs, mitten hands; run with `--body chibi` | every stage passes on the chibi route (without it, `mesh_check`'s bands and the windows refuse it) |
-| `heavy` | a wide torso and thick limbs, arms 50° | thick thighs meet below the hip joints, so crotch + 0.02 H reads the hip low and the shoulder sits out on the thick arm: `markers.limb_ratio` fails the short thigh (`true_fail`, not a false pass) |
+| `heavy` | a wide torso and thick limbs, arms 50° | thick thighs meet below the hip joints (the hip is read a leg's half-width over the crotch) and the chest at the armpit reaches past the shoulder joint: every stage passes; a hip read low fails `markers.limb_ratio`, not a false pass |
 | `thin` | slim limbs, arms 55° | every stage passes |
 | `long_limbs` | longer arms and legs, arms 30° | every stage passes |
 | `mitten` | the standard body with fused fingers | `fingers.mode` `fixed`, `mitten_bind`, the `mitten` pose |

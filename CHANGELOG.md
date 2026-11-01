@@ -2,6 +2,121 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.42.3
+
+A strengthening round from a fourth 3D character, an armoured depot guard in a tunic and a cape
+with a round shield held at the left hand, from the chibi mascot's own detection run and the
+gatekeeper's one failing run in four, and from a 2D courier on a board. A held prop now rides its
+hand instead of being read as the arm, a hip bag, a cap's crown and a cape are told apart from
+hair and from a back bag, the heavy body's hip and shoulder are placed right, and in 2D a board
+keeps both feet planted through a push and an ollie.
+
+- **`character-autorig`: a held prop.** A shield standing beside one arm from above the armpit
+  ran its own vertical track, so the arm read vertical and was refused.
+  - **`arp_markers.py`** sets that track aside and searches the arm again (up to twice). That
+    arm becomes the other arm mirrored, the fingers are read on the free hand, and the track's
+    cut boxes are written as the report's `prop` (side, slices). If both arms set a track
+    aside, the markers are refused, as before, because there is nothing to mirror from.
+  - **`mesh_check.py`** takes the midline from the feet when the extent under 0.4 H is more than
+    0.02 H off them.
+  - **`bcr_import_prep.py`** centres X on the feet when the bounding box is more than 0.01 H
+    off them.
+  - **`autorig.py` arp stage:** the prop's skin, less the arm's own, goes rigid onto the hand
+    bone. The fingers on that hand fold onto the hand, so a fist cannot close them into the prop.
+  - **`deform_gate.py --prop`** (which `autorig.py` passes) leaves that rigid skin out of the
+    self-intersection count, as it would a separate object.
+  - A prop that only starts under the hand is not handled; expect `markers.symmetry` to fail
+    (untested). Attach such a prop after the rig.
+- **The hip and the shoulder.**
+  - **The hip** is the crotch plus the leg's half-width just under it, at least 0.02 H: thick
+    thighs meet a thigh's radius below the hip joints. Over a measured knee the thigh is at most
+    1.1 × the shin, because shorts widen the leg at the crotch.
+  - **The shoulder** sits a quarter of the arm's radius outside the torso's edge, not a half (a
+    heavy chest reaches past the joint).
+  - **On the skirt route**, a crotch measured inside the skirt places the hip a leg loop's
+    radius over it, as in trousers.
+  - The chibi route is unchanged.
+- **`deform_gate.py`.**
+  - **The `fist` pose:** Index to Little now curl about the knuckle line (Index1 → Little1). A
+    finger placed a few degrees off parallel no longer swings its tip across the palm into the
+    thumb. The angles and the limits are unchanged.
+  - **`hinge_reach`:** one test, used by both the volume patch and `deform.hinge_blended`, so a
+    hinge one of them refuses is no longer read as 0.0 blended by the other.
+- **`secondary_chains.py`.**
+  - **Hip bag (`bagL`, `bagR`):** the back-bag rule turned 90° onto the lateral profile. It takes
+    one bone hung from the hips or the spine. A side bulge taller than 0.25 H (a cape's edge) is
+    refused.
+  - **Crown rule for hair:** a cluster whose outer envelope is a smooth dome is a cap's or a
+    helmet's crown, rigid on Head.
+  - **Skirt route:** a back bulge mostly of the skirt's own skin is its drape, not a bag. A cape
+    (both back sectors reach the hem, neither front one) is chained on its live sectors, each
+    half hung from the thigh it hangs behind.
+- **`layer_split.py`.**
+  - **Props:** a prop whose own fill fails is completed from what shows. A round shield becomes
+    its fitted ellipse, its hidden part copied from its mirror images. Any other prop has the
+    bands other layers cut through it filled.
+  - **Boards:** `--props name@feet=…` puts a board on its own `board` bone (a child of hips),
+    with both feet as contacts.
+  - **The side view's near arm** is now the arm whose sleeve is drawn over the body.
+  - **New gates:** `fill.alone` (a prop fill that kept the character fails), `split.prop_whole`
+    and `split.prop_contact`. `rig2d/1` gains an optional `props`.
+- **`unity-2d-animation`.**
+  - **`RigDriver2D`:** a `board` bone turns on two-bone leg IK, with new `Motion.Push` and
+    `Motion.Ollie`, and the readouts `FootMiss`, `SinkBelowGround`, `PushGap` and `BoardLift`.
+  - **`AutoRig2D`'s pose gate** adds the ride, five push and five ollie poses, and a contact gate.
+    Its attack poses now apply only to prop layers with a side suffix.
+  - **`Rig2DLayout`** binds an unsided `prop_<name>` to `board`.
+  - A new EditMode test.
+- **On the guard.**
+  - **Before:** the left arm was refused as vertical, then `markers.symmetry` was 0.082, then `markers.limb_ratio` failed (the leg
+    0.80), then the fist folded the fingers into the shield (self-intersection 0.234, p95 0.205).
+  - **Now:** markers pass (symmetry 0.012, leg 1.0), and the shield's 2,589 vertices ride
+    `hand.l`. The fist reads 0.076 and p95 0.0805 against a limit of 0.08.
+  - **Secondary:** the helmet is a crown, the cape's drape is no longer a back bag (0.735 of it
+    skirt skin), and the cape gets `hemBL` and `hemBR` with every secondary gate green.
+  - `all --body skirt` still stops at deform, on `self_intersection_p95` 0.0805 and `skirt_tear`
+    0.00209 (limit 0.002). Both come from rigid plates folding over cloth at the elbows and
+    shoulders, which the repair ladder does not handle. No limit was widened.
+- **On the mascot.** Without its marker file the detector now gives 12 chains: the hip satchel as
+  `bagR`, five hem chains and six shorts chains. The five cap "hair" spikes are rejected as
+  crowns. With the marker file it gives the same 11 as 0.42.2.
+- **On the gatekeeper.** Four runs of four pass (0.42.2: three).
+  - **`fist`:** 0.039–0.055 (was 0.054–0.078).
+  - **Final p95:** 0.0754–0.0757 (was 0.0752–0.0815).
+  - **Hem chains:** six each.
+  - **Elbow volume after repair:** 0.275 against the 0.35 limit (was 0.250).
+- **On the courier runner.**
+  - **`fine`:** exits 0 with the same 12 chains (p95 0.071 → 0.072).
+  - **The ship track:** exits 0 (p95 0.030 → 0.027) with 18 chains, not 19. The bag now covers
+    0.274 of the back-left hem sector, past the 0.25 limit (it was 0.246). `fine` has never had
+    that chain (0.274–0.28), so the ship now matches it.
+- **Rig exam against 0.42.2.**
+  - **`heavy`:** true fail → true pass (worst joint 0.066 H pelvis → 0.033 H shoulder; hip
+    0.066 → 0.018).
+  - **The accepted runner:** false fail (`markers.windows`) → true pass, though its pelvis is now
+    0.017 H off the accepted position (was 0.006).
+  - **All bodies:** joints p50 / p95 0.0136 / 0.0365 → 0.0091 / 0.0286; fingers p95
+    0.033 → 0.018.
+  - All 38 planted faults are caught, the five controls pass, and there is no false pass.
+- **README, in four languages.** Two new showcases: the long-coat sentry before and after the skirt
+  route with the chibi mascot's poses (`coat.jpg`, `chibi.jpg`), and the 2D guard's pole and shield
+  with the courier's push and ollie (`guard.gif`, `skate.gif`). Two "Try asking" rows, SciPy listed
+  for `comfyui-asset-generation`'s part, layer and scene scripts, the hip bag, coat hem and cape
+  among the chains, the script counts, and four skill rows brought up to date.
+- **Still open.**
+  - **The guard's deform:** plates over cloth at the elbows and shoulders, outside the repair
+    ladder.
+  - **`spiky_hair`'s fingers** now read `fixed` (`fingers_right` 10 → 9). The shoulder rule moved
+    its wrist 3 mm, and that drew another sample set. Denser sampling restores it, but it reads
+    four fingers on the accepted runner's closed hand, so it was not taken. The finger read needs
+    a vote over several samplings.
+  - **Thin margins:** the crown rule (real hair spikes from 0.343, crowns to 0.150, two fine-runner
+    candidates at 0.175 / 0.206) and the prep centring (0.0073 H on `asym` against the 0.01 H
+    rule). Heavy's shoulder is 0.033 H against a 0.04 H tolerance.
+  - **2D:** the deck under each shoe is not completed (a 5–9 px notch when a foot lifts), the
+    shorts' hem opens on big thigh swings (ollie holes 590 against a limit of 739), and there is
+    no front view of the board rider.
+
 ## 0.42.2
 
 A strengthening round from a third character, a chibi courier mascot (a head a third of its

@@ -28,8 +28,10 @@
 | "The sentry sees the runner through walls." | `unity-game-ai` builds the vision cone from distance, angle and one line-of-sight cast; a journey proves the chase starts only after sight |
 | "It hitches when the third pickup spawns." | `unity-profiling` samples that moment in 90-frame windows (median, p95, worst), reads the work and GC counters, and compares before and after |
 | "Turn this drawing of the runner into a character that runs in Unity." | `game-character-pipeline` sets the quality target and route first, then hands stages S0–S13 — views, 3D, rig, motion, import — to the skill that owns each, gated |
+| "Rig the sentry. He wears a long coat." | `character-autorig` takes the skirt route: it follows each leg inside the coat to the crotch, weights the coat over the hips and both thighs, and fails the rig if a squat tears it open between them |
 | "Show me the courier run before we write code." | `unity-game-brief` builds a timed simulated-gameplay preview from the game's own rule constants, with every sound logged |
 | "Make a walk loop from this still of the runner." | `sprite-from-video` has a video model walk the still in place, keys every frame against the key the model actually painted, finds the loop by measurement, and writes equal-canvas frames plus `frames.json` |
+| "Cut this drawing of the guard into layers and rig it in Unity." | `comfyui-asset-generation` cuts it into one layer per moving part and fills what the arms hide; `unity-2d-animation` gives the PSB bones, meshes and weights with no Skinning Editor step, the pole and shield riding his hands |
 | "Put it on my iPhone — without opening Xcode." | `unity-ios-build` runs a headless build, a compile gate, signing with what your Mac holds, a `devicectl` install, and reads the app's console |
 
 ## Install
@@ -54,7 +56,8 @@ manifests, so they cannot come to say anything different.
   buy a genuine licence from [Gumroad](https://artell.gumroad.com/l/auto-rig-pro) or
   [Superhive](https://superhivemarket.com/products/auto-rig-pro), which funds its development and
   brings its updates (the optional AI files come with it, one device per licence); a self-hosted
-  ComfyUI on a GPU machine; the `codex` CLI for 2D art; SciPy for `mesh-texture-paint`.
+  ComfyUI on a GPU machine; the `codex` CLI for 2D art; SciPy for `mesh-texture-paint` and for the
+  part, layer and scene scripts in `comfyui-asset-generation`.
 - **Optional, for video:** ffmpeg, for anything that writes one (previews, reels, sprites from video).
 - **Optional, for devices:** a Mac with Xcode 15 or newer for iOS; the Android SDK for Android.
 
@@ -155,7 +158,8 @@ weights under the MiniMax H3 Community License Agreement.
 [`character-autorig`](skills/character-autorig/SKILL.md) →
 [`unity-rigged-character`](skills/unity-rigged-character/SKILL.md)
 
-The rig step adds bone chains for the bag, hood, hair, jacket hem and shorts, and writes how stiff
+The rig step adds bone chains for the bag, hood, hair, jacket hem and shorts (on other characters a
+hip bag, a long coat's hem or a cape), and writes how stiff
 each is and where the body is to `<name>.secondary.json`. In Unity one command turns them into
 spring bones that keep their length and stay out of the body at any frame rate.
 
@@ -177,6 +181,30 @@ For hand close-ups each hand is generated on its own with gaps between the finge
 sleeve, so the rig finds every finger; eyeballs go behind the painted eyes and turn on the eye bones.
 For a game build the parts merge into one mesh with one texture atlas, one draw call.
 
+### A long coat and a chibi body through the same rig
+
+<div align="center">
+<img src=".github/media/coat.jpg" alt="A sentry in a long coat, untextured, in a deep squat and a high kick, each from the front and the side, in two rows. Top row: each half of the coat follows its own thigh, so the coat gapes open between the legs in the squat and is pulled apart in the kick. Bottom row: the same poses, the coat whole over both thighs and its hem following the raised leg" width="800">
+<p><sub>Top: the coat weighted like trousers tears between the thighs. Bottom: on the skirt route it stays whole and its hem follows each leg.</sub></p>
+</div>
+
+<div align="center">
+<img src=".github/media/chibi.jpg" alt="A chibi courier mascot with a big head, a cap, mitten gloves and a hip satchel: first painted, then untextured in four poses from its rig check: both arms raised, a deep squat seen from the side, one knee raised high, and both mittens closed" width="800">
+<p><sub>A chibi mascot whose head is a third of its height: arms up, a deep squat, a knee raised, and the mittens closed, each bending as one piece.</sub></p>
+</div>
+
+[`game-character-pipeline`](skills/game-character-pipeline/SKILL.md) →
+[`character-autorig`](skills/character-autorig/SKILL.md) →
+[`unity-rigged-character`](skills/unity-rigged-character/SKILL.md)
+
+A person picks the body type at the start. A long coat or a skirt takes the skirt route
+(`--body skirt`): the rig follows each leg inside the coat to the crotch, weights the coat over the
+hips and both thighs, gives its hem spring chains of its own, and fails if the coat tears between
+the legs. A chibi takes its own route (`--body chibi`), with bands and windows for a big head, a
+short neck and thick limbs under the same limits, and a mitten is read and bent as one piece. Every
+change to the rig is scored on a rig exam: seeded bodies with known joints, and planted faults that
+each gate has to catch.
+
 ### A layered 2D runner that rigs itself
 
 <div align="center">
@@ -196,6 +224,23 @@ For a game build the parts merge into one mesh with one texture atlas, one draw 
 
 The drawing is cut into one layer per moving part on your own ComfyUI, with what the arms and hair hide filled in by Qwen-Image-Edit, and Unity gives the PSB its bones, meshes and weights without a Skinning Editor step; the street is split by depth with Qwen-Image-Layered (both Apache-2.0) and scrolls as parallax with no prop beside its own copy. The same layers also come as a PSD ready for Live2D Cubism, which a person rigs in Cubism Editor under Live2D's own licence.
 
+### Props and a skateboard on the 2D rig
+
+<div align="center">
+<img src=".github/media/guard.gif" alt="A 2D street guard seen from the side in Unity, a long pole in his front hand and a round shield on his back arm: he breathes, swings the pole in an attack, then runs with the pole upright, the shield whole behind his arm" width="339"> <img src=".github/media/skate.gif" alt="A 2D courier in a cap and hoodie riding a skateboard, seen from the side in Unity: he pushes off the ground with his back foot and sets it back on the board, then crouches and pops an ollie, the board rising with both feet on it" width="281">
+<p><sub>Left: a guard whose pole and shield are layers of their own, riding his hands. Right: a courier whose board has a bone of its own, with leg IK keeping both feet on it through a push and an ollie.</sub></p>
+</div>
+
+[`codex-visual`](skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`unity-2d-animation`](skills/unity-2d-animation/SKILL.md)
+
+Props are named when the drawing is cut. A prop in a hand becomes its own layer on that hand, with
+what the arm hides completed from its own shape (a round shield from its fitted ellipse); a board
+under both feet gets a bone of its own, and two-bone leg IK keeps the feet on it. The cut is gated
+(no prop left with a gap, a board under both soles), and so are the poses in Unity: no foot misses
+the board or sinks into the ground.
+
 ## How it works
 
 ```mermaid
@@ -210,7 +255,7 @@ flowchart LR
 
 - **Lands on the right method from your words.** Each skill opens with a table of symptoms in
   plain language, and four start-here skills route any gameplay, UI, character or backend request.
-- **Runs code, not advice.** 100+ Python scripts, 170+ C# files and 50+ templates you copy into
+- **Runs code, not advice.** 130+ Python scripts, 200+ C# files and 50+ templates you copy into
   your project instead of retyping notes.
 - **Proves it.** Methods end in a check you can read: a probe snapshot, a journey test, a re-imported FBX,
   a device log.
@@ -270,7 +315,7 @@ flowchart LR
 | [`unity-2d-level`](skills/unity-2d-level/SKILL.md) | A 2D level as data, with seeded generation that checks every pickup is reachable |
 | [`unity-2d-grid`](skills/unity-2d-grid/SKILL.md) | Board logic for tactics and tile puzzles on square, isometric or hex grids |
 | [`unity-tilemap`](skills/unity-tilemap/SKILL.md) | Tiles that won't connect as you paint: RuleTiles from your sheet, palettes per grid |
-| [`unity-2d-rendering`](skills/unity-2d-rendering/SKILL.md) | A sprite drawn behind the wrong one, or a `Light2D` that turns everything black |
+| [`unity-2d-rendering`](skills/unity-2d-rendering/SKILL.md) | A sprite drawn behind the wrong one, a `Light2D` that turns everything black, or a parallax background |
 
 </details>
 
@@ -317,7 +362,7 @@ flowchart LR
 | [`unity-3d-models`](skills/unity-3d-models/SKILL.md) | A 3D model into the game, at a budget picked under the game camera |
 | [`unity-rigged-character`](skills/unity-rigged-character/SKILL.md) | A rigged FBX that T-poses in Unity: import, Avatar, Animator and gameplay rig |
 | [`unity-2d-sprites`](skills/unity-2d-sprites/SKILL.md) | Sprite sheets sliced from script, and frames turned into a playable clip |
-| [`unity-2d-animation`](skills/unity-2d-animation/SKILL.md) | Skeletal 2D characters from a PSB, with skins and equipment swapped at runtime |
+| [`unity-2d-animation`](skills/unity-2d-animation/SKILL.md) | Skeletal 2D characters from a PSB, rigged by script with props and leg IK; skins and equipment swapped at runtime |
 | [`unity-2d-pixel-perfect`](skills/unity-2d-pixel-perfect/SKILL.md) | Pixel art that renders soft, shimmers as the camera moves or shows seams |
 | [`unity-sprite-atlas`](skills/unity-sprite-atlas/SKILL.md) | Sprites that should share a draw call, packed into V2 atlases from script |
 | [`unity-audio`](skills/unity-audio/SKILL.md) | Audio memory and CPU cut without the game sounding worse; it reports before reimporting |
@@ -332,12 +377,12 @@ flowchart LR
 |---|---|
 | [`game-character-pipeline`](skills/game-character-pipeline/SKILL.md) | **Start here** for a rigged character from an image: stages S0–S13, each gated |
 | [`codex-visual`](skills/codex-visual/SKILL.md) | 2D art through the `codex` image model, kept on-style by one art bible |
-| [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video and 3D models from your own ComfyUI, one job each |
+| [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video, 3D models and layered 2D art from your own ComfyUI, one job each |
 | [`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md) | A generated 3D model's dull texture repainted from the concept art, view by view, mesh and UVs kept |
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
 | [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |
-| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid rigged locally with your own Auto-Rig Pro, in one command; its optional AI step opens a Blender window |
+| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid, long coat or chibi included, rigged locally with your own Auto-Rig Pro in one command; its optional AI step opens a Blender window |
 | [`humanoid-motion`](skills/humanoid-motion/SKILL.md) | A move as a clip, solved from a two-camera video straight onto the skeleton |
 
 </details>

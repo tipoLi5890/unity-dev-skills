@@ -32,11 +32,11 @@ midline when its X range contains it: that is the torso (or the head) at that he
 | Marker | Method | Reported as |
 |---|---|---|
 | crotch | the lowest cut above 0.2 H from which one part crosses the midline in every cut up to 0.6 H | `crotch_h` |
-| hip | crotch + 0.02 H; X and Y from the leg part just below the crotch | measured |
+| hip | the crotch + the leg's half-width just under it (at least 0.02 H): thick thighs meet a thigh's radius below the hip joints; X and Y from that leg part. Over a measured knee the thigh is at most 1.1 x the shin: a wide hem at the crotch (shorts) widens the leg, and the hip is lowered there (a note says so) | measured |
 | ankle | both legs' areas summed; the lowest cut in 0.03–0.13 H within 5 % of the least there (where the foot's flare ends); each leg's centroid at that height | measured |
 | knee | per leg, on sections across the hip → ankle line (below); else 52 % of the way from ankle to hip | measured / proportion |
 | toe_tip, heel, ball | the foot's vertices below the ankle: front-most, rearmost, and 70 % of the way from heel to toe; the ball and toe at 35 % of the ankle's height, the heel at 25 % | measured |
-| shoulder | the arm part's centroids below the armpit (the longest run of cuts with a part wholly outside the torso) lie on the arm's axis; the shoulder is the axis point half the arm's radius outside the torso's edge at the armpit cut | measured |
+| shoulder | the arm part's centroids below the armpit (the longest run of cuts with a part wholly outside the torso) lie on the arm's axis; the shoulder is the axis point a quarter of the arm's radius outside the torso's edge at the armpit cut (a heavy chest there reaches past the joint) | measured |
 | hand_tip | the arm vertex farthest along the axis, projected onto the axis | measured |
 | elbow, wrist | 0.42 and 0.75 of shoulder → hand_tip (`--arm-ratios`); the wrist moves to a narrowing of the arm within 0.66–0.84 when one is at least 5 % narrower, and the elbow keeps 0.42 / 0.75 of shoulder → wrist (an AI wrist too), so the forearm keeps its length | proportion / measured |
 | neck | the narrowest central cut between the shoulders and 0.95 H | measured |
@@ -45,6 +45,18 @@ midline when its X range contains it: that is the torso (or the head) at that he
 | head_top | the highest vertex, at the mid-depth of the head | measured |
 | neck_base | the higher of the shoulders and neck − 0.03 H | measured |
 | pelvis, spine1…3 | on the midline at hip height, then the pelvis → neck_base line split evenly; Y at 55 % of the torso cut's depth (a little toward the back) | measured / proportion |
+
+**A held prop** (a shield, a board) standing beside one arm from above the armpit makes a vertical run of
+cuts of its own, and the arm's search follows it (the axis comes out vertical: refused). That run is set aside
+and the arm searched again (up to twice); the run's cut boxes are the report's `prop` (side, slices) and that
+arm is the other one mirrored (its own cuts run into the prop), the fingers read on the free hand. `autorig.py`'s
+hand_reach then gives the prop's skin (inside those boxes, less the arm's own skin) to the hand bone alone: it
+rides the hand rigid. The midline comes from the feet when the extent under 0.4 H is pulled more than 0.02 H
+off them, and prep centres X on the feet when the box is more than 0.01 H off them: the markers mirror about
+x = 0, so an offset d reads as 2 d of asymmetry (arms a few degrees apart move the box less than 0.01 H). Both
+arms setting a vertical run aside leaves nothing to mirror from: refused (arms held against the body). A prop
+that only starts under the hand is followed on from the hand: the hand tip lands on it and `markers.symmetry`
+fails; generate the character empty-handed and attach the prop (`blender-character-rig` prop-on-bone.md).
 
 **The knee on the leg's own sections.** Horizontal cuts at fractions of H put the knee wherever
 the narrowest slice happens to fall: a change of H (hair, a hat) moves it, and on a slanted leg a
@@ -71,14 +83,14 @@ section's centre.
 ## The skirt route (`--body skirt`)
 
 A long coat, a skirt or a robe hides the crotch: the first cut that crosses the midline is the
-hem, and a hip read at hem + 0.02 H sits at the knees (a knee-length greatcoat: hip 0.335 H, the
+hem, and a hip read from the hem sits at the knees (a knee-length greatcoat: hip 0.335 H, the
 window starts at 0.42). With `--body skirt` (`autorig.py all --body skirt`) that cut is the hem,
 and:
 
 | Step | Method |
 |---|---|
 | legs inside | from 0.06 H under the hem, each leg is followed up on the cut's **own loops** (no hole filled, so a trouser leg inside a coat is a loop of its own): on its side, overlapping its loop below (box IoU ≥ 0.3), under 1.8 x its area (the skirt around it is larger) |
-| crotch | where both legs end within 0.02 H of each other in one loop across the midline, no wider than 1.25 x their span and under 1.6 x their areas together: measured, hip = crotch + 0.02 H, X and Y of the leg's loop just under it |
+| crotch | where both legs end within 0.02 H of each other in one loop across the midline, no wider than 1.25 x their span and under 1.6 x their areas together: measured, hip = crotch + the leg loop's radius just under it (at least 0.02 H: a thick thigh's radius under the hip joint, as in trousers), X and Y of that loop |
 | crotch hidden | a leg runs into the skirt (a solid skirt): the hip on the leg's centre line (fitted on its loops above mid-shin) at 1.86 x the knee's height over the sole (adult anthropometry, hip 0.530 H, knee 0.285 H), the knee read again on the new line; with no knee cue, 0.50 H (proportion) |
 | knee | as above, on the leg's own section at each station (a loop over 1.8 x the station below is the skirt, not the leg); a cue within 0.02 H of the hem is the hem's lip, and one outside 40–65 % of the way a boot top: neither is the knee, and the knee falls back to 52 % |
 
@@ -103,10 +115,10 @@ type a person picks at G0, like the skirt: `autorig.py all --body chibi` passes 
 | Marker | Rule on the chibi route |
 |---|---|
 | crotch | as above, searched from 0.10 H up (short legs part low) |
-| hip | the crotch + the leg's half-width just under it: thick thighs meet a thigh's radius below the hip joints |
+| hip | the crotch + the leg's half-width just under it, as above, without the 0.02 H floor or the 1.1 x shin cap |
 | ankle | the highest cut under the shin's narrowest whose depth reaches 1.3 x the shin's: where a big shoe starts |
 | knee | as above (cue, else 52 % of ankle → hip) |
-| shoulder | where the arm's axis crosses the torso's edge at the armpit (a thick arm joins there, not half its radius outside); the arm is followed down to 0.2 H |
+| shoulder | where the arm's axis crosses the torso's edge at the armpit (a thick arm joins there, not a quarter of its radius outside); the arm is followed down to 0.2 H |
 | wrist, elbow | a narrowing within 0.52–0.80 of shoulder → hand_tip, else 0.66; the elbow at 0.36 / 0.66 of shoulder → wrist (a mitten is a third of a short arm) |
 | neck | the narrowest central cut from the shoulder up to 0.15 H above it (under the head, never inside it) |
 | neck_base, head_base | a third and two thirds of the way from the shoulder to the neck's narrowest: the head sits on the shoulders |
@@ -151,8 +163,8 @@ hangs clear of the torso, and the call refuses (exit 1).
 hip → knee over knee → ankle inside 0.85–2.0. One segment twice the other is a joint off its place
 (an elbow moved toward the wrist), not a style. An adult's thigh is about the shin's length (hip
 joint to knee 0.245 H, knee to ankle 0.246 H); a thigh under 0.85 of the shin is a hip read low at
-a heavy body's crotch, where thick thighs meet a thigh's radius below the hip joints (the rig
-exam's `heavy`): place the hip with `--adjust`. `markers.finger_lengths`: the shortest
+a crotch whose leg half-width did not lift it far enough (thick thighs meet a thigh's radius below
+the hip joints): place the hip with `--adjust`. `markers.finger_lengths`: the shortest
 finger phalanx, joint to joint, ≥ 0.01 × wrist → hand_tip; a chain collapsed onto its base bends
 nothing. Both read adjusted and AI markers too.
 

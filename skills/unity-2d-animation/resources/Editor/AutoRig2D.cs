@@ -58,7 +58,13 @@ namespace UnityDev.Rig2D
         public const float MaxRestHoles = 0.0005f, MaxPoseHoles = 0.002f;
         // ... and every limb joint keeps this share of a JointDisc-cell disc round it covered
         public const float MinJointCover = 0.97f, JointDisc = 6f;
+        // A board (a `board` bone): in every skate pose a planted foot lands within MaxFootMiss of
+        // its spot on the deck, nothing sinks more than MaxSink below the ground, the pushing
+        // sole is within MaxPushGap of the ground while it pushes, and a riding board stays down
+        // (all in character heights).
+        public const float MaxFootMiss = 0.01f, MaxSink = 0.006f, MaxPushGap = 0.01f;
         static readonly string[] LimbJoints = { "elbow_", "wrist_", "hip_", "knee_", "ankle_" };
+        static readonly float[] SkatePush = { 0.2f, 0.32f, 0.45f, 0.57f, 0.72f }, SkateOllie = { 0.2f, 0.3f, 0.5f, 0.66f, 0.8f };
 
         public sealed class Options
         {
@@ -84,6 +90,8 @@ namespace UnityDev.Rig2D
             public int silhouette;
             public float jointCover = 1f;
             public string jointWorst = "";
+            /// <summary>Per skate pose (a rig with a board): foot miss, sink, push gap, board lift.</summary>
+            public readonly List<(string pose, float miss, float sink, float gap, float lift)> contacts = new List<(string, float, float, float, float)>();
             public bool Ok => problems.Count == 0;
 
             public string ToJson()
@@ -97,6 +105,7 @@ namespace UnityDev.Rig2D
                   .Append(",\"jointCover\":").Append(jointCover.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
                   .Append(",\"jointWorst\":").Append(Str(jointWorst))
                   .Append(",\"poseHoles\":{").Append(string.Join(",", poseHoles.Select(p => Str(p.pose) + ":" + p.holes))).Append('}')
+                  .Append(",\"contacts\":{").Append(string.Join(",", contacts.Select(c => Str(c.pose) + ":[" + string.Join(",", new[] { c.miss, c.sink, c.gap, c.lift }.Select(v => float.IsNaN(v) ? "null" : v.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))) + "]"))).Append('}')
                   .Append(",\"library\":").Append(Str(library)).Append(",\"variant\":").Append(Str(variant))
                   .Append(",\"parts\":[").Append(string.Join(",", parts.Select(Str))).Append(']')
                   .Append(",\"notes\":[").Append(string.Join(",", notes.Select(Str))).Append(']')
@@ -433,8 +442,17 @@ namespace UnityDev.Rig2D
                     poses.Add(("rest", () => { }));
                     for (int q = 0; q < 4; q++) { float t = q * 0.25f * drv.stride; poses.Add(("run" + q, () => drv.RunSide(t))); }
                     // a held prop (prop_<name>_X) attacks: the poke drawn back and at the hit
-                    if (layers.Keys.Any(k => k.StartsWith("prop_", StringComparison.OrdinalIgnoreCase)))
+                    if (layers.Keys.Any(k => k.StartsWith("prop_", StringComparison.OrdinalIgnoreCase) && Rig2DLayout.Side(k) != ""))
                         foreach (float p in new[] { 0.4f, 0.58f }) poses.Add(("attack" + p.ToString("0.00", CultureInfo.InvariantCulture), () => drv.Attack(p * drv.attackPeriod)));
+                    // a board: riding, the push (off the deck, down by the front foot, the sweep, home)
+                    // and the ollie (crouch, pop, top, fall, landing)
+                    if (drv.HasBoard)
+                    {
+                        drv.motion = RigDriver2D.Motion.Idle;
+                        poses.Add(("ride", () => { drv.motion = RigDriver2D.Motion.Idle; drv.Evaluate(0.6f); }));
+                        foreach (float p in SkatePush) poses.Add(("push" + p.ToString("0.00", CultureInfo.InvariantCulture), () => drv.Push(p * drv.pushPeriod)));
+                        foreach (float p in SkateOllie) poses.Add(("ollie" + p.ToString("0.00", CultureInfo.InvariantCulture), () => drv.Ollie(p * drv.olliePeriod)));
+                    }
                 }
                 else
                     poses.AddRange(new (string, Action)[] { ("rest", () => { }), ("armup", drv.PoseArmUp), ("headturn", drv.PoseHeadTurn),
@@ -453,6 +471,18 @@ namespace UnityDev.Rig2D
                 foreach (var (name, set) in poses)
                 {
                     drv.ResetPose(); set();
+                    if (drv.HasBoard && (name == "ride" || name.StartsWith("push") || name.StartsWith("ollie")))
+                    {
+                        r.contacts.Add((name, drv.FootMiss, drv.SinkBelowGround, drv.PushGap, drv.BoardLift));
+                        if (drv.FootMiss > MaxFootMiss)
+                            r.problems.Add($"pose gate: {name}: a planted foot misses its spot on the board by {drv.FootMiss:0.###} heights (limit {MaxFootMiss}): the leg cannot reach the deck");
+                        if (drv.SinkBelowGround > MaxSink)
+                            r.problems.Add($"pose gate: {name}: a sole or the board sinks {drv.SinkBelowGround:0.###} heights below the ground (limit {MaxSink})");
+                        if (!float.IsNaN(drv.PushGap) && drv.PushGap > MaxPushGap)
+                            r.problems.Add($"pose gate: {name}: the pushing foot stays {drv.PushGap:0.###} heights above the ground (limit {MaxPushGap}): it pushes on air");
+                        if ((name == "ride" || name.StartsWith("push")) && Mathf.Abs(drv.BoardLift) > MaxSink)
+                            r.problems.Add($"pose gate: {name}: the board leaves the ground by {drv.BoardLift:0.###} heights while riding");
+                    }
                     var tris = new List<(Vector2, Vector2, Vector2, Vector2, Vector2, Vector2)>();
                     foreach (SpriteSkin sk in skins)
                     {
