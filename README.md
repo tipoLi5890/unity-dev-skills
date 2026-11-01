@@ -159,11 +159,11 @@ The rig step adds bone chains for the bag, hood, hair, jacket hem and shorts, an
 each is and where the body is to `<name>.secondary.json`. In Unity one command turns them into
 spring bones that keep their length and stay out of the body at any frame rate.
 
-### A face that holds up close
+### A face and hands that hold up close
 
 <div align="center">
-<img src=".github/media/parts.jpg" alt="The same courier runner twice, side by side, each as a full-body front view and a face close-up. Left, the whole body from one image-to-3D job: the face is soft and smeared and the hair is one heavy lump. Right, the same body with the head generated on its own and the hair split off: sharper eyes, nose, mouth and ears, and finer hair spikes" width="800">
-<p><sub>Left: the whole body from one job. Right: the same body with its head made on its own.</sub></p>
+<img src=".github/media/parts.jpg" alt="The same courier runner three times, side by side, each as a full-body front view, a face close-up and a close-up of the right hand. Left, the whole body from one image-to-3D job: the face is soft and smeared, the hair is one heavy lump and the gloved fingers are fused into one block. Middle, the same body with the head generated on its own and the hair split off: sharper eyes, nose, mouth and ears and finer hair spikes, but the same fused hand. Right, the hands generated on their own too and set into the sleeves, and eyeballs behind the painted eyes: four separate fingers in a fingerless orange glove" width="800">
+<p><sub>Left: the whole body from one job. Middle: its head made on its own. Right: its hands too, and eyeballs that turn.</sub></p>
 </div>
 
 [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
@@ -173,6 +173,9 @@ spring bones that keep their length and stay out of the body at any frame rate.
 When the face matters, the head is redrawn from the concept at its own scale, generated as a part of its
 own and put back on the whole-body mesh, which keeps the proportions. The hair becomes a third mesh, the
 neck seam is hidden in the collar and matched in colour, and the rig step binds the hair to the head.
+For hand close-ups each hand is generated on its own with gaps between the fingers and set into the
+sleeve, so the rig finds every finger; eyeballs go behind the painted eyes and turn on the eye bones.
+For a game build the parts merge into one mesh with one texture atlas, one draw call.
 
 ## How it works
 

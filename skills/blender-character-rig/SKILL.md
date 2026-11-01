@@ -29,7 +29,8 @@ weights want a surface every bone can see. A short-limbed mascot with long ears 
 | A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting | `reference/prop-on-bone.md` |
 | Poses in armature axes, keying an action, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
 | The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake | `reference/game-mesh.md` |
-| A character in parts (`three`): register the generated head onto the anchor, split its hair, cut, seam, gates; the hair bound by `character-autorig` `autorig.py all --hair` | `reference/part-assembly.md`, `scripts/assemble_parts.py`, `scripts/part_math.py` |
+| A character in parts (`three`): register the generated head onto the anchor, split its hair, cut, seam, gates; the hair bound by `character-autorig` `autorig.py all --hair`; `fine`: the hands attached under the sleeve | `reference/part-assembly.md`, `scripts/assemble_parts.py`, `scripts/part_math.py`, `scripts/hand_parts.py` |
+| The ship track's mesh from parts: one mesh, one material, one atlas per map, before the rig | `reference/part-assembly.md` §8, `scripts/ship_merge.py` |
 | Exporter options, clip naming, export FBX and prove it by re-import, the Unity check | `reference/fbx-export.md` |
 | "LOD spikes": lighter skinned levels on one skeleton — hidden shells, shard props, normals, boundary weights, names Unity will not turn into a LODGroup | `reference/skinned-lod.md` |
 | A worked example: the plush runner with long ears and a mallet, every step | `reference/worked-example.md` |

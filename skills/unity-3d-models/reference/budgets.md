@@ -77,19 +77,24 @@ the joints; the game mesh (stage S5) decides between regenerating and retopology
 
 ## A character in parts
 
-A character in tier `three` (`game-character-pipeline` → `reference/start-gate.md` §5) is three
-meshes, body, head and hair, and the class's row still budgets the whole character. Each part's
-`budget_share` in the parts plan is a **fraction of the row**, never a count of its own: by
-default body 0.6, head 0.25, hair 0.15. The parts tools check only that the shares sum to at most
-1.0; a share says how the row divides when the ship-track game mesh is built. Each part keeps its
+A character in tier `three` or `fine` (`game-character-pipeline` → `reference/start-gate.md` §5) is
+several meshes (body, head, hair; `fine` adds hands and eyeballs), and the class's row still budgets
+the whole character. Each part's `budget_share` in the parts plan is a **fraction of the row**, never
+a count of its own: by default body 0.6, head 0.25, hair 0.15 in `three`. The plan tools check only
+that the shares sum to at most 1.0; the ship merge checks each part against its share. Each part keeps its
 own texture, at most the row's `target_tex_px` on a side, which is where the face's texel density
 comes from.
 
-- **Preview and showcase**: one material per part, so `max_materials` must allow 3 (the rig mesh
-  carries two, the hair one).
-- **Ship**: the parts merge into one skinned mesh with one atlas before S6, rigged once, as every
-  mesh is (not built yet; until then a ship-track character in parts keeps its three materials and the row
-  must allow them).
+- **Preview and showcase**: one material per part, so `max_materials` must allow 3 in `three` (the
+  rig mesh carries two, the hair one) and 4 in `fine` (the rig mesh with both hands); the rigged
+  FBX then holds six (the hair shares the head's, each eyeball one).
+- **Ship**: the parts merge into one mesh, one material and one atlas per map before S6, rigged
+  once, as every mesh is (`assemble_parts.py ship`: `blender-character-rig` →
+  `reference/part-assembly.md` §8). The atlas side is the row's `target_tex_px` (2048 or 4096); each part's tile keeps at least half
+  its own texture's side. Each part's triangles are checked against `budget_share` × the row's
+  `ceiling_tris` (or an explicit limit) and warned past 1.25 × its share of `target_tris`; with no
+  calibrated row only the counts are reported. A part over its share is reduced on its own, before
+  the merge; `max_materials` 1 then holds.
 
 ## The two tables
 

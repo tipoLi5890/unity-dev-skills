@@ -70,6 +70,8 @@ TEMPLATE_PRESET = "Template"
 TIERS = ("whole", "three", "fine", "custom")
 REGIONS = ("body", "head", "hair", "hand.L", "hand.R", "eyes", "accessory")
 REGIONS_BUILT = {"whole": {"body"}, "three": {"body", "head", "hair"}}
+FINE_REGIONS = {"hand.L", "hand.R"}      # tier fine: three plus any of these (eyeballs: eye_fit.py, no plan part)
+HAND_REGIONS = ("hand.L", "hand.R")                           # views and generate: hand_views.py
 NAME = re.compile(r"^[a-z0-9_-]+$")
 
 IOU_MIN, REACH_MIN, WIDTH_RANGE, BG_RANGE = 0.90, 0.85, (0.8, 1.25), (0.95, 1.05)
@@ -147,8 +149,8 @@ def check_plan(plan: dict, plan_dir: Path, check_anchor=True) -> list:
     tier = plan.get("tier")
     if tier not in TIERS:
         raise Refused(f"tier {tier!r} is not one of {TIERS}")
-    if tier in ("fine", "custom"):
-        raise Refused(f"tier {tier} is reserved, not built yet: the tools build whole and three")
+    if tier == "custom":
+        raise Refused(f"tier {tier} is reserved, not built yet: the tools build whole, three and fine")
     parts = plan.get("parts")
     if not isinstance(parts, list) or not parts:
         raise Refused("parts must be a non-empty list")
@@ -161,8 +163,10 @@ def check_plan(plan: dict, plan_dir: Path, check_anchor=True) -> list:
             raise Refused(f"part {p['name']}: source must be anchor, generate or split")
         if p.get("region") not in REGIONS:
             raise Refused(f"part {p['name']}: region {p.get('region')!r} is not one of {REGIONS}")
-        if p["region"] not in REGIONS_BUILT["three"]:
-            raise Refused(f"part {p['name']}: region {p['region']} is reserved for tier fine, not built yet")
+        if p["region"] in ("eyes", "accessory"):
+            raise Refused(f"part {p['name']}: region {p['region']} is not built from a plan: eyeballs come from blender-character-rig eye_fit.py fit, not a plan part; accessories are reserved")
+        if p["region"] not in REGIONS_BUILT["three"] and tier != "fine":
+            raise Refused(f"part {p['name']}: region {p['region']} is for tier fine")
         if p["source"] == "split" and by.get(p.get("from"), {}).get("source") != "generate":
             raise Refused(f"part {p['name']}: a split needs `from` naming a generated part")
         if p["source"] == "generate":
@@ -182,8 +186,10 @@ def check_plan(plan: dict, plan_dir: Path, check_anchor=True) -> list:
         raise Refused("exactly one part has source: anchor")
     if sum(p.get("budget_share") or 0 for p in parts) > 1.0 + 1e-9:
         raise Refused("budget shares sum to more than 1")
-    if {p["region"] for p in parts} != REGIONS_BUILT[tier]:
-        raise Refused(f"tier {tier} takes the regions {sorted(REGIONS_BUILT[tier])}")
+    regions = {p["region"] for p in parts}
+    want = REGIONS_BUILT["three"] | (regions & FINE_REGIONS) if tier == "fine" else REGIONS_BUILT[tier]
+    if regions != want:
+        raise Refused(f"tier {tier} takes the regions {sorted(want)}")
     gen = [p for p in parts if p["source"] == "generate"]
     if tier == "whole":
         return gen
@@ -207,8 +213,8 @@ def check_plan(plan: dict, plan_dir: Path, check_anchor=True) -> list:
         rows = {(b[1], b[3]) for b in boxes.values()}
         if len(rows) != 1 or any(b[2] - b[0] != L or b[3] - b[1] != L for b in boxes.values()):
             raise Refused(f"part {p['name']}: every box is L x L on the same rows")
-        if "seam" not in p or "part_bottom_y" not in p["seam"]:
-            raise Refused(f"part {p['name']}: seam.part_bottom_y comes from part_math.py plan")
+        if "part_bottom_y" not in (p.get("seam") or {}) and not (p["region"] in HAND_REGIONS and "wrist" in p):
+            raise Refused(f"part {p['name']}: seam.part_bottom_y (a hand: wrist) comes from part_math.py plan")
     return gen
 
 
@@ -523,7 +529,7 @@ def cmd_views(a) -> int:
     from PIL import Image
     plan, gen = load_plan(a.plan)
     if a.part:
-        gen = [p for p in gen if p["name"] == a.part]
+        gen = [p for p in gen if p["name"] in a.part.split(",")]
         if not gen:
             raise Refused(f"--part {a.part}: no generated part of that name")
     if not gen:
@@ -537,8 +543,15 @@ def cmd_views(a) -> int:
     root = a.plan.parent
     work = {}
     all_gates = []
+    hands = [p for p in gen if p["region"] in HAND_REGIONS]
+    if hands:                 # hands: their own guide, prompt and band gates, the hidden view mirrored
+        import hand_views
+        code, all_gates, work = hand_views.views(a, plan, hands, qp, models, base)
+        if code:
+            free(base)
+            return code
     # 1. guides and redraws for every part (one model family, kept loaded)
-    for part in gen:
+    for part in [p for p in gen if p["region"] not in HAND_REGIONS]:
         vd = root / "views" / part["name"]
         vd.mkdir(parents=True, exist_ok=True)
         hint = part.get("prompt_hint")
@@ -642,6 +655,9 @@ def cmd_views(a) -> int:
         for i, t in enumerate(tiles):
             sheet.paste(t.resize((1024, 1024)), (1024 * i, 0))
         sheet.save(vd / "sheet.png")
+        if part["region"] in HAND_REGIONS:       # hand_views sampled the forearm's colour
+            part["views"].update({"dir": f"views/{name}", "sheet": f"views/{name}/sheet.png"})
+            continue
         g = guides["front"][2]
         front = np.asarray(tiles[0].resize((1024, 1024)))
         col = colours(front, silhouette(front), g["chin_row"] * 1024 / g["L"])
@@ -661,12 +677,20 @@ def save_report(vd: Path, rep: dict) -> None:
 def cmd_generate(a) -> int:
     plan, gen = load_plan(a.plan)
     if a.part:
-        gen = [p for p in gen if p["name"] == a.part]
+        gen = [p for p in gen if p["name"] in a.part.split(",")]
         if not gen:
             raise Refused(f"--part {a.part}: no generated part of that name")
     base = server_base(a.server)
     root = a.plan.parent
     failed = []
+    hands = [p for p in gen if p["region"] in HAND_REGIONS]
+    gen = [p for p in gen if p["region"] not in HAND_REGIONS]
+    if hands:                 # hands: generate, register and count fingers; another seed on a failed gate
+        import hand_views
+        for part in hands:
+            if hand_views.generate_part(a, plan, part, part is hands[-1] and not gen, base):
+                failed.append(part["name"])
+            save_plan(a.plan, plan)
     for i, part in enumerate(gen):
         name = part["name"]
         vd = root / (part["views"].get("dir") or f"views/{name}")
@@ -707,6 +731,12 @@ def cmd_generate(a) -> int:
             failed.append(name)
     save_plan(a.plan, plan)
     free(base)
+    if a.paint and not failed:     # model-family switch done: Pixal3D -> Qwen; mesh-texture-paint per part
+        import hand_views
+        for part in hands + gen:
+            hand_views.paint_part(a, plan, part, base)
+            save_plan(a.plan, plan)
+        free(base)
     return 2 if failed else 0
 
 
@@ -808,9 +838,14 @@ def selftest() -> int:
                 return False
             except Refused:
                 return True
-        checks["refuse_fine"] = refused(lambda p: p.update(tier="fine"))
-        checks["refuse_hand"] = refused(lambda p: p["parts"].append({"name": "hand_r", "source": "generate",
-                                                                    "region": "hand.R", "preset": "Template"}))
+        checks["refuse_custom"] = refused(lambda p: p.update(tier="custom"))
+        checks["refuse_hand_in_three"] = refused(lambda p: p["parts"].append({"name": "hand_r", "source": "generate",
+                                                                             "region": "hand.R", "preset": "Template"}))
+        checks["refuse_accessory_in_fine"] = refused(lambda p: (p.update(tier="fine"), p["parts"].append(
+            {"name": "bag", "source": "generate", "region": "accessory", "preset": "Template"})))
+        checks["refuse_hand_without_wrist"] = refused(lambda p: (p.update(tier="fine"), p["parts"].append(
+            {"name": "hand_r", "source": "generate", "region": "hand.R", "preset": "Template",
+             "views": p["parts"][1]["views"]})))
         checks["refuse_large_hair"] = refused(lambda p: p["parts"][1].update(preset="Large"))
         checks["refuse_two_anchors"] = refused(lambda p: p["parts"][1].update(source="anchor"))
         checks["refuse_split_from_anchor"] = refused(lambda p: p["parts"][2].update({"from": "body"}))
@@ -916,9 +951,15 @@ def main(argv=None) -> int:
     gn = sub.add_parser("generate", help="one Pixal3D multi-view job per generated part, then inspect_glb")
     gn.add_argument("plan", type=Path)
     gn.add_argument("--timeout", type=float, default=1800)
+    gn.add_argument("--hand-seeds", type=int, default=3,
+                    help="hand parts: jobs (each with every sampler seed moved) until hand_parts.py gate passes")
+    gn.add_argument("--hand-ratio", type=float, default=0.2,
+                    help="hand parts: the job's face target, this x the anchor's triangles")
+    gn.add_argument("--paint", action="store_true",
+                    help="then mesh-texture-paint's paint_loop.py on each generated part into paint/<part>/")
     for p in (v, gn):
         p.add_argument("--server", default=None, help="ComfyUI URL (else COMFYUI_SERVER_URL, else the client config)")
-        p.add_argument("--part", help="only this part")
+        p.add_argument("--part", help="only this part (or comma-separated parts: hand_r,hand_l)")
         p.add_argument("--wait-idle", type=float, default=900, help="seconds to wait for an empty queue before each job")
     a = ap.parse_args(argv)
     if a.selftest:

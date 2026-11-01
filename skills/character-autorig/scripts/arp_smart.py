@@ -10,7 +10,7 @@ registered refuses the run, and no other name is tried.
 usage (windowed Blender, the normalised file: +Z up, facing -Y, soles on Z 0, scale applied):
     blender Runner.blend -P arp_smart.py -- --mesh Runner --out rig/Runner.smart.json \
         [--save-blend rig/Runner_smart.blend] [--fingers 5|4] [--facial|--no-facial]
-        [--eyes proxy|none|auto] [--body-samples N] [--finger-samples N] [--timeout 600]
+        [--eyes proxy|none|auto|objects] [--eye-glb E.glb --eye-frame-glb RAW.glb] [--body-samples N] [--finger-samples N] [--timeout 600]
     blender -b -P arp_smart.py -- --probe [--out probe.json]   (headless: add-on, operators, AI files)
     python3 arp_smart.py --selftest                              (host, no Blender, no add-on)
 
@@ -27,7 +27,10 @@ The chain, one step per timer tick:
                raises nothing: judged by thumb1_loc. Both failing turns fingers off for Go!.
   face         (--facial) id.facial_setup, arp.guess_facial, then --eyes: proxy puts a sphere behind
                each eye from the lid markers (manual eyeball mode), none turns eyes off, auto lets the
-               add-on look for eyeball objects; id.validate_facial_setup. A face that fails is
+               add-on look for eyeball objects, objects imports real eyeballs (--eye-glb, blender-character-rig
+               eye_fit.py's Eye.L / Eye.R, in the frame of --eye-frame-glb, the GLB the open file was prepped
+               from: scale from the z extents, shift from the minima) as the manual eyeballs, removed after
+               Go! like the proxies; id.validate_facial_setup. A face that fails is
                cancelled (id.cancel_facial_setup, eyes off, proxies removed) so Go! still builds the
                body and the fingers.
   go           a copy with the markers is saved (<save-blend stem>_markers.blend), then id.go_detect
@@ -41,7 +44,7 @@ Output (schema "autorig-smart/1"; world space, metres, +Z up, facing -Y, .L on +
 autorig-markers/1): mesh, height, arp {version, ai_version}, options, steps [{step, seconds, error,
 ok, ...}], body_markers {root, neck, chin, head_tip, shoulder.L ... foot.R}, fingers {requested,
 count, fell_back, names, markers {thumb1.L ... pinky4.R}}, facial {enabled, ok, features,
-keypoints_found, keypoints_total, eye_proxies}, rig_matrix_world, refs {bone: {head, tail, roll,
+keypoints_found, keypoints_total, eye_proxies, eye_objects}, rig_matrix_world, refs {bone: {head, tail, roll,
 group body|finger|facial|ear, parent}}, ref_rolls_from, warnings, blend, blend_markers, elapsed_s,
 and gate/1's gates, pass, verdict (ok, pass's old name).
 Gates: smart.ai_files (version >= 1.20 and keypoint files written), smart.body_markers (all 18),
@@ -101,13 +104,28 @@ def parser() -> UsageParser:
     p.add_argument("--fingers", type=int, choices=(5, 4), default=5)
     p.add_argument("--facial", dest="facial", action="store_true", default=True)
     p.add_argument("--no-facial", dest="facial", action="store_false")
-    p.add_argument("--eyes", choices=("proxy", "none", "auto"), default="proxy")
+    p.add_argument("--eyes", choices=("proxy", "none", "auto", "objects"), default="proxy")
+    p.add_argument("--eye-glb", help="--eyes objects: the eyeballs (eye_fit.py fit's <c>_eyes.glb)")
+    p.add_argument("--eye-frame-glb", help="--eyes objects: the GLB the open file was prepped from (its frame)")
     p.add_argument("--body-samples", type=int, default=0, help="front pictures per body guess (0: the add-on's)")
     p.add_argument("--finger-samples", type=int, default=0, help="per finger guess (0: the add-on's)")
     p.add_argument("--timeout", type=float, default=TIMEOUT, help="seconds for the whole chain")
     p.add_argument("--probe", action="store_true", help="report add-on, operators and AI files; no AI run")
     p.add_argument("--selftest", action="store_true")
     return p
+
+
+def eye_args_error(a) -> str | None:
+    """--eyes objects needs both GLBs, and they must exist; the GLBs mean nothing without it."""
+    if a.eyes == "objects":
+        missing = [f for f, v in (("--eye-glb", a.eye_glb), ("--eye-frame-glb", a.eye_frame_glb)) if not v]
+        if missing:
+            return f"--eyes objects needs {' and '.join(missing)}"
+        gone = [v for v in (a.eye_glb, a.eye_frame_glb) if not os.path.isfile(v)]
+        return f"missing {gone[0]}" if gone else None
+    if a.eye_glb or a.eye_frame_glb:
+        return "--eye-glb and --eye-frame-glb go with --eyes objects"
+    return None
 
 
 def options(a) -> dict:
@@ -259,7 +277,8 @@ def assemble(state: dict, opts: dict) -> tuple[dict, int]:
                                    opts.get("fingers")),
            "facial": {"enabled": bool(opts.get("facial")), "ok": fc.get("ok"), "cancelled": fc.get("cancelled"),
                       "features": fc.get("features"), "keypoints_found": fc.get("keypoints_found"),
-                      "keypoints_total": fc.get("keypoints_total"), "eye_proxies": fc.get("eye_proxies")},
+                      "keypoints_total": fc.get("keypoints_total"), "eye_proxies": fc.get("eye_proxies"),
+                      "eye_objects": fc.get("eye_objects")},
            "rig_matrix_world": m, "refs": refs, "ref_rolls_from": "auto-rig-pro-go" if refs else None}
     warn = list(state.get("warnings") or [])
     if m and not rotation_free(m):
@@ -605,6 +624,60 @@ class Run:
             out[side[1:].upper()] = {"object": o.name, "center": r5((c.x, y, c.z)), "radius": round(r, 5)}
         return out
 
+    def eye_objects(self) -> dict | None:
+        """--eyes objects: import the fitted eyeballs and move them by the prep's transform (the frame GLB's
+        extents onto the open mesh's: scale from z, shift from the minima), named as proxies so they leave
+        with them."""
+        bpy = _bpy()
+        from mathutils import Matrix, Vector
+
+        def imported(path):
+            before = set(bpy.data.objects)
+            bpy.ops.import_scene.gltf(filepath=path)
+            new = [o for o in bpy.data.objects if o not in before]
+            for o in new:
+                if o.type == "MESH":
+                    w = o.matrix_world.copy()
+                    o.parent = None
+                    o.data.transform(w)
+                    o.matrix_world = Matrix.Identity(4)
+            for o in [o for o in new if o.type != "MESH"]:
+                bpy.data.objects.remove(o)
+            return [o for o in new if o.type == "MESH"]
+
+        def box(objs):
+            pts = [o.matrix_world @ v.co for o in objs for v in o.data.vertices]
+            return (Vector([min(p[i] for p in pts) for i in range(3)]), Vector([max(p[i] for p in pts) for i in range(3)]))
+
+        raw = imported(self.a.eye_frame_glb)
+        lo, hi = box(raw)
+        for o in raw:
+            me = o.data
+            bpy.data.objects.remove(o)
+            if me.users == 0:
+                bpy.data.meshes.remove(me)
+        bb = [self.mesh.matrix_world @ Vector(c) for c in self.mesh.bound_box]
+        plo = Vector([min(v[i] for v in bb) for i in range(3)])
+        phi = Vector([max(v[i] for v in bb) for i in range(3)])
+        s = (phi.z - plo.z) / max(hi.z - lo.z, 1e-12)
+        t = plo - s * lo
+        out = {}
+        for o in imported(self.a.eye_glb):
+            side = o.get("eye") or ("L" if o.name.startswith("Eye.L") else "R" if o.name.startswith("Eye.R") else None)
+            if side not in ("L", "R"):
+                bpy.data.objects.remove(o)
+                continue
+            o.data.transform(Matrix.Translation(t) @ Matrix.Scale(s, 4))
+            o.name = PROXY + "." + side.lower()
+            c = s * Vector(o["centre"]).xzy * Vector((1, -1, 1)) + t if o.get("centre") else None
+            out[side] = {"object": o.name, "center": r5(c) if c is not None else None,
+                         "radius": round(s * float(o["radius"]), 5) if o.get("radius") else None}
+        self.S["eye_transform"] = {"scale": round(s, 6), "shift": r5(t)}
+        if set(out) != {"L", "R"}:
+            self.drop_proxies()
+            return None
+        return out
+
     def drop_proxies(self):
         bpy = _bpy()
         for o in [o for o in bpy.data.objects if o.name.startswith(PROXY)]:
@@ -633,14 +706,15 @@ class Run:
                  sum((x - y) ** 2 for x, y in zip(after[k], before[k])) ** 0.5 > 1e-4}
         out["guess_facial"] = {"error": err2, "seconds": dt}
         F.update(keypoints_found=len(moved), keypoints_total=len(after))
-        if eyes == "proxy" and not err and not err2:
-            F["eye_proxies"] = self.proxy_eyes(after, moved)
-            if F["eye_proxies"]:
+        if eyes in ("proxy", "objects") and not err and not err2:
+            key = "eye_proxies" if eyes == "proxy" else "eye_objects"
+            F[key] = self.proxy_eyes(after, moved) if eyes == "proxy" else self.eye_objects()
+            if F[key]:
                 scn.arp_smart_eyes = True
                 scn.arp_eyeball_mode = "MANUAL"
                 scn.arp_eyeball_type = "SEPARATE"
-                scn.arp_eyeball_name = F["eye_proxies"]["L"]["object"]
-                scn.arp_eyeball_name_right = F["eye_proxies"]["R"]["object"]
+                scn.arp_eyeball_name = F[key]["L"]["object"]
+                scn.arp_eyeball_name_right = F[key]["R"]["object"]
         _, err3, dt = self.op("id.validate_facial_setup")
         out["validate_facial_setup"] = {"error": err3, "seconds": dt}
         F["features"] = {k[10:]: bool(getattr(scn, k, False)) for k in (
@@ -852,6 +926,14 @@ def selftest() -> int:
     a = parser().parse_args([])
     check("defaults: 5 fingers, face on, proxy eyes, 600 s", a.fingers == 5 and a.facial and a.eyes == "proxy"
           and a.timeout == TIMEOUT and not a.probe)
+    here = os.path.abspath(__file__)
+    check("--eyes objects needs --eye-glb and --eye-frame-glb (existing files); they need it",
+          "--eye-frame-glb" in (eye_args_error(parser().parse_args(["--eyes", "objects", "--eye-glb", here])) or "")
+          and eye_args_error(parser().parse_args(["--eyes", "objects", "--eye-glb", here, "--eye-frame-glb", here])) is None
+          and "missing" in (eye_args_error(parser().parse_args(["--eyes", "objects", "--eye-glb", here + "x",
+                                                                "--eye-frame-glb", here])) or "")
+          and eye_args_error(parser().parse_args(["--eye-glb", here])) is not None
+          and opts("--eyes", "objects")["eyes"] == "objects")
     check("--no-facial drops the eyes option", opts("--no-facial")["facial"] is False and opts("--no-facial")["eyes"] is None)
     for bad in (["--fingers", "3"], ["--eyes", "glass"], ["--no-such-flag"]):
         with contextlib.redirect_stderr(io.StringIO()):
@@ -980,6 +1062,8 @@ def main() -> None:
     a = parser().parse_args(argv)
     if a.selftest:
         sys.exit(selftest())
+    if eye_args_error(a):
+        parser().error(eye_args_error(a))
     if not blender:
         print(json.dumps({"tool": "arp_smart", "pass": False, "ok": False, "exit_code": 1,
                           "refused": "run inside a windowed Blender: blender FILE.blend -P arp_smart.py -- "

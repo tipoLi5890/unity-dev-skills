@@ -2,7 +2,7 @@
 """autorig.py — character-autorig's stages for one character in one command, on Windows, macOS or Linux.
 
 usage (in this order; `all` runs them one after another):
-    autorig.py prep     OUT GLB [--name NAME] [--height 1.75] [--hair HAIR.glb] -> OUT/NAME.glb, OUT/NAME.blend
+    autorig.py prep     OUT GLB [--name NAME] [--height 1.75] [--hair HAIR.glb] [--eyes EYES.glb] -> OUT/NAME.glb, .blend
     autorig.py check    OUT [--name NAME]                           -> rig/NAME.mesh.json
     autorig.py smart    OUT [--name NAME] [--facial] [--fingers 5|4] -> rig/NAME.smart.json, rig/NAME_smart.blend
     autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] -> rig/NAME.markers.json, rig/markers/
@@ -43,6 +43,11 @@ that file is there, the contract stage ends with `assemble_parts.py bind OUT --h
 OUT/NAME.glb --name NAME --report rig/NAME.bind.json` (no --factory-startup), which binds the hair rigidly to the
 contract's Head bone in rig/NAME_arp.blend and exports the FBX again, so the first deform gate, every repair
 and the spring chains already have the hair. A bind that fails a gate stops the run (exit 2) before deform.
+eyes_bind likewise: prep and all take --eyes, blender-character-rig eye_fit.py fit's <c>_eyes.glb, copied to
+OUT/NAME_eyes.glb (removed by a prep without it); with --facial the smart stage hands them to the add-on as
+its eyeballs (arp_smart.py --eyes objects --eye-glb OUT/NAME_eyes.glb --eye-frame-glb OUT/NAME.glb), and
+after parts_bind the contract stage runs `eye_fit.py bind OUT --eyes OUT/NAME_eyes.glb --rig-glb OUT/NAME.glb
+--name NAME --report rig/NAME.eyes_bind.json`: each eyeball rigid on its eye bone (Head without a face).
 
 smart never stops `all`: without the add-on or its AI files it is skipped (no exit change); a smart that fails
 (a gate, an error, a timeout) makes the run's exit 2, and the markers take what passed from its report (a face
@@ -93,7 +98,7 @@ MAC_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 WIN_BLENDER_GLOB = r"C:\Program Files\Blender Foundation\Blender*\blender.exe"
 STAGES = ("prep", "check", "smart", "markers", "arp", "contract", "deform", "secondary")
 STOP_ON_GATE = {"check", "markers", "arp", "deform"}   # a later stage cannot use what these failed to make
-STOP_STEPS = {"parts_bind"}     # a failed bind leaves the FBX without the hair: deform would gate the wrong file
+STOP_STEPS = {"parts_bind", "eyes_bind"}   # a failed bind leaves the FBX without the part: deform would gate the wrong file
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 DEFORM_POSES = ("arms_up", "deep_squat", "torso_twist", "fist", "leg_raise", "elbow_120")   # deform_gate.POSES
 SMART_KILL = 600 + 60 + 120       # arp_smart's --timeout, its watchdog's margin, then the window is killed
@@ -172,7 +177,8 @@ class Ctx:
                   "deform": o / "rig" / f"{n}.deform.json", "poses": o / "rig" / "poses", "logs": o / "logs",
                   "repair": o / "repair", "smart": o / "rig" / f"{n}.smart.json",
                   "smart_blend": o / "rig" / f"{n}_smart.blend", "smart_probe": o / "logs" / "smart_probe.json",
-                  "hair": o / f"{n}_hair.glb", "bind": o / "rig" / f"{n}.bind.json"}
+                  "hair": o / f"{n}_hair.glb", "bind": o / "rig" / f"{n}.bind.json",
+                  "eyes": o / f"{n}_eyes.glb", "eyes_bind": o / "rig" / f"{n}.eyes_bind.json"}
         sec = o / "secondary"
         self.f.update({"sec_dir": sec, "sec_blend": sec / f"{n}_sec.blend", "sec_fbx": sec / f"{n}.fbx",
                        "sec_skeleton": sec / f"{n}.skeleton.json", "sec_json": sec / f"{n}.secondary.json",
@@ -337,6 +343,8 @@ def plan(c: Ctx, stage: str, a) -> list:
             raise Refused(f"missing {c.glb}")
         if a.hair and not c.dry and not Path(a.hair).exists():
             raise Refused(f"missing --hair {a.hair}")
+        if a.eyes and not c.dry and not Path(a.eyes).exists():
+            raise Refused(f"missing --eyes {a.eyes}")
         return [step("prep", blender_cmd(c, SELF, "_inside", "prep", "--glb", f["glb"], "--name", c.name,
                                          "--height", a.height, "--save", f["blend"], "--report", f["prep"]),
                      f["prep"], logs / "prep.log", kind="inner")]
@@ -350,9 +358,11 @@ def plan(c: Ctx, stage: str, a) -> list:
             return []
         probe = step("smart_probe", blender_cmd(c, HERE / "arp_smart.py", "--probe", "--out", f["smart_probe"],
                                                 factory=False), f["smart_probe"], logs / "smart_probe.log", kind="inner")
+        eyes = ["--eyes", "objects", "--eye-glb", f["eyes"], "--eye-frame-glb", f["glb"]] if a.facial and (
+            f["eyes"].exists() or (c.dry and getattr(a, "eyes", None))) else []
         run = step("smart", blender_cmd(c, HERE / "arp_smart.py", "--mesh", c.name, "--out", f["smart"],
                                         "--save-blend", f["smart_blend"], "--fingers", a.fingers,
-                                        "--facial" if a.facial else "--no-facial", blend=f["blend"], factory=False,
+                                        "--facial" if a.facial else "--no-facial", *eyes, blend=f["blend"], factory=False,
                                         background=False), f["smart"], logs / "smart.log", kind="inner",
                    after_probe=True, timeout=SMART_KILL)
         return [probe, run]
@@ -379,6 +389,11 @@ def plan(c: Ctx, stage: str, a) -> list:
                                                         f["hair"], "--rig-glb", f["glb"], "--name", c.name,
                                                         "--report", f["bind"], factory=False),
                               f["bind"], logs / "parts_bind.log"))
+        if f["eyes"].exists() or (c.dry and getattr(a, "eyes", None)):   # eyeballs: rigid on the eye bones
+            steps.append(step("eyes_bind", blender_cmd(c, BCR / "eye_fit.py", "bind", c.out, "--eyes", f["eyes"],
+                                                       "--rig-glb", f["glb"], "--name", c.name,
+                                                       "--report", f["eyes_bind"], factory=False),
+                              f["eyes_bind"], logs / "eyes_bind.log"))
         return steps
     if stage == "deform":
         need(c, f["fbx"], "arp"); need(c, f["contract"], "contract")
@@ -638,6 +653,7 @@ def parser() -> Parser:
             p.add_argument("glb")
             p.add_argument("--height", type=float, default=1.75, help="metres (default 1.75)")
             p.add_argument("--hair", help="a character in parts: the assembly's <c>_hair.glb, bound after contract")
+            p.add_argument("--eyes", help="eye_fit.py fit's <c>_eyes.glb: the face's eyeballs, bound after contract")
         if s in ("markers", "deform", "secondary", "all"):
             p.add_argument("--no-render", action="store_true", help="no marker pictures, no pose renders")
         if s in ("smart", "markers", "all"):
@@ -661,7 +677,7 @@ def parse(argv) -> argparse.Namespace:
     a = parser().parse_args(argv)
     for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
                  ("no_smart", False), ("facial", False), ("fingers", 5), ("no_secondary", False),
-                 ("secondary_markers", None), ("hair", None), ("hair_chains", False)):
+                 ("secondary_markers", None), ("hair", None), ("hair_chains", False), ("eyes", None)):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -705,6 +721,11 @@ def main(argv=None, osname=None, env=None) -> int:
                 shutil.copyfile(hair, c.f["hair"])
             elif hair is None and c.f["hair"].exists():
                 c.f["hair"].unlink()
+            eyes = Path(os.path.abspath(a.eyes)) if a.eyes else None
+            if eyes is not None and eyes != c.f["eyes"]:
+                shutil.copyfile(eyes, c.f["eyes"])
+            elif eyes is None and c.f["eyes"].exists():
+                c.f["eyes"].unlink()
         if a.no_smart:
             c.smart = "skipped"
         for s in stages:
@@ -934,7 +955,7 @@ elif script == "inside_arp":
     fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
 elif script == "inside_repair":
     touch(opt("--fbx")); touch(opt("--save"))
-elif script == "assemble_parts.py":
+elif script in ("assemble_parts.py", "eye_fit.py"):
     touch(opt("--report"), json.dumps(rep))
 elif script == "secondary_chains.py":
     n = int(os.environ.get("FAKE_CHAINS", "2"))
@@ -1045,6 +1066,26 @@ def selftest() -> int:
                   and pb[pb.index("--report") + 1].endswith(os.path.join("rig", "Runner_Courier.bind.json"))
                   and "--hair-chains" in sh_["secondary"] and "--hair-chains" not in steps["secondary"],
                   steps=list(sh_))
+            code_e, re_, _ = go(["all", str(out), str(glb), "--hair", str(glb), "--eyes", str(glb), "--facial",
+                                 "--threads", "4", "--dry-run"], osname, {"BLENDER": bl})
+            se_ = {s_["name"]: s_["cmd"] for s_ in re_.get("steps", [])}
+            eb, sm_e = se_.get("eyes_bind", []), se_.get("smart", [])
+            _, rn, _ = go(["all", str(out), str(glb), "--eyes", str(glb), "--dry-run"], osname, {"BLENDER": bl})
+            sn = {s_["name"]: s_["cmd"] for s_ in rn.get("steps", [])}
+            check(f"{osname}: with --eyes, eyes_bind follows parts_bind before deform: eye_fit.py bind OUT, "
+                  "OUT/NAME_eyes.glb, the prepped GLB, a report, no --factory-startup; with --facial the smart "
+                  "window gets --eyes objects and both GLBs; without --facial it gets none",
+                  code_e == 0 and list(se_) == order[:7] + ["parts_bind", "eyes_bind"] + order[7:]
+                  and script_of(eb) == "eye_fit.py" and eb[eb.index("--") + 1] == "bind"
+                  and eb[eb.index("--") + 2] == str(out) and "--factory-startup" not in eb
+                  and eb[eb.index("--eyes") + 1] == str(Path(out) / "Runner_Courier_eyes.glb")
+                  and eb[eb.index("--rig-glb") + 1] == str(Path(out) / "Runner_Courier.glb")
+                  and eb[eb.index("--report") + 1].endswith(os.path.join("rig", "Runner_Courier.eyes_bind.json"))
+                  and sm_e[sm_e.index("--eyes") + 1] == "objects"
+                  and sm_e[sm_e.index("--eye-glb") + 1] == str(Path(out) / "Runner_Courier_eyes.glb")
+                  and sm_e[sm_e.index("--eye-frame-glb") + 1] == str(Path(out) / "Runner_Courier.glb")
+                  and "eyes_bind" in sn and "--eyes" not in sn["smart"] and "eyes_bind" not in steps,
+                  steps=list(se_))
             bls = [steps[k] for k in ("prep", "smart_probe", "markers", "arp", "deform")] + \
                 [s["cmd"] for s in r["repair_example"]]
             sm = steps["smart"]
@@ -1280,6 +1321,24 @@ def selftest() -> int:
               code == 0 and "assemble_parts.py" not in ran and not (run_dir / "Runner_hair.glb").exists(), ran=ran)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--hair", str(td / "no.glb")])
         check("--hair naming no file is refused before anything runs, exit 1", code == 1 and ran == [], ran=ran)
+        eyes = td / "src" / "runner_eyes.glb"
+        eyes.write_text("e")
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart", "--hair", str(hair),
+                                  "--eyes", str(eyes)], FAKE_DEFORM=clean0)
+        check("all --eyes: the eyes copied to OUT/NAME_eyes.glb, eyes_bind after parts_bind, before deform; exit 0",
+              code == 0 and ran == base[:-1] + ["assemble_parts.py", "eye_fit.py", "deform_gate.py"] + SEC
+              and (run_dir / "Runner_eyes.glb").read_text() == "e"
+              and [s_["name"] for s_ in r["steps"]][4:8] == ["contract", "parts_bind", "eyes_bind", "deform"],
+              ran=ran, code=code)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart", "--eyes", str(eyes)],
+                                 {"eye_fit.py": 2}, FAKE_DEFORM=clean0)
+        check("an eyes bind that fails a gate stops before deform, exit 2",
+              code == 2 and ran == base[:-1] + ["eye_fit.py"] and "secondary" not in r, ran=ran, code=code)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart"], FAKE_DEFORM=clean0)
+        check("all without --eyes removes an earlier eyes copy: no eyes_bind",
+              code == 0 and "eye_fit.py" not in ran and not (run_dir / "Runner_eyes.glb").exists(), ran=ran)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--eyes", str(td / "no.glb")])
+        check("--eyes naming no file is refused before anything runs, exit 1", code == 1 and ran == [], ran=ran)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"mesh_check.py": 2})
         check("all: a mesh check failure stops before the rig, exit 2", code == 2 and ran == chain[:2])
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"], {"inside_arp": 1})

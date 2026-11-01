@@ -317,6 +317,7 @@ What a head part view must show, and what any drawn part sheet must follow:
 - **No face on the back view.** The back of a head is hair and nape only; a model asked for "the same
   head" draws a face there, so the back view gets a prompt of its own.
 
-**The hand sheet (tier `fine`, reserved) is drawn, never cropped.** A crop of the body sheet gives
-fingers too small and too close to separate. Draw one open hand: true four views, fingers spread
-apart, the palm drawn where the view sees it.
+**Hands (tier `fine`) come from the body's clean views**, cropped at the plan's boxes and redrawn
+with black gaps between the fingers (`comfyui-asset-generation` → `reference/image-to-3d-parts.md`
+§Hands). Draw the body sheet with the fingers a little apart and the hands clear of the hips; the view
+the body hides is mirrored, so the palm carries the back's design.

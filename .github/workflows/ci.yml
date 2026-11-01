@@ -45,7 +45,10 @@ jobs:
           import importlib.util, os, subprocess, sys
           SCRIPTS = {   # path: modules it imports before parsing its arguments
               'blender-character-rig/scripts/assemble_parts.py': [],
+              'blender-character-rig/scripts/eye_fit.py': [],
+              'blender-character-rig/scripts/hand_parts.py': [],
               'blender-character-rig/scripts/part_math.py': [],
+              'blender-character-rig/scripts/ship_merge.py': [],
               'blender-retarget/scripts/motion_metrics.py': ['numpy'],
               'blender-retarget/scripts/clip_metrics.py': ['numpy'],
               'character-autorig/scripts/arp_markers.py': ['numpy'],
@@ -61,6 +64,7 @@ jobs:
               'codex-visual/scripts/key_unmix.py': ['numpy', 'PIL'],
               'codex-visual/scripts/pick_key.py': ['numpy', 'PIL'],
               'codex-visual/scripts/sheet_to_frames.py': ['PIL'],
+              'comfyui-asset-generation/scripts/hand_views.py': [],
               'comfyui-asset-generation/scripts/layout_map.py': ['numpy', 'PIL'],
               'comfyui-asset-generation/scripts/part_views.py': [],
               'humanoid-motion/scripts/contact_bake.py': ['numpy'],
@@ -166,18 +170,21 @@ jobs:
           import pathlib, re, sys
           root = pathlib.Path('skills')
           names = {d.name for d in root.iterdir() if d.is_dir()}
-          # A cross-skill pointer is written `skill` → `reference/x.md`; it is checked
-          # against the named skill. A bare `reference/x.md` is checked against its own skill.
-          arrow = re.compile(r'`([a-z0-9-]+)`\s*(?:→|->)\s*`(reference/[a-z0-9-]+\.md)`')
+          # A cross-skill pointer is written `skill` → `reference/x.md`, or a list after one
+          # arrow (`skill` → `reference/x.md` §2, `reference/y.md`); each is checked against the
+          # named skill. A bare `reference/x.md` is checked against its own skill.
+          ref = r'`reference/[a-z0-9-]+\.md`'
+          arrow = re.compile(r'`([a-z0-9-]+)`\s*(?:→|->)\s*(' + ref + r'(?:(?:\s*§[\w.-]+)?,\s*' + ref + r')*)')
           bare = re.compile(r'`(reference/[a-z0-9-]+\.md)`')
           missing = []
           for sk in root.iterdir():
               if not sk.is_dir(): continue
               for f in sk.rglob('*.md'):
                   txt = f.read_text(encoding='utf-8')
-                  for skill, r in set(arrow.findall(txt)):
-                      if skill not in names or not (root / skill / r).exists():
-                          missing.append(f'{f} -> {skill} {r}')
+                  for skill, refs in set(arrow.findall(txt)):
+                      for r in bare.findall(refs):
+                          if skill not in names or not (root / skill / r).exists():
+                              missing.append(f'{f} -> {skill} {r}')
                   rest = arrow.sub('', txt)
                   for r in set(bare.findall(rest)):
                       if not (sk / r).exists():

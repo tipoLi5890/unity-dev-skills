@@ -189,7 +189,8 @@ marker and the views, not a looser limit.
 ## The stages by hand
 
 What `autorig.py all` runs, one stage at a time (paths relative to the character's folder; the
-rig to chain is the passing repair's `repair/aN/Runner_arp.blend` when there was one):
+rig to chain is the passing repair's `repair/aN/Runner_arp.blend` when there was one). Relative paths
+are read from the working directory (`//` from the .blend).
 
 ```bash
 python3 scripts/mesh_check.py Runner.glb --out rig/runner.mesh.json
@@ -209,6 +210,9 @@ python3 <skills>/unity-rigged-character/scripts/contract_map.py map export/Runne
 # a character in parts (Runner_hair.glb beside Runner.glb): bind the hair to Head before the deformation gate
 blender -b -P <skills>/blender-character-rig/scripts/assemble_parts.py -- bind . --hair Runner_hair.glb \
   --rig-glb Runner.glb --name Runner --report rig/Runner.bind.json
+# eyeballs (eye_fit.py fit's Runner_eyes.glb): each rigid on its eye bone (c_eye.l/.r with --facial, else Head)
+blender -b -P <skills>/blender-character-rig/scripts/eye_fit.py -- bind . --eyes Runner_eyes.glb \
+  --rig-glb Runner.glb --name Runner --report rig/Runner.eyes_bind.json
 blender -b -P scripts/deform_gate.py -- --fbx export/Runner.fbx --map rig/runner.contract.json \
   --render rig/poses/ --out rig/runner.deform.json
 # fingers.mode "fixed" (a mitten): add --poses arms_up,deep_squat,torso_twist,leg_raise,elbow_120

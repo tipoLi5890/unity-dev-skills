@@ -11,7 +11,7 @@ is registered onto it and replaces its region, so those proportions carry over.
 |---|---|---|---|
 | `whole` | the anchor | one mesh | the demo; no plan file, nothing below applies |
 | `three` | the anchor + one head job | body (the anchor, head cut off), head, hair (split from the head job) | showcase and ship |
-| `fine` | `three` + hands, eyes, accessories | reserved | refused by the tools (not built yet) |
+| `fine` | `three` + both hands (§Hands); eyeballs by `eye_fit.py` after the assembly | body, head, hair, hand.R, hand.L | close-ups, ship with fingers |
 
 A person picks the tier at G0 (`game-character-pipeline` → `reference/start-gate.md`). The assembly
 (register, hair split, cut, seam, gates) is `blender-character-rig` → `reference/part-assembly.md`.
@@ -67,9 +67,9 @@ Each writer rewrites only its own keys. A plan whose anchor file no longer match
 ```
 
 Rules the tools hold beyond the schema (exit 1 with the reason): exactly one `source: anchor`; the
-tier's region set (`three` = body, head, hair); a split's `from` names a generated part; a part that
+tier's region set (`three` = body, head, hair; `fine` = those plus either hand or both, each with its `wrist`; eyeballs come from `eye_fit.py`, not a plan part, and `eyes` or `accessory` parts are refused); a split's `from` names a generated part; a part that
 carries hair (the head, or the source of a hair split) never takes `Large`; budget shares sum to at
-most 1; any other region or tier is refused as reserved. `budget_share` is a fraction of the class's
+most 1; `custom`, or a region outside the tier, is refused. `budget_share` is a fraction of the class's
 `3D budgets` row (`unity-3d-models`), never a triangle count.
 
 ## Part views (`part_views.py views`)
@@ -145,6 +145,50 @@ python3 ../mesh-texture-paint/scripts/paint_loop.py gen/head/head.glb --concept 
   --sheet views/head/sheet.png --out paint/head --kind character --subject "character's head"
 ```
 
+## Hands (tier `fine`)
+
+`part_math.py plan --tier fine` adds `hand_r` and `hand_l` (`hand_parts.py` measures them:
+`blender-character-rig` → `reference/part-assembly.md` §7). `part_views.py` hands every hand part to `scripts/hand_views.py`;
+the commands stay the same, `--part` takes a comma list:
+
+```
+python3 scripts/part_views.py views    ArtDirection/parts/courier/courier.parts.json --views Work/courier/clean --part hand_r,hand_l
+python3 scripts/part_views.py generate ArtDirection/parts/courier/courier.parts.json --part hand_r,hand_l --paint
+```
+
+- **Guide.** The crop where the plan's keep mask holds: the hand where it is the nearest surface, the
+  sleeve near the cuff grown half a forearm radius toward the hand (the drawn cuff hangs lower than the
+  mesh's). The forearm the sleeve hid is a **shaded cylinder** of 0.8 × the forearm radius with a flat
+  end at the part's bottom plane, painted in the visible forearm's colour where the keep mask dropped
+  pixels. `prompt_hint` names the glove (`a fingerless orange and black glove with a black wrist strap`).
+- **Redraw.** The prompt asks for pure black gaps between the fingers (cloth between them is
+  background) and a bare forearm cut flat, no sleeve. Only the three views that see the hand are
+  redrawn; the **hidden view** (the right hand's left view) is the source's redraw flipped, its box
+  mirrored. Asked for a palm, the model keeps the back of the hand and can leave a grey ghost hand.
+- **Gates** per view, a failing view retrying the next seed:
+
+  | Gate | Limit | Catches |
+  |---|---|---|
+  | `part.redraw_inside` | ≥ 0.98 of the redraw within 6 px of the guide's silhouette (1024 px); the stub's corridor (one sleeve radius around the prior) not counted | a redrawn, moved or fattened hand |
+  | `part.redraw_cover` | ≥ 0.85 of the guide within 6 px of the redraw | a hand cut short, fingers dropped |
+  | `part.redraw_colour` | ≤ 0.06 of the 32 × 32 cells inside both silhouettes (the prior left out) moved > ΔE 20 | a ghost hand, a recoloured glove |
+  | `part.sharpness` | ≥ `--sharpness-factor` × the guide's | the blur |
+
+  IoU is the wrong gate here: the redraw rightly drops the cloth between the fingers, which the guide
+  holds. A cell on a finger's edge mixes in that background, so the colour gate takes whole cells only.
+- **Generate.** After each hand job, blender-character-rig `hand_parts.py gate` registers it onto the
+  anchor (the head's limits: scale ± 5 %, RMS ≤ 3 % of the region height, rotation ≤ 6°) and counts
+  fingers (`hand.fingers`: ≥ 4 separate sections in ≥ 30 % of 40 slices across the hand). On a failure
+  the job runs again with every sampler seed moved, up to `--hand-seeds` (3) jobs: never loosen a
+  gate. `generated.attempts` keeps each job's gates.
+- **Paint.** `--paint` runs `mesh-texture-paint` `paint_loop.py --kind object` on each passing hand
+  into `paint/<hand>/`: the multi-view bake darkens an orange glove to brown; the paint loop takes the
+  colour back from the redrawn views. The palm carries the back's paint (the hidden view is a mirror).
+- **Budget.** Each hand job keeps its preset's grid and texture but decimates to `--hand-ratio`
+  (0.2) × the anchor's triangles (node 186), before it unwraps and bakes: a hand at Template's face
+  count outweighs the body, and a collapse in Blender afterwards tears the textured mesh open along its
+  UV seams. Template is enough: Showcase adds surface, not separation, at ten times the faces.
+
 ## GPU order and cost
 
 One family at a time, the queue empty before every submission (`reference/operations.md`): every Qwen
@@ -154,6 +198,8 @@ redraw of every part with the model kept loaded → `/free` → BiRefNet → eve
 A part job fills its sparse grid, so it costs more than the whole body: about 2–3.5× the time and up
 to twice the VRAM (a head job: 3–6 minutes, 12–17 GiB). `three` adds the four redraws (seconds each),
 one BiRefNet job, one head job and one paint loop to the anchor: about 6–10 minutes of GPU time.
+`fine`'s hands add six redraws, one BiRefNet job, a job per hand at its face target (about 2 minutes;
+another on a failed gate) and a paint loop per hand (the longest step, about 10–15 minutes each).
 
 ## Avoid
 
@@ -163,6 +209,7 @@ one BiRefNet job, one head job and one paint loop to the anchor: about 6–10 mi
 - **Rectangle neck fills**: they become a box-shaped neck. Paint the shaded cylinder and let the redraw
   draw the neck.
 - **Colour-segmented masks**: closing over colours fills real gaps; the keep mask is geometry.
-- **Mirrored stand-ins for an occluded view**: the silhouette is right and the surface is wrong.
+- **Mirrored stand-ins for an occluded view**: the silhouette is right and the surface is wrong. The
+  hands' hidden view is the one exception (§Hands): a palm asked of the model is worse.
 - **`Large` on hair**, and **a seam plane read from view pixels**: the anchor's chin sits lower than
   the part's; the plan slices the anchor for it.

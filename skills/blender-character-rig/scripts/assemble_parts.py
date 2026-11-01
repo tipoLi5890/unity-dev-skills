@@ -12,6 +12,10 @@ usage (Blender, headless):
             [--seam overlap|bridge] [--accept-joined-hair] [--no-render]
     blender -b -P assemble_parts.py -- bind OUT --hair ASSEMBLY_DIR/<c>_hair.glb --rig-glb ASSEMBLY_DIR/<c>_rig.glb
             [--name NAME] [--report PATH]   (no --factory-startup: the FBX export needs Auto-Rig Pro)
+    blender -b --factory-startup -P assemble_parts.py -- hands PLAN.parts.json --assembly ASSEMBLY_DIR --out FINE_DIR
+            [--hand-ratio 0.2] [--no-render]   (tier fine: hand_parts.py, same folder, documents it)
+    blender -b --factory-startup -P assemble_parts.py -- ship PARTS.blend --out SHIP_DIR [--plan PLAN.parts.json]
+            [--atlas 4096|2048] [--separate hair,eyes] [--max-tris N]   (ship_merge.py: one mesh, one atlas)
     blender -b --factory-startup -P assemble_parts.py -- --selftest
 
 assemble, in order:
@@ -33,14 +37,16 @@ assemble, in order:
   seam       overlap (default with a collar): the part's neck runs down to part_bottom_y, inside the
              anchor's neck stump and collar; the part is cut flat there. Before the hair split the
              part's neck axis is shifted onto the anchor's (fully below cut_y, nothing a neck radius
-             above it; gate seam.centre <= 0.25 x radius). After the cut, where nothing covers them,
-             the anchor's stump is pulled under the part's neck (fully at the rim) and the part's
-             flat bottom inside the stump (fully at part_bottom_y), each to 0.97 of the other's
-             outermost surface (gate seam.tuck <= 0.25 x radius; over it nothing moves). The two
-             open edges are the seam: gate seam.hidden, the share of their vertices (the part's flat
-             bottom edge, the anchor's rim at cut_y) with geometry outside them on the outward
-             horizontal ray (the other mesh, a coincident surface counting, or a collar), worse of
-             the two, >= 0.95.
+             above it; gate seam.centre <= 0.25 x radius). After the cut the stump is cut into 8
+             rows near the axis; where nothing covers them (every ray of a horizontal fan, outward
+             and +-35/70 degrees, meets the collar = covered), the anchor's stump is pulled to 0.90 of
+             the part's neck along the whole band, coming back out over its lowest 35 % (a vertex
+             there more than 0.25 x radius outside is a flare and stays), and the part's flat bottom
+             to 0.92 of the stump, fully at part_bottom_y, nothing at the top of that 35 % (TUCK;
+             gate seam.tuck <= 0.25 x radius; over it nothing moves). The two open edges are the
+             seam: gate seam.hidden, the share of their vertices (the part's flat bottom edge, the
+             anchor's rim at cut_y) with geometry outside them on the outward horizontal ray (the
+             other mesh at least 0.03 x radius out, or a collar), worse of the two, >= 0.95.
              Reported: seam.gap (anchor rim to part surface, share of the neck radius) and
              neck_inside_stump (part neck vertices below cut_y inside the anchor).
              bridge (default without a collar): both cut at cut_y, the inner shell deleted locally near
@@ -49,14 +55,16 @@ assemble, in order:
              the part's loop with new faces on Body; never bridged when a gate fails.
   colour     the part's neck takes the anchor's skin at the seam (part_math seam_colour_field): both
              sides sampled through their UVs on a cylinder grid around the neck axis (24 angles, rows
-             0.1 x radius), skin only (the plan's colours); the target is the anchor at the same place
-             below cut_y and the anchor's rim at and above it; the difference (linear RGB) is added to
-             the head's base-colour texels with weight 1 up to cut_y + 0.15 x radius, fading to 0 at the
-             chin (at least cut_y + 0.5 x radius) and from 1.3 to 1.8 x radius off the axis (the face
-             keeps its own); a cell whose two sides are two materials is left alone. Gate seam.colour,
-             over the sectors where the seam is in the open (nothing of the anchor outside it but the
-             neck): delta E of the part just above the cut to the anchor's rim <= 6, sharpest
-             lightness step per 0.1 x radius from the rim up <= 12 (provisional); before values kept.
+             0.1 x radius), skin only (the plan's colours); the seam is where the necks cross after the
+             tuck (overlap: part_math crossing_height over the angles no collar covers, seam_y; bridge:
+             cut_y), and below it the target is the anchor at the same place, at and above it the
+             anchor just below the seam; the difference (linear RGB) is added to
+             the head's base-colour texels with weight 1 up to the seam + 0.15 x radius, fading to 0 at
+             the chin (at least the seam + 0.5 x radius) and from 1.3 to 1.8 x radius off the axis (the
+             face keeps its own); a cell whose two sides are two materials is left alone. Gate
+             seam.colour, over the sectors where the seam is in the open (nothing of the anchor outside
+             it but the neck): delta E of the part just above the seam to the anchor just below <= 6,
+             sharpest lightness step per 0.1 x radius from there up <= 12 (provisional); before kept.
   coverage   part.coverage.rim: horizontal rays from the anchor's cut rim toward the neck axis hit the
              part >= 0.98 (the part fills the opening); part.coverage.sphere: 288 rays from a sphere
              (1.5 x head height) toward the head region's centre hit geometry >= 0.99.
@@ -104,6 +112,10 @@ if HERE not in sys.path:
 GATES = {"scale_ratio": 0.05, "rms": 0.03, "rotation_deg": 6.0, "hidden": 0.95, "rim": 0.98, "sphere": 0.99,
          "silhouette": 0.95, "head_extent": 0.05, "bridge_gap_mean": 0.10, "bridge_gap_max": 0.25,
          "collar_kept": 0.99, "tuck": 0.25, "colour_delta": 6.0, "colour_edge": 12.0}
+# overlap seam: the stump to 0.90 of the part's neck, the part's bottom to 0.92 of the stump, crossing once
+# over the lowest 35 % of the band, the stump first cut into 8 rows; an edge counts as covered only by a
+# surface 3 % of the radius outside it
+TUCK = {"stump_inset": 0.90, "part_inset": 0.92, "ramp": 0.35, "cover_gap": 0.03, "rows": 7}
 VIEWS = ("front", "left", "back", "right")
 
 
@@ -132,6 +144,12 @@ def parser():
     b.add_argument("--rig-glb", required=True)
     b.add_argument("--name")
     b.add_argument("--report", help="also write the gate/1 report here")
+    h = sub.add_parser("hands", help="tier fine: attach the hand parts to an assembly (hand_parts.py)")
+    h.add_argument("plan")
+    h.add_argument("--assembly", required=True, help="the folder assemble wrote (<c>_parts.blend)")
+    h.add_argument("--out", required=True)
+    h.add_argument("--hand-ratio", type=float, default=0.2, help="each hand at most this x the anchor's triangles")
+    h.add_argument("--no-render", action="store_true")
     return p
 
 
@@ -259,12 +277,17 @@ def delete_faces(obj, mask):
     obj.data.update()
 
 
-def bisect(obj, y_gltf):
-    """Cut every face that crosses the height y (glTF frame) so no face straddles it; triangles kept."""
+def bisect(obj, y_gltf, near=None):
+    """Cut every face that crosses the height y (glTF frame) so no face straddles it; triangles kept.
+    near = (axis_xz, reach): only faces with a corner within reach of that vertical axis."""
     import bmesh
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    if near is not None:      # Blender frame: glTF (x, z) is (x, -y)
+        (ax, az), reach = near
+        fs = [f for f in bm.faces if any((v.co.x - ax) ** 2 + (-v.co.y - az) ** 2 < reach * reach for v in f.verts)]
+        geom = list({v for f in fs for v in f.verts}) + list({e for f in fs for e in f.edges}) + fs
     bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-9, plane_co=(0.0, 0.0, y_gltf), plane_no=(0.0, 0.0, 1.0))
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 3])
     bm.to_mesh(obj.data)
@@ -610,6 +633,10 @@ def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=Tru
     detail["cut"] = {"faces_deleted": int(kill.sum()), "inner_shell_deleted": int(inner_b.sum()),
                      "components": cut_info["deleted"][:6], "kept_components": cut_info["kept"][:6]}
 
+    if mode == "overlap":     # rows through the stump, so the tuck's ramp bends it smoothly, not per triangle
+        for y in np.linspace(bottom_y, cut_y, TUCK["rows"] + 2)[1:-1]:
+            bisect(body, float(y), near=(axis, 1.5 * radius))
+
     # ---- seam checks
     Vb, Fb, _ = arrays(body)
     Vbw, Fbw, _ = pm.weld(Vb, Fb)
@@ -625,13 +652,16 @@ def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=Tru
         sd["gap_mean"], sd["gap_max"] = r4(d.mean() / radius), r4(d.max() / radius)
     if mode == "overlap":
         near_t = np.abs(Vhw[Fhw].mean(1)[:, 1] - (bottom_y + cut_y) / 2) < (cut_y - bottom_y) / 2 + 0.5 * radius
+        # the stump goes clearly inside the part's neck along the whole band (a coincident stump fights
+        # it along a ragged line), coming back out over the lowest TUCK["ramp"] of the band
         Vt, tk = pm.tuck_stump(Vbw, Fbw, rim_v, Vhw, Fhw[near_t], axis, radius, bottom_y, cut_y,
-                               limit=GATES["tuck"])
+                               inset=TUCK["stump_inset"], limit=GATES["tuck"], ramp=TUCK["ramp"])
         # the part's flat bottom, where it stands outside the stump and no collar covers it, goes inside
         stump = pm.stump_faces(Vbw, Fbw, rim_v, axis, radius, bottom_y, cut_y)
         pv = np.nonzero((Vhw[:, 1] >= bottom_y - 1e-9) & (Vhw[:, 1] <= cut_y)
                         & (np.linalg.norm(Vhw[:, [0, 2]] - axis, axis=1) < 1.5 * radius))[0]
-        Vpt, tp = pm.tuck_band(Vhw, pv, axis, radius, bottom_y, cut_y, (Vbw, Fbw[stump]), hide=(Vbw, Fbw[~stump]),
+        Vpt, tp = pm.tuck_band(Vhw, pv, axis, radius, bottom_y, bottom_y + TUCK["ramp"] * (cut_y - bottom_y),
+                               (Vbw, Fbw[stump]), hide=(Vbw, Fbw[~stump]), inset=TUCK["part_inset"],
                                limit=GATES["tuck"])
         sd["centre"] = None if centred is None else {k: (r4(v) if isinstance(v, float) else v) for k, v in centred.items()}
         sd["tuck"] = {k: (r4(v) if isinstance(v, float) else v) for k, v in tk.items()}
@@ -664,12 +694,12 @@ def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=Tru
 
         def covered(pts, own_V, own_F, other_V, other_F):
             """Share of edge points with geometry outside them on the outward horizontal ray: the other
-            mesh anywhere from just inside the point (a coincident surface counts), or their own mesh
-            beyond 10 % of the radius (past the faces at the edge itself)."""
+            mesh at least TUCK["cover_gap"] x radius outside the point (a coincident surface fights it and
+            does not count), or their own mesh beyond 10 % of the radius (past the faces at the edge)."""
             if not len(pts):
                 return None
             D = outward(pts)
-            t1, _ = pm.ray_hits(pts - D * 0.02 * radius, D, other_V, other_F, t_min=1e-9)
+            t1, _ = pm.ray_hits(pts + D * TUCK["cover_gap"] * radius, D, other_V, other_F, t_min=1e-9)
             t2, _ = pm.ray_hits(pts, D, own_V, own_F, t_min=0.1 * radius)
             return float((np.isfinite(t1) | np.isfinite(t2)).mean())
 
@@ -701,9 +731,22 @@ def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=Tru
             sd["bridged"] = True
     detail["seam"] = sd
 
-    # ---- seam colour: the part's neck takes the anchor's skin at the cut, fading out below the chin
-    g, detail["seam_colour"], neck_before = seam_colour(head, ref, body, axis, radius, cut_y, bottom_y,
+    # ---- seam colour: the part's neck takes the anchor's skin where the seam shows, fading out below the
+    # chin; overlap: the stump is tucked along the band, so the necks cross low in the ramp, not at cut_y
+    seam_y = cut_y
+    if mode == "overlap":
+        Vb, Fb, _ = arrays(body)
+        Vh, Fh, _ = arrays(head)
+        cb, ch = Vb[Fb].mean(1), Vh[Fh].mean(1)
+        lo = bottom_y - 0.5 * radius
+        nb = (np.linalg.norm(cb[:, [0, 2]] - axis, axis=1) < 1.3 * radius) & (cb[:, 1] > lo) & (cb[:, 1] < cut_y + radius)
+        nh = (ch[:, 1] > lo) & (ch[:, 1] < cut_y + radius)
+        y_x, _ = pm.crossing_height(Vb, Fb[nb], Vh, Fh[nh], axis, radius, lo, cut_y,
+                                    cover=(Vb, Fb[~nb], (bottom_y + cut_y) / 2))
+        seam_y = cut_y if y_x is None else y_x
+    g, detail["seam_colour"], neck_before = seam_colour(head, ref, body, axis, radius, seam_y, bottom_y,
                                                          float(neck["band"][1]), colours, rng)
+    detail["seam_colour"]["seam_y"] = r4(seam_y)
     gates.append(g)
 
     # ---- coverage
@@ -814,7 +857,7 @@ def seam_colour(head, ref, body, axis, radius, cut_y, bottom_y, chin, colours, r
     import part_math as pm
     node, slot = base_colour_node(head, with_slot=True)
     anode = base_colour_node(ref)
-    limit = (f"worst sector: delta E of the part just above the cut to the anchor's rim <= {GATES['colour_delta']}, "
+    limit = (f"worst sector: delta E of the part just above the seam to the anchor just below it <= {GATES['colour_delta']}, "
              f"sharpest lightness step per 0.1 radius <= {GATES['colour_edge']} (provisional)")
     fade_top = max(chin, cut_y + 0.5 * radius)
     step, y_lo = 0.1 * radius, bottom_y - 0.25 * radius
@@ -1410,6 +1453,9 @@ def contract_sample(script, case, doc):
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
+    if argv[:1] == ["ship"]:          # the ship track's merge lives in ship_merge.py (same folder)
+        import ship_merge
+        sys.exit(ship_merge.main(argv[1:], prog="assemble_parts.py ship"))
     args = parser().parse_args(argv)
     if not args.selftest and args.cmd is None:
         parser().print_usage(sys.stderr)
@@ -1424,6 +1470,13 @@ def main():
             code, report = selftest()
         elif args.cmd == "assemble":
             code, report = assemble(args.plan, args.out, args.seam, args.accept_joined_hair, not args.no_render)
+        elif args.cmd == "hands":
+            import hand_parts
+            try:
+                code, report = hand_parts.assemble_hands(args.plan, args.assembly, args.out, args.hand_ratio,
+                                                         not args.no_render)
+            except hand_parts.Refused as exc:
+                raise Refused(str(exc))
         else:
             code, report = bind(args.autorig_out, args.hair, args.rig_glb, args.name)
     except Refused as exc:

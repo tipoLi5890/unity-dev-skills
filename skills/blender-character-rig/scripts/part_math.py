@@ -26,7 +26,8 @@ frame: +Y up, the character facing +Z (the `front` view); a view maps a point to
 u = x (front), -x (back), -z (left), +z (right).
 
 Tiers: `whole` (the anchor alone, no plan needed), `three` (body = the anchor, head = one generated
-job, hair = split from the head). `fine` and `custom` are reserved names: refused here ("reserved, not built yet").
+job, hair = split from the head), `fine` (three plus parts from FINE_REGIONS: the hands are measured by
+hand_parts.py, same folder; eyeballs come from eye_fit.py, not the plan, and `eyes` / `accessory` parts are refused). `custom` is a reserved name: refused here ("reserved, not built yet").
 
 Exit codes: 0 done (or --selftest passed); 1 usage error, refused input or a failed --selftest;
 2 a measurement gate failed (no clean neck band: a raised hood or a helmet; a frame-fit IoU under
@@ -54,6 +55,8 @@ VIEWS = ("front", "left", "back", "right")
 VIEW_PX = 1024
 REGIONS = ("body", "head", "hair", "hand.L", "hand.R", "eyes", "accessory")
 REGIONS_NOW = ("body", "head", "hair")
+FINE_REGIONS = ("hand.L", "hand.R")     # tier fine: three plus any of these (eyeballs: eye_fit.py, no plan part)
+UNBUILT_REGIONS = ("eyes", "accessory")
 PRESETS = ("Small", "Medium", "Compact", "Large", "Template", "Showcase")
 TIERS = {
     "whole": [{"name": "body", "source": "anchor", "region": "body", "budget_share": 1.0}],
@@ -61,9 +64,18 @@ TIERS = {
               {"name": "head", "source": "generate", "region": "head", "preset": "Template", "budget_share": 0.25},
               {"name": "hair", "source": "split", "from": "head", "region": "hair",
                "split": {"method": "scalp-radius", "delta": 0.03}, "budget_share": 0.15}],
+    "fine": [{"name": "body", "source": "anchor", "region": "body", "budget_share": 0.46},
+             {"name": "head", "source": "generate", "region": "head", "preset": "Template", "budget_share": 0.22},
+             {"name": "hair", "source": "split", "from": "head", "region": "hair",
+              "split": {"method": "scalp-radius", "delta": 0.03}, "budget_share": 0.12},
+             {"name": "hand_r", "source": "generate", "region": "hand.R", "preset": "Template", "budget_share": 0.08,
+              "attach": {"mode": "replace"}},
+             {"name": "hand_l", "source": "generate", "region": "hand.L", "preset": "Template", "budget_share": 0.08,
+              "attach": {"mode": "replace"}}],
 }
-RESERVED_TIERS = ("fine", "custom")
+RESERVED_TIERS = ("custom",)
 FRAME_IOU_MIN = 0.90
+HIDE_FAN_DEG = (0, -35, 35, -70, 70)     # tuck_band: covered = every ray of this horizontal fan meets the hide
 
 
 class Refused(Exception):
@@ -916,14 +928,18 @@ def outer_radius(O_y, D, axis_xz, V, F, reach):
     return np.where(np.isfinite(t), reach - t, np.nan)
 
 
-def tuck_band(V, vid, axis_xz, radius, y_full, y_zero, target, hide=None, inset=0.97, limit=0.25):
+def tuck_band(V, vid, axis_xz, radius, y_full, y_zero, target, hide=None, inset=0.97, limit=0.25, flare_below=None):
     """Pull the vertices vid of V (welded) radially inside `target` (V, F: the other mesh near the seam,
     its outermost surface along the same ray from the axis) to inset x its radius, fully at height
     y_full and fading to nothing at y_zero. A vertex that some `hide` geometry (V, F: the anchor's
     collar or torso) already covers from outside, or that is inside the target, does not move.
     Nothing moves when a vertex would move more than limit x radius (that neck is a redraw failure).
-    Returns (V after, stats: moved, exposed, need_max and shift_max as shares of the radius, applied)."""
-    stats = {"moved": 0, "exposed": 0, "need_max": 0.0, "shift_max": 0.0, "shift_mean": 0.0, "applied": False}
+    flare_below given: a vertex below that height standing more than limit x radius outside the target
+    is a flare (shoulders, a collar's foot) that covers the target there: it stays and is not counted.
+    Returns (V after, stats: moved, exposed, flare, need_max and shift_max as shares of the radius,
+    applied)."""
+    stats = {"moved": 0, "exposed": 0, "flare": 0, "need_max": 0.0, "shift_max": 0.0, "shift_mean": 0.0,
+             "applied": False}
     V = np.asarray(V, float)
     if not len(vid) or y_full == y_zero:
         return V, stats
@@ -936,8 +952,19 @@ def tuck_band(V, vid, axis_xz, radius, y_full, y_zero, target, hide=None, inset=
     need = np.where(np.isfinite(rt), rxz - inset * np.nan_to_num(rt), 0.0).clip(0.0, None)
     if hide is not None and len(hide[1]) and (need > 0).any():
         o = np.nonzero(need > 0)[0]
-        t, _ = ray_hits(V[vid[o]], D[o], hide[0], hide[1], t_min=0.1 * radius, t_max=3 * radius)
-        need[o[np.isfinite(t)]] = 0.0
+        # covered = every ray of a horizontal fan (the outward direction, +-35 and +-70 degrees) meets the
+        # hide geometry: a collar far out to the side covers the radial ray but not the front view
+        hit = np.ones(len(o), bool)
+        for deg in HIDE_FAN_DEG:
+            c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+            Dr = np.c_[c * D[o, 0] + s * D[o, 2], np.zeros(len(o)), -s * D[o, 0] + c * D[o, 2]]
+            t, _ = ray_hits(V[vid[o]], Dr, hide[0], hide[1], t_min=0.1 * radius, t_max=3 * radius)
+            hit &= np.isfinite(t)
+        need[o[hit]] = 0.0
+    if flare_below is not None:
+        flare = (V[vid, 1] < flare_below) & (need > limit * radius)
+        stats["flare"] = int(flare.sum())
+        need[flare] = 0.0
     shift = need * _smooth01((V[vid, 1] - y_zero) / (y_full - y_zero))
     move = shift > 1e-9
     stats.update(exposed=int((need > 0).sum()), need_max=float(need.max() / radius) if len(need) else 0.0,
@@ -949,6 +976,29 @@ def tuck_band(V, vid, axis_xz, radius, y_full, y_zero, target, hide=None, inset=
     out[vid[move]] -= D[move] * shift[move][:, None]
     stats.update(moved=int(move.sum()), applied=True)
     return out, stats
+
+
+def crossing_height(Va, Fa, Vp, Fp, axis_xz, radius, y0, y1, n_y=33, n_theta=24, cover=None):
+    """Where an overlap seam shows after the tuck: per angle around the neck axis, the highest height in
+    [y0, y1] at which the anchor (Va, Fa: its faces near the neck) stands outside the part's neck (Vp, Fp);
+    returns (the median over the angles that have one, else None; the per-angle heights). cover = (V, F,
+    y): an angle where that geometry (a collar) stands 1.3 to 4 radii out at height y is not counted."""
+    axis_xz = np.asarray(axis_xz, float)
+    a = np.linspace(-math.pi, math.pi, n_theta, endpoint=False)
+    D = np.c_[np.sin(a), np.zeros(n_theta), np.cos(a)]
+    ys = np.linspace(y0, y1, n_y)
+    best = np.full(n_theta, np.nan)
+    for y in ys:
+        Y = np.full(n_theta, y)
+        ra = outer_radius(Y, D, axis_xz, Va, Fa, 2.5 * radius)
+        rp = outer_radius(Y, D, axis_xz, Vp, Fp, 2.5 * radius)
+        out = np.isfinite(ra) & (~np.isfinite(rp) | (ra > np.nan_to_num(rp)))
+        best[out] = y
+    have = np.isfinite(best)
+    if cover is not None and len(cover[1]):
+        rc = outer_radius(np.full(n_theta, float(cover[2])), D, axis_xz, cover[0], cover[1], 4 * radius)
+        have &= ~(np.isfinite(rc) & (rc > 1.3 * radius))
+    return (float(np.median(best[have])) if have.any() else None), best
 
 
 def stump_faces(V, F, rim_v, axis_xz, radius, bottom_y, cut_y):
@@ -964,15 +1014,21 @@ def stump_faces(V, F, rim_v, axis_xz, radius, bottom_y, cut_y):
     return band & np.isin(lab, keep[keep >= 0])
 
 
-def tuck_stump(V, F, rim_v, Vp, Fp, axis_xz, radius, bottom_y, cut_y, inset=0.97, limit=0.25):
-    """Overlap seam, the anchor's side: where the part's neck is slimmer than the anchor's stump and
-    nothing covers the stump, its open rim would show as a step. Pull the stump under the part's neck
-    (tuck_band: fully at the rim, nothing at bottom_y). V is welded, F its faces, (Vp, Fp) the part."""
+def tuck_stump(V, F, rim_v, Vp, Fp, axis_xz, radius, bottom_y, cut_y, inset=0.97, limit=0.25, ramp=1.0):
+    """Overlap seam, the anchor's side: where the part's neck is slimmer than the anchor's stump, or
+    about as wide, and nothing covers the stump, its open rim shows as a step or the two surfaces fight
+    along a ragged line. Pull the stump under the part's neck (tuck_band) to inset x its radius: fully
+    from the rim down to bottom_y + ramp x (cut_y - bottom_y), fading to nothing at bottom_y. ramp=1
+    fades over the whole band; a short ramp with inset ~0.9 keeps the whole band clearly inside, so
+    the two necks cross once, near bottom_y. V is welded, F its faces, (Vp, Fp) the part."""
     stump = stump_faces(V, F, rim_v, axis_xz, radius, bottom_y, cut_y)
     vid = np.unique(F[stump])
     vid = vid[V[vid, 1] >= bottom_y]
-    return tuck_band(V, vid, axis_xz, radius, cut_y, bottom_y, (Vp, Fp), hide=(V, F[~stump]),
-                     inset=inset, limit=limit)
+    y_full = bottom_y + float(np.clip(ramp, 1e-3, 1.0)) * (cut_y - bottom_y)
+    # with a short ramp the band's foot may flare into the shoulders: left there; the rim's quarter counts
+    flare = cut_y - 0.25 * (cut_y - bottom_y) if ramp < 1.0 else None
+    return tuck_band(V, vid, axis_xz, radius, y_full, bottom_y, (Vp, Fp), hide=(V, F[~stump]),
+                     inset=inset, limit=limit, flare_below=flare)
 
 
 def neck_offset(Vp, Fp, axis_xz, radius, ys):
@@ -1617,10 +1673,14 @@ def check_plan(plan, for_tool="part_math"):
     if sum(1 for p in parts if p.get("source") == "anchor") != 1:
         raise Refused("exactly one part has source anchor")
     regions = {p.get("region") for p in parts}
-    outside = regions - set(REGIONS_NOW)
+    outside = regions - set(REGIONS_NOW) - (set(FINE_REGIONS) if tier == "fine" else set())
+    if outside & set(UNBUILT_REGIONS):
+        raise Refused(f"regions {sorted(outside & set(UNBUILT_REGIONS))} are not built from a plan: eyeballs come from blender-character-rig eye_fit.py fit, not a plan part; accessories are reserved")
     if outside:
-        raise Refused(f"regions {sorted(outside)} are reserved for tier fine, not built yet")
+        raise Refused(f"regions {sorted(outside)} are for tier fine" if tier != "fine" else f"unknown regions {sorted(outside)}")
     want = {p["region"] for p in TIERS[tier]}
+    if tier == "fine":           # three's regions plus either hand or both
+        want = set(REGIONS_NOW) | (regions & set(FINE_REGIONS))
     if regions != want:
         raise Refused(f"tier {tier} takes the regions {sorted(want)}, the plan has {sorted(regions)}")
     by = {p["name"]: p for p in parts}
@@ -1682,8 +1742,12 @@ def plan_core(V, F, masks, tier, character, margin_frac=0.1, band_step=0.002, ho
             sx1, sy1 = min(x1, m.shape[1]), min(y1, m.shape[0])
             out[sy0 - y0: sy1 - y0, sx0 - x0: sx1 - x0] = sil[sy0:sy1, sx0:sx1]
             keep[p["name"]][view] = out
+    hands = None
+    if any(p["region"] in ("hand.L", "hand.R") for p in parts):
+        import hand_parts       # forearm slices, wrist planes, hand boxes and keep masks (same folder)
+        hands = hand_parts.plan_hands(V, F, masks, frame, anchor, parts, keep)
     doc = {"schema": "parts/1", "character": character, "tier": tier, "anchor": anchor, "parts": parts}
-    return doc, keep, {"neck_profile": neck["profile"], "region": info, "frame_bad": bad}
+    return doc, keep, {"neck_profile": neck["profile"], "region": info, "frame_bad": bad, "hands": hands}
 
 
 def read_masks(views_dir):
@@ -2021,6 +2085,15 @@ def selftest():
         else:
             ok("tuck: a thin neck is refused (shift over the limit), nothing moves",
                not st["applied"] and st["shift_max"] > 0.25 and np.allclose(Vt, Va), st["shift_max"])
+    Vp, Fp = tube(1.0, -0.47, 2.0, n=96)          # a part neck as wide as the stump: whole band, short ramp
+    c_, s_ = math.cos(0.013), math.sin(0.013)     # off the stump's vertex angles: a ray along an edge can miss
+    Vp = Vp @ np.array([[c_, 0, -s_], [0, 1, 0], [s_, 0, c_]])
+    Vt, st = tuck_stump(Va, Fa, rim, Vp, Fp, np.zeros(2), 1.0, 0.0, 1.0, inset=0.9, ramp=0.35)
+    r_all = np.linalg.norm(Vt[:, [0, 2]], axis=1)
+    above, low = Va[:, 1] >= 0.35 - 1e-9, np.nonzero(Va[:, 1] <= 1e-9)[0]
+    ok("tuck: a neck as wide as the stump: the whole band above the ramp goes to 0.9 of it, below stays",
+       st["applied"] and np.all(r_all[above] < 0.91) and np.allclose(Vt[low], Va[low]),
+       [round(float(r_all[above].max()), 4), st["shift_max"]])
 
     Vp, Fp = tube(0.95, -0.5, 3.0, n=96)
     Vp = Vp + [0.15, 0, 0]
@@ -2148,12 +2221,32 @@ def selftest():
                 except Refused as exc:
                     ok("plan: validity rules hold", False, str(exc))
                 bad = json.loads(json.dumps(doc))
+                bad["tier"] = "custom"
+                try:
+                    check_plan(bad)
+                    ok("plan: custom is refused", False)
+                except Refused as exc:
+                    ok("plan: custom is refused", "reserved" in str(exc))
+                bad = json.loads(json.dumps(doc))
+                bad["parts"].append({"name": "hand_r", "source": "generate", "region": "hand.R", "preset": "Template"})
+                try:
+                    check_plan(bad)
+                    ok("plan: a hand is refused in tier three", False)
+                except Refused as exc:
+                    ok("plan: a hand is refused in tier three", "tier fine" in str(exc))
                 bad["tier"] = "fine"
                 try:
                     check_plan(bad)
-                    ok("plan: fine is refused", False)
+                    ok("plan: a hand is taken in tier fine", True)
                 except Refused as exc:
-                    ok("plan: fine is refused", "reserved" in str(exc))
+                    ok("plan: a hand is taken in tier fine", False, str(exc))
+                bad["parts"].append({"name": "eyes", "source": "generate", "region": "eyes", "preset": "Template"})
+                try:
+                    check_plan(bad)
+                    ok("plan: an eyes part is refused in tier fine (eye_fit.py makes the eyeballs)", False)
+                except Refused as exc:
+                    ok("plan: an eyes part is refused in tier fine (eye_fit.py makes the eyeballs)",
+                       "not built from a plan" in str(exc), str(exc))
                 bad = json.loads(json.dumps(doc))
                 next(p for p in bad["parts"] if p["name"] == "head")["preset"] = "Large"
                 try:

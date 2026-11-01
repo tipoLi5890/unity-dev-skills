@@ -65,7 +65,16 @@ deletes the markers, so a copy of the file with them is saved just before it.
 - **Eyes on a generated mesh.** The add-on wants a separate eyeball object, which an image-to-3D
   mesh does not have. `--eyes proxy` (default) places a sphere behind each eye from the lid
   markers, points the add-on at them in its manual eyeball mode, and removes them after Go!;
-  `--eyes none` turns eyes off (no eye or lid references).
+  `--eyes none` turns eyes off (no eye or lid references). A character in parts with real eyeballs
+  (`blender-character-rig` `eye_fit.py fit`, `autorig.py all --eyes <c>_eyes.glb --facial`) runs
+  `--eyes objects`: the fitted balls go in instead of the proxies (moved by the prep's transform from
+  `--eye-frame-glb`), so the eye references sit on the real balls; they too leave after Go!, and
+  `eyes_bind` puts them on `c_eye.l/.r` after the rig.
+- **The face rig is symmetric; a generated head is not.** Go! mirrors the eye references, so one eye
+  bone can sit off its ball (about 0.2 × radius was seen). `eyes_bind` moves both eye bones, and every
+  bone pivoting with them (lids, the eye target), onto the balls' centres. It also moves skin weights
+  off the eye bones, so that only the ball turns with the gaze. In Blender the eyes are aimed with
+  `c_eye_target`; Unity turns LeftEye / RightEye directly.
 - **A face that fails** is cancelled before Go! (`id.cancel_facial_setup`, the proxies removed):
   Go! then still builds the body and the fingers, and `smart.facial` fails alone.
 - **Errors come two ways.** A reported error raises in the script, in the user's interface
@@ -91,7 +100,7 @@ folder, set in memory only; an empty folder tries the fallback without touching 
 | `--save-blend` | none | the rig saved here for a person to look at, and the markers beside it (`_markers.blend`) |
 | `--fingers` | 5 | how many fingers the AI fits: 5, or 4 (thumb, middle, ring, little: the add-on's four-finger hand has no index); 5 that fails is tried again with 4. The AI fits whatever count it is asked for and does not tell a four-fingered hand from five |
 | `--facial`, `--no-facial` | on | the face step |
-| `--eyes` | proxy | `proxy` or `none`, as above; `auto` lets the add-on find separate eyeball objects (a mesh that has them; it fails on a single-mesh character) |
+| `--eyes` | proxy | `proxy` or `none`, as above; `auto` lets the add-on find separate eyeball objects (a mesh that has them; it fails on a single-mesh character); `objects` takes `--eye-glb` and `--eye-frame-glb` (autorig passes them with `--eyes`) |
 | `--body-samples`, `--finger-samples` | the add-on's | front pictures per body guess, hand pictures per finger guess |
 | `--timeout` | 600 s | the whole chain; on a timeout the result is written and Blender quits. The inference programs are CPU-bound, so a busy machine is slow |
 
@@ -188,6 +197,6 @@ Read these off the pictures before taking either side:
 | `smart.ai_files`: no keypoints written | the inference programs are blocked or out of date: reinstall with Install AI Files…; never clear OS protections by hand |
 | `smart.body_markers` | look at the saved markers file; rig from slice markers |
 | `smart.fingers` | the hand is too small in the pictures, or the count is wrong for the character: `--fingers 4`, or keep the slice fingers |
-| `smart.facial` | eyes: `--eyes proxy`; the mouth dropped: the viewport was not in Material shading, or the face is not painted; else `--no-facial` |
+| `smart.facial` | eyes: `--eyes proxy` (or `objects` with real eyeballs); the mouth dropped: the viewport was not in Material shading, or the face is not painted; else `--no-facial` |
 | `smart.go` | Go! built no rig: a second rig in the file, or a face left half set up; rerun on a clean copy |
 | timeout | a busy machine: run again when it is idle, or raise `--timeout` |

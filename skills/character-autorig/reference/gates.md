@@ -189,7 +189,8 @@ What it finds and how it weights is in `reference/secondary-chains.md`. Its gate
 A separate hair object (a character in parts) counts in every gate above with the body;
 `detect.dropped_small` lists hair spikes left rigid for want of 50 vertices a bone. The hair's own
 bind, `parts_bind` (`parts.transform_residual`, `parts.hair_bound`, then the `arp.export_*` gates
-of its re-export), is gated in `blender-character-rig` → `reference/part-assembly.md`.
+of its re-export), and the eyeballs' `eyes_bind` (`eyes.*`), are gated in `blender-character-rig` →
+`reference/part-assembly.md`.
 
 With `--fbx` the report also carries `brt_arp`'s own `arp.export_*` gates. Then `contract_map.py`
 on the new skeleton (the `cc_` bones are extras) and `deform_gate.py` on the new FBX:

@@ -8,7 +8,7 @@
   "properties": {
     "schema": {"const": "parts/1"},
     "character": {"$ref": "#/$defs/name"},
-    "tier": {"enum": ["whole", "three", "fine", "custom"], "description": "whole = the demo, no parts; three = body, head, hair; fine and custom are reserved names, refused by the tools"},
+    "tier": {"enum": ["whole", "three", "fine", "custom"], "description": "whole = the demo, no parts; three = body, head, hair; fine = three plus hand.L and/or hand.R (eyeballs come from eye_fit.py, not a plan part; eyes and accessory parts are refused for now); custom is a reserved name, refused by the tools"},
     "anchor": {
       "type": "object",
       "required": ["glb", "glb_sha256", "frame", "head_height", "neck"],
@@ -79,7 +79,8 @@
             "mode": {"enum": ["overlap", "bridge", "none"], "description": "none is for fine add-ons (accessories)"},
             "cut_y": {"type": "number"},
             "part_bottom_y": {"type": "number"},
-            "margin_frac": {"type": "number", "minimum": 0}
+            "margin_frac": {"type": "number", "minimum": 0},
+            "depth_r_fore": {"type": "number", "exclusiveMinimum": 0, "description": "a hand: its bottom plane lies this many forearm radii past the wrist plane, inside the sleeve"}
           }
         },
         "views": {
@@ -96,6 +97,12 @@
               "additionalProperties": false
             },
             "keep": {"$ref": "#/$defs/per_view"},
+            "hidden": {
+              "type": "object",
+              "description": "a hand: the view the body hides is the mirror of the opposite side view (its box mirrored about the frame centre, its redraw flipped)",
+              "required": ["view", "mirror_of"],
+              "properties": {"view": {"enum": ["left", "right"]}, "mirror_of": {"enum": ["left", "right"]}}
+            },
             "colours": {
               "type": ["object", "null"],
               "properties": {"hair": {"$ref": "#/$defs/hex"}, "skin": {"$ref": "#/$defs/hex"}}
@@ -104,15 +111,34 @@
         },
         "generated": {
           "type": "object",
-          "properties": {"glb": {"type": "string"}, "painted": {"type": "string", "description": "the part repainted by mesh-texture-paint; absent, the assembly takes paint/<part>/<stem>_painted.glb when it exists"}}
+          "properties": {"glb": {"type": "string"}, "painted": {"type": "string", "description": "the part repainted by mesh-texture-paint; absent, the assembly takes paint/<part>/<stem>_painted.glb when it exists"},
+                         "attempts": {"type": "array", "description": "a hand: each generation job (its GLB, the gate exit and the failed gates); a failed registration or finger gate runs the job again with every sampler seed moved", "items": {"type": "object"}}}
         },
         "split": {
           "type": "object",
           "properties": {"method": {"enum": ["scalp-radius"]}, "delta": {"type": "number", "exclusiveMinimum": 0}}
         },
+        "wrist": {
+          "type": "object",
+          "description": "a hand (tier fine), measured on the anchor by part_math.py plan: the forearm axis (toward the shoulder), the wrist plane through the sleeve's cuff (rim, normal), the part's bottom plane inside the sleeve, the forearm and sleeve radii",
+          "required": ["axis", "rim", "normal", "bottom", "r_fore", "r_sleeve"],
+          "properties": {
+            "tip": {"$ref": "#/$defs/vec3"},
+            "axis": {"$ref": "#/$defs/vec3"},
+            "rim": {"$ref": "#/$defs/vec3"},
+            "normal": {"$ref": "#/$defs/vec3"},
+            "bottom": {"$ref": "#/$defs/vec3"},
+            "r_fore": {"type": "number", "exclusiveMinimum": 0},
+            "r_sleeve": {"type": "number", "exclusiveMinimum": 0},
+            "rim_threshold": {"type": "number", "exclusiveMinimum": 0},
+            "plane": {"enum": ["fitted", "perpendicular"]},
+            "tilt_deg": {"type": "number", "minimum": 0},
+            "sectors": {"type": "integer", "minimum": 0}
+          }
+        },
         "attach": {
           "type": "object",
-          "description": "reserved for tier fine",
+          "description": "tier fine: replace = the part replaces the anchor's region (hands); add = it is added (accessories)",
           "required": ["mode"],
           "properties": {"mode": {"enum": ["replace", "add"]}, "bone": {"type": "string"}}
         }

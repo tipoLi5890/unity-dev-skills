@@ -7,12 +7,16 @@
 
 blender-retarget/scripts/tests/test_blender_common.py -> blender-character-rig/scripts/bcr_common.py | checks the shared report() in the other pasted copy; skips when that skill is not installed beside this one
 blender-character-rig/scripts/assemble_parts.py -> blender-retarget/scripts | bind imports brt_arp (op export) to re-export the rig's FBX with the hair bound to the Head bone
-character-autorig/scripts/autorig.py -> blender-character-rig/scripts | imports bcr_import_prep inside Blender for the prep stage; runs assemble_parts.py bind for a character in parts (parts_bind)
+blender-character-rig/scripts/eye_fit.py -> blender-retarget/scripts | bind imports brt_arp (op export) to re-export the rig's FBX with the eyeballs bound to the eye bones
+blender-character-rig/scripts/ship_merge.py -> comfyui-asset-generation/scripts/inspect_glb.py | gates the merged GLB with inspect_glb.py and reads the class's 3D budgets row through its load_budget
+character-autorig/scripts/autorig.py -> blender-character-rig/scripts | imports bcr_import_prep inside Blender for the prep stage; runs assemble_parts.py bind for a character in parts (parts_bind) and eye_fit.py bind for its eyeballs (eyes_bind)
 character-autorig/scripts/autorig.py -> blender-retarget/scripts | imports brt_arp (the Auto-Rig Pro pipeline) and brt_weights (the weight repair) inside Blender
 character-autorig/scripts/autorig.py -> unity-rigged-character/scripts/contract_map.py | maps the rig onto the humanoid contract (contract_map.py map)
 character-autorig/scripts/secondary_chains.py -> blender-retarget/scripts | imports brt_arp inside Blender to export the rig with its chains (op export)
 character-autorig/scripts/tests/test_arp_pipeline.py -> blender-retarget/scripts | imports the brt modules the pipeline drives
 character-autorig/scripts/tests/test_arp_pipeline.py -> unity-rigged-character/scripts/contract_map.py | runs the contract step on the test rig
+comfyui-asset-generation/scripts/hand_views.py -> blender-character-rig/scripts/hand_parts.py | runs hand_parts.py gate (registration and finger gates, numpy) after each hand job, and generates again with other seeds on a failure
+comfyui-asset-generation/scripts/hand_views.py -> mesh-texture-paint/scripts/paint_loop.py | part_views.py generate --paint repaints each generated part with paint_loop.py (hands: --kind object)
 comfyui-asset-generation/scripts/part_views.py -> mesh-texture-paint/scripts/qwen_paint.py | redraws each part view with the one Qwen image-edit graph mesh-texture-paint keeps (picture 1 = picture 2 = the guide); both skills must be installed for parts
 humanoid-motion/scripts/contact_bake.py -> blender-retarget/scripts/motion_metrics.py | imports the plant and slide metrics, so the bake gates what motion_metrics gates
 humanoid-motion/scripts/twocam/film.py -> comfyui-asset-generation/scripts/comfy_asset_client.py | submits the image-to-video job through the ComfyUI client and its workflow template

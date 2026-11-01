@@ -104,7 +104,9 @@ the master trajectory is exported). Both columns follow the add-on's rename code
   them, and they are reported as extra.
 - A rig with a face exports `c_jawbone.x` under `head.x`; `arp` maps it to `Jaw`, an extra role
   outside the contract: it reaches `retarget_map`, `extra_roles` and Unity's optional `Jaw`, never
-  the contract tier or the bone count. Without a face nothing changes.
+  the contract tier or the bone count. With eyes it also exports `c_eye.l` / `c_eye.r` (under
+  `c_eye_offset.*`), mapped the same way to the extra roles `Eye.L` / `Eye.R` (Unity's LeftEye /
+  RightEye). Without a face nothing changes.
 
 **A purchased clip pack, or any skeleton without a preset.** Many packs share `arp-ue`'s mannequin
 names; try `--map auto` first. Otherwise build the map once per skeleton (per level of detail, for

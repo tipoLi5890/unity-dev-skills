@@ -2,6 +2,79 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.41.0
+
+Tier `fine`: hands and eyeballs of their own, and the ship merge. A whole-body job fuses the
+fingers and paints the eyes on a flat surface, so the fist pose has nothing to curl and the eyes
+cannot turn. `fine` generates each hand as its own part and sets it into the sleeve, puts a ball
+behind each painted eye and binds it to the face rig's eye bone. For the ship track, the parts now
+merge into one mesh, one material and one atlas per map before the rig. The neck seam of `three`
+no longer shows a pale stump edge in an open hood.
+
+- **The parts plan.** `fine` is built: `three` plus either hand or both. Eyeballs come from
+  `eye_fit.py` after the assembly, not from a plan part; `eyes` and `accessory` parts are refused,
+  and `custom` stays reserved. `part_math.py plan --tier fine` measures both forearms
+  through `blender-character-rig` → `hand_parts.py plan_hands`: the forearm axis from tracked
+  sections, the wrist plane fitted through the cuff's lip in 16 sectors (an angled cuff keeps its
+  whole edge), the part's flat bottom 1.8 forearm radii inside the sleeve, crop boxes and keep
+  masks; the view the body hides is the mirror of the opposite side view. `parts/1` gains `wrist`,
+  `views.hidden`, `seam.depth_r_fore` and `generated.attempts`.
+- **`comfyui-asset-generation` → `hand_views.py`** (through `part_views.py`, whose `--part` now
+  takes a list). The hand guide paints the forearm the sleeve hid as a cylinder ending flat at the
+  bottom plane; the redraw asks for black gaps between the fingers; the gates are bands around the
+  guide's silhouette (`part.redraw_inside`, `redraw_cover`, `redraw_colour` by whole cells,
+  `sharpness`), not IoU, which the dropped cloth between the fingers would fail. `generate` makes
+  each hand at `--hand-ratio` (0.2) × the anchor's triangles, runs `hand_parts.py gate`
+  (registration, `hand.fingers`: ≥ 4 sections in ≥ 30 % of 40 slices) and on a failure generates
+  again with every seed moved, up to `--hand-seeds`; `--paint` then repaints each part with
+  `mesh-texture-paint` (`--kind object`), which brings the glove back from brown to orange.
+- **`assemble_parts.py hands`.** Registers each painted hand, cuts it flat at the bottom plane,
+  gates the fingers again, removes the anchor's forearm and hand past the wrist plane (keeping the
+  sleeve's hem whole) and caps the opening with a fan recessed into the sleeve, its UVs on a free
+  block of the body texture painted a lining colour. Gates `hand.triangles`,
+  `seam.sleeve_clearance`, `seam.hidden` (eight cameras, four into the cuff); writes
+  `<c>.hands.gate.json` and `hands.png`.
+- **`blender-character-rig` → `eye_fit.py`.** `fit` (numpy and Pillow, no Blender) finds the
+  painted eyes by their sclera, fits a ball behind each (radius 0.55 × the lid width, pushed back
+  until the skin around the opening cuts into it by at most the limit), cuts the painted eye out in
+  front of it, projects the opening onto the ball and writes `<c>_eyes.glb`; gates `eye.found`,
+  `eye.symmetry`, `eye.poke.*`, `eye.rim_gap.*`, `eye.removed.*`, `eye.in_opening.*`. `bind` puts
+  each ball on its eye bone with weight 1, moves the mirrored face rig's eye bones (and the lids and
+  target pivoting with them) onto the balls, takes the skin's weights off the eye bones, and turns
+  each bone ±25° to gate `eyes.follows_bone` and `eyes.poke_turned`.
+- **`character-autorig`.** `autorig.py all --eyes <c>_eyes.glb --facial`: the smart stage gives
+  the real eyeballs to Auto-Rig Pro's face detection (`arp_smart.py --eyes objects`), and an
+  `eyes_bind` step after `parts_bind` binds them before the deformation gate (a failed bind stops
+  the run). `contract_map.py` maps `c_eye.l/.r` to the extra roles `Eye.L` / `Eye.R`, Unity's
+  LeftEye / RightEye, outside the contract count.
+- **`ship_merge.py`** (`assemble_parts.py ship`). Every part's texture becomes a square tile of one
+  atlas per map (base colour, normal, ORM), its UVs scaled and offset into the tile without
+  rotation or a rebake; tiles halve by texel density until they fit, mirrored pairs together.
+  Hair joins the mesh by default, so the ship rig runs without `--hair` and the secondary stage
+  still finds the hair spikes. Gates `ship.materials`, `ship.uv_in_tiles`, `ship.density`,
+  `ship.triangles` and `ship.tris.<part>` against each part's `budget_share` when a limit is known,
+  and `inspect_glb.py`.
+- **The neck seam.** The anchor's stump was tucked only where it stood outside the head's neck, so
+  in an open hood the two necks, nearly coincident, fought along a ragged line. The stump is now cut
+  into rows and pulled to 0.90 of the head's neck along the whole band, coming back out over its
+  lowest 35 %; a surface counts as covering an edge only 3 % of the radius outside it, and a collar
+  covers only when a fan of rays meets it, not one ray far to the side. The colour match targets
+  where the necks now cross.
+- **On the courier runner.** The three-tier assembly reproduces with the new seam: 806 stump
+  vertices tucked (18 before), largest move 0.199 of the neck radius, `seam.hidden` 0.963,
+  `seam.colour` 1.68 ΔE. Hands at 13,544 / 13,264 triangles (limit 13,751): registration
+  0.974 / 1.015 scale, 3.7° / 5.3°; `hand.fingers` 0.375 / 0.325 (the anchor's hands 0.05 / 0.0);
+  `seam.hidden` 1.0 / 0.999. Eyes: lid gap p90 0.181 / 0.248 radius, the ball seen on 0.999 /
+  0.995 of the cut-out pixels. `autorig.py all --hair --eyes --facial`: the AI's body, five
+  fingers and all 48 face points; fingers `detected` by the slice markers as well; the deformation
+  gate passes first time (volume loss 0.296, self-intersection p95 0.058; the `three` run needed an
+  elbow repair); the right eye bone moved 0.42 radius onto its ball; 12 spring chains. In Unity:
+  a valid Humanoid avatar with LeftEye, RightEye and Jaw, 30 finger bones, base and normal bound
+  on every material, the eyes as their own skinned meshes, 12 spring chains set up. The ship merge:
+  5 draw calls → 1, a 4096 atlas with every tile at full size (153k triangles; the hair is 50k of
+  them, over its 0.12 share of any limit), rigged once, fingers detected by the slices too, 18 chains with the hair. The
+  rig exam's nine bodies and the reference score as in 0.40.0.
+
 ## 0.40.0
 
 A character in parts. Image-to-3D spends one job on the whole body, so the face comes out soft and

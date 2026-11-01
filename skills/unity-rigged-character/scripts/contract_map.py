@@ -47,9 +47,10 @@ Gates (each failing one makes exit 2):
   sides        (heads present) every .L bone lies at larger x than its .R twin
   axes         (heads present) Head above Hips above the feet; toes in front of the foot (-Y)
 
-Jaw is an extra role outside the contract: mapped when the skeleton has it (the arp preset's
-c_jawbone.x), it joins retarget_map, `extra_roles` and `human` (Unity's optional Jaw) but never the
-contract gate, `mapped`, `contract_bones` or `missing_optional`.
+Jaw, Eye.L and Eye.R are extra roles outside the contract: mapped when the skeleton has them (the arp
+preset's c_jawbone.x, c_eye.l, c_eye.r), they join retarget_map, `extra_roles` and `human` (Unity's
+optional Jaw, LeftEye, RightEye) but never the contract gate, `mapped`, `contract_bones` or
+`missing_optional`.
 
 The report carries `retarget_map` {contract_bone: source_bone}, the orientation brt_retarget's
 `map` takes (target: source), and `human` [{humanName, boneName}] for Unity's HumanDescription
@@ -125,7 +126,9 @@ def contract_bones() -> list[dict]:
 CONTRACT = contract_bones()
 # roles mapped when the skeleton has them, outside the contract: never required, not in the contract
 # gate, the bone count or missing_optional; they reach retarget_map and Unity's human map
-EXTRA = [dict(name="Jaw", parent="Head", unity="Jaw", required=False, finger=False)]
+EXTRA = [dict(name="Jaw", parent="Head", unity="Jaw", required=False, finger=False),
+         dict(name="Eye.L", parent="Head", unity="LeftEye", required=False, finger=False),
+         dict(name="Eye.R", parent="Head", unity="RightEye", required=False, finger=False)]
 EXTRA_NAMES = {b["name"] for b in EXTRA}
 BY_NAME = {b["name"]: b for b in CONTRACT + EXTRA}
 ORDER = [b["name"] for b in CONTRACT + EXTRA]
@@ -226,7 +229,7 @@ def builtin_maps() -> dict:
     arp_limbs.update(_fingers({f: "c_" + ("pinky" if f == "Little" else f.lower()) for f in FINGERS}))
     bones = {"Root": ["c_traj", "root"], "Hips": ["root.x"], "Spine": ["spine_01.x"],
              "Chest": ["spine_02.x"], "UpperChest": ["spine_03.x"], "Neck": ["neck.x", "neck_01.x"],
-             "Head": ["head.x"], "Jaw": ["c_jawbone.x", "jawbone.x"]}
+             "Head": ["head.x"], "Jaw": ["c_jawbone.x", "jawbone.x"], "Eye.L": ["c_eye.l"], "Eye.R": ["c_eye.r"]}
     bones.update(_sided(arp_limbs, "l", "r", lambda s, w: f"{s}.{w}"))
     maps["arp"] = {"name": "arp", "bones": bones}
 
@@ -1006,6 +1009,21 @@ def selftest() -> int:
     jaw_bad = dict(jaw, parent="spine_01.x")
     rb = evaluate(normalise_skeleton({**arp, "bones": arp["bones"] + [jaw_bad]}), "arp", "contract", 30)
     check("a Jaw under the spine breaks parent_chain", not gate_of(rb, "parent_chain")["pass"])
+    # the eyes: extra roles under an unmapped offset bone (the add-on's c_eye_offset.l), never counted
+    eyes = []
+    for s, x in (("l", 0.03), ("r", -0.03)):
+        eyes += [{"name": f"c_eye_offset.{s}", "parent": "head.x", "deform": True,
+                  "head": [x, -0.08, head["head"][2] + 0.07], "tail": [x, -0.09, head["head"][2] + 0.07]},
+                 {"name": f"c_eye.{s}", "parent": f"c_eye_offset.{s}", "deform": True,
+                  "head": [x, -0.08, head["head"][2] + 0.07], "tail": [x, -0.09, head["head"][2] + 0.07]}]
+    re_ = evaluate(normalise_skeleton({**with_jaw, "bones": with_jaw["bones"] + eyes}), "arp", "contract", 30)
+    check("arp: c_eye.l/.r map Eye.L/Eye.R (Unity LeftEye/RightEye) through their offset bone, outside the count",
+          re_["ok"] and re_["retarget_map"].get("Eye.L") == "c_eye.l" and re_["retarget_map"].get("Eye.R") == "c_eye.r"
+          and re_["mapped"] == len(CONTRACT) and re_["extra_roles"] == ["Eye.L", "Eye.R", "Jaw"]
+          and {"humanName": "LeftEye", "boneName": "c_eye.l"} in re_["human"]
+          and {"humanName": "RightEye", "boneName": "c_eye.r"} in re_["human"]
+          and "Eye.L" not in rj["retarget_map"] and "Eye.L" not in re_["missing_optional"],
+          [re_["mapped"], re_.get("extra_roles"), [g for g in re_["gates"] if not g["pass"]]])
 
     failed = [c for c in checks if not c["pass"]]
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks),

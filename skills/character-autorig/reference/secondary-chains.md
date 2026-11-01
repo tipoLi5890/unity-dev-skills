@@ -100,7 +100,7 @@ both ends (sin² along it): the middle sags and settles, the ends ride the chest
 switches): no `cc_` bone gets a curve. Auto-Rig Pro's FBX export then bakes the active action onto
 every exported bone, the `cc_` bones included, as curves holding their rest values. In Unity such a
 clip writes each chain bone to rest every frame; a `humanoid-motion` clip never writes them. The
-spring runtime handles both (`reference/secondary-motion.md`, the animated pose).
+spring runtime handles both (`unity-rigged-character` → `reference/secondary-motion.md`, the animated pose).
 
 ## Checks
 
