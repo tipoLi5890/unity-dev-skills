@@ -41,6 +41,7 @@ First match wins. Stop at the first cause the audit or the frame confirms.
 | A sprite mask hides nothing, or hides sprites it should leave alone | §7 |
 | Tinting or flashing one sprite multiplied the draw calls | §7 |
 | A parallax background: layers shudder, slide after a respawn, or run out in a long level | §8 |
+| A generated scene to scroll endlessly, or props repeating beside their own mirror image | §8 — `reference/parallax-layers.md` |
 
 ## 0. Before diagnosing
 
@@ -174,7 +175,11 @@ by a frame and shudders on every acceleration. `resources/ParallaxLayer.cs` runs
 Cinemachine Brain, wraps endlessly for a runner, snaps to the pixel grid, and has `Snap()` for
 cuts and respawns. Camera timing itself is `unity-camera` → `reference/update-order-and-jitter.md`.
 
-`reference/parallax.md`.
+A scene split into depth layers (`comfyui-asset-generation` → `scene_layers.py`) becomes one rig
+with `ParallaxRigBuilder`: `ParallaxTiles` mirrors continuous strips and shuffles props one per
+tile with seeded gaps, so no prop stands beside its own copy; tile i always holds the same art.
+
+`reference/parallax.md`; `reference/parallax-layers.md`.
 
 ## The tools
 
@@ -183,6 +188,8 @@ cuts and respawns. Camera timing itself is `unity-camera` → `reference/update-
 | `resources/Editor/SortingAudit.cs` | Read-only. Every renderer's four keys, group, sort point, lit or unlit, and tied pairs, as JSON. `SortingAudit.Json()` |
 | `resources/Editor/Renderer2DSetup.cs` | `Report()` the pipeline, renderers and sort axis. Creates a 2D Renderer or sets its axis after reporting the plan and waiting for confirmation |
 | `resources/ParallaxLayer.cs` | One parallax layer: factor, wrap, pixel snap, `Snap()` |
+| `resources/ParallaxTiles.cs`, `TileSequence.cs` | Endless tiles on a layer: Mirror, Repeat, Shuffle with gaps; deterministic per tile |
+| `resources/Editor/ParallaxRigBuilder.cs` | `scene.json` + PNGs (or a PSD, `PsdLayerReader.cs`) → rig prefab. `BuildFromCommandLine` |
 
 Menu root: Tools → Unity Dev → 2D Rendering.
 

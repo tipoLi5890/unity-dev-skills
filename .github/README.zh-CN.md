@@ -159,6 +159,25 @@ claude plugin install unity-dev@unity-dev
 
 脸部重要的角色，头部会按概念图以自己的比例重绘，作为独立部件生成，再装回全身网格上，比例仍以全身为准。头发拆成第三个网格，脖子的接缝藏进衣领并对齐肤色，绑骨步骤再把头发绑到头上。要近看手时，每只手单独生成、手指之间留空，再接进袖口，绑骨时每根手指都找得到；画上去的眼睛后面放进眼球，跟着眼骨转动。做游戏版时，各部件合并成一个网格、一张贴图图集，只需一次绘制调用。
 
+### 自己绑好骨的分层 2D 跑者
+
+<div align="center">
+<img src="media/layered2d.gif" alt="Unity 里的两段画面。先是 2D 快递跑者的正面，左边是全身，右边是脸部特写：他在呼吸、眨眼、说话。接着是同一个跑者的侧面画法，沿着一条街奔跑，天空、天际线、店面和马路以不同速度滚动，一个消防栓从前景经过" width="640">
+<p><sub>一张正面、一张侧面的图，拆成图层后在 Unity 绑好骨：正面眨眼和说话，侧面在视差街景上奔跑。</sub></p>
+</div>
+
+<div align="center">
+<img src="media/layered2d.jpg" alt="2D 快递跑者的六格画面。正面原图；同一张图拆成图层，叠上骨骼和关节线；接着是绑好骨的角色在 Unity 里的四个姿势：举起一只手、转头、举起双手并转头下蹲，以及迈步中的侧面" width="800">
+<p><sub>原图、它的图层和骨骼，以及在 Unity 里摆出原图没画过的姿势的绑骨角色。</sub></p>
+</div>
+
+[`codex-visual`](../skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) →
+[`unity-2d-animation`](../skills/unity-2d-animation/SKILL.md) →
+[`unity-2d-rendering`](../skills/unity-2d-rendering/SKILL.md)
+
+图在你自己的 ComfyUI 上拆成每个会动的部位一层，手臂和头发挡住的地方由 Qwen-Image-Edit 补画，Unity 再为 PSB 写入骨骼、网格和权重，不必进 Skinning Editor；街景由 Qwen-Image-Layered 按深度拆层（两者都是 Apache-2.0），做成视差滚动，道具不会和自己的副本并排。同一套图层也会输出成 Live2D Cubism 可直接导入的 PSD，再由人在 Cubism Editor 里按 Live2D 自己的许可绑定。
+
 ## 工作原理
 
 ```mermaid

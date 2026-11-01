@@ -211,12 +211,36 @@ foreach (UnityEditor.U2D.Animation.CharacterPart part in data.parts)
 return sb.ToString();
 ```
 
-Writing is a different matter. `SetCharacterData` replaces bones and bindings for every part at
-once, and weights and geometry sit in the per-sprite providers keyed to the same bone indices:
-change one side alone and the weights name bones that moved. Rig in the Skinning Editor; use
-the providers to read, to audit, and to copy a finished rig between files that share a layout.
-A write follows the same rule as any importer edit — report first, then `Apply()` and
-`SaveAndReimport()`.
+### Writing: what the auto-rig replaces
+
+Writing through the providers is supported. `resources/Editor/AutoRig2D.cs` does it for a whole
+character (`reference/auto-rig-2d.md`). It reads the bones from the layer names, or from a
+splitter's rig file, then writes three things: the skeleton with `SetCharacterData`, each
+part's bone subset with `ISpriteBoneDataProvider`, and the mesh and weights with
+`ISpriteMeshDataProvider`. Then it calls `Apply()` and `SaveAndReimport()`.
+
+The writes have to agree. Weights index the part's own bone list, which in turn indexes the
+skeleton, so the skeleton and every part are written together. A bone moved later means every
+part's weights are written again. Re-run the tool rather than editing one side.
+
+| Step | Before | With the auto-rig |
+|---|---|---|
+| Bones | Drawn in the Skinning Editor | From the layer names and positions, or the rig file; joint names (`shoulder_L`, `knee_R`, `neck`), so no bone shares a layer's name |
+| Geometry | *Auto Geometry*, then the outline tidied | A grid per layer, or the splitter's mesh when it covers the layer |
+| Weights | *Auto Weights*, then painted | Two bones per vertex, summing to 1 |
+| *Apply* | By hand | Written and reimported; the report's gates say whether it held |
+| Face swaps | A library built by hand | `<name>_Faces.spriteLib` and a variant with resolvers and `RigDriver2D` |
+
+**What still needs the Skinning Editor:** finer weights where a joint creases, extra bones
+(fingers, a hair chain), outline vertices on a part whose silhouette matters, and the look
+verdict on an extreme pose. Edits made there carry their own bone GUIDs, so the next auto-rig
+run refuses the file unless told to overwrite. Decide per character which side owns the rig.
+
+**Renaming a layer drops that part's rig.** A generated file keys each layer id to its name,
+so a rename makes a new layer under either mapping rule in §4. The importer sees a new sprite
+with no bones. Photoshop keeps the id on a rename, which only helps under Use Layer ID.
+Renaming the layer back does not restore the rig. Re-run the auto-rig after any rename; it
+takes seconds.
 
 ## Checks
 

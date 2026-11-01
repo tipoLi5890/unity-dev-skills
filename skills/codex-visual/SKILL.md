@@ -28,6 +28,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 | "Off-centre", "one is smaller"; a crosshair template | `reference/geometry-gate.md` |
 | "The assets don't match / the style drifted" | PHASE 4 |
 | A source image for image-to-3D; the views a generated mesh's texture is repainted from | `reference/image-to-3d-input.md`; repaint: `mesh-texture-paint` |
+| A 2D character or scene to cut into layers (PSB, Live2D, parallax) | `reference/layered-2d-source.md` |
 | A review sheet (8-view QA, clips, before/after), gated on checks | `reference/review-sheets.md` |
 | Read a screenshot; compare two images | `reference/codex-runtime.md` §7 |
 | Any `codex exec` image work by hand (bare `codex` hangs; exit 0 proves nothing) | Step 0; `reference/codex-runtime.md` §1–4 |

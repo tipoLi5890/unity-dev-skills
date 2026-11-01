@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/rig2d-1.json",
+  "title": "rig2d/1 — a layered 2D character's bones, meshes and weights",
+  "description": "Written beside the layer PNGs and the PSB (rig2d.json) by comfyui-asset-generation layer_split.py; read by unity-2d-animation AutoRig2D. Image pixels of the canvas, y down. Flat arrays only, so Unity's JsonUtility reads it: a bone is {name, parent, hx, hy, tx, ty}; a part is one layer's mesh, verts as x, y pairs, indices as triangles, bw as (bone index into the part's bones, weight) x 2 per vertex.",
+  "type": "object",
+  "required": ["schema", "tool", "view", "width", "height", "layers", "bones", "parts"],
+  "properties": {
+    "schema": {"const": "rig2d/1"},
+    "tool": {"type": "string", "minLength": 1},
+    "view": {"enum": ["front", "side"]},
+    "facing": {"enum": ["front", "right", "left"]},
+    "width": {"type": "integer", "minimum": 1},
+    "height": {"type": "integer", "minimum": 1},
+    "y_down": {"const": true},
+    "sides": {"type": "array", "items": {"type": "string"}},
+    "layers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "bones": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "parent", "hx", "hy", "tx", "ty"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "parent": {"type": "string"},
+          "hx": {"type": "number"}, "hy": {"type": "number"},
+          "tx": {"type": "number"}, "ty": {"type": "number"}
+        }
+      }
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "bones", "verts", "indices", "bw"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "bones": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}},
+          "verts": {"type": "array", "items": {"type": "number"}},
+          "indices": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+          "bw": {"type": "array", "items": {"type": "number"}}
+        }
+      }
+    },
+    "swaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "labels", "layers"],
+        "properties": {
+          "category": {"type": "string"},
+          "labels": {"type": "array", "items": {"type": "string"}},
+          "layers": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "joints": {"type": "array", "items": {"type": "object", "required": ["name", "x", "y"]}},
+    "landmarks": {"type": "object"}
+  }
+}

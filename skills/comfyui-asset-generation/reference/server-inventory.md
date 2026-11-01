@@ -62,6 +62,20 @@ The image-edit family `mesh-texture-paint` paints each view with (Qwen-Image-Edi
 | VAE | `vae` | `qwen_image_vae.safetensors` |
 | Lightning LoRA, 4 steps | `loras` | `Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors` |
 
+The 2D layer fills (`scripts/layer_split.py`) use the same image-edit files.
+
+## Layered image components
+
+Qwen-Image-Layered (Apache-2.0) splits a scene into RGBA depth layers (`scripts/scene_layers.py`,
+`templates/qwen_image_layered_api.json`). It is its own model family: free the image-edit models
+before its first job, and free it before the next family.
+
+| Role | Folder | Installed filename | Licence |
+|---|---|---|---|
+| Qwen-Image-Layered diffusion model (fp8 mixed) | `diffusion_models` | `qwen_image_layered_fp8mixed.safetensors` | Apache-2.0 |
+| Layered VAE | `vae` | `qwen_image_layered_vae.safetensors` | Apache-2.0 |
+| Text encoder (shared with image edit) | `text_encoders` | `qwen_2.5_vl_7b_fp8_scaled.safetensors` | Apache-2.0 |
+
 Before every first job in a session, verify these choices through the relevant
 `/object_info/{class}` endpoints. A renamed, moved, or removed file invalidates
 this inventory.

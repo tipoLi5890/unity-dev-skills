@@ -1,6 +1,6 @@
 # Data contracts
 
-Four files that cross skill boundaries, each defined once, here, as JSON Schema (draft 2020-12).
+Files that cross skill boundaries, each defined once, here, as JSON Schema (draft 2020-12).
 A producer stamps the file with `schema`. `tools/check-contracts.py` validates producer output
 against these schemas in CI. Skills never import a validator: each skill's scripts stay copyable
 on their own, and a selftest checks its own output's required keys by hand.
@@ -16,6 +16,7 @@ misread the file. Adding an optional key does not need a new version.
 | A character's parts plan `<c>.parts.json` | [`parts-1.json`](parts-1.json) | `blender-character-rig` `part_math.py plan`; `comfyui-asset-generation` `part_views.py` (its own keys) | `part_views.py`, `assemble_parts.py` |
 | One line of a journey's `timeline.jsonl` | [`timeline-1.json`](timeline-1.json) | `unity-play-harness` `JourneyRecorder.cs` (samples from `GameProbe.ToJson`) | `journey_report.py`, `jump_report.py`, `camera_jitter.py` |
 | A rigged character's `<name>.secondary.json` | [`secondary-1.json`](secondary-1.json) | `character-autorig` `secondary_chains.py` | `unity-rigged-character` `SecondarySpec`, `SecondaryMotionSetup` |
+| A layered 2D character's `rig2d.json` | [`rig2d-1.json`](rig2d-1.json) | `comfyui-asset-generation` `layer_split.py split` | `unity-2d-animation` `AutoRig2D` |
 
 ## frames/1
 
@@ -119,3 +120,14 @@ than warning. A Blender op that reports with zero gates is returning a result, n
 it has no `schema` and keeps `ok`.
 
 The release after this one removes the old dialect.
+
+## rig2d/1
+
+- **Image pixels, y down**, on the layered file's own canvas; the Unity reader flips y. Arrays are
+  flat (`hx, hy, tx, ty`; `verts` as x, y pairs; `bw` as `i0, w0, i1, w1` per vertex, indices into
+  the part's own `bones`), because `JsonUtility` reads no nested arrays.
+- **`layers`** is the layer order, top to bottom, and every name is the PSB layer's name: a renamed
+  layer loses its rig, so the auto-rig runs again after any rename.
+- **`view`** is `front` (sides `R`, `L`: the character's own) or `side` (sides `near`, `far`, with
+  `facing` `right` or `left`). **`swaps`** names the layer pairs a Sprite Resolver switches
+  (eyes open/closed, mouth closed/open).

@@ -177,6 +177,25 @@ For hand close-ups each hand is generated on its own with gaps between the finge
 sleeve, so the rig finds every finger; eyeballs go behind the painted eyes and turn on the eye bones.
 For a game build the parts merge into one mesh with one texture atlas, one draw call.
 
+### A layered 2D runner that rigs itself
+
+<div align="center">
+<img src=".github/media/layered2d.gif" alt="Two scenes in Unity. First, the 2D courier runner from the front, full body on the left and a close-up of the face on the right: he breathes, blinks and talks. Then the same runner drawn from the side runs along a street whose sky, skyline, shopfronts and road scroll at different speeds, with a fire hydrant passing in front" width="640">
+<p><sub>One front and one side drawing, cut into layers and rigged in Unity: blink and talk from the front, a run over the parallax street from the side.</sub></p>
+</div>
+
+<div align="center">
+<img src=".github/media/layered2d.jpg" alt="Six panels of the 2D courier runner. The front drawing; the same drawing cut into layers, with the bones and joint lines drawn over it; then four poses of the rigged character in Unity: an arm raised, the head turned, a crouch with the arms up and the head turned, and a side view mid-stride" width="800">
+<p><sub>The drawing, its layers and bones, and the rig in Unity bent into poses the drawing never showed.</sub></p>
+</div>
+
+[`codex-visual`](skills/codex-visual/SKILL.md) →
+[`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) →
+[`unity-2d-animation`](skills/unity-2d-animation/SKILL.md) →
+[`unity-2d-rendering`](skills/unity-2d-rendering/SKILL.md)
+
+The drawing is cut into one layer per moving part on your own ComfyUI, with what the arms and hair hide filled in by Qwen-Image-Edit, and Unity gives the PSB its bones, meshes and weights without a Skinning Editor step; the street is split by depth with Qwen-Image-Layered (both Apache-2.0) and scrolls as parallax with no prop beside its own copy. The same layers also come as a PSD ready for Live2D Cubism, which a person rigs in Cubism Editor under Live2D's own licence.
+
 ## How it works
 
 ```mermaid

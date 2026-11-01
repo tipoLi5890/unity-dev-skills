@@ -1,0 +1,499 @@
+#!/usr/bin/env python3
+"""scene_layers.py — split a 2D scene into depth layers with Qwen-Image-Layered, gate them, and
+write the strips, the props and a layered PSD for parallax.
+
+  scene_layers.py run  SCENE.png --out DIR [--layers 4] [--max-size 1024] [--prompt TEXT]
+                       [--seed 1] [--names sky,road,skyline,shops,props] [--server URL]
+                       [--scroll sky=0.04,skyline=0.15,shops=0.45,road=1,props=1.35]
+  scene_layers.py gate SCENE.png --layers-dir DIR_WITH_PNGS --out DIR [--names ...] [--scroll ...]
+  scene_layers.py --selftest          offline: ordering, band split, gates, the template
+
+`run` submits templates/qwen_image_layered_api.json (the official graph: 20 steps, cfg 2.5,
+euler/simple, shift 1; LatentCut drops the composite frame) after an empty queue, downloads the
+layers and runs `gate` on them. The model returns the layers back to front, each RGBA with the
+hidden parts filled (the sky behind the skyline, the shops behind the props). It splits a scene by
+depth; it does not split a character into body parts (layer_split.py does that).
+
+`gate`, offline:
+  order    the layers as returned, back to front; an empty layer (< 0.5 % opaque) is dropped.
+  split    a layer with a full-width transparent band of at least --band rows is cut in two at
+           the band (sky above, road below), both at that layer's depth.
+  names    --names gives the final layers back to front, after the splits; default layer0, ...
+  props    the front layer's islands (>= --prop-min px) are also written one by one as
+           props/<name>_<i>.png with their box: place them as sprites in the level; never tile
+           or mirror the props strip (mirrored tiles put a prop beside its own copy).
+  gates    scene.recomposite: mean |RGB| of the layers composited against the source scaled
+           to their size <= --max-error (8); scene.coverage: opaque share of the composite >=
+           0.99; scene.alpha_clean: each layer's semi-transparent share 3 px or more inside (alpha
+           9..246; a ghost layer) <= 0.03;
+           scene.depth_order: where a back and a front layer both cover a pixel, the source
+           matches the front one on >= 0.6 of those pixels, per pair with >= 400 shared px.
+  writes   DIR/<name>.png (canvas-sized), scene.json (back to front: name, png, box, depth,
+           role "strip" or "props", tile, and scroll from --scroll: 1 moves with the play line,
+           0 stays fixed to the camera, above 1 is a foreground), scene.gate.json (gate/1), scene.psd (psd_write.py),
+           sheet.png (each layer over a checker, then the composite).
+
+Exit codes: 0 passed; 1 usage error; 2 a gate failed; 3 a server or job failure.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SKILL = HERE.parent
+CLIENT = HERE / "comfy_asset_client.py"
+TEMPLATE = SKILL / "templates" / "qwen_image_layered_api.json"
+TEMPLATE_ARGS = ("REPLACE_WITH_SCENE.png", "")
+
+MODELS = {
+    "unet": "qwen_image_layered_fp8mixed.safetensors",
+    "clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+    "vae": "qwen_image_layered_vae.safetensors",
+}
+
+
+class JobFailed(Exception):
+    pass
+
+
+def graph(image: str, prompt: str, layers=4, max_size=1024, seed=1, prefix="scene_layers/layer",
+          models=MODELS) -> dict:
+    """The official Qwen-Image-Layered graph in API form; node ids kept from the template."""
+    return {
+        "1": {"class_type": "LoadImage", "inputs": {"image": image}},
+        "2": {"class_type": "ImageScaleToMaxDimension",
+              "inputs": {"image": ["1", 0], "upscale_method": "lanczos", "largest_size": max_size}},
+        "37": {"class_type": "UNETLoader", "inputs": {"unet_name": models["unet"], "weight_dtype": "default"}},
+        "38": {"class_type": "CLIPLoader", "inputs": {"clip_name": models["clip"], "type": "qwen_image", "device": "default"}},
+        "39": {"class_type": "VAELoader", "inputs": {"vae_name": models["vae"]}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["38", 0], "text": prompt}},
+        "7": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["38", 0], "text": ""}},
+        "71": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["39", 0]}},
+        "69": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["6", 0], "latent": ["71", 0]}},
+        "70": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["7", 0], "latent": ["71", 0]}},
+        "66": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["37", 0], "shift": 1}},
+        "78": {"class_type": "GetImageSize", "inputs": {"image": ["2", 0]}},
+        "118": {"class_type": "EmptyQwenImageLayeredLatentImage",
+                "inputs": {"width": ["78", 0], "height": ["78", 1], "layers": layers, "batch_size": 1}},
+        "3": {"class_type": "KSampler", "inputs": {"model": ["66", 0], "positive": ["69", 0], "negative": ["70", 0],
+                                                   "latent_image": ["118", 0], "seed": seed, "steps": 20, "cfg": 2.5,
+                                                   "sampler_name": "euler", "scheduler": "simple", "denoise": 1}},
+        "140": {"class_type": "LatentCut", "inputs": {"samples": ["3", 0], "dim": "t", "index": 1, "amount": 16384}},
+        "76": {"class_type": "LatentCutToBatch", "inputs": {"samples": ["140", 0], "dim": "t", "slice_size": 1}},
+        "8": {"class_type": "VAEDecode", "inputs": {"samples": ["76", 0], "vae": ["39", 0]}},
+        "60": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": prefix}},
+    }
+
+
+# ------------------------------------------------------------------------------------- server
+def client_mod():
+    sys.path.insert(0, str(HERE))
+    import comfy_asset_client as cac
+    return cac
+
+
+def server_base(server):
+    cac = client_mod()
+    return cac.resolve_server(server, cac.load_config(cac.DEFAULT_CONFIG))
+
+
+def wait_idle(base: str, seconds: float) -> None:
+    """One job at a time on a shared server: never queue behind someone else's job."""
+    cac = client_mod()
+    end = time.monotonic() + seconds
+    while not cac.queue_empty(base):
+        if time.monotonic() > end:
+            raise JobFailed("the ComfyUI queue stayed busy; nothing submitted")
+        time.sleep(15)
+
+
+def run_job(scene: Path, out: Path, a) -> list:
+    base = server_base(a.server)
+    raw = out / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    h = hashlib.sha256(scene.read_bytes()).hexdigest()[:10]
+    with tempfile.TemporaryDirectory() as td:
+        up = Path(td) / f"scene_{h}.png"
+        shutil.copyfile(scene, up)
+        prefix = f"scene_layers/{scene.stem}_{h}"
+        wf = Path(td) / "graph.json"
+        wf.write_text(json.dumps({"client_id": "scene-layers", "prompt": graph(
+            up.name, a.prompt or "", a.layers, a.max_size, a.seed, prefix)}), encoding="utf-8")
+        wait_idle(base, a.wait_idle)
+        cmd = [sys.executable, str(CLIENT), "--workflow", str(wf), "--output-dir", str(raw),
+               "--upload", str(up), "--timeout-seconds", str(a.timeout), "--server", base]
+        if a.keep_loaded:
+            cmd.append("--keep-loaded")
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise JobFailed(f"client exit {r.returncode}: {r.stderr[-500:]}")
+        res = json.loads(r.stdout)
+    files = sorted(Path(f["path"]) for f in res.get("output_files", []) if str(f.get("path", "")).endswith(".png"))
+    if not files:
+        raise JobFailed("the job finished without layer images")
+    (out / "run.json").write_text(json.dumps({k: res.get(k) for k in ("prompt_id", "elapsed_seconds", "overrides")},
+                                             indent=1), encoding="utf-8")
+    return files
+
+
+# --------------------------------------------------------------------------------------- gate
+def _np():
+    import numpy as np
+    return np
+
+
+def load_rgba(p):
+    np = _np()
+    from PIL import Image
+    return np.asarray(Image.open(p).convert("RGBA")).astype(np.float32)
+
+
+def over(layers):
+    """Composite RGBA float layers (0..255), back to front."""
+    np = _np()
+    acc = np.zeros_like(layers[0])
+    for L in layers:
+        sa, da = L[..., 3:4] / 255, acc[..., 3:4] / 255
+        oa = sa + da * (1 - sa)
+        rgb = np.where(oa > 0, (L[..., :3] * sa + acc[..., :3] * da * (1 - sa)) / np.maximum(oa, 1e-6), 0)
+        acc = np.concatenate([rgb, oa * 255], -1)
+    return acc
+
+
+def band_split(L, band: int):
+    """[L] or [upper, lower] when a full-width transparent band of >= band rows has content on
+    both sides."""
+    np = _np()
+    occ = (L[..., 3] > 8).mean(1)
+    empty = occ < 0.002
+    rows = np.nonzero(~empty)[0]
+    if len(rows) == 0:
+        return [L]
+    y = rows[0]
+    best = None
+    while y <= rows[-1]:
+        if empty[y]:
+            y1 = y
+            while y1 <= rows[-1] and empty[y1]:
+                y1 += 1
+            if y1 - y >= band and (best is None or y1 - y > best[1] - best[0]):
+                best = (y, y1)
+            y = y1
+        else:
+            y += 1
+    if best is None:
+        return [L]
+    cut = (best[0] + best[1]) // 2
+    up, lo = L.copy(), L.copy()
+    up[cut:, :, 3] = 0
+    lo[:cut, :, 3] = 0
+    return [up, lo]
+
+
+def gate(name, value, limit, ok, **extra):
+    return {"name": name, "value": value, "limit": limit, "pass": bool(ok), **extra}
+
+
+def analyse(source, layers, names=None, band=16, max_error=8.0, prop_min=400, props=True):
+    """source: float RGBA/RGB array; layers: back to front float RGBA, same size as each other.
+    Returns (named layers, gates, props list)."""
+    np = _np()
+    from PIL import Image
+    H, W = layers[0].shape[:2]
+    if source.shape[:2] != (H, W):
+        source = np.asarray(Image.fromarray(source.astype(np.uint8)).resize((W, H), Image.LANCZOS)).astype(np.float32)
+    src = source[..., :3]
+    dropped = []
+    kept = []
+    for i, L in enumerate(layers):
+        if (L[..., 3] > 127).mean() < 0.005:
+            dropped.append(i)
+            continue
+        kept.append(L)
+    final = []
+    for L in kept:
+        final.extend(band_split(L, band))
+    depth_of = []
+    d = 0
+    for L in kept:
+        n = len(band_split(L, band))
+        depth_of += [d] * n
+        d += 1
+    if names and len(names) != len(final):
+        raise ValueError(f"--names lists {len(names)} layers; the scene has {len(final)} after splits")
+    names = names or [f"layer{i}" for i in range(len(final))]
+    comp = over(final) if final else np.zeros((H, W, 4), np.float32)
+    err = float(np.abs(comp[..., :3] * (comp[..., 3:4] / 255) - src * (comp[..., 3:4] / 255)).mean()) if final else 1e9
+    cover = float((comp[..., 3] > 127).mean()) if final else 0.0
+    gates = [gate("scene.recomposite", round(err, 2), max_error, err <= max_error),
+             gate("scene.coverage", round(cover, 4), 0.99, cover >= 0.99)]
+    from scipy import ndimage as ndi
+    partial = {}
+    for n, L in zip(names, final):            # semi-transparent pixels 3 px or more inside: a ghost
+        core = ndi.binary_erosion(L[..., 3] > 8, iterations=3)
+        partial[n] = round(float(((L[..., 3] > 8) & (L[..., 3] < 247) & core).sum() / max(core.sum(), 1)), 4)
+    gates.append(gate("scene.alpha_clean", max(partial.values()) if partial else 1.0, 0.03,
+                      bool(partial) and max(partial.values()) <= 0.03, per_layer=partial))
+    worst, pairs = 1.0, {}
+    for i in range(len(kept)):
+        for j in range(i + 1, len(kept)):
+            both = (kept[i][..., 3] > 200) & (kept[j][..., 3] > 200)
+            if both.sum() < 400:
+                continue
+            ei = np.abs(kept[i][..., :3] - src).mean(-1)[both]
+            ej = np.abs(kept[j][..., :3] - src).mean(-1)[both]
+            share = float((ej < ei).mean())
+            pairs[f"{i}<{j}"] = round(share, 3)
+            worst = min(worst, share)
+    gates.append(gate("scene.depth_order", round(worst, 3), 0.6, worst >= 0.6, pairs=pairs))
+    gates.append(gate("scene.layers", len(final), 2, len(final) >= 2, dropped_empty=dropped))
+    prop_list = []
+    if props and final:
+        from scipy import ndimage as ndi
+        F = final[-1]
+        m = F[..., 3] > 127
+        lab, n = ndi.label(ndi.binary_closing(m, iterations=2))
+        for k in range(1, n + 1):
+            mk = (lab == k) & (F[..., 3] > 0)
+            if mk.sum() < prop_min:
+                continue
+            ys, xs = np.nonzero(mk)
+            prop_list.append({"mask": mk, "box": [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1]})
+    return list(zip(names, final, depth_of)), gates, prop_list, comp
+
+
+def parse_scroll(text):
+    """'sky=0.04,road=1' -> {'sky': 0.04, 'road': 1.0}; ValueError on a bad pair."""
+    out = {}
+    for kv in (text or "").split(","):
+        if not kv.strip():
+            continue
+        name, eq, val = kv.partition("=")
+        if not eq or not name.strip():
+            raise ValueError(f"--scroll wants name=value pairs, got {kv!r}")
+        out[name.strip()] = float(val)
+    return out
+
+
+def write_outputs(out: Path, named, gates, props, comp, tool="scene_layers", scroll=None):
+    np = _np()
+    from PIL import Image
+    out.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for k, (name, L, depth) in enumerate(named):
+        a = np.clip(L, 0, 255).astype(np.uint8)
+        Image.fromarray(a).save(out / f"{name}.png")
+        ys, xs = np.nonzero(a[..., 3] > 8)
+        box = [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if len(ys) else [0, 0, 0, 0]
+        front = k == len(named) - 1
+        entries.append({"name": name, "png": f"{name}.png", "box": box, "depth": depth,
+                        "role": "props" if front and props else "strip", "tile": not (front and props)})
+        if scroll and name in scroll:
+            entries[-1]["scroll"] = scroll[name]
+    plist = []
+    if props:
+        (out / "props").mkdir(exist_ok=True)
+        front = named[-1]
+        F = np.clip(front[1], 0, 255).astype(np.uint8)
+        for i, p in enumerate(sorted(props, key=lambda q: q["box"][0])):
+            x0, y0, x1, y1 = p["box"]
+            crop = F[y0:y1, x0:x1].copy()
+            crop[~p["mask"][y0:y1, x0:x1]] = 0
+            fn = f"props/{front[0]}_{i}.png"
+            Image.fromarray(crop).save(out / fn)
+            plist.append({"png": fn, "x": x0, "y": y0, "box": p["box"]})
+    H, W = named[0][1].shape[:2]
+    scene = {"tool": tool, "width": W, "height": H, "order": "back_to_front", "layers": entries, "props": plist}
+    (out / "scene.json").write_text(json.dumps(scene, indent=1), encoding="utf-8")
+    ok = all(g["pass"] for g in gates)
+    rep = {"schema": "gate/1", "tool": tool, "pass": ok, "gates": gates}
+    (out / "scene.gate.json").write_text(json.dumps(rep, indent=1), encoding="utf-8")
+    man = {"width": W, "height": H, "ids": "ids.json",
+           "layers": [{"name": e["name"], "png": e["png"]} for e in reversed(entries)]}
+    (out / "scene.manifest.json").write_text(json.dumps(man, indent=1), encoding="utf-8")
+    sys.path.insert(0, str(HERE))
+    import psd_write
+    psd_write.write_manifest(out / "scene.manifest.json", out / "scene.psd")
+    sheet(out / "sheet.png", [L for _, L, _ in named], comp)
+    return rep, scene
+
+
+def sheet(path, layers, comp, width=320):
+    np = _np()
+    from PIL import Image
+    H, W = layers[0].shape[:2]
+    h = int(width * H / W)
+    tiles = []
+    yy, xx = np.mgrid[:H, :W]
+    chk = np.where(((yy // 16) + (xx // 16)) % 2 == 0, 200, 150).astype(np.float32)
+    for L in list(layers) + [comp]:
+        a = L[..., 3:4] / 255
+        rgb = L[..., :3] * a + chk[..., None] * (1 - a)
+        tiles.append(Image.fromarray(rgb.clip(0, 255).astype(np.uint8)).resize((width, h), Image.LANCZOS))
+    s = Image.new("RGB", (width * len(tiles) + 8 * (len(tiles) - 1), h), (40, 40, 40))
+    for i, t in enumerate(tiles):
+        s.paste(t, (i * (width + 8), 0))
+    s.save(path)
+
+
+def cmd_gate(scene: Path, pngs: list, out: Path, a) -> int:
+    layers = [load_rgba(p) for p in pngs]
+    sizes = {L.shape[:2] for L in layers}
+    if len(sizes) != 1:
+        print(f"scene_layers.py: layer sizes differ: {sorted(sizes)}", file=sys.stderr)
+        return 1
+    names = [n.strip() for n in a.names.split(",")] if a.names else None
+    try:
+        scroll = parse_scroll(a.scroll)
+    except ValueError as e:
+        print(f"scene_layers.py: {e}", file=sys.stderr)
+        return 1
+    try:
+        named, gates, props, comp = analyse(load_rgba(scene), layers, names, a.band, a.max_error,
+                                            a.prop_min, not a.no_props)
+    except ValueError as e:
+        print(f"scene_layers.py: {e}", file=sys.stderr)
+        return 1
+    if not named:
+        print("scene_layers.py: every layer is empty", file=sys.stderr)
+        return 2
+    unknown = sorted(set(scroll) - {n for n, _, _ in named})
+    if unknown:
+        print(f"scene_layers.py: --scroll names no layer: {', '.join(unknown)}", file=sys.stderr)
+        return 1
+    rep, scene_doc = write_outputs(out, named, gates, props, comp, scroll=scroll)
+    print(json.dumps({"pass": rep["pass"], "out": str(out), "layers": [e["name"] for e in scene_doc["layers"]],
+                      "props": len(scene_doc["props"]), "gates": {g["name"]: g["value"] for g in gates}}))
+    return 0 if rep["pass"] else 2
+
+
+# ----------------------------------------------------------------------------------- selftest
+def selftest() -> int:
+    np = _np()
+    checks = {}
+    H, W = 120, 200
+    yy, xx = np.mgrid[:H, :W]
+    src = np.zeros((H, W, 4), np.float32)
+    src[..., 3] = 255
+    sky = np.zeros_like(src)
+    sky[:50] = (120, 170, 230, 255)
+    sky[80:] = (70, 70, 80, 255)                                   # road; rows 50..80 empty
+    far = np.zeros_like(src)
+    far[30:80, 20:180] = (150, 160, 190, 255)
+    near = np.zeros_like(src)
+    near[60:110, 40:70] = (200, 40, 40, 255)                         # a hydrant
+    near[70:112, 140:180] = (180, 140, 90, 255)                     # parcels
+    src = over([sky, far, near])
+    src[50:80][src[50:80, :, 3] < 1] = (90, 90, 90, 255)
+    named, gates, props, comp = analyse(src, [sky, far, near], None)
+    g = {x["name"]: x for x in gates}
+    checks["split_sky_road"] = len(named) == 4 and [d for _, _, d in named] == [0, 0, 1, 2]
+    checks["clean_pass"] = all(x["pass"] for x in gates if x["name"] != "scene.coverage")
+    checks["coverage_counts_gap"] = g["scene.coverage"]["pass"] is False   # the 30-row gap is uncovered
+    checks["props_two"] = len(props) == 2
+    _, gates2, _, _ = analyse(src, [sky, near, far], None)                  # wrong depth order
+    checks["order_caught"] = not next(x for x in gates2 if x["name"] == "scene.depth_order")["pass"]
+    soft = far.copy()
+    soft[30:80, 20:180, 3] = 128
+    _, gates3, _, _ = analyse(src, [sky, soft, near], None)
+    checks["soft_alpha_caught"] = not next(x for x in gates3 if x["name"] == "scene.alpha_clean")["pass"]
+    try:
+        analyse(src, [sky, far, near], ["a", "b"])
+        checks["names_count_refused"] = False
+    except ValueError:
+        checks["names_count_refused"] = True
+    with tempfile.TemporaryDirectory() as td:
+        rep, doc = write_outputs(Path(td), named, gates, props, comp,
+                                 scroll=parse_scroll(f"{named[0][0]}=0.04,{named[-1][0]}=1.35"))
+        checks["outputs"] = (Path(td) / "scene.psd").is_file() and len(doc["props"]) == 2 and \
+            doc["layers"][-1]["tile"] is False and doc["layers"][0]["tile"] is True and rep["schema"] == "gate/1"
+        checks["scroll_written"] = doc["layers"][0].get("scroll") == 0.04 and \
+            doc["layers"][-1].get("scroll") == 1.35 and "scroll" not in doc["layers"][1]
+    try:
+        parse_scroll("sky")
+        checks["scroll_refused"] = False
+    except ValueError:
+        checks["scroll_refused"] = True
+    try:
+        tpl = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+        checks["template_matches"] = set(tpl) == {"client_id", "prompt"} and tpl["prompt"] == graph(*TEMPLATE_ARGS)
+    except (OSError, json.JSONDecodeError):
+        checks["template_matches"] = False
+    gr = graph("s.png", "p", layers=5, max_size=640, seed=9)
+    links = [v for n in gr.values() for v in n["inputs"].values() if isinstance(v, list)]
+    checks["graph_links"] = all(v[0] in gr for v in links) and gr["118"]["inputs"]["layers"] == 5 \
+        and gr["3"]["inputs"]["seed"] == 9 and gr["140"]["inputs"]["index"] == 1
+    ok = all(checks.values())
+    print(json.dumps({"checks": checks, "pass": ok}))
+    return 0 if ok else 2
+
+
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1, never 2."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv in (["--selftest"], ["selftest"]):
+        return selftest()
+    ap = UsageParser(prog="scene_layers.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--selftest", action="store_true")
+    sub = ap.add_subparsers(dest="cmd", parser_class=UsageParser)
+    for name in ("run", "gate"):
+        p = sub.add_parser(name)
+        p.add_argument("scene", type=Path)
+        p.add_argument("--out", type=Path, required=True)
+        p.add_argument("--names", help="final layer names, back to front, comma-separated")
+        p.add_argument("--band", type=int, default=16, help="rows of a transparent band that split a layer")
+        p.add_argument("--max-error", type=float, default=8.0)
+        p.add_argument("--prop-min", type=int, default=400, help="px; smaller islands stay in the strip only")
+        p.add_argument("--no-props", action="store_true", help="the front layer is a strip, not props")
+        p.add_argument("--scroll", help="name=S,... scroll speed per final layer, written to scene.json")
+        if name == "run":
+            p.add_argument("--layers", type=int, default=4)
+            p.add_argument("--max-size", type=int, default=1024)
+            p.add_argument("--prompt", default="")
+            p.add_argument("--seed", type=int, default=1)
+            p.add_argument("--server", default=os.environ.get("COMFYUI_SERVER_URL"))
+            p.add_argument("--wait-idle", type=float, default=900)
+            p.add_argument("--timeout", type=float, default=1800)
+            p.add_argument("--keep-loaded", action="store_true")
+        else:
+            p.add_argument("--layers-dir", type=Path, required=True, help="the layer PNGs, back to front by name")
+    a = ap.parse_args(argv)
+    if a.selftest:
+        return selftest()
+    if not a.cmd:
+        ap.error("choose run or gate")
+    if not a.scene.is_file():
+        ap.error(f"scene not found: {a.scene}")
+    if a.cmd == "gate":
+        pngs = sorted(a.layers_dir.glob("*.png"))
+        if not pngs:
+            ap.error(f"no PNGs in {a.layers_dir}")
+        return cmd_gate(a.scene, pngs, a.out, a)
+    if not 2 <= a.layers <= 10:
+        ap.error("--layers must be 2..10")
+    try:
+        pngs = run_job(a.scene, a.out, a)
+    except (JobFailed, OSError, json.JSONDecodeError) as e:
+        print(f"scene_layers.py: {e}", file=sys.stderr)
+        return 3
+    return cmd_gate(a.scene, pngs, a.out, a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

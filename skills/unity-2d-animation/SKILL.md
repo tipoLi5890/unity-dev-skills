@@ -20,6 +20,8 @@ description: >-
 |---|---|
 | "Bones or frame-by-frame"; what a rig costs in memory, CPU and draw calls; when GPU deformation is on and why a part fell back; mixing both on one character | `reference/skeletal-vs-frames.md` |
 | "Import this PSB as a character"; importing a PSB; mosaic, rig and layer-group settings; a `.psd` that imports as one flat texture; "the bones came off after a layer was renamed"; sharing one skeleton between two PSBs | `reference/psd-to-rig.md` |
+| "Rig this PSB automatically"; bones, meshes, weights from layer names or a rig file; idle, blink, talk, a side-view run; a bone imported as `head_1` | `reference/auto-rig-2d.md` |
+| Live2D Cubism: the Cubism-ready PSD, the SDK for Unity, `.model3.json`, blink, lip sync, licences | `reference/live2d-import.md` |
 | Skinning Editor order; "the elbow folds like paper"; a part left behind when the body moves; `SpriteSkin` states, Auto Rebind, bounds and culling; one part passing in front of another on the same sprite | `reference/bones-and-weights.md` |
 | Sprite Library assets, categories and labels; "swap the helmet at runtime"; a whole-skin swap; animating the resolver; variant libraries; a swapped part frozen in its bind pose | `reference/sprite-library.md` |
 | IK Manager 2D; Limb, CCD or FABRIK; "the 2D leg bends backwards"; IK on top of a clip; feet on a slope | `reference/ik-2d.md` |
@@ -35,7 +37,9 @@ description: >-
 
 Copy `resources/SkinSwap.cs` into a Runtime assembly that references `Unity.2D.Animation.Runtime`,
 and `resources/Editor/SpriteLibraryBuilder.cs` and `resources/Editor/SkinningAudit.cs` into an
-Editor one that also references `Unity.2D.Animation.Editor`. IK types live in a third assembly,
+Editor one that also references `Unity.2D.Animation.Editor`; the auto-rig adds
+`resources/Editor/AutoRig2D.cs` and `Rig2DLayout.cs` there, `resources/RigDriver2D.cs` at
+runtime, and EditMode tests in `resources/Tests/Editor/`. IK types live in a third assembly,
 `Unity.2D.IK.Runtime`, under `UnityEngine.U2D.IK`.
 
 ```
@@ -87,9 +91,9 @@ grep -rn 'm_UseSRPBatcher' --include='*.asset' Assets Settings 2>/dev/null
 2. **Get the art in as a rig.** A `.psb` (not `.psd`), one layer per part, unique layer names,
    neutral pose. Import Mode *Individual Sprites (Mosaic)*, *Use as Rig* on.
    → `reference/psd-to-rig.md`
-3. **Rig in order: bones, geometry, weights.** Weights are generated from the bones that overlap
-   the geometry, so a bone moved afterwards means weights redone. Then *Apply*, or nothing is
-   saved. → `reference/bones-and-weights.md`
+3. **Rig it.** `AutoRig2D` rigs a PSB that follows the layer names, with a face library
+   and a driven variant → `reference/auto-rig-2d.md`. By hand: bones, geometry,
+   weights, then *Apply* → `reference/bones-and-weights.md`.
 4. **Audit what was built** — `resources/Editor/SkinningAudit.cs`, one JSON object:
 
 ```bash
@@ -169,5 +173,5 @@ deforming and solving.
 | Pixel-art filtering and camera snapping | `unity-2d-pixel-perfect` |
 | 3D rigs, Humanoid Avatars, Mixamo | `unity-rigged-character` |
 | Rigging and animating a 3D mesh in Blender | `character-autorig` (default) · `blender-character-rig` (hand-built fallback) |
-| Generating the layered artwork | `codex-visual` |
+| Generating the layered artwork; the layer split and rig file | `codex-visual`; `comfyui-asset-generation` |
 | Recording a run and asserting on it | `unity-play-harness` |

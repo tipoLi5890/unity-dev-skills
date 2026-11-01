@@ -97,6 +97,10 @@ far.wrapWidth = 24f;
 The wrap is horizontal only. A vertical layer that must not run out is made tall enough for
 the level's height range instead.
 
+Art that does not tile, or separate props, wants `ParallaxTiles` beside the layer instead of
+`wrapWidth` (leave it at 0): it mirrors a continuous strip and shuffles props one per tile, so a
+prop never stands beside its own copy — `reference/parallax-layers.md`.
+
 World coordinates grow without bound in an endless run; past a few thousand units sprite
 positions lose sub-pixel precision and everything shimmers, parallax first. Shift the world
 back to the origin periodically and call `Snap()` in the same frame.

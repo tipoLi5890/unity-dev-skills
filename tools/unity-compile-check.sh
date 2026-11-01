@@ -14,9 +14,9 @@
 #   2. Creates a project from the Universal 2D template (`unity projects create`, falling back
 #      to a bare folder), then merges a known-good package set into Packages/manifest.json:
 #      every package the skills' C# names (Input System, Cinemachine 3, URP, 2D Sprite /
-#      Animation / Tilemap / Tilemap Extras, Localization, Addressables, Splines, ProBuilder,
-#      Test Framework, Performance Testing, Collections, Mathematics, Profiling Core, AI
-#      Navigation, uGUI/TextMeshPro, and com.unity.pipeline for the Editor commands).
+#      Animation / PSD Importer / Tilemap / Tilemap Extras, Localization, Addressables, Splines,
+#      ProBuilder, Test Framework, Performance Testing, Collections, Mathematics, Profiling Core,
+#      AI Navigation, uGUI/TextMeshPro, and com.unity.pipeline for the Editor commands).
 #   3. Opens it once so the packages resolve, then copies every skill's resources/ and
 #      templates/ *.cs and *.asmdef to Assets/UnityDevSkills/<skill>/, keeping the folders.
 #      Three generated assemblies hold them:
@@ -167,6 +167,7 @@ want = {
     'com.unity.render-pipelines.universal': '17.4.0',
     'com.unity.2d.sprite': '1.0.0',
     'com.unity.2d.animation': '14.0.3',
+    'com.unity.2d.psdimporter': '13.0.3',
     'com.unity.2d.tilemap': '1.0.0',
     'com.unity.2d.tilemap.extras': '7.0.1',
     'com.unity.localization': '1.5.13',
@@ -186,7 +187,7 @@ want = {
 for k, v in want.items():
     deps[k] = v
 # The template's extras this check does not need slow every import down.
-for k in ('com.unity.collab-proxy', 'com.unity.visualscripting', 'com.unity.2d.psdimporter',
+for k in ('com.unity.collab-proxy', 'com.unity.visualscripting',
           'com.unity.2d.aseprite', 'com.unity.2d.spriteshape', 'com.unity.2d.tooling'):
     deps.pop(k, None)
 json.dump(m, open(path, 'w', encoding='utf-8'), indent=2)

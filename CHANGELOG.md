@@ -2,6 +2,77 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.42.0
+
+Layered 2D characters and scenes. A drawing of a character becomes a PSB with one layer per
+moving part, the parts it hides filled in, and Unity's 2D Animation rigs it with bones, meshes and
+weights and no Skinning Editor step; the face swaps, idle, blink, talk and a side-view run come with
+it. A scene becomes parallax depth layers that scroll endlessly without a prop beside its own copy.
+The same layers are written as a PSD ready for Live2D Cubism, which a person rigs in Cubism Editor
+under Live2D's own licence; nothing of Live2D's is downloaded or redistributed.
+
+- **`comfyui-asset-generation` → `layer_split.py`.** `fills` makes the hidden parts with
+  Qwen-Image-Edit-2511 (`templates/qwen_image_edit_2511_fill_api.json`, 4-step Lightning): an
+  armless torso, a bald head, eyes closed, mouth open and, with `--cubism`, a blank face, each from
+  a square-padded crop of the source and never from another edit, gated on alignment, silhouette
+  and staying inside the source, with a seed retry. `split` cuts by geometry, not by a part map:
+  neck, crotch, hem, ankles and armpits from the silhouettes, each arm a capsule from its shoulder
+  joint, the wrist at the narrowest section. Where an arm hid the torso's side, the torso is
+  bridged, rounded and outlined, so a raised arm no longer shows a straight shoulder edge. A side
+  view (`--view side --facing right|left`, sides `near` / `far`) puts the shoulder where the arms'
+  axes meet and sweeps the far arm on under the torso. It writes the layer PNGs, `rig2d.json`,
+  `debug.png`, `pose.png` and the PSB, and gates the composite (IoU, pixels off), interior
+  semi-transparency, joint overlap, the layer names, the limbs and `split.shoulder_notch`.
+- **`psd_write.py`.** PSD and PSB, 8-bit RGB with transparency, PackBits, `luni`, `lyid`, groups,
+  hidden layers and a merged composite, from Adobe's specification; ids kept by name in `ids.json`
+  so a repaint keeps every sprite id in Unity. `read` prints the tree; the selftest reads its
+  output back, and with psd-tools (MIT, optional) when it is installed.
+- **`cubism_psd.py`.** The Cubism-ready PSD: the face split on the 1024 px head crops (blank face,
+  eye white, iris and lash per side, brows, nose, mouth line, the inside of the mouth hidden in a
+  folder), the body layers in depth folders; gates the composite, the 100-layer cap of the FREE
+  edition, unique names, version 1, 8 bit, RGB.
+- **`scene_layers.py`.** Qwen-Image-Layered (`templates/qwen_image_layered_api.json`, the
+  official graph) splits a scene by depth; a layer with a transparent band is cut in two (sky and
+  road), the front layer's props are also written one by one, and `--scroll` writes each layer's
+  parallax speed into `scene.json`. Gates recomposite, coverage, interior semi-transparency and
+  depth order. The server inventory gains the fp8mixed weights and the layered VAE (Apache-2.0).
+- **`unity-2d-animation` → `AutoRig2D.cs`, `Rig2DLayout.cs`, `RigDriver2D.cs`.** Reads
+  `rig2d.json` (`rig2d/1`, `schemas/rig2d-1.json`) beside the PSB, or infers the bones from the
+  layer names alone, and writes the skeleton, each part's bones and its mesh and weights through
+  the data providers, then `Apply()` and a reimport. Bones are named after joints so the importer
+  never renames one; GUIDs are a hash of the name, so a re-run keeps every binding and a hand rig
+  is left alone unless overwritten. A rig-file mesh that covers less than 98 % of its layer is
+  replaced by a grid. It builds `<name>_Faces.spriteLib` and a Prefab Variant with resolvers and
+  `RigDriver2D` (idle, blink, talk at 8 Hz, a front run in place, a side run with the legs in
+  opposite phase, 2D springs on the hair). Gates: every layer rigged, weights summing to 1, every
+  `SpriteSkin` ready, and every layer the rig file names back as a sprite. Batch:
+  `-executeMethod UnityDev.Rig2D.AutoRig2D.RunFromCommandLine`, with graphics. A renamed layer loses
+  its rig, and a PSB re-split over its old `.meta` can tear; both are documented with the fix.
+- **`reference/live2d-import.md`.** The Cubism route without promising automation past the PSD:
+  the Editor's own manual rules for the PSD, the SDK for Unity installed by each developer from
+  Live2D, blink and lip sync components, the standard parameter IDs, and the licences: never
+  vendor the SDK, read Live2D's SDK licence page before release, and buy the licence a project
+  needs.
+- **`unity-2d-rendering` → `ParallaxTiles.cs`, `TileSequence.cs`, `ParallaxRigBuilder.cs`,
+  `PsdLayerReader.cs`.** One prefab from `scene.json` (or the layers read by name from the PSD):
+  a `ParallaxLayer` per layer, factor 1 − scroll, and tiles that are a function of the seed and
+  the tile index, so a respawn or walking back shows the same art. Mirror for continuous strips,
+  Repeat, and Shuffle for props: one per tile from a seeded bag, never twice in a row, with seeded
+  gaps; props cut by the canvas edge are left out. Batch:
+  `-executeMethod UnityDev.Rendering2D.ParallaxRigBuilder.BuildFromCommandLine`.
+- **`codex-visual` → `reference/layered-2d-source.md`.** How to draw a front or side character
+  and a scene for cutting: limbs apart, neutral face, a flat key, the canvas padded square for the
+  edits.
+- **Tools.** `unity-compile-check.sh` adds the PSD Importer to its package set;
+  `check-contracts.py` knows `.rig2d.json`; four selftests and four usage probes.
+- **On the courier runner.** A front and a side view and a street, all fills passing on the
+  first seed (alignment p75 3.1–10.0, silhouette IoU ≥ 0.989). The split: composite IoU 0.9988 /
+  0.9978, pixels off 0.0004 / 0.0021, interior semi-transparency 0.0078 / 0.0067, 22 px joint
+  overlap, shoulder notch 0.00001 / 0.0004; both PSBs read back by psd-tools pixel for pixel. The
+  Cubism PSD: 23 layers, IoU 0.9988. In Unity, from a fresh import: 16/16 layers rigged per view
+  from the rig file's own meshes, 0 bad weights, 16/16 skins ready; EditMode 42/42 (the auto-rig
+  9, the parallax 33). The street: sky, road, skyline, shops and props, recomposite 4.65,
+  coverage 1.0, depth order 0.828; built from the PSD or the PNGs, the tiles match pixel for pixel.
 ## 0.41.2
 
 A strengthening round. On the ship track the elbow no longer needs a repair: its marker follows

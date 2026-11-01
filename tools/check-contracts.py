@@ -56,7 +56,8 @@ CHECKS = ('outputs', 'flags', 'deps', 'versions')
 HANDS_OFF = re.compile(r'selftest-output|contract_sample\(|contract_out\(')
 OUTPUT_LINE = re.compile(r'^selftest-output:\s*(.+?)\s*$', re.M)
 SUFFIX_STAMP = {'.frames.json': 'frames/1', '.gate.json': 'gate/1', '.timeline.jsonl': 'timeline/1',
-                '.secondary.json': 'secondary/1', '.parts.json': 'parts/1'}
+                '.secondary.json': 'secondary/1', '.parts.json': 'parts/1',
+                '.rig2d.json': 'rig2d/1'}
 
 
 class Report:
