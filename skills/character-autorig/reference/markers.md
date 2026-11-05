@@ -187,6 +187,15 @@ so the index side faces −Y. `L` = |hand_tip − wrist|.
   same stations, has to fall into four or more closed loops (each at least 0.05 L round) at two of
   them, else the four lanes were a mitten's sample gaps and the hand is `fixed`. `fingers.mode` is
   `detected`.
+- **The read can be a vote** (`arp_markers.py --finger-votes K`; default 1, the single reading). On
+  the rig exam five votes turned `spiky_hair` to `detected` but `thin` to `fixed` (2 of 5), so the
+  vote is opt-in until a second opinion on the hand exists. Fingers about 0.015 L apart sit on the
+  split's own threshold, so one sampling can flip with a wrist moved by a few millimetres. K
+  readings each take 4000 samples (seed k) and cut at the stations shifted by 0, −1, +1, −2, +2 …
+  × 0.005 L; reading 0 is the single reading (`--finger-votes 1`). `detected` needs more than half
+  of them, so a tie reads `fixed`, and the surface's loops still veto every reading. The lanes are
+  reading 0's when it detected, else the first detecting reading's. `fingers.votes` records `k`,
+  the counts and each reading's seed, offset and mode.
 - **Fixed shape** (`--fingers fixed`, or when no cut splits into four): knuckles at 0.49–0.51 L,
   fingertips at 0.78 (little) to 1.0 L (middle), with a slight curl toward the palm, scaled to L
   and turned into the hand frame. `fingers.reason` says why detection was not used.
@@ -258,7 +267,7 @@ marker at a time and look again. Through the runner: `autorig.py markers OUT --a
 | `smart`, `smart_agreement` | with `--smart`: the file, what was used, notes (`rejected` when its body sits over 0.10 H off: another mesh or frame, nothing taken); per landmark the distance and height difference to the AI's marker as fractions of H, and `agrees` |
 | `ref_rolls`, `facial` | the roll per reference taken from the AI (hand, fingers, face), written as is; `facial` true when `arp_refs` holds the face. Empty and false without `--smart` |
 | `contract_bones` | `{mirror: true, bones: [...]}`: a `bcr_armature` spec with the contract's names and a radius per bone |
-| `previews`, `gates`, `pass` | as above; each gate `{name, value, limit, pass}` as in a gate/1 report, and `ok`, pass's old name, beside it for one release |
+| `previews`, `gates`, `pass` | as above; each gate `{name, value, limit, pass}` as in a gate/1 report |
 
 `arp_refs` is what `blender-retarget` → `brt_arp` op `pipeline` writes onto the preset
 (`reference/arp-pipeline.md`); `contract_bones` is what the hand-built route builds

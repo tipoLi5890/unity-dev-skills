@@ -12,7 +12,7 @@ The shapes it reads, tried in this order:
   frames       a frames.json stamped "frames/1" (schemas/frames-1.json), sheet_to_frames.py's
                frames.json, or any frames.json naming its `producer` ({skill, script}:
                breathe.py, video_loop.py): the sidecar and every frame (relative to it), the sheet
-               or `source` as input, one `frames.faults` gate (its verdict.ok), and as params what
+               or `source` (with its sha256 when given) as input, one `frames.faults` gate (its verdict.ok), and as params what
                a Unity import needs again: pivot_norm, key_color, canvas, fps_hint, loop,
                hold_last, block_px, reference_core_height_px and foot_margin_px
   gate         a gate/1 report (schemas/gate-1.json, `"schema": "gate/1"`), or an unstamped
@@ -23,9 +23,17 @@ The shapes it reads, tried in this order:
                --expect-size was given; more than one image is refused (none was chosen)
 Anything else exits 3. Text output (an audit's lines) is never parsed: ask the producer for JSON.
 A gate passes only on `"pass": true`: a gate without a boolean `pass` has failed. A file stamped
-gate/1 or frames/1 that lacks a key its schema requires exits 3 (a producer bug). For one release
-an unstamped file in the 0.34 dialect is still read, with one WARN line on stderr per file: a
-gate's or a report's `ok` is read as `pass`, register.margin_px as foot_margin_px.
+gate/1 or frames/1 that lacks a key its schema requires exits 3 (a producer bug). `ok`, the old
+name of `pass`, is never read: a gate or a report carrying it exits 3 (a producer bug), and so
+does a Blender op's zero-gate result (`ok`, no gates), which is not a verdict. A gate's `margin`
+is carried as written. For one release an unstamped frames.json is still read, with one WARN
+line on stderr per file: register.margin_px as foot_margin_px. (frames/1's own `verdict.ok` is
+that schema's key, not a gate's.)
+
+Upstream links: each input (a frame set's sheet or source clip, a record's `inputs`) that a
+current ledger record already holds, matched by sha256 (the producer's, else the file's) and
+else by path, becomes a `depends-on` link to that record's id, so `check` carries the input's
+licence and its territory exclusions down to what was made from it (reference/licences.md).
 
 Without --write it prints only the partial record, so it can be read first or piped on:
 `registry.py ingest --json frames.json | registry.py record --kind frames`. With --write it is
@@ -102,13 +110,16 @@ def _frames(doc, src, notes):
             raise Bad("`producer` is not an object with string `skill` and `script`")
         tool = {"skill": producer["skill"], "script": producer["script"]}
     part = {"kind": "frames", "source": "generated", "files": files, "tool": tool}
-    origin = doc.get("source")
+    origin, origin_sha = doc.get("source"), None
     if isinstance(origin, dict):
+        origin_sha = origin.get("sha256")
         origin = origin.get("file")
     if isinstance(doc.get("sheet"), str):
         part["inputs"] = [{"path": doc["sheet"]}]
     elif isinstance(origin, str):
         part["inputs"] = [{"path": origin}]
+        if isinstance(origin_sha, str) and L.SHA_RE.match(origin_sha):
+            part["inputs"][0]["sha256"] = origin_sha      # the clip's bytes, as the producer read them
     verdict = doc.get("verdict")
     if isinstance(verdict, dict) and isinstance(verdict.get("ok"), bool):
         faults = [f for f in verdict.get("faults") or [] if isinstance(f, dict)]
@@ -135,46 +146,46 @@ def _frames(doc, src, notes):
     return part
 
 
-def _gate_list(doc, notes, stamped):
-    """The report's gates, each with a boolean `pass`: a gate without one has failed. An unstamped
-    report's gate `ok` is read as `pass` (one WARN); a stamped gate/1 gate without `pass` is a
-    producer bug (Bad)."""
-    gates, legacy = [], False
+def _gate_list(doc, stamped):
+    """The report's gates, each with a boolean `pass`: a gate without one has failed (a stamped
+    gate/1 gate without one is a producer bug). A gate carrying `ok` is refused (Bad)."""
+    gates = []
     for g in doc.get("gates") or []:
         if not isinstance(g, dict):
             continue
+        if "ok" in g:
+            raise Bad(f"gate {g.get('name')!r} carries `ok`, the old name of `pass`; gate/1 refuses it "
+                      "(a producer bug)")
         g = dict(g)
         if not isinstance(g.get("pass"), bool):
             if stamped:
                 raise Bad(f"stamped gate/1 but gate {g.get('name')!r} has no boolean `pass` (a producer bug)")
-            if isinstance(g.get("ok"), bool) and "pass" not in g:
-                legacy = True
-                g["pass"] = g["ok"]
-            else:
-                g["pass"] = False                    # no verdict is a failed gate
-        g.pop("ok", None)
+            g["pass"] = False                        # no verdict is a failed gate
         gates.append(g)
-    if legacy:
-        notes.append("a gate's `ok` read as `pass` (gate/1 names it `pass`)")
     return gates
 
 
+def _refuse_ok(doc):
+    """A report carrying `ok` is refused (Bad): gate/1 has no `ok`, and a Blender op's zero-gate
+    result, the one place `ok` is still written, is not a verdict."""
+    if "ok" not in doc:
+        return
+    if not doc.get("gates") and doc.get("schema") != "gate/1" and "pass" not in doc:
+        raise Bad("an op's result (`ok`, no gates) is not a verdict: nothing to record")
+    raise Bad("the report carries `ok`, the old name of `pass`; gate/1 refuses it (a producer bug)")
+
+
 def _gate(doc, src, notes):
-    """A gate report: gate/1, or the unstamped 0.34 Blender report read for one release."""
+    """A gate report: gate/1, or an unstamped Blender report (`gates` and `blender`)."""
     stamped = doc.get("schema") == "gate/1"
+    _refuse_ok(doc)
     if stamped and not isinstance(doc.get("pass"), bool):
         raise Bad("stamped gate/1 but `pass` is not true or false (a producer bug)")
-    gates = _gate_list(doc, notes, stamped)
+    gates = _gate_list(doc, stamped)
     if not gates and (doc.get("refused") or doc.get("error")):
         raise Bad("the producer reported an error and wrote nothing to record: "
                   + str(doc.get("refused") or doc.get("error")))
-    if isinstance(doc.get("pass"), bool):
-        ok = doc["pass"]
-    elif isinstance(doc.get("ok"), bool):
-        notes.append("the report's `ok` read as `pass` (gate/1 names it `pass`)")
-        ok = doc["ok"]
-    else:
-        ok = bool(gates)
+    ok = doc["pass"] if isinstance(doc.get("pass"), bool) else bool(gates)
     ok = ok and all(g["pass"] is True for g in gates)
     part = {"source": "authored", "gates": gates, "verdict": "green" if ok else "failed"}
     if _strings(doc.get("warnings")):
@@ -195,8 +206,8 @@ def _codex(doc, src):
         first["sha256"] = doc["out_sha256"]          # record keeps the file's own and warns
     part = {"source": "generated", "files": [first],
             "tool": {"skill": "codex-visual", "script": "codex_generate.py"}}
-    params = {k: doc[k] for k in ("model", "seed", "prompt_sha256", "prompt_file")
-              if doc.get(k) is not None}
+    params = {k: doc[k] for k in ("model", "agent_model", "codex_version", "seed", "prompt_sha256",
+                                   "prompt_file") if doc.get(k) is not None}
     if params:
         part["params"] = params
     if isinstance(doc.get("inputs"), list):
@@ -246,16 +257,22 @@ def _norm(ctx, p):
         raise Refused(f"{p}: {e}") from None
 
 
-def convert(doc, src, ctx, args, notes=None):
+def convert(doc, src, ctx, args, notes=None, dropped=None):
     """The partial record a producer's JSON stands for: paths relative to --root, the flags
-    applied. Raises Bad or Refused. Each old-dialect key read is appended to `notes`."""
+    applied. Raises Bad or Refused. Each old-dialect key read is appended to `notes`, and each
+    input dropped for lying outside --root to `dropped` (its sha256 can still find its record)."""
     notes = [] if notes is None else notes
+    dropped = [] if dropped is None else dropped
     shape = legacy_shape(doc)
     if "record" in doc:
         if not isinstance(doc["record"], dict):
             raise Bad("`record` is not an object")
         part = copy.deepcopy(doc["record"])
         base = {}
+        if shape != "frames":                        # never set aside with the shape below: a report
+            _refuse_ok(doc)                          # with a `record` and an unknown shape is refused too
+            if isinstance(doc.get("gates"), list):
+                _gate_list(doc, False)               # and so is a top-level gate's `ok`
         if shape:
             try:
                 base = SHAPES[shape](doc, src, notes)
@@ -266,7 +283,7 @@ def convert(doc, src, ctx, args, notes=None):
         for k, v in base.items():
             part.setdefault(k, v)
         if isinstance(part.get("gates"), list):
-            part["gates"] = _gate_list(part, notes, doc.get("schema") == "gate/1")
+            part["gates"] = _gate_list(part, doc.get("schema") == "gate/1")
     elif shape:
         part = SHAPES[shape](doc, src, notes)
     elif "error" in doc:
@@ -311,6 +328,7 @@ def convert(doc, src, ctx, args, notes=None):
                 kept.append(f)
             except ValueError:
                 outside.append(os.path.basename(str(f.get("path"))))
+                dropped.append(f)
         part["inputs"] = kept
         if not kept:
             part.pop("inputs")
@@ -334,6 +352,45 @@ def convert(doc, src, ctx, args, notes=None):
     return L.canonical(part)
 
 
+def upstream_links(ctx, part, outside=()):
+    """`depends-on` links to the current ledger records that hold one of the part's inputs:
+    matched by sha256 (the one the producer gave, else the file's on disk), else by path. An input
+    outside --root (`outside`, dropped from the record) is matched by the sha256 it was given
+    only. The record's own id, and any id holding one of its files (an earlier revision), is
+    never its own upstream. No ledger, or a corrupt one, gives none: `record` reports the
+    ledger itself."""
+    inputs = [f for f in part.get("inputs") or [] if isinstance(f, dict) and isinstance(f.get("path"), str)]
+    inputs += [{"sha256": f["sha256"]} for f in outside
+               if isinstance(f, dict) and isinstance(f.get("sha256"), str) and L.SHA_RE.match(f["sha256"])]
+    if not inputs or not os.path.isfile(ctx.ledger):
+        return []
+    try:
+        records = L.load(ctx.ledger, errors=[], torn=[])
+    except (OSError, ValueError):
+        return []
+    own = {L.path_key(f["path"]) for f in part.get("files") or [] if isinstance(f, dict)}
+    by_sha, by_path, skip = {}, {}, {part.get("id")}
+    for ident, rec in L.last_by_id(records).items():
+        for f in rec.get("files") or []:
+            if not isinstance(f, dict):
+                continue
+            if isinstance(f.get("path"), str):
+                by_path.setdefault(L.path_key(f["path"]), []).append(ident)
+                if L.path_key(f["path"]) in own:
+                    skip.add(ident)
+            if isinstance(f.get("sha256"), str):
+                by_sha.setdefault(f["sha256"], []).append(ident)
+    found = []
+    for f in inputs:
+        sha = f.get("sha256") if isinstance(f.get("sha256"), str) else None
+        if sha is None and "path" in f and os.path.isfile(ctx.full(f["path"])):
+            sha = L.sha256_file(ctx.full(f["path"]))
+        for ident in by_sha.get(sha) or (by_path.get(L.path_key(f["path"])) if "path" in f else None) or []:
+            if ident not in skip and ident not in found:
+                found.append(ident)
+    return [{"rel": "depends-on", "to": ident} for ident in found]
+
+
 # ------------------------------------------------------------------------------------ command
 
 
@@ -344,9 +401,9 @@ def cmd_ingest(ctx, args, rep):
         rep.summary("ERROR", label, "nothing ingested")
         return R.HARNESS
     src = None if label == "stdin" else os.path.abspath(label)
-    notes = []
+    notes, dropped = [], []
     try:
-        part = convert(doc, src, ctx, args, notes)
+        part = convert(doc, src, ctx, args, notes, dropped)
     except Bad as e:
         rep.error(label, "shape", str(e))
         rep.summary("ERROR", label, "nothing ingested")
@@ -358,6 +415,15 @@ def cmd_ingest(ctx, args, rep):
     if notes:      # stderr, so the printed partial stays one JSON object for a pipe into `record`
         print(f"WARN {label}: old dialect (unstamped, read for one release): " + "; ".join(notes),
               file=sys.stderr)
+    ups = upstream_links(ctx, part, dropped)
+    if ups:        # the input's licence reaches what was made from it (check follows depends-on)
+        links = list(part["links"]) if isinstance(part.get("links"), list) else []
+        for link in ups:
+            if not any(isinstance(x, dict) and x.get("rel") == link["rel"] and x.get("to") == link["to"]
+                       for x in links):
+                links.append(link)
+        part["links"] = links
+        part = L.canonical(part)
     if not args.write:
         # the printed partial carries --link and --art-version too, so a pipe into `record`
         # needs no flag twice (with --write, record applies them)
@@ -498,7 +564,8 @@ def selftest(d):
         part = json.loads(out)
         assert code == 0 and part["kind"] == "frames", out
         assert part["tool"] == {"skill": "sprite-from-video", "script": "video_loop.py"}, part
-        assert part["inputs"] == [{"path": "ArtDirection/sheets/runner_run.png"}], part
+        assert part["inputs"] == [dict({"path": "ArtDirection/sheets/runner_run.png"},
+                                       **({"sha256": "0" * 64} if isinstance(source, dict) else {}))], part
         assert len(part["files"]) == 3 and part["verdict"] == "failed", part
     with open(side, "w", encoding="utf-8") as fh:
         json.dump(dict(named, producer={"skill": "sprite-from-video", "script": 3}), fh)
@@ -531,46 +598,68 @@ def selftest(d):
     with open(side, "w", encoding="utf-8") as fh:
         json.dump(doc, fh)
 
-    # gate/1 reports (no `blender` key): their gates, pass or fail; refused or broken ones exit 3
-    bake = {"schema": "gate/1", "tool": "contact_bake", "pass": True, "ok": True, "clip": "walk.bvh",
-            "gates": [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "pass": True},
+    # gate/1 reports (no `blender` key): their gates, pass or fail, margins kept; refused or broken
+    # ones exit 3
+    bake = {"schema": "gate/1", "tool": "contact_bake", "pass": True, "clip": "walk.bvh",
+            "gates": [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "pass": True,
+                       "margin": 0.9333},
                       {"name": "plants_found", "value": 6, "limit": 1, "pass": True}],
             "record": {"kind": "clip"}}
     code, part = ingest(bake, "--file", "ArtDirection/clips/runner_gatelatchswing.fbx")
     assert code == 0 and part["kind"] == "clip" and part["verdict"] == "green", part
     assert [g["pass"] for g in part["gates"]] == [True, True], part["gates"]
-    code, part = ingest(dict(bake, **{"pass": False, "ok": False}), "--file", clip)
+    assert part["gates"][0]["margin"] == 0.9333 and "margin" not in part["gates"][1], part["gates"]
+    code, part = ingest(dict(bake, **{"pass": False}), "--file", clip)
     assert code == 0 and part["verdict"] == "failed", part
     broken = dict(bake, gates=[{"name": "plants_found", "value": 6}])
     code, out = ingest(broken, "--file", clip)
     assert code == 3 and "producer bug" in out, (code, out)
     code, out = ingest({k: v for k, v in bake.items() if k != "pass"}, "--file", clip)
     assert code == 3 and "producer bug" in out, (code, out)
-    code, out = ingest({"schema": "gate/1", "pass": False, "ok": False, "gates": [], "refused": "no clip"},
+    code, out = ingest({"schema": "gate/1", "pass": False, "gates": [], "refused": "no clip"},
                        "--file", clip)
     assert code == 3 and "no clip" in out, (code, out)
-    # the 0.34 dialect, unstamped, one release: a gate's `ok` is its `pass`, with a WARN; a gate
-    # with neither has failed
-    legacy = {"tool": "contact_bake", "ok": True, "blender": [5, 2, 1], "record": {"kind": "clip"},
-              "gates": [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "ok": True}]}
-    code, part = ingest(legacy, "--file", clip)
-    assert code == 0 and part["gates"] == [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015,
-                                            "pass": True}] and part["verdict"] == "green", part
-    notes = []
-    assert _gate(legacy, None, notes)["verdict"] == "green" and len(notes) == 2, notes
-    silent = dict(legacy, gates=[{"name": "foot_slide_p95_m", "value": 0.001}])
+    # `ok`, the old name of `pass`, is refused wherever it is written: on the report, on a gate, on
+    # a gate inside the report's `record`, stamped or not; a zero-gate op result is no verdict
+    old_gate = {"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "ok": True}
+    for bad, why in ((dict(bake, ok=True), "the report carries `ok`"),
+                     (dict(bake, gates=[old_gate]), "carries `ok`"),
+                     (dict(bake, record={"kind": "clip", "gates": [old_gate]}), "carries `ok`"),
+                     ({"tool": "contact_bake", "ok": True, "blender": [5, 2, 1], "record": {"kind": "clip"},
+                       "gates": [old_gate]}, "carries `ok`"),
+                     ({"tool": "contact_bake", "ok": True, "blender": [5, 2, 1], "gates": [
+                         {"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "pass": True}],
+                       "record": {"kind": "clip"}}, "the report carries `ok`"),
+                     ({"ok": True, "gates": [], "blender": [5, 2, 1], "record": {"tool": {
+                         "skill": "blender-character-rig", "script": "bcr_pose"}}}, "not a verdict"),
+                     # a `record` beside `ok` with neither a stamp nor `blender`: no shape, still refused
+                     ({"ok": True, "record": {"kind": "clip"}}, "not a verdict"),
+                     ({"ok": True, "record": {"kind": "clip"}, "gates": [
+                         {"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "pass": True}]},
+                      "the report carries `ok`"),
+                     ({"pass": True, "record": {"kind": "clip"}, "gates": [old_gate]}, "carries `ok`")):
+        code, out = ingest(bad, "--file", clip)
+        assert code == 3 and why in out, (bad, code, out)
+    # an unstamped Blender report (gates and blender): a gate's `pass` is its verdict; a gate with
+    # none has failed
+    unstamped = {"tool": "contact_bake", "blender": [5, 2, 1], "record": {"kind": "clip"},
+                 "gates": [{"name": "foot_slide_p95_m", "value": 0.001, "limit": 0.015, "pass": True}]}
+    code, part = ingest(unstamped, "--file", clip)
+    assert code == 0 and part["gates"] == unstamped["gates"] and part["verdict"] == "green", part
+    silent = dict(unstamped, gates=[{"name": "foot_slide_p95_m", "value": 0.001}])
     code, part = ingest(silent, "--file", clip)
     assert code == 0 and part["gates"][0]["pass"] is False and part["verdict"] == "failed", part
 
     # a Blender report: no file named -> 3; --file; a newer report with record and file
-    report = {"ok": True, "gates": [{"name": "rig.bones", "value": 24, "limit": 15, "pass": True}],
+    report = {"schema": "gate/1", "pass": True,
+              "gates": [{"name": "rig.bones", "value": 24, "limit": 15, "pass": True}],
               "blender": [5, 2, 1]}
     code, _ = ingest(report)
     assert code == 3, code
     code, part = ingest(report, "--file", "ArtDirection/clips/runner_gatelatchswing.fbx")
     assert code == 0 and part["kind"] == "mesh" and part["source"] == "authored", part
     assert part["verdict"] == "green" and part["gates"] == report["gates"]
-    newer = dict(report, schema=1, warnings=[],
+    newer = dict(report, warnings=[],
                  file={"path": blend, "saved": False, "dirty": True},
                  record={"tool": {"skill": "blender-retarget", "script": "brt_retarget"},
                          "params": {"clip": "GateLatchSwing"}, "gates": report["gates"],
@@ -607,7 +696,7 @@ def selftest(d):
     assert not os.path.exists(ledger)
     code, out = ingest(codex, "--write")
     assert code == 0 and "recorded artdirection/anchors/runner rev 1 (candidate)" in out, out
-    code, out = ingest(legacy, "--file", clip, "--write")       # an old contact_bake report records
+    code, out = ingest(unstamped, "--file", clip, "--write")    # an unstamped contact_bake report records
     assert code == 0 and "recorded" in out, out
     code, out = R._run("ingest", "--root", root, "--ledger", ledger, "--json", side, "--write")
     assert code == 0, out
@@ -626,6 +715,114 @@ def selftest(d):
     assert rec["files"][0]["sha256"] == L.sha256_file(blend) and rec["files"][0]["mutable"], rec
     assert rec["file"]["sha256"] == L.sha256_file(blend), rec["file"]
     assert rec["links"] == [{"rel": "made-under", "to": "art:direction", "rev": 2}], rec
+
+    upstream_selftest(os.path.join(work, "upstream"), R)
+
+
+H3_LOCAL = {"source": "minimax-h3-local", "id": "runner-run-take-2",
+            "territory": {"excludes": ["US", "EU", "UK", "KR"]}}
+
+
+def upstream_selftest(root, R):
+    """An input already in the ledger becomes a depends-on link, so its licence reaches what was
+    made from it: frames cut from a local-H3 clip are refused for a US sale, and a mesh painted
+    by paint_loop (its gates.json) depends on the generated GLB it was painted onto."""
+    ledger = os.path.join(root, "ArtDirection", "assets.jsonl")
+
+    def put(rel, data):
+        full = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as fh:
+            fh.write(data)
+        return full
+
+    def run(*argv):
+        return R._run(*argv[:1], "--root", root, "--ledger", ledger, *argv[1:])
+
+    def declare(line):
+        put("ART_DIRECTION.md", f"# Courier run\n\n{line}\n".encode())
+
+    clip = put("ArtDirection/motion/runner_run_h3.mp4", b"a generated performance video")
+    rec = put("raw/runner_run_h3.record.json", json.dumps(
+        {"files": [clip], "kind": "preview", "source": "generated", "licence": H3_LOCAL}).encode())
+    code, out = run("record", "--json", rec)
+    assert code == 0, out
+    vid = "artdirection/motion/runner-run-h3"
+    for k in range(2):
+        put(f"ArtDirection/frames/runner_run/runner_run_{k:03d}.png", bytes([k + 1]))
+    # video_loop names the clip by its own path and sha256: the hash finds the record even
+    # when the path is one the ledger never saw (the clip was copied elsewhere first)
+    side = put("ArtDirection/frames/runner_run/frames.json", json.dumps({
+        "schema": "frames/1", "tool": "video_loop.py", "producer": {"skill": "sprite-from-video",
+                                                                     "script": "video_loop.py"},
+        "source": {"file": os.path.join(root, "raw", "copy_of_take.mp4"), "sha256": L.sha256_file(clip),
+                   "fps": 24.0},
+        "canvas": [64, 96], "pivot_norm": [0.5, 0.0625], "key_color": "#00ff00", "fps_hint": 12.0,
+        "loop": True, "hold_last": False, "verdict": {"ok": True, "faults": []},
+        "register": {"mode": "ground", "ref": 0, "reference_core_height_px": 80, "foot_margin_px": 6},
+        "frames": [{"index": k, "file": f"runner_run_{k:03d}.png", "source_frame": k} for k in range(2)]}).encode())
+    code, out = run("ingest", "--json", side)
+    part = json.loads(out)
+    assert code == 0 and part.get("links") == [{"rel": "depends-on", "to": vid}], out
+    code, out = run("ingest", "--json", side, "--write")
+    assert code == 0 and "recorded" in out, out
+    fid = "artdirection/frames/runner-run/frames"
+    frames = L.last_by_id(L.load(ledger))[fid]
+    assert frames["links"] == [{"rel": "depends-on", "to": vid, "rev": 1}], frames
+    code, out = run("status", fid, "approved", "--approver", "lead")     # nothing declared: a warning
+    assert code == 0 and "territory-undeclared" in out and f"via {fid} -> {vid}" in out, (code, out)
+    declare("Sales territory: US")
+    code, out = run("check")
+    assert code == 2 and "territory-excluded" in out and f"via {fid} -> {vid}" in out \
+        and "excludes US" in out, (code, out)
+    declare("Sales territory: JP, TW")
+    code, out = run("check")
+    assert code == 0, out
+    # a clip keyed outside the project (video_frames.py writes its resolved path): the input is
+    # dropped from the record, unpinned, and its sha256 still finds the clip's record
+    with open(side, encoding="utf-8") as fh:
+        far = json.load(fh)
+    far["source"]["file"] = os.path.join(os.path.dirname(root), "staging", "take.mp4")
+    with open(side, "w", encoding="utf-8") as fh:
+        json.dump(far, fh)
+    code, out = run("ingest", "--json", side)
+    part = json.loads(out)
+    assert code == 0 and "inputs" not in part and part.get("links") == [{"rel": "depends-on", "to": vid}] \
+        and any("outside --root" in w for w in part.get("warnings", [])), out
+    # by path, when the producer gave no hash and the file is on disk under another one
+    sheet = put("ArtDirection/sheets/runner_idle.png", b"an idle sheet")
+    code, out = run("record", "--json", put("raw/idle.record.json", json.dumps(
+        {"files": [sheet], "kind": "sheet", "source": "generated"}).encode()))
+    assert code == 0, out
+    put("ArtDirection/sheets/runner_idle.png", b"the idle sheet, edited since")
+    code, out = run("ingest", "--json", put("ArtDirection/frames/runner_idle/frames.json", json.dumps(
+        {"tool": "sheet_to_frames.py", "sheet": sheet, "verdict": {"ok": True, "faults": []},
+         "frames": []}).encode()))
+    assert code == 0 and json.loads(out).get("links") == [
+        {"rel": "depends-on", "to": "artdirection/sheets/runner-idle"}], out
+
+    # paint_loop's gates.json: gate/1 with a record; the GLB it painted is an input in the ledger
+    glb = put("ArtDirection/models/runner/runner.glb", b"glTF generated mesh")
+    code, out = run("record", "--json", put("raw/runner_glb.record.json", json.dumps(
+        {"files": [glb], "kind": "mesh", "source": "generated"}).encode()))
+    assert code == 0, out
+    painted = put("ArtDirection/models/runner/paint/runner_painted.glb", b"glTF painted mesh")
+    base = put("ArtDirection/models/runner/paint/basecolor.png", b"png")
+    gates = put("ArtDirection/models/runner/paint/gates.json", json.dumps({
+        "schema": "gate/1", "tool": "paint_loop", "pass": True, "path": painted,
+        "gates": [{"name": "paint.coverage", "value": 0.88, "limit": ">= 0.85", "pass": True, "margin": 0.0353},
+                  {"name": "paint.seam_delta", "value": 6.4, "limit": None, "pass": True, "report_only": True},
+                  {"name": "paint.views_refused", "value": 2, "limit": None, "pass": True, "report_only": True}],
+        "record": {"tool": {"skill": "mesh-texture-paint", "script": "paint_loop.py"}, "kind": "mesh",
+                   "source": "generated", "files": [{"path": painted, "role": "shipped"},
+                                                    {"path": base, "role": "derived"}],
+                   "inputs": [{"path": glb}], "params": {"subject": "character", "seeds": [42, 1043]}}}).encode())
+    code, out = run("ingest", "--json", gates, "--write")
+    assert code == 0 and "recorded" in out, out
+    mesh = L.last_by_id(L.load(ledger))["artdirection/models/runner/paint/runner-painted"]
+    assert mesh["links"] == [{"rel": "depends-on", "to": "artdirection/models/runner/runner", "rev": 1}], mesh
+    assert mesh["verdict"] == "green" and mesh["gates"][0]["margin"] == 0.0353 and \
+        mesh["tool"]["script"] == "paint_loop.py", mesh
 
 
 def _main(argv):

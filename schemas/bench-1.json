@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/bench-1.json",
+  "title": "bench/1 — one version's rig readings, to compare with another",
+  "description": "What character-autorig's `rig_exam.py bench` writes and `rig_exam.py compare` reads: the rig exam's summary (exam/1's report summary, or null) and, per real character, every gate its autorig.py stages read, with the margin, plus the stability of `autorig.py all --repeat`. The required keys are what compare reads; every level stays open to extra keys.",
+  "type": "object",
+  "required": [
+    "schema",
+    "exam",
+    "real"
+  ],
+  "properties": {
+    "schema": {
+      "const": "bench/1"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "exam": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/summary"
+        }
+      ],
+      "description": "the exam's summary, or null (no exam, or no case scored)"
+    },
+    "real": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "stages",
+          "worst_margin"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "out": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "stages": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/stage"
+            },
+            "description": "per autorig.py step (`deform` the reading after the repair ladder)"
+          },
+          "stability": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "OUT/autorig.stability.json (gate/1), or null without --repeat"
+          },
+          "worst_margin": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "the least margin over the stages' gates; null when none carries one"
+          }
+        }
+      }
+    },
+    "made_with": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scripts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "required": [
+        "pass",
+        "gates"
+      ],
+      "properties": {
+        "pass": {
+          "type": "boolean"
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "pass",
+              "margin"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {},
+              "limit": {},
+              "pass": {
+                "type": "boolean"
+              },
+              "margin": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "gate/1's margin (schemas/README.md); null when the gate has none"
+              }
+            }
+          }
+        }
+      }
+    },
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "the rig exam's summary, as exam/1's report carries it (schemas/exam-1.json, $defs/summary): keep the two equal",
+      "required": [
+        "tol",
+        "outcomes",
+        "false_pass",
+        "false_fail",
+        "faults_caught",
+        "faults_slipped",
+        "control_fail",
+        "fingers_right"
+      ],
+      "properties": {
+        "tol": {
+          "type": "number"
+        },
+        "outcomes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/names"
+          }
+        },
+        "false_pass": {
+          "$ref": "#/$defs/names"
+        },
+        "false_fail": {
+          "$ref": "#/$defs/names"
+        },
+        "faults_caught": {
+          "$ref": "#/$defs/names"
+        },
+        "faults_slipped": {
+          "$ref": "#/$defs/names"
+        },
+        "control_fail": {
+          "$ref": "#/$defs/names"
+        },
+        "fingers_right": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fingers_cases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "volume": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

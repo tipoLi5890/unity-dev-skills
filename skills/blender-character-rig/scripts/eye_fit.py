@@ -817,7 +817,7 @@ def fit(assembly_dir, name=None, head_material=None, radius_frac=0.55, render_pn
         + (f" --hair {os.path.join(a, name + '_hair.glb')}" if os.path.exists(os.path.join(a, name + '_hair.glb')) else "")
         + f" --eyes {os.path.join(a, name + '_eyes.glb')} --facial"
         if ok else "a person looks at eyes.png; the eyes stay painted"))
-    rep["pass"] = rep["ok"] = ok
+    rep["pass"] = ok
     gate_json = os.path.join(a, f"{name}.eyes.gate.json")
     with open(gate_json, "w", encoding="utf-8") as handle:
         json.dump(rep, handle, indent=1)
@@ -1120,7 +1120,7 @@ def bind(out, eyes_glb, rig_glb, name=None, turn=25.0):
         gates += [g for g in export.get("gates", [])]
         bpy.ops.wm.save_as_mainfile(filepath=blend)
     ok = all(g["pass"] for g in gates)
-    rep = {"schema": "gate/1", "tool": "eye_fit", "op": "bind", "pass": ok, "ok": ok,
+    rep = {"schema": "gate/1", "tool": "eye_fit", "op": "bind", "pass": ok,
            "verdict": ("degraded" if degraded else "green") if ok else "failed", "degraded": degraded,
            "name": name, "scale": s, "shift": [float(x) for x in t], "eyes": report_eyes,
            "pivot_offset": {k: r4(v) for k, v in pivot.items()},
@@ -1339,12 +1339,12 @@ def main():
                 sys.exit(1)
             code, report = bind(args.autorig_out, args.eyes, args.rig_glb, args.name, args.turn)
     except Refused as exc:
-        code, report = 1, {"schema": "gate/1", "tool": "eye_fit", "pass": False, "ok": False, "verdict": "failed",
+        code, report = 1, {"schema": "gate/1", "tool": "eye_fit", "pass": False, "verdict": "failed",
                            "gates": [], "refused": str(exc)}
     except Exception as exc:              # Blender -b exits 0 on an uncaught error: make it a failure
         import traceback
         traceback.print_exc()
-        code, report = 1, {"schema": "gate/1", "tool": "eye_fit", "pass": False, "ok": False, "verdict": "harness",
+        code, report = 1, {"schema": "gate/1", "tool": "eye_fit", "pass": False, "verdict": "harness",
                            "gates": [], "error": f"{type(exc).__name__}: {exc}"}
     if getattr(args, "report", None):
         os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)

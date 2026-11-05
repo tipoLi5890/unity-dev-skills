@@ -32,19 +32,26 @@ usage:
 `$imagegen` is prepended when the prompt does not carry it. Reference images
 go in the order the prompt names them. Prints one JSON object.
 
-Exit codes: 0 one new image was written to --out; 2 `codex` is not installed
+Exit codes: 0 one new image was written to --out; 1 a usage error (a bad flag,
+an -i file that is not there); 2 `codex` is not installed
 (ask the user; never auto-install); 3 the agent model was rejected or the
 probe failed (pass another -m); 4 the call ran and produced no new image;
 5 the call produced more than one new image (all written, see "images");
 6 the image is not --expect-size (written anyway, so it can be looked at).
 5 wins over 6.
 
-Every object printed also carries `model` (the -m value, null for the
-config's), `record` (this call's partial ledger record for skill
-art-asset-registry: tool, params, inputs, files, verdict — green on exit 0,
-failed on 4/5/6, harness on 2/3), and, once the prompt has been read,
-`prompt_sha256` (of the prompt file's bytes, or of --prompt as given) and
-`inputs` (each -i with its sha256). A written image adds `out_sha256`.
+Every object printed also carries `model` (the image model, read from the
+written image's C2PA manifest: its softwareAgent's name and version as the
+file states them, e.g. "gpt-image 2.0" or "ChatGPT gpt-image"; null before an
+image exists or when the file carries none — never guessed), `agent_model`
+(the -m value, null for the config's), `codex_version` (`codex --version`,
+null when it does not answer), `record` (this call's partial ledger record for
+skill art-asset-registry: tool, params {model, agent_model, codex_version,
+prompt_sha256}, inputs, files, verdict — green on exit 0, failed on 4/5/6,
+harness on 2/3), and, once the prompt has been read, `prompt_sha256` (of the
+prompt file's bytes, or of --prompt as given) and `inputs` (each -i with its
+sha256). A written image adds `out_sha256`, and each entry of "images" its own
+`model`.
 `--job-log PATH` appends that object as one JSON line, with `ts` and
 `exit_code` (this script's; `exit` on exit 4 is codex's own), and with the
 prompt text, and each of its lines, replaced by "<prompt>" wherever an ERROR
@@ -53,7 +60,8 @@ hash, not its text.
 
 Stdlib only. A private home needs `auth.json` in the real CODEX_HOME; with
 none (keyring or API-key login) the call falls back to the shared home and
-says so under "isolation_skipped".
+says so under "isolation_skipped". `codex_generate.py --selftest` checks the
+C2PA reader on synthetic PNG and JPEG bytes (exit 0 passed, 1 failed).
 """
 from __future__ import annotations
 
@@ -187,6 +195,117 @@ def png_info(path: Path) -> tuple[list[int] | None, bool | None]:
     return [width, height], colour_type in (4, 6)
 
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+C2PA_AGENT = b"\x6dsoftwareAgent"      # the CBOR text string "softwareAgent" (major type 3, length 13)
+
+
+def c2pa_blocks(data: bytes) -> list[bytes]:
+    """The C2PA manifest store's bytes: a PNG's `caBX` chunks, or a JPEG's APP11 (JUMBF)
+    segments, each continuation joined without its repeated 16-byte JUMBF header."""
+    blocks: list[bytes] = []
+    if data[:8] == PNG_SIGNATURE:
+        pos = 8
+        while pos + 8 <= len(data):
+            (length,) = struct.unpack_from(">I", data, pos)
+            kind = data[pos + 4:pos + 8]
+            if kind == b"caBX":
+                blocks.append(data[pos + 8:pos + 8 + length])
+            if kind == b"IEND":
+                break
+            pos += 12 + length
+    elif data[:2] == b"\xff\xd8":
+        pos, app11 = 2, []
+        while pos + 4 <= len(data) and data[pos] == 0xFF:
+            marker = data[pos + 1]
+            if marker in (0xD9, 0xDA):                   # end of image, start of scan: no more metadata
+                break
+            if 0xD0 <= marker <= 0xD7 or marker in (0x01, 0xFF):
+                pos += 1 if marker == 0xFF else 2
+                continue
+            (length,) = struct.unpack_from(">H", data, pos + 2)
+            if marker == 0xEB:
+                app11.append(data[pos + 4:pos + 2 + length])
+            pos += 2 + length
+        if app11:
+            blocks.append(app11[0] + b"".join(seg[16:] for seg in app11[1:]))
+    return blocks
+
+
+def _cbor_head(data: bytes, i: int) -> tuple[int, int, int] | None:
+    """(major type, argument, index after the head) of the CBOR item at i, or None."""
+    if i >= len(data):
+        return None
+    major, info = data[i] >> 5, data[i] & 31
+    if info < 24:
+        return major, info, i + 1
+    width = {24: 1, 25: 2, 26: 4, 27: 8}.get(info)
+    if width is None or i + 1 + width > len(data):
+        return None
+    return major, int.from_bytes(data[i + 1:i + 1 + width], "big"), i + 1 + width
+
+
+def _cbor_text(data: bytes, i: int) -> tuple[str, int] | None:
+    head = _cbor_head(data, i)
+    if head is None or head[0] != 3 or head[2] + head[1] > len(data):
+        return None
+    try:
+        return data[head[2]:head[2] + head[1]].decode("utf-8"), head[2] + head[1]
+    except UnicodeDecodeError:
+        return None
+
+
+def c2pa_agent(data: bytes) -> dict | None:
+    """The first `softwareAgent` in the image's C2PA manifest (the c2pa.created action's: what
+    made the pixels), as {name, version} read from its CBOR; a plain-text agent is {name}. None
+    when the file carries no manifest or none names an agent."""
+    for block in c2pa_blocks(data):
+        at = block.find(C2PA_AGENT)
+        while at >= 0:
+            i = at + len(C2PA_AGENT)
+            text = _cbor_text(block, i)
+            if text is not None and text[0]:
+                return {"name": text[0]}
+            head = _cbor_head(block, i)
+            if head is not None and head[0] == 5 and head[1] <= 16:   # a map of text keys
+                agent, j = {}, head[2]
+                for _ in range(head[1]):
+                    key = _cbor_text(block, j)
+                    if key is None:
+                        break
+                    value = _cbor_text(block, key[1])
+                    if value is None:
+                        break
+                    agent[key[0]] = value[0]
+                    j = value[1]
+                if isinstance(agent.get("name"), str) and agent["name"]:
+                    return {k: agent[k] for k in ("name", "version") if k in agent}
+            at = block.find(C2PA_AGENT, at + 1)
+    return None
+
+
+def image_model(path: Path) -> str | None:
+    """The image model the file's C2PA manifest names: its softwareAgent's name and version,
+    joined by a space, exactly as written there. None when unreadable: never guessed."""
+    try:
+        agent = c2pa_agent(path.read_bytes())
+    except OSError:
+        return None
+    if not agent:
+        return None
+    return " ".join(v for v in (agent.get("name"), agent.get("version")) if v)
+
+
+def codex_version() -> str | None:
+    """`codex --version`, stripped, or None when it does not answer in 20 s."""
+    try:
+        done = subprocess.run(["codex", "--version"], stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = (done.stdout or "").strip()
+    return text.splitlines()[0][:200] if done.returncode == 0 and text else None
+
+
 def size_ok(size: list[int] | None, expect: tuple[int, int] | None, tolerance: int) -> bool | None:
     if expect is None:
         return None
@@ -261,8 +380,16 @@ def emit(obj: dict, code: int, job_log: Path | None, secrets: list[str] | None =
     return code
 
 
+class UsageParser(argparse.ArgumentParser):
+    """Usage errors exit 1, never 2: here 2 means codex is not installed."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = UsageParser(description=__doc__.split("\n")[0])
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--prompt")
     source.add_argument("--prompt-file", type=Path)
@@ -285,8 +412,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if shutil.which("codex") is None:
-        return emit({"error": "codex is not on PATH", "model": args.model,
-                     "record": make_record({"model": args.model}, [], [], "harness")}, 2, args.job_log)
+        none = {"model": None, "agent_model": args.model, "codex_version": None}
+        return emit({"error": "codex is not on PATH", **none,
+                     "record": make_record(none, [], [], "harness")}, 2, args.job_log)
     missing = [str(p) for p in args.image if not p.is_file()]
     if missing:
         parser.error(f"reference image not found: {', '.join(missing)}")
@@ -304,12 +432,15 @@ def main() -> int:
     out = args.out.resolve()
     images = [str(p.resolve()) for p in args.image]
     inputs = [{"path": path, "sha256": sha256_file(Path(path))} for path in images]
-    params = {"prompt_sha256": prompt_sha256, "model": args.model}
+    version = codex_version()
+    params = {"prompt_sha256": prompt_sha256, "model": None, "agent_model": args.model, "codex_version": version}
 
-    def provenance(files: list[dict], verdict: str) -> dict:
-        """The keys every object printed after the prompt was read carries, after its own."""
-        return {"model": args.model, "prompt_sha256": prompt_sha256, "inputs": inputs,
-                "record": make_record(params, inputs, files, verdict)}
+    def provenance(files: list[dict], verdict: str, image_model_name: str | None = None) -> dict:
+        """The keys every object printed after the prompt was read carries, after its own:
+        `model` is the image model the written file's C2PA manifest names, `agent_model` the -m."""
+        return {"model": image_model_name, "agent_model": args.model, "codex_version": version,
+                "prompt_sha256": prompt_sha256, "inputs": inputs,
+                "record": make_record(dict(params, model=image_model_name), inputs, files, verdict)}
 
     real_home = codex_home()
     private_home = None if args.shared_home else make_private_home(real_home)
@@ -330,7 +461,7 @@ def main() -> int:
         if not args.no_probe:
             pcode, ptext = run_codex([*model, "--skip-git-repo-check", "Reply with the single word OK."], work, 120, env)
             if pcode != 0 or errors(ptext):
-                return emit({"error": "agent model probe failed", "model": args.model, "detail": errors(ptext),
+                return emit({"error": "agent model probe failed", "detail": errors(ptext),
                              "isolated": private_home is not None, **provenance([], "harness")}, 3, args.job_log,
                             secrets)
 
@@ -351,7 +482,8 @@ def main() -> int:
             shutil.copyfile(original, dest)
             size, alpha = png_info(dest)
             written.append({"out": str(dest), "size": size, "alpha": alpha, "original": str(original),
-                            "size_ok": size_ok(size, args.expect_size, args.size_tolerance)})
+                            "size_ok": size_ok(size, args.expect_size, args.size_tolerance),
+                            "model": image_model(dest)})
 
         if private_home is not None and not (private_home / "auth.json").is_symlink():
             # codex replaced the link with a file (a token refresh written by rename):
@@ -410,9 +542,73 @@ def main() -> int:
     files = [{"path": w["out"], "sha256": sha256_file(Path(w["out"])), "bytes": Path(w["out"]).stat().st_size}
              for w in written]
     result["out_sha256"] = files[0]["sha256"]
-    result.update(provenance(files, "green" if status == 0 else "failed"))
+    result.update(provenance(files, "green" if status == 0 else "failed", first["model"]))
     return emit(result, status, args.job_log, secrets, indent=2)
 
 
+def selftest() -> int:
+    """The C2PA reader on synthetic bytes: the two softwareAgent shapes codex renders carry, a
+    plain-text agent, a JPEG manifest split over two APP11 segments, and files that carry none."""
+    import zlib
+
+    def text(t: str) -> bytes:
+        raw = t.encode("utf-8")
+        return (bytes([0x60 | len(raw)]) if len(raw) < 24 else bytes([0x78, len(raw)])) + raw
+
+    def agent_map(**kv: str) -> bytes:
+        return bytes([0xA0 | len(kv)]) + b"".join(text(k) + text(v) for k, v in kv.items())
+
+    def actions(agent: bytes) -> bytes:   # c2pa.actions.v2, as CBOR inside a JUMBF box
+        return (b"\x00\x00\x00\x40jumbjumdc2pa.actions.v2\x00" + b"\xa1" + text("actions") + b"\x81\xa3"
+                + text("action") + text("c2pa.created") + text("when") + text("2026-10-12T10:30:49Z")
+                + C2PA_AGENT + agent + text("digitalSourceType")
+                + text("http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"))
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    def png(*extra: bytes) -> bytes:
+        ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0))
+        return PNG_SIGNATURE + ihdr + b"".join(extra) + chunk(b"IDAT", zlib.compress(b"\x00" * 52)) + chunk(b"IEND", b"")
+
+    def app11(body: bytes) -> bytes:
+        return b"\xff\xeb" + struct.pack(">H", len(body) + 2) + body
+
+    checks = {}
+    v2 = png(chunk(b"caBX", actions(agent_map(name="gpt-image", version="2.0"))))
+    chat = png(chunk(b"caBX", actions(agent_map(name="ChatGPT", version="gpt-image"))))
+    plain = png(chunk(b"caBX", actions(text("Courier Model 1"))))
+    checks["png_name_version"] = c2pa_agent(v2) == {"name": "gpt-image", "version": "2.0"}
+    checks["png_app_name"] = c2pa_agent(chat) == {"name": "ChatGPT", "version": "gpt-image"}
+    checks["png_plain_text_agent"] = c2pa_agent(plain) == {"name": "Courier Model 1"}
+    checks["no_manifest"] = c2pa_agent(png()) is None
+    checks["agent_outside_manifest"] = c2pa_agent(png(chunk(b"tEXt", b"Comment\x00" + actions(
+        agent_map(name="gpt-image", version="2.0"))))) is None
+    whole = actions(agent_map(name="gpt-image", version="2.0"))
+    checks["truncated"] = c2pa_agent(png(chunk(b"caBX", whole[:whole.index(C2PA_AGENT) + 20]))) is None
+    checks["not_an_image"] = c2pa_agent(b"GIF89a" + actions(agent_map(name="gpt-image"))) is None
+    box = actions(agent_map(name="gpt-image", version="2.0"))
+    cut = box.index(C2PA_AGENT) + 5                          # the CBOR split over two APP11 segments
+    header = b"JP\x00\x01\x00\x00\x00\x01" + b"\x00\x00\x00\x40jumb"
+    jpeg = (b"\xff\xd8" + app11(header + box[:cut]) + app11(b"JP\x00\x01\x00\x00\x00\x02" + b"\x00\x00\x00\x40jumb"
+                                                            + box[cut:]) + b"\xff\xda\x00\x02" + b"\x00" * 8 + b"\xff\xd9")
+    checks["jpeg_split_app11"] = c2pa_agent(jpeg) == {"name": "gpt-image", "version": "2.0"}
+    with tempfile.TemporaryDirectory() as td:
+        made = {}
+        for name, data in (("v2", v2), ("chat", chat), ("none", png())):
+            (Path(td) / f"{name}.png").write_bytes(data)
+            made[name] = image_model(Path(td) / f"{name}.png")
+        made["missing"] = image_model(Path(td) / "missing.png")
+    checks["image_model"] = made == {"v2": "gpt-image 2.0", "chat": "ChatGPT gpt-image", "none": None, "missing": None}
+    record = make_record({"prompt_sha256": "0" * 64, "model": made["v2"], "agent_model": None, "codex_version": None},
+                         [], [], "green")
+    checks["record_params"] = record["params"]["model"] == "gpt-image 2.0" and "agent_model" in record["params"]
+    ok = all(checks.values())
+    print(json.dumps({"checks": checks, "pass": ok}))
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] in (["--selftest"], ["selftest"]):
+        sys.exit(selftest())
     sys.exit(main())

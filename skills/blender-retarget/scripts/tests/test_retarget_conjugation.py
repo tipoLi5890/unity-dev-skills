@@ -139,7 +139,7 @@ def case_conjugation():
     key_rotations(src, "CourierJog", {"hips": hips, "spine": spine})
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierJog",
                  "map": {"Hips": "hips", "Spine": "spine"}, "output_action": "Runner_Jog"})
-    assert out["ok"], out["gates"]
+    assert out["pass"] and "ok" not in out, out["gates"]
     names = [g["name"] for g in out["gates"]]
     assert names == ["retarget.output_is_new", "retarget.finite_keys"], names
     assert out["translation"] == "not retargeted"
@@ -162,7 +162,7 @@ def case_fast_clip():
     key_rotations(src, "CourierSpin", {"hips": fast})
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierSpin",
                  "map": {"Hips": "hips"}, "output_action": "Runner_Spin", "max_step_rad": 0.35})
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     assert not any(g["name"] == "retarget.max_step" for g in out["gates"])
     assert abs(out["max_step"] - 1.0) < 1e-4, out["max_step"]
     assert abs(out["source_max_step"] - 1.0) < 1e-4, out["source_max_step"]
@@ -198,7 +198,7 @@ def case_into_action():
     before = snapshot(baked)
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierLane",
                  "map": {"Hips": "hips"}, "into_action": "JogLaneLeft"})
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     assert [g["name"] for g in out["gates"]] == ["retarget.channels_free", "retarget.finite_keys",
                                                  "retarget.translation_kept"], out["gates"]
     after = snapshot(baked)
@@ -220,11 +220,11 @@ def case_into_refuses_then_replaces():
     before = snapshot(baked)
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierLane",
                  "map": {"Spine": "spine"}, "into_action": "JogLaneLeft"})
-    assert not out["ok"] and out["reason"] == "channels_exist", out
+    assert not out["pass"] and out["reason"] == "channels_exist", out
     assert snapshot(baked) == before, "a refusal changed the action"
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierLane",
                  "map": {"Spine": "spine"}, "into_action": "JogLaneLeft", "replace": True})
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     after = snapshot(baked)
     for key, value in before.items():
         if key[0] != 'pose.bones["Spine"].rotation_quaternion':
@@ -235,7 +235,7 @@ def case_into_refuses_then_replaces():
     # the merged record keeps both bones once the second conversion lands
     out = R.run({"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierLane",
                  "map": {"Hips": "hips"}, "into_action": "JogLaneLeft"})
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     import json
     record = json.loads(baked["brt_retarget"])
     assert set(record["map"]) == {"Hips", "Spine"}, record["map"]
@@ -293,7 +293,7 @@ def case_reference_map_aims_ancestors():
     base = {"source": "CourierMocap", "target": "RunnerRig", "source_action": "CourierSwing"}
     out = R.run({**base, "map": {"c_hand_fk.r": "hand"}, "reference_map": {"c_arm_fk.r": "arm"},
                  "output_action": "Runner_SwingHand"})
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     assert out["aimed"] == ["c_arm_fk.r"], out["aimed"]
     assert close(Quaternion(out["K"]["c_hand_fk.r"]), want) <= 1e-4, (out["K"], list(want))   # reported rounded
     got = written(bpy.data.actions["Runner_SwingHand"], "c_hand_fk.r")
@@ -305,7 +305,7 @@ def case_reference_map_aims_ancestors():
     # the same K with both bones written and the hand left unaimed
     out = R.run({**base, "map": {"c_arm_fk.r": "arm", "c_hand_fk.r": "hand"}, "no_aim": ["c_hand_fk.r"],
                  "output_action": "Runner_SwingBoth"})
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     assert close(Quaternion(out["K"]["c_hand_fk.r"]), want) <= 1e-4, out["K"]
     arm = walked_K(src, tgt, {"arm": "c_arm_fk.r"}, "arm", "c_arm_fk.r")
     assert abs(arm.angle) > 0.1 and close(Quaternion(out["K"]["c_arm_fk.r"]), arm) <= 1e-4, out["K"]

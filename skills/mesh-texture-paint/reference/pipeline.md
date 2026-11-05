@@ -163,9 +163,11 @@ python3 "$CA/scripts/inspect_glb.py" paint/runner/runner_painted.glb \
 ```
 
 Exit 0, then the painted GLB goes where the unpainted one would have: for a character, stage S4
-(normalise in Blender) of `game-character-pipeline`; for a prop, `unity-3d-models` for import;
-`art-asset-registry` records the run (`report.json`, the seed of every used view, the concept
-sheet) as one asset.
+(normalise in Blender) of `game-character-pipeline`; for a prop, `unity-3d-models` for import.
+`art-asset-registry` records the run as one asset from `gates.json` (`gates.md` §7: the coverage
+gate, the painted files, the seed of every used view, the GLB, sheet and concept views as
+inputs): `registry.py ingest --json paint/runner/gates.json --write`. Record the generated GLB
+first; the painted one then depends on it and carries its licence.
 
 **Host hygiene.** `paint_loop.py` keeps the edit model loaded between views (`--keep-loaded` on
 each call). When the run is over and no paint job follows, wait for an empty `/queue`, then

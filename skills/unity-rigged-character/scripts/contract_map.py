@@ -56,8 +56,8 @@ The report carries `retarget_map` {contract_bone: source_bone}, the orientation 
 `map` takes (target: source), and `human` [{humanName, boneName}] for Unity's HumanDescription
 (also written by --unity-out, the file CharacterHumanoidAvatar.cs reads).
 
-Prints one JSON object; the `map` report is a gate/1 report (schemas/gate-1.json): `pass`, and
-`ok`, its old name, equal to it for one release. Exit codes: 0 every gate passed; 2 a gate failed (required bones missing,
+Prints one JSON object; the `map` report is a gate/1 report (schemas/gate-1.json) whose verdict is
+`pass`. Exit codes: 0 every gate passed; 2 a gate failed (required bones missing,
 a broken chain, ...); 1 refused input (unreadable file, unknown preset, malformed BVH).
 Requires Python 3 and numpy.
 """
@@ -572,7 +572,7 @@ def evaluate(skel: dict, spec: str = "auto", require: str = "unity", min_fingers
              sorted(mapped.items(), key=lambda kv: ORDER.index(kv[0]))
              if BY_NAME[c]["unity"]]
     ok = all(g["pass"] is True for g in gates)
-    return {"schema": "gate/1", "op": "map", "pass": ok, "ok": ok, "preset": role_map["name"], "require": require,
+    return {"schema": "gate/1", "op": "map", "pass": ok, "preset": role_map["name"], "require": require,
             "mapped": len([c for c in mapped if c not in EXTRA_NAMES]), "contract_bones": len(CONTRACT),
             "extra_roles": sorted(c for c in mapped if c in EXTRA_NAMES),
             "missing_required": missing_req,
@@ -744,7 +744,7 @@ def main(argv=None) -> int:
     except Refused as exc:
         out = {"op": args.cmd, "ok": False, "error": str(exc)}
         if args.cmd == "map":     # the gate report's refusal: gate/1 with no gates
-            out = {"schema": "gate/1", "op": "map", "pass": False, "ok": False, "gates": [], "refused": str(exc),
+            out = {"schema": "gate/1", "op": "map", "pass": False, "gates": [], "refused": str(exc),
                    "error": str(exc)}
         print(json.dumps(out))
         return 1
@@ -831,17 +831,17 @@ def selftest() -> int:
                                                                                  for b in CONTRACT))
 
     rep = evaluate(normalise_skeleton(contract), "auto", "contract", 10)
-    check("full contract passes --require contract", rep["ok"] and rep["preset"] == "contract",
+    check("full contract passes --require contract", rep["pass"] and rep["preset"] == "contract",
           [g for g in rep["gates"] if not g["pass"]])
-    check("map: a passing gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is True and rep["ok"] is True)
+    check("map: a passing gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is True and "ok" not in rep)
     contract_sample("contract_map", "full_contract", rep)
 
     no_root = _renamed(contract, {}, drop=("Root",))
     rep = evaluate(normalise_skeleton(no_root), "contract", "unity")
-    check("no Root passes the unity tier", rep["ok"], [g for g in rep["gates"] if not g["pass"]])
+    check("no Root passes the unity tier", rep["pass"], [g for g in rep["gates"] if not g["pass"]])
     rep = evaluate(normalise_skeleton(no_root), "contract", "contract")
-    check("no Root fails the contract tier", not rep["ok"] and "Root" in gate_of(rep, "contract")["missing"])
-    check("map: a failed gate/1 report", rep["pass"] is False and rep["ok"] is False)
+    check("no Root fails the contract tier", not rep["pass"] and "Root" in gate_of(rep, "contract")["missing"])
+    check("map: a failed gate/1 report", rep["pass"] is False and "ok" not in rep)
     contract_sample("contract_map", "no_root", rep)
 
     deform_root = json.loads(json.dumps(contract))
@@ -874,7 +874,7 @@ def selftest() -> int:
         check("BVH root carries position channels",
               any("position" in c.lower() for c in sk["bones"][0].get("channels", [])))
         rep = evaluate(sk, "auto", "unity", 10)
-        check("Mixamo BVH auto-picks mixamo and passes", rep["ok"] and rep["preset"] == "mixamo",
+        check("Mixamo BVH auto-picks mixamo and passes", rep["pass"] and rep["preset"] == "mixamo",
               [rep["preset"], [g for g in rep["gates"] if not g["pass"]]])
         check("retarget_map is contract -> source", rep["retarget_map"].get("UpperLeg.L") == "LeftUpLeg"
               and rep["retarget_map"].get("LowerLeg.L") == "LeftLeg")
@@ -978,7 +978,7 @@ def selftest() -> int:
             ren = {c: "mixamorig:" + n for c, n in ren.items()}
         drop = ("Root",) if "Root" not in ren else ()
         rep = evaluate(normalise_skeleton(_renamed(contract, ren, drop=drop)), "auto", "unity", 10)
-        check(f"{preset} names auto-detected and pass", rep["ok"] and rep["preset"] == preset,
+        check(f"{preset} names auto-detected and pass", rep["pass"] and rep["preset"] == preset,
               [rep["preset"], [g for g in rep["gates"] if not g["pass"]]])
 
     # suggest on a UE-style pack names most of the body
@@ -988,7 +988,7 @@ def selftest() -> int:
     check("suggest recovers a UE-style pack's body", all(sug["bones"].get(r) == ren[r] for r in REQUIRED)
           and hit >= 40, {"hit": hit})
     check("names-only skeleton is read", evaluate(normalise_skeleton(
-        [{"name": b["name"], "parent": b["parent"]} for b in contract["bones"]]), "contract")["ok"])
+        [{"name": b["name"], "parent": b["parent"]} for b in contract["bones"]]), "contract")["pass"])
     check("all contract names unique", len(cbones) == len(CONTRACT))
 
     # the Jaw: an extra role, mapped when present, never part of the contract gate or the count
@@ -1001,9 +1001,9 @@ def selftest() -> int:
     rj = evaluate(normalise_skeleton(with_jaw), "arp", "contract", 30)
     r0 = evaluate(normalise_skeleton(arp), "arp", "contract", 30)
     check("arp: c_jawbone.x maps Jaw, outside the contract count; human gets Jaw; without it nothing changes",
-          rj["ok"] and rj["retarget_map"].get("Jaw") == "c_jawbone.x" and rj["mapped"] == len(CONTRACT)
+          rj["pass"] and rj["retarget_map"].get("Jaw") == "c_jawbone.x" and rj["mapped"] == len(CONTRACT)
           and rj["extra_roles"] == ["Jaw"] and {"humanName": "Jaw", "boneName": "c_jawbone.x"} in rj["human"]
-          and r0["ok"] and "Jaw" not in r0["retarget_map"] and r0["extra_roles"] == []
+          and r0["pass"] and "Jaw" not in r0["retarget_map"] and r0["extra_roles"] == []
           and "Jaw" not in rj["missing_optional"] + r0["missing_optional"],
           [rj["mapped"], rj.get("extra_roles"), [g for g in rj["gates"] if not g["pass"]]])
     jaw_bad = dict(jaw, parent="spine_01.x")
@@ -1018,7 +1018,7 @@ def selftest() -> int:
                   "head": [x, -0.08, head["head"][2] + 0.07], "tail": [x, -0.09, head["head"][2] + 0.07]}]
     re_ = evaluate(normalise_skeleton({**with_jaw, "bones": with_jaw["bones"] + eyes}), "arp", "contract", 30)
     check("arp: c_eye.l/.r map Eye.L/Eye.R (Unity LeftEye/RightEye) through their offset bone, outside the count",
-          re_["ok"] and re_["retarget_map"].get("Eye.L") == "c_eye.l" and re_["retarget_map"].get("Eye.R") == "c_eye.r"
+          re_["pass"] and re_["retarget_map"].get("Eye.L") == "c_eye.l" and re_["retarget_map"].get("Eye.R") == "c_eye.r"
           and re_["mapped"] == len(CONTRACT) and re_["extra_roles"] == ["Eye.L", "Eye.R", "Jaw"]
           and {"humanName": "LeftEye", "boneName": "c_eye.l"} in re_["human"]
           and {"humanName": "RightEye", "boneName": "c_eye.r"} in re_["human"]

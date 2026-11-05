@@ -104,8 +104,9 @@ Metrics and gates (a gate appears only when its input exists):
                  --reproj-p95-px (8 px at a 768 px frame height, scaled to the given height).
 
 Prints one JSON report (also to --out): per-metric p50/p95/max/n, plants, loop, gates and pass: a
-gate/1 report (schemas/gate-1.json), each gate {name, value, limit, pass}; `ok`, pass's old name,
-equals it for one release. A refused input reports pass false, no gates and `refused`.
+gate/1 report (schemas/gate-1.json), each gate {name, value, limit, pass, margin?}: a numeric gate
+carries `margin`, the signed distance to its limit (gate_margin: + safe, - failing); loop_period_found
+carries none. A refused input reports pass false, no gates and `refused`.
 Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed; 1 refused input
 (unreadable file, wrong schema, a named joint missing, frame counts that differ, a non-finite
 value), a usage error or a failed --selftest. clip_metrics.py, which imports the plant helpers from
@@ -306,8 +307,63 @@ def read_segment(p, ch, readings, parent):
     return p, ch
 
 
-def gate(name, value, limit, ok) -> dict:
-    return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
+
+
+def gate(name, value, limit, ok, margin=None) -> dict:
+    """One gate/1 gate; margin=(op, bound) adds its `margin` (the bound is the number `limit` describes)."""
+    g = {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
+    if margin is not None:
+        m = gate_margin(value.item() if hasattr(value, "item") else value, float(margin[1]), margin[0])
+        if m is not None:
+            g["margin"] = m
+    return g
 
 
 # ------------------------------------------------------------------- loop search (ported)
@@ -622,14 +678,14 @@ def measure(doc: dict, a) -> dict:
     out["foot_slide_m"] = summary(np.concatenate(sl))
     out["plant_speed_mps"] = summary(speeds)
     v = out["foot_slide_m"]
-    gates += [gate("foot_slide_p95_m", v["p95"], f"<= {a.slide_p95}", v["p95"] <= a.slide_p95),
-              gate("foot_slide_max_m", v["max"], f"<= {a.slide_max}", v["max"] <= a.slide_max)]
+    gates += [gate("foot_slide_p95_m", v["p95"], f"<= {a.slide_p95}", v["p95"] <= a.slide_p95, ("<=", a.slide_p95)),
+              gate("foot_slide_max_m", v["max"], f"<= {a.slide_max}", v["max"] <= a.slide_max, ("<=", a.slide_max))]
     grounded = [s for s in SIDES if plant_rec[s]["grounded"] >= GROUNDED_SHARE]
     if a.state in ("walk", "run") or grounded:
         need = SIDES if a.state in ("walk", "run") else grounded
         fewest = min(out["plants_per_foot"][s] for s in need)
         gates.append(gate("plants_min_per_foot", fewest, ">= 1 per foot" + ("" if need == SIDES else
-                          f" on the ground ({', '.join(need)})"), fewest >= 1))
+                          f" on the ground ({', '.join(need)})"), fewest >= 1, (">=", 1)))
 
     # ground penetration
     depth = np.maximum(0.0, floor - np.minimum(soles["l"], soles["r"]))
@@ -637,7 +693,7 @@ def measure(doc: dict, a) -> dict:
     out["penetration_frames"] = int(np.sum(depth > 1e-6))
     out["lowest_joint_m"] = float(P[:, :, 2].min())
     gates.append(gate("penetration_max_m", float(depth.max()), f"<= {a.penetration_max}",
-                      depth.max() <= a.penetration_max))
+                      depth.max() <= a.penetration_max, ("<=", a.penetration_max)))
 
     # jitter; with readings, only what the source does not show on the same frame and joint is gated
     acc = np.linalg.norm(np.diff(P, 2, axis=0), axis=2) * fps * fps
@@ -663,7 +719,7 @@ def measure(doc: dict, a) -> dict:
         out["jitter_over_source_mps2"] = summary(over)
         out["jitter_reference"] = kinds
         jv, jlimit = out["jitter_over_source_mps2"]["p95"], f"<= {a.jitter_p95} over {CLIP_FACTOR} x the source's"
-    gates.append(gate("jitter_p95_mps2", jv, jlimit, jv <= a.jitter_p95))
+    gates.append(gate("jitter_p95_mps2", jv, jlimit, jv <= a.jitter_p95, ("<=", a.jitter_p95)))
 
     # joint limits
     if m["limits"]:
@@ -677,7 +733,7 @@ def measure(doc: dict, a) -> dict:
                          "first": int(bad[0]) if bad.size else None})
         out["joint_limits"] = rows
         total = sum(r["frames_outside"] for r in rows)
-        gates.append(gate("joint_limit_frames", total, 0, total == 0))
+        gates.append(gate("joint_limit_frames", total, 0, total == 0, ("<=", 0)))
 
     # loop: period and cut
     prof = STATE_PROFILES.get(a.state or "default", STATE_PROFILES["default"])
@@ -693,9 +749,9 @@ def measure(doc: dict, a) -> dict:
         gates.append(gate("loop_period_found", cut is not None, True, cut is not None))
         if cut is not None:
             gates += [gate("loop_periodicity", cut["periodicity"], f">= {PERIODICITY_MIN}",
-                           cut["periodicity"] >= PERIODICITY_MIN),
+                           cut["periodicity"] >= PERIODICITY_MIN, (">=", PERIODICITY_MIN)),
                       gate("loop_seam_ratio", cut["seam_ratio"], f"<= {a.seam_max}",
-                           cut["seam_ratio"] <= a.seam_max)]
+                           cut["seam_ratio"] <= a.seam_max, ("<=", a.seam_max))]
 
     # root drift
     rxy = root[:, :2]                              # as sampled: an in-place root stays put
@@ -714,9 +770,11 @@ def measure(doc: dict, a) -> dict:
         lateral = np.zeros(n)
     out["root_lateral_m"] = summary(lateral)
     if a.in_place:
-        gates.append(gate("root_drift_m", drift, f"<= {a.root_drift_max}", drift <= a.root_drift_max))
+        gates.append(gate("root_drift_m", drift, f"<= {a.root_drift_max}", drift <= a.root_drift_max,
+                          ("<=", a.root_drift_max)))
     if a.loop:
-        gates.append(gate("root_vertical_drift_m", vdrift, f"<= {a.root_drift_max}", vdrift <= a.root_drift_max))
+        gates.append(gate("root_vertical_drift_m", vdrift, f"<= {a.root_drift_max}", vdrift <= a.root_drift_max,
+                          ("<=", a.root_drift_max)))
 
     # pops; with readings, a spike the source shows too is listed apart and not gated
     if m["segments"]:
@@ -739,7 +797,7 @@ def measure(doc: dict, a) -> dict:
         out["pops"] = {"count": len(events), "segments": len(found), "list": found[:60]}
         if R is not None:
             out["pops_in_source"] = {"count": len(src_events), "segments": len(in_src), "list": in_src[:60]}
-        gates.append(gate("pops", len(events), f"<= {a.pops_max}", len(events) <= a.pops_max))
+        gates.append(gate("pops", len(events), f"<= {a.pops_max}", len(events) <= a.pops_max, ("<=", a.pops_max)))
     else:
         out["pops"] = {"count": None, "skipped": "no segments given"}
 
@@ -753,7 +811,8 @@ def measure(doc: dict, a) -> dict:
                               "ratio": out_disp / src_disp if src_disp > 0 else None}
         if src_disp > TRAVEL_MIN_M:
             gates.append(gate("translation_kept", round(out_disp / src_disp, 4),
-                              f">= {TRAVEL_KEPT_SHARE} of k x source", out_disp >= TRAVEL_KEPT_SHARE * src_disp))
+                              f">= {TRAVEL_KEPT_SHARE} of k x source", out_disp >= TRAVEL_KEPT_SHARE * src_disp,
+                              (">=", TRAVEL_KEPT_SHARE)))
 
     # two-view block
     tv = m["two_view"]
@@ -763,21 +822,22 @@ def measure(doc: dict, a) -> dict:
             ag = tv["agreement"]
             ag = float(ag) if isinstance(ag, (int, float)) else float(np.mean(_arr(ag, "two_view.agreement", dims=0)))
             rec["agreement"] = ag
-            gates.append(gate("two_view_agreement", ag, f">= {a.agreement_min}", ag >= a.agreement_min))
+            gates.append(gate("two_view_agreement", ag, f">= {a.agreement_min}", ag >= a.agreement_min,
+                              (">=", a.agreement_min)))
         if "reprojection_px" in tv:
             rp = _per_frame_or_summary(tv["reprojection_px"], "reprojection_px")
             h = float(tv.get("frame_height_px") or REPROJ_REF_HEIGHT)
             limit = a.reproj_p95_px * h / REPROJ_REF_HEIGHT
             rec["reprojection_px"] = rp
             gates.append(gate("two_view_reprojection_p95_px", rp["p95"], f"<= {round(limit, 3)}",
-                              rp["p95"] <= limit))
+                              rp["p95"] <= limit, ("<=", limit)))
         out["two_view"] = rec
 
     if warnings:   # only with sole_offsets: an input without them reports as before
         out["warnings"] = warnings
     out["gates"] = gates
     out["schema"] = "gate/1"
-    out["pass"] = out["ok"] = all(g["pass"] is True for g in gates)
+    out["pass"] = all(g["pass"] is True for g in gates)
     return out
 
 
@@ -825,7 +885,7 @@ def run(argv) -> tuple:
             float(a.floor)
         rep = measure(load(a.samples), a)
     except (ValueError, TypeError, KeyError, Refused) as e:
-        rep, code = {"schema": "gate/1", "tool": "motion_metrics.py", "pass": False, "ok": False, "gates": [],
+        rep, code = {"schema": "gate/1", "tool": "motion_metrics.py", "pass": False, "gates": [],
                      "refused": str(e)}, 1
     else:
         code = 0 if rep["pass"] is True else 2
@@ -926,9 +986,13 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "s.json"
 
+        seen = []    # every gate of every run: the margin's sign is checked against pass at the end
+
         def go(doc, *flags):
             p.write_text(json.dumps(doc))
-            return run([str(p), *flags])
+            out = run([str(p), *flags])
+            seen.extend(out[1].get("gates", []))
+            return out
 
         # 1. a clean walk: every gate passes, plants cover each stance, the period is 32 frames
         code, rep, _ = go(_body(), "--state", "walk", "--loop")
@@ -944,8 +1008,18 @@ def selftest() -> int:
         check("clean walk: period 32", rep["loop"].get("period") == 32 and rep["loop"]["length"] in (31, 32, 33))
         check("clean walk: seam about one step", 0.5 <= rep["loop"]["seam_ratio"] <= SEAM_RATIO_MAX)
         check("clean walk: no pops", rep["pops"]["count"] == 0)
-        check("clean walk: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True
-              and rep.get("ok") is True and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep["gates"]))
+        check("clean walk: a passing gate/1 report, no `ok`", rep.get("schema") == "gate/1" and rep.get("pass") is True
+              and "ok" not in rep and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep["gates"]))
+        check("clean walk: every gate but loop_period_found carries a margin, >= 0 on a pass",
+              all(isinstance(g.get("margin"), (int, float)) and g["margin"] >= 0 for g in rep["gates"]
+                  if g["name"] != "loop_period_found"))
+        check("gate_margin: <=, >=, range, a zero limit, a string limit; bool, string and NaN give none",
+              gate_margin(0.06, 0.08, "<=") == 0.25 and gate_margin(0.1, 0.08, "<=") == -0.25
+              and gate_margin(0.95, 0.9, ">=") == 0.0556 and gate_margin(5, [0, 10], "range") == 1.0
+              and gate_margin(-1, [0, 10], "range") == -0.2 and gate_margin(0.5, 0, "<=") == -0.5
+              and gate_margin(0.06, "<= 0.08") == 0.25 and gate_margin(0.06, 0.08) is None
+              and gate_margin(True, 1, "<=") is None and gate_margin("x", 1, "<=") is None
+              and gate_margin(float("nan"), 1, "<=") is None)
         contract_sample("motion_metrics", "clean_walk", rep)
 
         # 2. known slide: each plant creeps 2 cm (the slow creep stays under the plant speed);
@@ -1242,6 +1316,9 @@ def selftest() -> int:
         check("wrong schema: exit 1, a refused gate/1 report", code == 1 and rep["pass"] is False and rep["gates"] == [])
         contract_sample("motion_metrics", "refused", rep)
         check("unreadable file: exit 1", run([str(Path(d) / "none.json")])[0] == 1)
+        signs = [(g["margin"], g["pass"]) for g in seen if "margin" in g]
+        check("margin: + on a passing gate, - on a failing one, over every run",
+              any(m < 0 for m, _ in signs) and all((m <= 0 or ok) and (m >= 0 or not ok) for m, ok in signs))
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": checks, "failed": failed}))
     return 0 if not failed else 1
 

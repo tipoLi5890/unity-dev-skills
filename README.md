@@ -382,7 +382,7 @@ flowchart LR
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
 | [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |
-| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid, long coat or chibi included, rigged locally with your own Auto-Rig Pro in one command; its optional AI step opens a Blender window |
+| [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid, long coat or chibi included, rigged locally with your own Auto-Rig Pro in one command, repeatable to show how steady the rig is; its optional AI step opens a Blender window |
 | [`humanoid-motion`](skills/humanoid-motion/SKILL.md) | A move as a clip, solved from a two-camera video straight onto the skeleton |
 
 </details>

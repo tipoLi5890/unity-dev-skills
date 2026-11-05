@@ -85,6 +85,15 @@ Output (OUT = --out-dir, NAME = --name):
                            source_frame}]
   OUT/NAME.gif             preview, beside the frame folder (never in it)
   OUT/NAME.report.json     the whole decision, written on every run
+  OUT/NAME.gates.json      the same decision as gate/1 (schemas/gate-1.json), written on
+                           every run that read the frames, for art-asset-registry's ingest:
+                           frames.cut (a cut was found), frames.periodicity (a loop with the
+                           gate on: >= the floor), frames.seam and frames.seam_source_rate
+                           (<= --seam-max), frames.faults (0 named faults), each number with
+                           its margin (+ safe, - failing); `refused` on exit 2; a `record`
+                           naming the frames, frames.json, this report, the sidecar and the
+                           GIF (none on exit 2), the source clip (file and sha256) as input
+                           and the import params frames.json carries
 
 Examples
   video_loop.py work/runner_walk --state walk --name runner_walk --out-dir out
@@ -185,6 +194,55 @@ SPANS = ((-1, 0), (0, 1), (-2, 0), (-1, 1), (0, 2))
 CROP_PAD = 64                # px kept round the cut's union box while it is moved
 PRODUCER = {"skill": "sprite-from-video", "script": "video_loop.py"}
 MODES = ("auto", "loop", "oneshot", "once")
+
+
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
 
 
 class Refused(Exception):
@@ -727,7 +785,9 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
     """-> (exit code, report)."""
     out_dir = Path(out_dir)
     frame_dir, gif_path, report_path = out_dir / name, out_dir / f"{name}.gif", out_dir / f"{name}.report.json"
+    gates_path = out_dir / f"{name}.gates.json"
     report = {"tool": "video_loop.py", "producer": PRODUCER, "name": name, "state": state, "mode": mode}
+    gates, handed = [], {}          # the gate/1 sidecar's gates; what a written set hands to the ledger
 
     def finish(code, extra):
         report.update(extra)
@@ -738,6 +798,12 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
                 gif_path.unlink()
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
+            if handed:      # the run's own files ride along, so nothing it wrote is an orphan in the ledger
+                handed["extra"] = [(str(report_path.resolve()), "derived"), (str(gates_path.resolve()), "derived")] + (
+                    [(str(gif_path.resolve()), "preview")] if gif_path.is_file() else [])
+            sidecar = gate_report(code, gates, report.get("error"), report.get("source"), handed)
+            gates_path.write_text(json.dumps(sidecar, indent=2), encoding="utf-8")
+            report["gates_json"] = str(gates_path)
             report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
             report["report"] = str(report_path)
         except OSError as exc:
@@ -784,9 +850,16 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
                     raise Refused(f"no periodic cycle — {flat_why}; the motion does not repeat: regenerate the clip, "
                                   "or pass --mode oneshot for a single performed action", cut)
     except Refused as exc:
+        gates.append({"name": "frames.cut", "value": None, "limit": None, "pass": False})
         return finish(2, {"ok": False, "error": str(exc), "cut": exc.diagnostics, "periodic_attempt": periodic_attempt})
 
     loop = cut["kind"] == "loop"
+    gates.append({"name": "frames.cut", "value": cut["kind"], "limit": None, "pass": True})
+    if loop and cut.get("periodicity_gate") == "on":
+        gates.append(number_gate("frames.periodicity", cut["periodicity"], cut["periodicity_min"], ">="))
+    elif loop:              # idle: exempt, measured and reported
+        gates.append({"name": "frames.periodicity", "value": round(float(cut["periodicity"]), 4), "limit": None,
+                      "pass": True, "report_only": True})
     start, L = cut["start"], cut["length"]
     if loop:
         guard = cut["half_period_guard"]
@@ -841,6 +914,7 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
             if c_adj > 0 and c_wrap / c_adj <= seam_max and float(steps.max()) / c_adj <= seam_max:
                 seam.update(read_on="moved-cells", ratio=seam["cells_ratio"])
                 ratio = c_wrap / c_adj
+        gates.append(number_gate("frames.seam", ratio, seam_max, "<="))
         if ratio > seam_max:
             return finish(2, {"ok": False, "cut": _public(cut), "seam": seam,
                               "error": f"the loop's wrap is {ratio:.2f} mean steps (over --seam-max {seam_max:g}): the "
@@ -854,6 +928,7 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
             src_ratio = float(np.abs(cells[-1] - cells[0]).mean()) / c_adj if c_adj > 0 else math.inf
             seam["source_rate_read_on"] = "moved-frames"
         seam["source_rate_ratio"] = round(src_ratio, 4) if math.isfinite(src_ratio) else None
+        gates.append(number_gate("frames.seam_source_rate", src_ratio, seam_max, "<="))
         if src_ratio > seam_max:
             return finish(2, {"ok": False, "cut": _public(cut), "seam": seam,
                               "error": f"the loop's wrap is {src_ratio:.2f} mean steps at the source rate (over "
@@ -931,11 +1006,50 @@ def run(frames_dir, out_dir, name, *, state=None, mode="auto", fps=12.0, source_
     except OSError as exc:
         return finish(1, {"ok": False, "error": f"cannot write to {out_dir}: {exc}"})
     code = 3 if faults else 0
+    gates.append(number_gate("frames.faults", len(faults), 0, "<=", kinds=sorted({f["kind"] for f in faults})))
+    handed.update(files=[str((frame_dir / "frames.json").resolve())] + [str((frame_dir / f).resolve()) for f in name_fmt],
+                  params={k: doc[k] for k in ("canvas", "pivot_norm", "key_color", "fps_hint", "loop", "hold_last")},
+                  register=doc["register"])
     return finish(code, {"ok": code == 0, "frames_json": str(frame_dir / "frames.json"), "written": len(out_frames),
                          "canvas": [W, H], "fps_hint": fps_hint, "loop": loop, "hold_last": doc["hold_last"],
                          "register": doc["register"], "verdict": verdict, "cut": cut_pub, "seam": seam,
                          "drift": drift_rec, "subsample": doc["subsample"], "periodic_attempt": periodic_attempt,
                          "preview": doc["preview"]})
+
+
+def number_gate(name, value, limit, op, **extra):
+    """A measured gate: value against limit (op "<=" or ">="), with its margin when both are numbers."""
+    v = round(float(value), 4) if math.isfinite(value) else None
+    ok = v is not None and (value <= limit if op == "<=" else value >= limit)
+    g = {"name": name, "value": v, "limit": f"{op} {limit:g}", "pass": bool(ok), **extra}
+    m = gate_margin(v, limit, op)
+    if m is not None:
+        g["margin"] = m
+    return g
+
+
+def gate_report(code, gates, error, source, handed):
+    """NAME.gates.json: the run as gate/1, with a partial ledger record when frames were written."""
+    ok = code == 0 and bool(gates) and all(g["pass"] is True for g in gates)
+    doc = {"schema": "gate/1", "tool": "video_loop", "producer": PRODUCER, "pass": ok, "gates": gates}
+    if code == 2:
+        doc["refused"] = error or "refused"
+    elif code == 1:
+        doc["error"] = error or "failed"
+    if handed:
+        record = {"tool": dict(PRODUCER), "kind": "frames", "source": "generated",
+                  "files": [{"path": p, "role": "derived"} for p in handed["files"]]
+                  + [{"path": p, "role": r} for p, r in handed.get("extra", [])],
+                  "params": dict(handed["params"], reference_core_height_px=handed["register"]["reference_core_height_px"],
+                                 foot_margin_px=handed["register"]["foot_margin_px"]),
+                  "verdict": "green" if ok else "failed"}
+        if source and isinstance(source.get("file"), str):
+            inp = {"path": source["file"]}
+            if isinstance(source.get("sha256"), str):
+                inp["sha256"] = source["sha256"]
+            record["inputs"] = [inp]
+        doc["record"] = record
+    return doc
 
 
 def _public(cut):
@@ -947,8 +1061,8 @@ def _public(cut):
 
 
 def summary_of(rep):
-    keep = ("ok", "status", "error", "frames_json", "preview", "report", "written", "canvas", "fps_hint", "loop",
-            "hold_last", "verdict", "seam", "drift")
+    keep = ("ok", "status", "error", "frames_json", "preview", "report", "gates_json", "written", "canvas", "fps_hint",
+            "loop", "hold_last", "verdict", "seam", "drift")
     out = {k: rep[k] for k in keep if k in rep}
     cut = rep.get("cut") or {}
     out["cut"] = {k: cut[k] for k in ("kind", "start", "length", "end_frame", "period_global", "periodicity",
@@ -1009,13 +1123,13 @@ def _contract(doc):
             and isinstance(doc["loop"], bool) and not (doc.get("hold_last") and doc["loop"]))
 
 
-def contract_out(path, case):
-    """Copy a frames.json the selftest wrote to where tools/check-contracts.py validates it against
-    schemas/frames-1.json: $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints
-    `selftest-output: PATH`."""
+def contract_out(path, case, suffix=".frames.json"):
+    """Copy a frames.json (or, suffix ".gate.json", a NAME.gates.json) the selftest wrote to where
+    tools/check-contracts.py validates it against schemas/frames-1.json (gate-1.json):
+    $UNITY_DEV_CONTRACT_OUT, else a fixed folder in the temp dir. Prints `selftest-output: PATH`."""
     out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
     os.makedirs(out, exist_ok=True)
-    dest = os.path.join(out, f"video_loop__{case}.frames.json")
+    dest = os.path.join(out, f"video_loop__{case}{suffix}")
     shutil.copyfile(path, dest)
     print(f"selftest-output: {dest}")
 
@@ -1044,6 +1158,28 @@ def selftest():
                            and doc["register"]["foot_margin_px"] == round(doc["pivot_norm"][1] * doc["canvas"][1])
                            and doc["register"]["canvas_margin_px"] == 8))
             contract_out(tmp / "out" / "runner_walk" / "frames.json", "walk_loop")
+        gd = json.loads((tmp / "out" / "runner_walk.gates.json").read_text()) if code == 0 else {}
+        gg = {g["name"]: g for g in gd.get("gates", [])}
+        rec = gd.get("record") or {}
+        checks.append(("walk: NAME.gates.json, gate/1 with margins beside the report",
+                       gd.get("schema") == "gate/1" and gd.get("pass") is True and "ok" not in gd
+                       and list(gg) == ["frames.cut", "frames.periodicity", "frames.seam", "frames.seam_source_rate",
+                                        "frames.faults"]
+                       and all("ok" not in g and g["pass"] is True for g in gg.values())
+                       and all(isinstance(gg[n].get("margin"), float) and gg[n]["margin"] >= 0
+                               for n in ("frames.periodicity", "frames.seam", "frames.seam_source_rate"))
+                       and gg["frames.seam"]["limit"] == "<= 2" and gg["frames.faults"]["margin"] == 0
+                       and "margin" not in gg["frames.cut"] and rep.get("gates_json", "").endswith("runner_walk.gates.json")))
+        checks.append(("walk: the sidecar's record names the frames and the source clip",
+                       rec.get("kind") == "frames" and rec.get("tool") == PRODUCER and rec.get("verdict") == "green"
+                       and len(rec.get("files", [])) == len(doc.get("frames", [])) + 4
+                       and rec["files"][0]["path"].endswith("frames.json")
+                       and [f["path"].rsplit("/", 1)[-1] for f in rec["files"][-3:]]
+                       == ["runner_walk.report.json", "runner_walk.gates.json", "runner_walk.gif"]
+                       and rec.get("inputs") == [{"path": "synthetic.mp4", "sha256": "0" * 64}]
+                       and rec.get("params", {}).get("foot_margin_px") == doc.get("register", {}).get("foot_margin_px")))
+        if gd:
+            contract_out(tmp / "out" / "runner_walk.gates.json", "walk_loop", ".gate.json")
         checks.append(("walk: subsampled to 12 fps", code == 0 and doc["fps_hint"] == round(len(doc["frames"]) / (cut["length"] / 24), 4)
                        and len(doc["frames"]) == round(cut["length"] / 2)))
         files = sorted((tmp / "out" / "runner_walk").glob("runner_walk_*.png"))
@@ -1101,6 +1237,12 @@ def selftest():
         code, rep = run(_write(still, tmp / "still"), tmp / "out", "still", state="walk")
         checks.append(("still clip refused (2)", code == 2 and not (tmp / "out" / "still").exists()
                        and (tmp / "out" / "still.report.json").is_file()))
+        sg = json.loads((tmp / "out" / "still.gates.json").read_text()) if (tmp / "out" / "still.gates.json").is_file() else {}
+        checks.append(("still clip: the sidecar fails, refused, no record", sg.get("pass") is False
+                       and bool(sg.get("refused")) and "record" not in sg
+                       and any(g["name"] == "frames.cut" and g["pass"] is False for g in sg.get("gates", []))))
+        if sg:
+            contract_out(tmp / "out" / "still.gates.json", "still_refused", ".gate.json")
 
         # 4. a one-shot: rest, a 12-frame crouch, a 40-frame hop, rest; drifting 8 px; colour noise every frame
         rng, seq = np.random.default_rng(3), []
@@ -1154,6 +1296,14 @@ def selftest():
                        and json.loads((tmp / "out" / "alt" / "frames.json").read_text())["verdict"]["ok"] is False))
         if (tmp / "out" / "alt" / "frames.json").is_file():
             contract_out(tmp / "out" / "alt" / "frames.json", "alt_uncertain")
+        ag = json.loads((tmp / "out" / "alt.gates.json").read_text()) if (tmp / "out" / "alt.gates.json").is_file() else {}
+        fg = next((g for g in ag.get("gates", []) if g["name"] == "frames.faults"), {})
+        checks.append(("multi-cycle suspect: frames.faults fails with a negative margin", ag.get("pass") is False
+                       and fg.get("pass") is False and fg.get("margin", 0) < 0
+                       and "multi-cycle-suspect" in fg.get("kinds", [])
+                       and (ag.get("record") or {}).get("verdict") == "failed"))
+        if ag:
+            contract_out(tmp / "out" / "alt.gates.json", "alt_uncertain", ".gate.json")
 
         code, _ = run(tmp / "nowhere", tmp / "out", "x")
         checks.append(("no frames -> 1", code == 1))

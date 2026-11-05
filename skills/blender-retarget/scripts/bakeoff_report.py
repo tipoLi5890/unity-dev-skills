@@ -190,7 +190,7 @@ def selftest() -> int:
         check("different clips: exit 2", code == 2)
         code, _ = run(["--route", f"Fit={d / 'missing.json'}"])
         check("missing report: exit 2", code == 2)
-        (d / "ref.json").write_text(json.dumps({"schema": "gate/1", "pass": False, "ok": False, "gates": [],
+        (d / "ref.json").write_text(json.dumps({"schema": "gate/1", "pass": False, "gates": [],
                                                 "refused": "toe_l missing"}))
         code, _ = run(["--route", f"Fit={d / 'ref.json'}"])
         check("refused report: exit 2", code == 2)

@@ -88,7 +88,7 @@ def main() -> int:
 
     def held_prop_passes():
         r = D.run(PARAMS)
-        assert r["ok"], r["gates"]
+        assert r["pass"] and "ok" not in r, r["gates"]
         assert list(r["per_action"]) == ["GateLatchSwing"], r["per_action"]
         assert r["per_action_rotation"]["GateLatchSwing"] < 1e-3, r["per_action_rotation"]
 
@@ -105,7 +105,7 @@ def main() -> int:
             assert not g["drift.max_rotation"], r["per_action_rotation"]
             assert r["worst_rotation"]["action"] == "GateLatchSwing", r["worst_rotation"]
             assert 25.0 < r["worst_rotation"]["degrees"] <= 30.5, r["worst_rotation"]
-            assert r["ok"] is False
+            assert r["pass"] is False
         finally:
             act = mallet.animation_data.action
             mallet.animation_data_clear()

@@ -58,6 +58,7 @@ SELFTESTS = [
     ('codex-visual/scripts/audit_3d_source.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/audit_frames.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/breathe.py', ['--selftest'], ['numpy', 'pillow']),
+    ('codex-visual/scripts/codex_generate.py', ['--selftest'], ['stdlib']),
     ('codex-visual/scripts/contact_sheet.py', ['--selftest'], ['pillow']),
     ('codex-visual/scripts/key_unmix.py', ['--selftest'], ['numpy', 'pillow']),
     ('codex-visual/scripts/overview_sheet.py', ['--selftest'], ['pillow']),

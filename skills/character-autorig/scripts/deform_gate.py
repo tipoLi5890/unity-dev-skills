@@ -122,9 +122,11 @@ ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the po
 joint}, ball_joint_loss_max,
 self_intersection {p95, max, pose}, skin {cross_side {band_m, L/R {share, vertices, held, bones (the other side's
 bones holding weight there: their summed weight)}}, hinge_blend {joint:
-{blended, vertices}}}, renders?, gates [{name, value, limit, pass}], schema, pass, ok}: a gate/1
-report (schemas/gate-1.json); `ok`, pass's old name, equals it for one release. A refused input
-reports pass false, no gates, `refused` and `error`.
+{blended, vertices}}}, renders?, gates [{name, value, limit, pass, margin?}], schema, pass}: a gate/1
+report (schemas/gate-1.json). `margin` is the signed distance to the limit (gate_margin: + safe, - failing),
+written on the numeric gates: volume_loss_max and self_intersection_p95 (<=), hinge_blended (>=), and the
+skirt and mitten tears (<=) when their edges were read. A refused input reports pass false, no gates,
+`refused` and `error`.
 
 Prints one JSON object. Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed;
 1 refused input (no such object, a body bone the map cannot find, an unreadable map or FBX) or a
@@ -198,6 +200,55 @@ def read_map(path: str | None) -> dict:
     if not isinstance(bones, dict):
         raise Refused(f"{path}: neither a contract_map report (retarget_map) nor a role map (bones)")
     return {k: (v if isinstance(v, list) else [v]) for k, v in bones.items()}
+
+
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
 
 
 # Between the shared:chain_tails markers: a copy of tools/shared-blocks/chain_tails.py (also in
@@ -824,15 +875,16 @@ def gates_of(result: dict, poses, args) -> list:
         result["skirt"]["worst"] = {"pose": pose, "t": t, **reading}
         edges = result["skirt"]["edges"]
         out.append({"name": "deform.skirt_tear", "value": share, "pose": pose, "limit": args.tear_max,
-                    "pass": bool(edges >= 50 and share <= args.tear_max)})
+                    "pass": bool(edges >= 50 and share <= args.tear_max), "read": edges >= 50})
     if result.get("mitten") is not None:
         tears = [(s["mitten_tear"]["share"], s["t"], s["mitten_tear"]) for s in
                  (result["poses"].get("mitten") or {}).get("samples", []) if "mitten_tear" in s]
         share, t, reading = max(tears, key=lambda w: w[0], default=(0.0, None, {}))
         result["mitten"]["worst"] = {"t": t, **reading}
         out.append({"name": "deform.mitten_tear", "value": share, "pose": "mitten", "limit": args.tear_max,
-                    "pass": bool(result["mitten"]["edges"] >= 50 and share <= args.tear_max)})
-    return [
+                    "pass": bool(result["mitten"]["edges"] >= 50 and share <= args.tear_max),
+                    "read": result["mitten"]["edges"] >= 50})
+    return with_margins([
         {"name": "deform.volume_loss_max", "value": round(worst[0], 4), "limit": args.volume_max,
          "pass": bool(worst[0] <= args.volume_max)},
         {"name": "deform.self_intersection_p95", "value": round(p95, 4), "limit": args.intersect_p95,
@@ -843,7 +895,23 @@ def gates_of(result: dict, poses, args) -> list:
          "limit": {"share": args.cross_side_max, "held": 0}, "pass": bool(cross <= args.cross_side_max and held == 0)},
         {"name": "deform.hinge_blended", "value": low, "joint": least, "limit": args.hinge_blend_min,
          "pass": bool(low is not None and low >= args.hinge_blend_min)},
-    ] + out
+    ] + out)
+
+
+# the direction of each numeric gate's limit; a gate not named here carries no margin
+MARGIN_OPS = {"deform.volume_loss_max": "<=", "deform.self_intersection_p95": "<=", "deform.hinge_blended": ">=",
+              "deform.skirt_tear": "<=", "deform.mitten_tear": "<="}
+
+
+def with_margins(gates: list) -> list:
+    """Each gate in MARGIN_OPS gains `margin` (gate_margin) after `pass`. A tear gate whose edges were too few to
+    read (`read` false, popped here) fails on that, not on its value, so it carries none."""
+    for g in gates:
+        read = g.pop("read", True)
+        m = gate_margin(g.get("value"), g.get("limit"), MARGIN_OPS.get(g["name"])) if read else None
+        if m is not None:
+            g["margin"] = m
+    return gates
 
 
 class UsageParser(argparse.ArgumentParser):
@@ -884,7 +952,7 @@ def run(args) -> tuple[int, dict]:
     """The gate/1 report and its exit code; a refused input (exit 1) reports pass false with no gates."""
     code, report = _run(args)
     if code == 1 and "gates" not in report:
-        report = {"schema": "gate/1", "tool": "deform_gate", "pass": False, "ok": False, "gates": [],
+        report = {"schema": "gate/1", "tool": "deform_gate", "pass": False, "gates": [],
                   "refused": str(report.get("error")), **report}
     return code, report
 
@@ -968,7 +1036,7 @@ def _run(args) -> tuple[int, dict]:
             rig_obj.animation_data.action = action
     gates = gates_of(result, poses, args)
     ok = all(g["pass"] is True for g in gates)
-    report = {"schema": "gate/1", "tool": "deform_gate", "pass": ok, "ok": ok, "armature": rig_obj.name,
+    report = {"schema": "gate/1", "tool": "deform_gate", "pass": ok, "armature": rig_obj.name,
               "mesh": mesh.name, **result, "gates": gates}
     return (0 if report["pass"] is True else 2), report
 
@@ -1172,11 +1240,25 @@ def selftest() -> tuple[int, dict]:
         code, rep = run(args)
         results[mode] = (code, rep)
         notes[mode] = {g["name"]: g["value"] for g in rep.get("gates", [])}
+    signs = [(g["margin"], g["pass"]) for _, r in results.values() for g in r.get("gates", []) if "margin" in g]
+    ok("margin: + on a passing gate, - on a failing one, in every skin", signs and all(
+        (m <= 0 or p) and (m >= 0 or not p) for m, p in signs) and any(m < 0 for m, _ in signs))
+    ok("gate_margin: <=, >=, range, a zero limit, a string limit; bool, string and NaN give none",
+       gate_margin(0.06, 0.08, "<=") == 0.25 and gate_margin(0.1, 0.08, "<=") == -0.25
+       and gate_margin(0.95, 0.9, ">=") == 0.0556 and gate_margin(5, [0, 10], "range") == 1.0
+       and gate_margin(-1, [0, 10], "range") == -0.2 and gate_margin(0.5, 0, "<=") == -0.5
+       and gate_margin(0.06, "<= 0.08") == 0.25 and gate_margin(0.06, 0.08) is None
+       and gate_margin(True, 1, "<=") is None and gate_margin("x", 1, "<=") is None
+       and gate_margin(float("nan"), 1, "<=") is None)
     code, rep = results["good"]
     gate = {g["name"]: g for g in rep.get("gates", [])}
     ok("good skin: exit 0", code == 0)
-    ok("good skin: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True
-       and rep.get("ok") is True and all("pass" in g and "ok" not in g for g in rep.get("gates", [])))
+    ok("good skin: a passing gate/1 report, no `ok` at either level", rep.get("schema") == "gate/1"
+       and rep.get("pass") is True and "ok" not in rep
+       and all("pass" in g and "ok" not in g for g in rep.get("gates", [])))
+    ok("good skin: volume, intersection and hinge gates carry a margin", all(
+        isinstance(gate.get(n, {}).get("margin"), float) for n in
+        ("deform.volume_loss_max", "deform.self_intersection_p95", "deform.hinge_blended")))
     contract_sample("deform_gate", "good", rep)
     ok("good skin: six poses measured", len(rep.get("poses", {})) == 6 and
        all(d["samples"] for d in rep.get("poses", {}).values()))
@@ -1195,7 +1277,7 @@ def selftest() -> tuple[int, dict]:
     ok("the leak names the right leg's bones that hold the left leg, heaviest first",
        list(held_by)[:2] in (["UpperLeg.R", "LowerLeg.R"], ["LowerLeg.R", "UpperLeg.R"])
        and all(b.endswith(".R") for b in held_by))
-    ok("hard skin: a failed gate/1 report", rep.get("pass") is False and rep.get("ok") is False)
+    ok("hard skin: a failed gate/1 report", rep.get("pass") is False and "ok" not in rep)
     contract_sample("deform_gate", "hard", rep)
     code, rep = results["blend"]
     gate = {g["name"]: g for g in rep.get("gates", [])}

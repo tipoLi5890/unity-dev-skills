@@ -12,7 +12,11 @@ than believing any claim, including this one:
 strings -n 4 out.png | grep -o 'dnameigpt-imagegversionc[0-9.]*'   # -> dnameigpt-imagegversionc2.0
 ```
 
-The version suffix names the model: `c2.0` is **gpt-image 2.0**. The 2.5 API ids
+The version suffix names the model: `c2.0` is **gpt-image 2.0**. Other renders name the app
+and the family instead (`dnamegChatGPTgversionigpt-image`: name `ChatGPT`, version `gpt-image`).
+Both are the `softwareAgent` of the `c2pa.created` action; `scripts/codex_generate.py` reads it
+from the CBOR and records it as `model` exactly as written (`gpt-image 2.0`, `ChatGPT gpt-image`),
+`null` when the file carries none. The 2.5 API ids
 (`gpt-image-2.5-sunburst`, `gpt-image-2.5-flare`), their extra `xhigh` / `max` quality tiers and
 their `background` parameter belong to the keyed API, not to the built-in tool.
 

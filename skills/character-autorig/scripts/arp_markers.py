@@ -14,7 +14,7 @@ usage (host Python, numpy only; no pictures):
     python3 arp_markers.py runner.glb [--up y|z] --out markers.json
 options: [--spine-bones 3] [--fingers auto|fixed] [--adjust ADJUST.json] [--arm-angle 30,60]
          [--arm-ratios 0.42,0.75] [--no-window-gate] [--symmetry-max 0.02] [--mitten]
-         [--smart NAME.smart.json] [--smart-tol 0.03] [--body human|skirt|chibi]
+         [--smart NAME.smart.json] [--smart-tol 0.03] [--body human|skirt|chibi] [--finger-votes 1]
 self-tests:
     python3 arp_markers.py --selftest                       (tube body, numpy only)
     blender -b --factory-startup -P arp_markers.py -- --selftest   (metaball runner, pictures)
@@ -55,6 +55,12 @@ How each marker is found (methods are reported per marker: measured, proportion,
               stations in a row, those are index..little, each tracked to its tip. Otherwise, and
               with `fixed`, a fixed hand shape scaled to wrist -> hand_tip and turned to the hand's
               own plane (its thinnest axis is the palm normal). The thumb is always the fixed shape.
+              --finger-votes K (default 1, the single reading) reads the hand K times, each 4000
+              surface samples (seed k) cut at the stations shifted by 0, -1, +1, -2, +2 ... x 0.005
+              of the hand's length; reading 0 is the single reading. `detected` needs more than half
+              of them (a tie reads `fixed`); a reading counts only when the surface cuts into four
+              loops. On the rig exam five votes fixed spiky_hair but lost thin, so the vote is opt-in.
+              fingers.votes {k, detected, fixed, readings [{seed, offset, mode}]} records the vote.
 Both sides are measured apart, compared (asymmetry), and averaged into one mirrored pair.
 --body skirt (a long coat, a skirt, a robe): the crotch cut is the hem. Each leg is followed up from
 SKIRT_FROM under it on the cut's own loops (skirt_legs); a crotch inside the skirt places the hip as
@@ -110,14 +116,14 @@ slice markers carry on alone; a malformed one (not autorig-smart/1, a coordinate
 three numbers) is refused (exit 1).
 
 Output (schema "autorig-markers/1"): landmarks {name: [x, y, z]} (.L/.R), methods, height,
-ground_z, arm_angle_deg, asymmetry_m, asymmetry_accepted, fingers {mode, reason?}, hand_frames {.L: {x, y, z}},
+ground_z, arm_angle_deg, asymmetry_m, asymmetry_accepted, fingers {mode, reason?, votes}, hand_frames {.L: {x, y, z}},
 facial (bool), ref_rolls {ref bone: roll}, with --smart also smart {file, used, notes} and smart_agreement,
 arp_refs {ref bone: {head, tail}} for the .x and .l bones of Auto-Rig Pro's human preset (the
 blender-retarget brt_arp `pipeline` op mirrors .l to .r), arp_spine_count (spine bones + 1, the
 add-on counts its root), contract_bones (a blender-character-rig bcr_armature spec with contract
 names, .L only, mirror true, radius per bone; with --mitten the finger bones are there but do
 not deform), previews {front, side}, gates [{name, value, limit, pass}] and pass, as in a gate/1
-report (schemas/gate-1.json), with `ok`, pass's old name, equal to it for one release.
+report (schemas/gate-1.json).
 Bend hints: Auto-Rig Pro reads the knee and elbow direction from the reference chain, so a leg
 that is straight in the mesh gets its knee 1 % of the leg length forward (-Y) and an arm its elbow
 2 % back (+Y) in arp_refs and contract_bones; landmarks stay as measured.
@@ -868,12 +874,14 @@ def fixed_hand(wrist, frame):
     return {f: [wrist + L * (a * x + b * y + c * z) for a, b, c in pts] for f, pts in HAND.items()}
 
 
-def detect_fingers(points, wrist, frame):
+FINGER_STATIONS = np.arange(0.40, 1.02, 0.02)   # of wrist -> hand_tip: where the samples are cut across the hand
+
+
+def detect_fingers(points, wrist, frame, stations=FINGER_STATIONS):
     """Index..little from where the hand splits into four parts; None and a reason otherwise."""
     x, y, z, L = frame
     rel = points - wrist
     u, v, w = rel @ x / L, rel @ y / L, rel @ z / L
-    stations = np.arange(0.40, 1.02, 0.02)
     groups = []
     for st in stations:
         sel = np.abs(u - st) < 0.015
@@ -929,6 +937,56 @@ def hand_loops(V, F, wrist, frame, stations=HAND_LOOP_STATIONS) -> list:
         out.append(sum(1 for P in loops if len(P) >= 3 and
                        float(np.linalg.norm(np.diff(P, axis=0), axis=1).sum()) >= HAND_LOOP_MIN * L))
     return out
+
+
+FINGER_VOTES = 1          # --finger-votes: readings of the hand, the majority wins (1: the single reading)
+FINGER_SAMPLES = 4000     # surface samples over the hand per reading
+FINGER_OFFSET = 0.005     # of wrist -> hand_tip: the station shift between readings (a quarter of a station)
+
+
+def finger_offset(k: int) -> float:
+    """Reading k's station shift, spread around today's: 0, -1, +1, -2, +2 ... x FINGER_OFFSET."""
+    return round(FINGER_OFFSET * ((k + 1) // 2) * (1 if k % 2 == 0 else -1), 6)
+
+
+def finger_reading(V, F, wrist, frame, k: int = 0):
+    """One reading of the hand: FINGER_SAMPLES surface samples (seed k) over the triangles near it, cut at the
+    stations shifted by finger_offset(k). Reading 0 (seed 0, no shift) is the single reading before the vote.
+    (found, reason) as detect_fingers."""
+    x, y, z, L = frame
+    rel = V[F].mean(axis=1) - wrist
+    along = rel @ x
+    near = (along > 0) & (along < 1.1 * L) & (np.linalg.norm(rel - np.outer(along, x), axis=1) < 0.6 * L)
+    if near.sum() < 20:
+        return None, "too few hand triangles"
+    pts, _ = M.surface_samples(V, F[near], FINGER_SAMPLES, seed=k)
+    return detect_fingers(pts, wrist, frame, FINGER_STATIONS + finger_offset(k))
+
+
+def read_fingers(V, F, wrist, frame, votes: int = FINGER_VOTES) -> tuple:
+    """The finger read as a vote over `votes` readings (finger_reading 0..votes-1): `detected` needs more than
+    half of them, so a tie reads `fixed`. A reading that finds four lanes counts only when the surface itself
+    cuts into four loops (hand_loops, read once: it takes no samples), else a mitten's sample gaps would read
+    as fingers. The lanes taken are reading 0's when it detected, else the first detecting reading's.
+    (found or None, fingers {mode, reason?, votes {k, detected, fixed, readings}})."""
+    readings = [finger_reading(V, F, wrist, frame, k) for k in range(max(1, int(votes)))]
+    loops = None
+    if any(found for found, _ in readings):
+        counts = hand_loops(V, F, wrist, frame)
+        if sum(c >= 4 for c in counts) < 2:
+            loops = (f"the samples part into four lanes but the surface never cuts into four loops "
+                     f"(at most {max(counts, default=0)}): a mitten, or fingers held together")
+    modes = ["detected" if found and loops is None else "fixed" for found, _ in readings]
+    n = modes.count("detected")
+    record = {"k": len(modes), "detected": n, "fixed": len(modes) - n,
+              "readings": [{"seed": k, "offset": finger_offset(k), "mode": m} for k, m in enumerate(modes)]}
+    if 2 * n > len(modes):
+        found = next(f for (f, _), m in zip(readings, modes) if m == "detected")
+        return found, {"mode": "detected", "votes": record}
+    reason = loops or next((r for (f, r) in readings if not f), None) or "the readings split evenly: a tie reads fixed"
+    if n:
+        reason = f"{n} of {len(modes)} readings found four fingers, not a majority: {reason}"
+    return None, {"mode": "fixed", "reason": reason, "votes": record}
 
 
 def measure(V, F, opts) -> dict:
@@ -1021,27 +1079,8 @@ def measure(V, F, opts) -> dict:
     detected = None
     free = ".R" if prop == [1] else ".L"      # fingers are read on a hand that holds nothing
     if opts["fingers"] == "auto":
-        x, y, z, L = frames[free]
-        tri = V[F]
-        cen = tri.mean(axis=1)
-        rel = cen - lm["wrist" + free]
-        along = rel @ x
-        near = (along > 0) & (along < 1.1 * L) & (np.linalg.norm(rel - np.outer(along, x), axis=1) < 0.6 * L)
-        if near.sum() >= 20:
-            pts, _ = M.surface_samples(V, F[near], 4000)
-            detected, reason = detect_fingers(pts, lm["wrist" + free], frames[free])
-            if detected:    # the samples' four lanes must be four loops of the surface too (else a mitten)
-                counts = hand_loops(V, F, lm["wrist" + free], frames[free])
-                if sum(c >= 4 for c in counts) < 2:
-                    detected = None
-                    reason = (f"the samples part into four lanes but the surface never cuts into four loops "
-                              f"(at most {max(counts, default=0)}): a mitten, or fingers held together")
-        else:
-            reason = "too few hand triangles"
-        if detected:
-            fingers = {"mode": "detected"}
-        else:
-            fingers = {"mode": "fixed", "reason": reason}
+        detected, fingers = read_fingers(V, F, lm["wrist" + free], frames[free],
+                                         opts.get("finger_votes") or FINGER_VOTES)
     hand = {}
     for s, side in ((1, ".L"), (-1, ".R")):
         shape = fixed_hand(lm["wrist" + side], frames[side])
@@ -1220,8 +1259,69 @@ def proportions(lm: dict) -> tuple[dict, float | None]:
     return ratios, (None if shortest is None else round(shortest, 4))
 
 
-def gate(name, value, limit, ok):
-    return {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
+
+
+def gate(name, value, limit, ok, op=None):
+    """A gate/1 gate. With op ("<=", ">=" or "range") a numeric value also carries its margin; a
+    dict of readings (limb_ratio) carries the worst one, each read against its own limit."""
+    g = {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
+    if op is None:
+        return g
+    if isinstance(value, dict) and isinstance(limit, dict):
+        ms = [gate_margin(v, limit.get(k.split(".")[0]), op) for k, v in value.items()]
+        m = min(ms) if ms and None not in ms else None
+    else:
+        m = gate_margin(value, limit, op)
+    if m is not None:
+        g["margin"] = m
+    return g
 
 
 # ------------------------------------------------------------------------------ Auto-Rig Pro's AI (--smart)
@@ -1459,13 +1559,13 @@ def build_report(V, F, opts) -> dict:
             record["used"]["window"] = True
     gates = [windows,
              gate("markers.symmetry", round(asym, 4), round(opts["symmetry_max"] * H, 4),
-                  asym <= opts["symmetry_max"] * H),
-             gate("markers.arm_angle", round(arm_angle, 2), [a_lo, a_hi], a_lo <= arm_angle <= a_hi)]
+                  asym <= opts["symmetry_max"] * H, "<="),
+             gate("markers.arm_angle", round(arm_angle, 2), [a_lo, a_hi], a_lo <= arm_angle <= a_hi, "range")]
     ratios, phalanx = proportions(lm)
     lim = {"arm": list(LIMB_RATIO), "leg": [THIGH_MIN, LIMB_RATIO[1]]}
     gates += [gate("markers.limb_ratio", ratios, lim,
-                   all(lim[k.split(".")[0]][0] <= v <= lim[k.split(".")[0]][1] for k, v in ratios.items())),
-              gate("markers.finger_lengths", phalanx, PHALANX_MIN, phalanx is None or phalanx >= PHALANX_MIN)]
+                   all(lim[k.split(".")[0]][0] <= v <= lim[k.split(".")[0]][1] for k, v in ratios.items()), "range"),
+              gate("markers.finger_lengths", phalanx, PHALANX_MIN, phalanx is None or phalanx >= PHALANX_MIN, ">=")]
 
     def r(p):
         return [round(float(x), 5) for x in p]
@@ -1484,7 +1584,6 @@ def build_report(V, F, opts) -> dict:
         "ref_rolls": rolls, "facial": bool(record and record["used"]["facial"]),
         "contract_bones": {"mirror": True, "bones": spec},
         "notes": m["notes"], "gates": gates, "pass": all(g["pass"] is True for g in gates),
-        "ok": all(g["pass"] is True for g in gates),
     }
     if "skirt" in m:
         report["skirt"] = skirt_block(m, lm)
@@ -1536,8 +1635,20 @@ def parser():
                         "chibi: a big head on short limbs, with its own windows (CHIBI_WINDOWS)")
     p.add_argument("--smart", help="an arp_smart.py result (autorig-smart/1) to check and complete the markers")
     p.add_argument("--smart-tol", type=float, default=0.03, help="x H: smart_agreement's agrees, and how far out of its window the AI may confirm a landmark")
+    p.add_argument("--finger-votes", type=_votes, default=FINGER_VOTES,
+                   help="readings of the hand the finger read votes over (default 1, the single reading; try 5)")
     p.add_argument("--selftest", action="store_true")
     return p
+
+
+def _votes(text):
+    try:
+        k = int(text)
+    except ValueError:
+        k = 0
+    if k < 1:
+        raise argparse.ArgumentTypeError(f"{text!r}: a whole number of readings, 1 or more")
+    return k
 
 
 def _opts(args) -> dict:
@@ -1548,7 +1659,7 @@ def _opts(args) -> dict:
             "arm_angle": args.arm_angle, "arm_ratios": args.arm_ratios,
             "symmetry_max": args.symmetry_max, "no_window_gate": args.no_window_gate,
             "mitten": args.mitten, "body": args.body, "smart": read_smart(args.smart) if args.smart else None,
-            "smart_file": args.smart, "smart_tol": args.smart_tol}
+            "smart_file": args.smart, "smart_tol": args.smart_tol, "finger_votes": args.finger_votes}
 
 
 CHAINS = [("pelvis", "spine1"), ("spine1", "spine2"), ("spine2", "spine3"), ("spine3", "neck_base"),
@@ -1597,7 +1708,7 @@ def run_blender(args) -> tuple[int, dict]:
         ok = all(os.path.getsize(p) > 0 for p in files.values() if os.path.exists(p)) and \
             all(os.path.exists(p) for p in files.values())
         report["gates"].append(gate("markers.previews", sorted(files), ["front", "side"], ok and len(files) == 2))
-        report["pass"] = report["ok"] = all(g["pass"] is True for g in report["gates"])
+        report["pass"] = all(g["pass"] is True for g in report["gates"])
     return (0 if report["pass"] is True else 2), report
 
 
@@ -1983,6 +2094,45 @@ def selftest_prop(ok, opts) -> None:
        "both arms read vertical" in both)
 
 
+def selftest_vote(ok, frame) -> None:
+    """The finger vote on a hand whose four fingers stand 2.6 mm apart (about the 0.015 x L the samples part
+    them by): a wrist moved by half a millimetre flips the single reading, the vote of five stays `detected`;
+    a mitten reads `fixed` under the vote; --finger-votes 1 is the single reading."""
+    r, gap = 0.0075, 0.0026
+    pieces = [M.tube((0.0, 0, 0), (0.09, 0, 0), 0.0, rx=0.045, ry=0.012)]
+    for i, length in enumerate((0.075, 0.09, 0.08, 0.06)):
+        y = (i - 1.5) * (2 * r + gap)
+        pieces.append(M.tube((0.08, y, 0), (0.09 + length, y, 0), r))
+    hv, hf = M.assemble(pieces)
+    single, voted = [], []
+    for dx in (0.0015, 0.002, 0.0025, 0.003):
+        wrist = np.array([dx, 0.0, 0.0])
+        single.append(read_fingers(hv, hf, wrist, frame, 1)[1]["mode"])
+        found, fv = read_fingers(hv, hf, wrist, frame, 5)
+        voted.append(fv["mode"] if (found is not None) == (fv["mode"] == "detected") else "inconsistent")
+        if dx == 0.0025:
+            rec = fv["votes"]
+    ok("finger vote: on fingers 2.6 mm apart the single reading flips as the wrist moves 0.5 mm, the vote of "
+       "five stays detected", "fixed" in single and "detected" in single and set(voted) == {"detected"})
+    ok("finger vote: reading 0 is the single reading (seed 0, no shift), the votes recorded, offsets spread "
+       "around it", rec["k"] == 5 and rec["readings"][0] == {"seed": 0, "offset": 0.0, "mode": single[2]}
+       and [x["offset"] for x in rec["readings"]] == [0.0, -0.005, 0.005, -0.01, 0.01]
+       and rec["detected"] + rec["fixed"] == 5 and rec["detected"] > 2)
+    mv, mf = M.assemble([M.tube((0.0, 0, 0), (0.09, 0, 0), 0.0, rx=0.045, ry=0.012),
+                         M.tube((0.09, 0, 0), (0.18, 0, 0), 0.0, rx=0.04, ry=0.012)])
+    found, fm = read_fingers(mv, mf, np.zeros(3), frame, 5)
+    ok("finger vote: a mitten reads fixed in every reading (the surface never cuts into four loops)",
+       found is None and fm["mode"] == "fixed" and fm["votes"]["fixed"] == 5 and "loops" in fm["reason"])
+    tie = read_fingers(hv, hf, np.array([0.0025, 0.0, 0.0]), frame, 2)
+    ok("finger vote: one reading of two found the fingers, a tie reads fixed", tie[0] is None
+       and tie[1]["mode"] == "fixed" and tie[1]["votes"]["detected"] == 1 and "not a majority" in tie[1]["reason"])
+    try:
+        parser().parse_args(["x.glb", "--finger-votes", "0"])
+        ok("--finger-votes 0 refused", False)
+    except SystemExit as exc:
+        ok("--finger-votes 0 refused, exit 1", exc.code == 1)
+
+
 def selftest_host() -> tuple[int, list, int]:
     checks, failed = 0, []
 
@@ -2105,6 +2255,7 @@ def selftest_host() -> tuple[int, list, int]:
         ok("little shorter than middle", tips["Little"][0] < tips["Middle"][0])
     found, reason = detect_fingers(_hand_points(False), np.zeros(3), frame)
     ok("mitten: not detected, reason given", found is None and "four" in reason)
+    selftest_vote(ok, frame)
     hz, hx = np.array(rep["hand_frames"][".L"]["z"]), np.array(rep["hand_frames"][".L"]["x"])
     ok("hand frame: the palm normal is a unit vector across the hand", abs(np.linalg.norm(hz) - 1) < 1e-3
        and abs(hz @ hx) < 1e-3)

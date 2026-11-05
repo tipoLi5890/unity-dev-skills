@@ -33,12 +33,15 @@ Tried in this order; the first that fits is used.
 | Shape | Recognised by | Becomes |
 |---|---|---|
 | a record | a `record` object, from any producer that writes one (every Blender skill report carries one; the ComfyUI and codex clients where they add one) | that object; keys it leaves out are filled from the shape below it, and a top-level `file` (`{path, saved, dirty}`) is carried in and hashed. A ComfyUI job is read only through its `record` |
-| frames | `"schema": "frames/1"` (`schemas/frames-1.json` in the plugin repo); also, for one release, `sheet_to_frames.py`'s unstamped `frames.json` (`tool`, or `frames` with `cell` and `verdict`), or any `frames.json` with `frames` and a `producer` (`breathe.py`, `video_loop.py`) | the sidecar first, then every frame (read next to it), the sheet (else `source`, a path or `{file}`) as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note`; `params` keep what a re-import needs: `pivot_norm`, `key_color`, `canvas`, `fps_hint`, `loop`, `hold_last`, `block_px` (from `pixel`), `reference_core_height_px` and `foot_margin_px` (from `register`); `tool` is the `producer`'s `{skill, script}` when it names one (both strings, else exit 3), else `codex-visual`/`sheet_to_frames.py`. A stamped file missing a required key exits 3 |
-| gate | `"schema": "gate/1"` (`schemas/gate-1.json` in the plugin repo); also, for one release, an unstamped Blender report (`gates` and `blender`) | its gates and verdict (`pass`), `source: authored`; the file comes from `--file`, else the report's top-level `path` (an FBX export), else the saved `.blend` from `file.path` as `role: source, mutable: true`, hashed like any file. A gate without a boolean `pass` has failed; a stamped report whose `pass` or a gate's `pass` is missing exits 3, and so does a refused report with no gates |
-| codex | `out` and `size` | the image, `source: generated`; with `--expect-size`, a `codex.size` gate; an alpha render adds a warning |
+| frames | `"schema": "frames/1"` (`schemas/frames-1.json` in the plugin repo); also, for one release, `sheet_to_frames.py`'s unstamped `frames.json` (`tool`, or `frames` with `cell` and `verdict`), or any `frames.json` with `frames` and a `producer` (`breathe.py`, `video_loop.py`) | the sidecar first, then every frame (read next to it), the sheet (else `source`, a path or `{file, sha256}`) as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note`; `params` keep what a re-import needs: `pivot_norm`, `key_color`, `canvas`, `fps_hint`, `loop`, `hold_last`, `block_px` (from `pixel`), `reference_core_height_px` and `foot_margin_px` (from `register`); `tool` is the `producer`'s `{skill, script}` when it names one (both strings, else exit 3), else `codex-visual`/`sheet_to_frames.py`. A stamped file missing a required key exits 3 |
+| gate | `"schema": "gate/1"` (`schemas/gate-1.json` in the plugin repo); also an unstamped Blender report (`gates` and `blender`) | its gates (with any `margin`) and verdict (`pass`), `source: authored` unless its `record` says otherwise (`paint_loop.py`'s `gates.json`, `video_loop.py`'s `<name>.gates.json`); the file comes from `--file`, else the report's top-level `path` (an FBX export), else the saved `.blend` from `file.path` as `role: source, mutable: true`, hashed like any file. A gate without a boolean `pass` has failed; a stamped report whose `pass` or a gate's `pass` is missing exits 3, and so does a refused report with no gates |
+| codex | `out` and `size` | the image, `source: generated`; `params` keep `model` (the image model read from the file's C2PA manifest), `agent_model` (`-m`), `codex_version` and `prompt_sha256`; with `--expect-size`, a `codex.size` gate; an alpha render adds a warning |
 
-The 0.34 dialect (no `schema`) is read for one release, with one `WARN` line on stderr per file:
-a gate's or a report's `ok` is read as `pass`, and `register.margin_px` as `foot_margin_px`.
+`ok`, the old name of `pass`, is never read. A report or a gate that carries it exits 3 (a
+producer bug), and so does a Blender op's zero-gate result (`ok` and no gates): it is not a
+verdict. A gate's `margin` (`schemas/README.md` in the plugin repo) is carried as written. An
+unstamped `frames.json` is read for one release, with one `WARN` line on stderr per file:
+`register.margin_px` as `foot_margin_px`. A frame set's `verdict.ok` is frames/1's own key.
 
 Anything else exits 3, and so does a producer's error output (an `error` with nothing written)
 and JSON holding NaN or Infinity.
@@ -47,6 +50,13 @@ output instead.
 
 Rules that hold for every shape:
 
+- **An input already in the ledger becomes upstream.** Each input (a frame set's sheet or source
+  clip, a `record`'s `inputs`) that a current record holds, matched by sha256 (the producer's,
+  else the file's on disk) and else by path, adds a `depends-on` link to that record's id, in the
+  printed partial too; an input outside `--root`, dropped from the record, still finds its
+  record by the sha256 the producer gave. `check` follows it, so the input's licence and its territory exclusions
+  reach what was made from it (`reference/licences.md`): frames cut from a local-H3 clip, a mesh
+  painted onto a generated GLB. Record the source first, then ingest what was made from it.
 - **Paths become project-relative.** Absolute paths inside `--root` are rewritten, and a relative
   path is read against `--root` (so a producer is run from the project root); a file outside
   it is refused (exit 2). An input outside it is dropped and named in the record's `warnings`.

@@ -44,16 +44,14 @@ def gate(name, value, limit, passed) -> dict:
 
 
 def report(script: str, params: dict, gates: list, **extra) -> dict:
-    """A gate/1 report (schemas/gate-1.json): `pass` is true only when every gate's `pass` is true; `ok`, its old
-    name, equals it for one release. With no gates it is a result, not a verdict: no `schema` or `pass`."""
+    """A gate/1 report (schemas/gate-1.json): `pass` is true only when every gate's `pass` is true, and no `ok`
+    (gate/1 refuses it). With no gates it is a result, not a verdict: no `schema` or `pass`, and `ok` true."""
     ok = all(g.get("pass") is True for g in gates)
     out = {"tool": script, "gates": gates, "blender": list(bpy.app.version)}
     out.update(extra)
-    for k in ("schema", "pass"):
+    for k in ("schema", "pass", "ok"):
         out.pop(k, None)
-    if gates:
-        out.update({"schema": "gate/1", "pass": ok})
-    out["ok"] = ok
+    out.update({"schema": "gate/1", "pass": ok} if gates else {"ok": ok})
     out["record"] = {"tool": {"skill": SKILL, "script": f"twocam/blender/{script}"},
                      "params": {k: v for k, v in params.items() if "path" not in k and not str(k).endswith(("blend", "dir"))},
                      "gates": gates, "verdict": "green" if ok else "failed"}
@@ -84,7 +82,7 @@ def guarded(main_fn):
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 - every failure must reach the exit code
-        result, code = {"schema": "gate/1", "pass": False, "ok": False, "gates": [],
+        result, code = {"schema": "gate/1", "pass": False, "gates": [],
                         "error": f"{type(exc).__name__}: {exc}", "trace": traceback.format_exc()[-1500:]}, 1
     sys.exit(emit(result, code))
 

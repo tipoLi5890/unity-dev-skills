@@ -164,26 +164,26 @@ def run_film(a) -> tuple:
         out["warnings"].append("width/height not checked against the server's node: run `film.py object-info` once "
                                "and pass --object-info")
     if not all(g["pass"] for g in gates):
-        out["pass"] = out["ok"] = False
+        out["pass"] = False
         return out, 2
     if a.dry_run:
         h = sha256(a.ref)
         cmd = client_cmd(a, Path(a.out_dir) / f"ref_{h[:12]}{Path(a.ref).suffix or '.png'}")
-        out.update({"pass": True, "ok": True, "dry_run": True, "client_args": cmd[2:]})
+        out.update({"pass": True, "dry_run": True, "client_args": cmd[2:]})
         return out, 0
     cmd = client_cmd(a, upload_copy(a))
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        out.update({"pass": False, "ok": False, "error": f"comfy_asset_client exited {r.returncode}: {r.stderr.strip()[-400:]}"})
+        out.update({"pass": False, "error": f"comfy_asset_client exited {r.returncode}: {r.stderr.strip()[-400:]}"})
         return out, 1
     try:
         rep = json.loads(r.stdout)
     except json.JSONDecodeError:
-        out.update({"pass": False, "ok": False, "error": "comfy_asset_client printed no JSON report"})
+        out.update({"pass": False, "error": "comfy_asset_client printed no JSON report"})
         return out, 1
     videos = [Path(p) for p in rep.get("outputs", []) if str(p).lower().endswith((".mp4", ".webm", ".mov", ".mkv"))]
     if not videos:
-        out.update({"pass": False, "ok": False, "error": f"no video among the outputs {rep.get('outputs')}"})
+        out.update({"pass": False, "error": f"no video among the outputs {rep.get('outputs')}"})
         return out, 1
     clip = Path(a.out_dir) / "h3.mp4"
     silent = strip_audio(videos[0], clip)
@@ -205,7 +205,7 @@ def run_film(a) -> tuple:
     out.update({"video": str(clip), "audio_discarded": silent, "raw_outputs": rep.get("outputs"),
                 "prompt_id": rep.get("prompt_id"), "elapsed_seconds": rep.get("elapsed_seconds"),
                 "workflow_sha256": rep.get("workflow_sha256"), "record": record,
-                "pass": all(g["pass"] is True for g in gates), "ok": all(g["pass"] is True for g in gates)})
+                "pass": all(g["pass"] is True for g in gates)})
     (Path(a.out_dir) / "film.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
     return out, 0 if out["pass"] else 2
 
@@ -342,7 +342,7 @@ def _selftest(check, checks) -> int:
         code, r = go(base + [str(out), "--seed", "1"] + tail)
         sets = json.loads((out / "sets.json").read_text()) if (out / "sets.json").exists() else {}
         check("a clip is filmed, exit 0", code == 0, code=code, err=r.get("error"))
-        check("a passing gate/1 report", r.get("schema") == "gate/1" and r.get("pass") is True and r.get("ok") is True)
+        check("a passing gate/1 report", r.get("schema") == "gate/1" and r.get("pass") is True and "ok" not in r)
         contract_sample("film", "filmed", r)
         check("node 7 gets width, height, length and the prompt file", sets.get("7.width") == "1376" and
               sets.get("7.height") == "768" and sets.get("7.length") == "124" and sets.get("7.prompt", "").startswith("@"))
@@ -359,7 +359,7 @@ def _selftest(check, checks) -> int:
         check("no address in the report", "://" not in json.dumps(r))
         code, r = go(base + [str(td / "b"), "--seed", "1", "--width", "1365"] + tail)
         check("a width off the 32 step fails before submission, exit 2", code == 2 and not (td / "b").exists()
-              and r.get("pass") is False and r.get("ok") is False)
+              and r.get("pass") is False and "ok" not in r)
         contract_sample("film", "width_step", r)
         code, r = go(base + [str(td / "c"), "--seed", "1", "--width", "2048", "--height", "1152"] + tail)
         check("a size above the node's max fails film.size_range, exit 2",

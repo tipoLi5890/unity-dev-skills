@@ -25,7 +25,7 @@ an exporter may split vertices at seams. A mesh parented to a bone carries no
 vertex groups and is checked for presence and scale only.
 
 Prints one gate/1 report (schemas/gate-1.json): `pass` true only when every
-gate passed; `ok`, its old name, equals it for one release. Exit codes: 0 every gate passed; 1 a gate failed;
+gate passed. Exit codes: 0 every gate passed; 1 a gate failed;
 2 a snapshot is missing or unreadable.
 
 Stdlib only.
@@ -63,7 +63,7 @@ def main() -> int:
     try:
         before, after = load(args.before), load(args.after)
     except (OSError, ValueError) as exc:
-        print(json.dumps({"schema": "gate/1", "pass": False, "ok": False, "gates": [], "error": str(exc)}))
+        print(json.dumps({"schema": "gate/1", "pass": False, "gates": [], "error": str(exc)}))
         return 2
 
     gates = []
@@ -123,7 +123,7 @@ def main() -> int:
         gate("action", same, before=a, after=b)
 
     ok = all(g["pass"] is True for g in gates)
-    print(json.dumps({"schema": "gate/1", "tool": "rig_gate.py", "pass": ok, "ok": ok, "gates": gates,
+    print(json.dumps({"schema": "gate/1", "tool": "rig_gate.py", "pass": ok, "gates": gates,
                       "vertices": vertices}, indent=2))
     return 0 if ok else 1
 

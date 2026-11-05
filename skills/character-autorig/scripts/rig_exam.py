@@ -8,6 +8,8 @@ usage:
                                                                                 known defects on a good rig -> EXAM/faults/
     rig_exam.py reference EXAM NAME --glb G --markers M [--fbx F --contract C]  add a rig a person accepted -> EXAM/refs/NAME/
     rig_exam.py score  EXAM [--tol 0.04] [--out EXAM/exam.json] [--sheet EXAM/sheet.png]
+    rig_exam.py bench  EXAM|--no-exam [--real OUT ...] --out FILE [--label TEXT] [--tol 0.04] [--volume-max 0.35]
+    rig_exam.py compare OLD.json NEW.json [--margin-drop 0.02]
     rig_exam.py --selftest
 build, run, faults and reference's rig check take --blender PATH (env BLENDER, else autorig.py's default) and
 --threads N; they run Blender one call at a time. score is numpy (Pillow for the sheet) and needs no Blender.
@@ -57,13 +59,30 @@ listed beside them as `mild` (a marker off the crease, which the volume gate may
 The report (exam/1, kind report; skill-local, not a cross-skill contract) and a contact sheet (front and side of
 each case, truth green, markers red, a line where they differ) are written.
 
-Prints one JSON object. Exit codes: 0 done (score: no false pass and no slipped fault), 2 the score found a false
-pass or a slipped fault (build/run/faults: a Blender step failed), 1 refused input or a failed selftest.
+bench (bench/1, schemas/bench-1.json; numpy, no Blender): one file that a later version is compared with. `exam`
+is score's summary of EXAM (null when no case was scored; leave EXAM out with --no-exam), `real` one entry per
+--real OUT (a character's autorig.py folder): name, out, body (its markers'), per step of OUT/autorig.all.json
+(else each OUT/autorig.<stage>.json) the gates {name, value, limit, pass, margin} of its report (`deform` the
+reading after the repair ladder; repair attempts left out; a report moved with OUT is found under the given OUT),
+`stability` (OUT/autorig.stability.json from `all --repeat`, else null) and worst_margin (the least margin over its
+gates). made_with: --label (say, the version benched), the plugin version when the plugin's manifest is found, and
+a sha256 prefix of each script of this folder. A bench with no scored exam case and no --real is refused.
+compare (two bench/1 files, OLD then NEW): a regression is a gate that passed in OLD and fails or is not read in
+NEW, a gate new to a step OLD read that fails in NEW, a margin that drops by more than --margin-drop (0.02), a real character or exam case of OLD missing in NEW,
+a case that was a true pass or an expected fail and is not now, fewer fingers right, or a new false pass,
+slipped fault or failed control. Improvements are the reverse. Prints one JSON object {regressions,
+improvements, pass}. Keep the bench files outside the repository, beside the exam folder.
+
+Prints one JSON object. Exit codes: 0 done (score: no false pass and no slipped fault; compare: no regression), 2
+the score found a false pass or a slipped fault, or compare found a regression (build/run/faults: a Blender step
+failed), 1 refused input or a failed selftest.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -75,6 +94,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 SCHEMA = "exam/1"
+BENCH = "bench/1"
 AUTORIG = HERE / "autorig.py"
 MARKERS = HERE / "arp_markers.py"
 DEFORM = HERE / "deform_gate.py"
@@ -100,6 +120,55 @@ EXPECT = {"elbow_shift": ["markers.limb_ratio", "deform.volume_loss_max"],
 VOLUME_FAULTS = ("elbow_blend", "knee_blend")
 NO_FIST = "arms_up,deep_squat,torso_twist,leg_raise,elbow_120"
 SHIFT_H = 0.05
+
+
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
 
 
 class Refused(Exception):
@@ -531,6 +600,211 @@ def cmd_score(a) -> tuple[int, dict]:
     return (2 if bad else 0), report
 
 
+# --- bench and compare: one file per version, two files compared ------------------------------------------------
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def bench_gate(g: dict) -> dict:
+    """A gate as bench/1 keeps it: the producer's own margin, else one read from a limit that says its direction
+    ("<= 0.08") or a [lo, hi] range; null when neither (a bool, a dict, a bare number)."""
+    m = g.get("margin")
+    if not _number(m):
+        lim = g.get("limit")
+        m = gate_margin(g.get("value"), lim, "range" if isinstance(lim, list) else None)
+    return {"name": str(g.get("name")), "value": g.get("value"), "limit": g.get("limit"),
+            "pass": g.get("pass") is True, "margin": m}
+
+
+def _rebase(path, ran_in, out: Path) -> Path:
+    """A report path the summary wrote, found under OUT when the folder was moved since."""
+    p = Path(str(path))
+    if p.exists() or not ran_in:
+        return p
+    try:
+        return out / p.relative_to(ran_in)
+    except ValueError:
+        return p
+
+
+def real_reading(out: Path) -> dict:
+    """One character's autorig.py folder as bench/1's `real` entry."""
+    summary = read_json(out / "autorig.all.json")
+    if summary is None:     # stages run one at a time: each writes its own summary
+        parts = [read_json(out / f"autorig.{s}.json") for s in ("prep", "check", "smart", "markers", "arp",
+                                                                 "contract", "deform", "secondary")]
+        parts = [x for x in parts if x]
+        if not parts:
+            raise Refused(f"{out}: no autorig.all.json or autorig.<stage>.json (not an autorig.py folder)")
+        summary = {"name": parts[-1].get("name"), "out": parts[-1].get("out"),
+                   "steps": [st for x in parts for st in x.get("steps") or []],
+                   "repair": next((x["repair"] for x in reversed(parts) if x.get("repair")), None)}
+    ran_in = summary.get("out")
+    name = summary.get("name") or out.name
+    stages = {}
+    for st in summary.get("steps") or []:
+        step = str(st.get("name"))
+        if step.startswith(("repair_", "deform_a")):
+            continue            # the ladder's attempts: the final reading stands for the deform stage below
+        rep = read_json(_rebase(st.get("report"), ran_in, out))
+        if isinstance(rep, dict) and isinstance(rep.get("gates"), list):
+            stages[step] = {"pass": rep.get("pass") is True, "gates": [bench_gate(g) for g in rep["gates"]
+                                                                       if isinstance(g, dict)]}
+    attempts = (summary.get("repair") or {}).get("attempts") or []
+    if attempts and "deform" in stages:
+        final = read_json(_rebase(attempts[-1].get("deform"), ran_in, out))
+        if isinstance(final, dict) and isinstance(final.get("gates"), list):
+            stages["deform"] = {"pass": final.get("pass") is True, "repair": summary["repair"].get("result"),
+                                "gates": [bench_gate(g) for g in final["gates"] if isinstance(g, dict)]}
+    markers = read_json(out / "rig" / f"{name}.markers.json") or {}
+    margins = [g["margin"] for v in stages.values() for g in v["gates"] if _number(g["margin"])]
+    failed = [f"{st}:{g['name']}" for st, v in stages.items() for g in v["gates"] if g["pass"] is not True]
+    return {"name": name, "out": str(out), "body": markers.get("body", "human"), "exit_code": summary.get("exit_code"),
+            "stages": stages, "stability": read_json(out / "autorig.stability.json"),
+            "worst_margin": min(margins) if margins else None, "failed_gates": failed}
+
+
+def made_with(label=None) -> dict:
+    """What made the bench: the label given, the plugin version when its manifest is found, each script's hash."""
+    out = {"label": label, "version": None,
+           "scripts": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:12] for p in sorted(HERE.glob("*.py"))}}
+    for up in HERE.parents[:4]:
+        man = read_json(up / ".claude-plugin" / "plugin.json")
+        if isinstance(man, dict) and man.get("version"):
+            out["version"] = str(man["version"])
+            break
+    return out
+
+
+def exam_summary(exam: Path, tol: float, volume_max: float):
+    """score's summary of an exam folder, or None when no case there was scored (no run yet)."""
+    if not exam.is_dir():
+        raise Refused(f"no exam folder {exam}")
+    cases, faults, _ = collect(exam)
+    scored = [score_case(c, tol) for c in cases]
+    if not any("landmarks" in c for c in scored):
+        return None
+    return summarise(scored, [score_fault(f) for f in faults], tol, volume_max)
+
+
+def cmd_bench(a) -> tuple[int, dict]:
+    if bool(a.exam) == bool(a.no_exam):
+        raise Refused("bench: name the exam folder, or --no-exam for real characters alone")
+    if a.no_exam and not a.real:
+        raise Refused("bench --no-exam: name at least one --real OUT")
+    for o in a.real:
+        if not Path(o).is_dir():
+            raise Refused(f"--real {o}: no such folder")
+    doc = {"schema": BENCH, "tool": "rig_exam",
+           "exam": None if a.no_exam else exam_summary(Path(a.exam), a.tol, a.volume_max),
+           "exam_dir": None if a.no_exam else str(Path(a.exam)),
+           "real": [real_reading(Path(o)) for o in a.real], "made_with": made_with(a.label)}
+    if doc["exam"] is None and not doc["real"]:     # an empty baseline would let every later compare pass
+        raise Refused(f"bench: nothing to bench: no case of {a.exam} has been scored (run it first) and no --real")
+    write_json(a.out, doc)
+    return 0, {"tool": "rig_exam", "op": "bench", "out": a.out, "exam": doc["exam"] is not None,
+               "real": {r["name"]: {"exit_code": r["exit_code"], "worst_margin": r["worst_margin"],
+                                    "failed_gates": r["failed_gates"]} for r in doc["real"]}}
+
+
+GOOD_OUTCOMES = ("true_pass", "expected_fail")
+
+
+def _cases(exam: dict | None) -> dict:
+    return {n: o for o, names in ((exam or {}).get("outcomes") or {}).items() for n in names}
+
+
+def compare(old: dict, new: dict, margin_drop: float = 0.02) -> dict:
+    """Regressions and improvements from OLD to NEW, two bench/1 documents (see the docstring)."""
+    reg, imp = [], []
+    if old.get("exam") is not None and new.get("exam") is None:
+        reg.append({"what": "exam_missing"})
+    oe, ne = old.get("exam"), new.get("exam")
+    if oe is not None and ne is not None:
+        for key in ("false_pass", "faults_slipped", "control_fail"):
+            a, b = set(oe.get(key) or []), set(ne.get(key) or [])
+            reg += [{"what": key, "case": x} for x in sorted(b - a)]
+            imp += [{"what": key + "_gone", "case": x} for x in sorted(a - b)]
+        oc, nc = _cases(oe), _cases(ne)
+        for n, o in sorted(oc.items()):
+            if n not in nc:
+                reg.append({"what": "case_missing", "case": n})
+            elif o in GOOD_OUTCOMES and nc[n] not in GOOD_OUTCOMES:
+                reg.append({"what": "outcome", "case": n, "old": o, "new": nc[n]})
+            elif o not in GOOD_OUTCOMES and nc[n] in GOOD_OUTCOMES:
+                imp.append({"what": "outcome", "case": n, "old": o, "new": nc[n]})
+        of = set(oe.get("faults_caught") or []) | set(oe.get("faults_slipped") or [])
+        nf = set(ne.get("faults_caught") or []) | set(ne.get("faults_slipped") or [])
+        reg += [{"what": "fault_missing", "case": x} for x in sorted(of - nf)]
+        fo, fn = oe.get("fingers_right"), ne.get("fingers_right")
+        if _number(fo) and _number(fn) and fn != fo:
+            (reg if fn < fo else imp).append({"what": "fingers_right", "old": fo, "new": fn})
+
+    def gates(r: dict) -> dict:
+        out = {(st, g["name"]): g for st, v in (r.get("stages") or {}).items() for g in v.get("gates") or []}
+        out.update({("stability", g.get("name")): g for g in ((r.get("stability") or {}).get("gates") or [])})
+        return out
+    nr = {r.get("name"): r for r in new.get("real") or []}
+    for r in old.get("real") or []:
+        name = r.get("name")
+        if name not in nr:
+            reg.append({"what": "real_missing", "real": name})
+            continue
+        for st, v in sorted((r.get("stages") or {}).items()):     # a step OLD read: a gate new to it that fails
+            w = (nr[name].get("stages") or {}).get(st)
+            known = {g.get("name") for g in v.get("gates") or []}
+            for g in (w or {}).get("gates") or [] if isinstance(w, dict) else []:
+                if g.get("name") not in known and g.get("pass") is not True:
+                    reg.append({"what": "new_gate_failed", "real": name, "stage": st, "gate": g.get("name"),
+                                "new": g.get("value")})
+        og, ng = gates(r), gates(nr[name])
+        for (st, gn), g in sorted(og.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
+            where = {"real": name, "stage": st, "gate": gn}
+            h = ng.get((st, gn))
+            if h is None:
+                if g.get("pass") is True:
+                    reg.append({"what": "gate_not_read", **where})
+                continue
+            if g.get("pass") is True and h.get("pass") is not True:
+                reg.append({"what": "gate_failed", **where, "old": g.get("value"), "new": h.get("value")})
+            elif g.get("pass") is not True and h.get("pass") is True:
+                imp.append({"what": "gate_passed", **where, "old": g.get("value"), "new": h.get("value")})
+            mo, mn = g.get("margin"), h.get("margin")
+            if _number(mo) and _number(mn):
+                if mo - mn > margin_drop:
+                    reg.append({"what": "margin_drop", **where, "old": mo, "new": mn, "drop": round(mo - mn, 4)})
+                elif mn - mo > margin_drop:
+                    imp.append({"what": "margin_rise", **where, "old": mo, "new": mn, "rise": round(mn - mo, 4)})
+    return {"regressions": reg, "improvements": imp, "pass": not reg}
+
+
+def cmd_compare(a) -> tuple[int, dict]:
+    docs = []
+    for path in (a.old, a.new):
+        d = read_json(path)
+        if not isinstance(d, dict) or d.get("schema") != BENCH:
+            raise Refused(f"{path}: not a bench/1 file (rig_exam.py bench)")
+        docs.append(d)
+    if docs[0].get("exam") is None and not docs[0].get("real"):
+        raise Refused(f"{a.old}: benches nothing (no exam summary, no real character): no baseline to compare with")
+    if not _number(a.margin_drop) or a.margin_drop < 0:
+        raise Refused("--margin-drop: a number, 0 or more")
+    out = compare(docs[0], docs[1], a.margin_drop)
+    out = {"tool": "rig_exam", "op": "compare", "old": a.old, "new": a.new, "margin_drop": a.margin_drop, **out}
+    return (0 if out["pass"] else 2), out
+
+
+def contract_sample(case: str, doc: dict) -> None:
+    """Hand one selftest document to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as rig_exam__<case>.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"rig_exam__{case}.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1, default=_plain)
+    print(f"selftest-output: {path}")
+
+
 # --- Blender steps -------------------------------------------------------------------------------------------------
 def blender_path(a) -> str:
     if a.blender:
@@ -802,6 +1076,134 @@ def planted(name="planted", shift=None, H=1.75, fingers=4, failed=(), expect_fai
             "deform_first": {"volume_loss_max": {"value": 0.08, "joint": "LowerArm.L"}, "gates": [], "poses": {}}}
 
 
+def fake_real(out: Path, name: str, vol: float, si: float, repaired: bool = False) -> None:
+    """An autorig.py folder as `all` leaves it: the summary, the markers and deform reports (the repair's when
+    `repaired`: the first deform failed, attempt 1 passed), and a stability file."""
+    def deform(v, s_):
+        gates = [{"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "pass": v <= 0.35,
+                  "margin": gate_margin(v, 0.35, "<=")},
+                 {"name": "deform.self_intersection_p95", "value": s_, "limit": 0.08, "pass": s_ <= 0.08,
+                  "margin": gate_margin(s_, 0.08, "<=")}]
+        return {"schema": "gate/1", "gates": gates, "pass": all(g["pass"] for g in gates)}
+    rig = out / "rig"
+    markers = {"schema": "autorig-markers/1", "body": "skirt", "pass": True,
+               "gates": [{"name": "markers.symmetry", "value": 0.004, "limit": 0.035, "pass": True},
+                         {"name": "markers.arm_angle", "value": 44.0, "limit": [30.0, 60.0], "pass": True}]}
+    write_json(rig / f"{name}.markers.json", markers)
+    steps = [{"name": "markers", "report": str(rig / f"{name}.markers.json"), "failed_gates": []},
+             {"name": "deform", "report": str(rig / f"{name}.deform.json"), "failed_gates": []}]
+    summary = {"tool": "autorig.py", "stage": "all", "name": name, "out": str(out), "steps": steps, "exit_code": 0}
+    if repaired:
+        write_json(rig / f"{name}.deform.json", deform(0.41, si))
+        write_json(out / "repair" / "a1" / f"{name}.deform.json", deform(vol, si))
+        steps += [{"name": "repair_a1", "report": str(out / "repair" / "a1" / "repair.json"), "failed_gates": []},
+                  {"name": "deform_a1", "report": str(out / "repair" / "a1" / f"{name}.deform.json"), "failed_gates": []}]
+        summary["repair"] = {"result": "passed", "attempts": [{"deform": str(out / "repair" / "a1" / f"{name}.deform.json")}]}
+    else:
+        write_json(rig / f"{name}.deform.json", deform(vol, si))
+    write_json(out / "autorig.all.json", summary)
+    write_json(out / "autorig.stability.json", {"schema": "gate/1", "pass": True, "gates": [
+        {"name": "stable", "value": 0.2, "limit": 0.0, "pass": True, "margin": 0.2}]})
+
+
+def selftest_bench(ok, exam: Path, real: Path) -> None:
+    """bench on the planted exam and two planted characters; compare on a pair with and without a regression."""
+    fake_real(real / "runner", "Runner", 0.30, 0.05)
+    fake_real(real / "mascot", "Mascot", 0.20, 0.04, repaired=True)
+    moved = real.parent / "moved"
+    shutil.copytree(real / "runner", moved / "runner")      # a folder moved since: its reports found under it
+    old = real.parent / "old.bench.json"
+    code, msg = cmd_bench(parser().parse_args(["bench", str(exam), "--real", str(real / "runner"), str(real / "mascot"),
+                                               "--out", str(old), "--label", "0.42.3"]))
+    b = read_json(old) or {}
+    runner = next((r for r in b.get("real", []) if r["name"] == "Runner"), {})
+    mascot = next((r for r in b.get("real", []) if r["name"] == "Mascot"), {})
+    vol = next((g for g in (mascot.get("stages", {}).get("deform") or {}).get("gates", [])
+                if g["name"] == "deform.volume_loss_max"), {})
+    ok("bench: bench/1 with the exam's summary, each character's stages and margins, the label",
+       code == 0 and b.get("schema") == BENCH and b["exam"]["faults_slipped"] == ["elbow_blend@body"]
+       and runner.get("body") == "skirt" and runner.get("worst_margin") == round((0.35 - 0.30) / 0.35, 4)
+       and b["made_with"]["label"] == "0.42.3" and "rig_exam.py" in b["made_with"]["scripts"]
+       and runner["stability"]["gates"][0]["name"] == "stable")
+    ok("bench: a passing repair's reading stands for the deform stage; the attempts are left out; a margin "
+       "read from a [lo, hi] limit", vol.get("value") == 0.20 and mascot["stages"]["deform"]["repair"] == "passed"
+       and not any(k.startswith(("repair_", "deform_a")) for k in mascot["stages"])
+       and next(g for g in runner["stages"]["markers"]["gates"] if g["name"] == "markers.arm_angle")["margin"]
+       == round(14.0 / 15.0, 4)
+       and next(g for g in runner["stages"]["markers"]["gates"] if g["name"] == "markers.symmetry")["margin"] is None)
+    shutil.rmtree(real / "runner")
+    code_m, _ = cmd_bench(parser().parse_args(["bench", "--no-exam", "--real", str(moved / "runner"),
+                                               "--out", str(real.parent / "moved.bench.json")]))
+    mv = read_json(real.parent / "moved.bench.json") or {}
+    ok("bench --no-exam: exam null; a moved folder's reports found under it",
+       code_m == 0 and mv.get("exam") is None and mv["real"][0]["stages"].get("deform", {}).get("pass") is True)
+    contract_sample("bench", b)
+    # compare: the same file is no regression; a worse one is
+    same = cmd_compare(parser().parse_args(["compare", str(old), str(old)]))
+    ok("compare: a bench against itself, exit 0, nothing listed", same[0] == 0 and not same[1]["regressions"]
+       and not same[1]["improvements"])
+    worse = json.loads(json.dumps(b))
+    wr = next(r for r in worse["real"] if r["name"] == "Runner")
+    for g in wr["stages"]["deform"]["gates"]:
+        if g["name"] == "deform.self_intersection_p95":     # 0.05 -> 0.07: still passing, margin 0.375 -> 0.125
+            g.update(value=0.07, margin=gate_margin(0.07, 0.08, "<="))
+    wm = next(r for r in worse["real"] if r["name"] == "Mascot")
+    wm["stages"]["deform"]["gates"][0].update({"value": 0.36, "pass": False, "margin": gate_margin(0.36, 0.35, "<=")})
+    worse["exam"]["false_pass"] = ["body"]
+    newp = real.parent / "new.bench.json"
+    write_json(newp, worse)
+    code_w, cw = cmd_compare(parser().parse_args(["compare", str(old), str(newp)]))
+    kinds = sorted({r_["what"] for r_ in cw["regressions"]})
+    ok("compare: a margin drop past 0.02, a gate gone from pass to fail and a new false pass: exit 2, each listed",
+       code_w == 2 and kinds == ["false_pass", "gate_failed", "margin_drop"])
+    code_b, cb = cmd_compare(parser().parse_args(["compare", str(newp), str(old)]))
+    ok("compare: the reverse is all improvement, exit 0", code_b == 0 and {r_["what"] for r_ in cb["improvements"]}
+       == {"false_pass_gone", "gate_passed", "margin_rise"})
+    small = json.loads(json.dumps(b))
+    sr = next(r for r in small["real"] if r["name"] == "Runner")
+    sr["stages"]["deform"]["gates"][0]["margin"] = round(sr["stages"]["deform"]["gates"][0]["margin"] - 0.01, 4)
+    write_json(newp, small)
+    ok("compare: a margin 0.01 lower is within --margin-drop 0.02, exit 0; 0.005 catches it",
+       cmd_compare(parser().parse_args(["compare", str(old), str(newp)]))[0] == 0
+       and cmd_compare(parser().parse_args(["compare", str(old), str(newp), "--margin-drop", "0.005"]))[0] == 2)
+    gone = json.loads(json.dumps(b))
+    gone["real"] = [r for r in gone["real"] if r["name"] != "Mascot"]
+    gone["exam"]["outcomes"] = {k: [n for n in v if n != "body"] for k, v in gone["exam"]["outcomes"].items()}
+    write_json(newp, gone)
+    code_g, cg = cmd_compare(parser().parse_args(["compare", str(old), str(newp)]))
+    ok("compare: a character or a case of the old bench missing from the new: exit 2",
+       code_g == 2 and {r_["what"] for r_ in cg["regressions"]} == {"real_missing", "case_missing"})
+    added = json.loads(json.dumps(b))
+    next(r for r in added["real"] if r["name"] == "Runner")["stages"]["deform"]["gates"].append(
+        {"name": "deform.mitten_tear", "value": 0.2, "limit": 0.1, "pass": False, "margin": -1.0})
+    write_json(newp, added)
+    code_n, cn = cmd_compare(parser().parse_args(["compare", str(old), str(newp)]))
+    ok("compare: a gate new to a step the old bench read, failing in the new: exit 2",
+       code_n == 2 and [r_["what"] for r_ in cn["regressions"]] == ["new_gate_failed"])
+    empty = real.parent / "empty_exam"
+    empty.mkdir()
+    empty_b = real.parent / "empty.bench.json"
+    write_json(empty_b, {"schema": BENCH, "exam": None, "real": []})
+    for argv in (["bench", str(empty), "--out", str(newp)], ["compare", str(empty_b), str(old)]):
+        try:
+            a = parser().parse_args(argv)
+            (cmd_bench if a.cmd == "bench" else cmd_compare)(a)
+            ok(f"refused, nothing to compare: {argv[0]}", False)
+        except Refused:
+            ok(f"refused, nothing to compare: {argv[0]}", True)
+    for argv in (["bench", "--real", str(moved / "runner"), "--out", str(newp)],
+                 ["bench", str(exam), "--no-exam", "--out", str(newp)],
+                 ["bench", "--no-exam", "--out", str(newp)],
+                 ["bench", str(exam), "--real", str(real / "nowhere"), "--out", str(newp)],
+                 ["compare", str(old), str(exam / "exam.json")]):
+        try:
+            a = parser().parse_args(argv)
+            (cmd_bench if a.cmd == "bench" else cmd_compare)(a)
+            ok(f"refused: {argv[:2]}", False)
+        except Refused:
+            ok(f"refused: {argv[:2]}", True)
+
+
 def selftest() -> int:
     checks, failed = 0, []
 
@@ -909,7 +1311,14 @@ def selftest() -> int:
             ok("missing exam folder refused", False)
         except Refused:
             ok("missing exam folder refused", True)
-    for argv in (["--no-such-flag"], ["score"], ["faults", "x", "--only", "bogus"]):
+        contract_sample("truth", p["truth"])
+        contract_sample("report", saved)
+        contract_sample("fault", {"schema": SCHEMA, "kind": "fault", "fault": "elbow_blend", "base": "body",
+                                  "steps": [{"name": "deform", "exit_code": 2,
+                                             "failed_gates": ["deform.volume_loss_max"]}], "base_failed": []})
+        selftest_bench(ok, exam, Path(d) / "real")
+    for argv in (["--no-such-flag"], ["score"], ["faults", "x", "--only", "bogus"], ["bench", "x"],
+                 ["compare", "a.json"], ["compare", "a.json", "b.json", "--margin-drop", "x"]):
         try:
             a = parser().parse_args(argv)
             if a.cmd == "faults":
@@ -952,6 +1361,19 @@ def parser() -> Parser:
     s.add_argument("--volume-max", type=float, default=0.35, help="deform_gate's volume limit, for the volume check")
     s.add_argument("--out")
     s.add_argument("--sheet")
+    bn = sub.add_parser("bench")
+    bn.add_argument("exam", nargs="?", help="the exam folder (or --no-exam)")
+    bn.add_argument("--no-exam", action="store_true", help="real characters alone")
+    bn.add_argument("--real", action="extend", nargs="+", default=[], metavar="OUT",
+                    help="a character's autorig.py folder (repeatable)")
+    bn.add_argument("--out", required=True, help="the bench/1 file to write")
+    bn.add_argument("--label", help="recorded in made_with, say the version benched")
+    bn.add_argument("--tol", type=float, default=0.04)
+    bn.add_argument("--volume-max", type=float, default=0.35)
+    cp = sub.add_parser("compare")
+    cp.add_argument("old", help="the earlier bench/1 file")
+    cp.add_argument("new", help="the later bench/1 file")
+    cp.add_argument("--margin-drop", type=float, default=0.02, help="a margin falling by more than this regresses")
     p.add_argument("--selftest", action="store_true")
     return p
 
@@ -963,9 +1385,10 @@ def main(argv=None) -> int:
     try:
         a = parser().parse_args(argv)
         if not a.cmd:
-            raise Refused("rig_exam.py: name a command (build, run, faults, reference, score) or --selftest")
+            raise Refused("rig_exam.py: name a command (build, run, faults, reference, score, bench, compare) "
+                          "or --selftest")
         code, rep = {"build": cmd_build, "run": cmd_run, "faults": cmd_faults, "reference": cmd_reference,
-                     "score": cmd_score}[a.cmd](a)
+                     "score": cmd_score, "bench": cmd_bench, "compare": cmd_compare}[a.cmd](a)
     except Refused as exc:
         print(json.dumps({"tool": "rig_exam", "ok": False, "error": str(exc)}))
         return 1

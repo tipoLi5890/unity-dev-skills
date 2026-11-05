@@ -276,7 +276,7 @@ def case_reset_switches_exclude():
     rig = scene()
     objects_before = set(bpy.data.objects)
     out = retarget(clips=[clip("JogLaneLeft"), clip("JogLaneRight", map="stub_preset")])
-    assert out["ok"], (out["gates"], out["clips"])
+    assert out["pass"] and "ok" not in out, (out["gates"], out["clips"])
     assert [g["name"] for g in out["gates"]] == ["arp.retarget_clips", "arp.metadata_clips"]
     assert len(SEEN["freeze"]) == 2
     for seen in SEEN["freeze"]:
@@ -311,7 +311,7 @@ def case_metadata_missing_refuses():
     actions, objects = set(bpy.data.actions), set(bpy.data.objects)
     bare = {"name": "JogLaneRight", "fbx": FBX}            # no description
     out = retarget(clips=[clip("JogLaneLeft"), bare])
-    assert not out["ok"] and out["reason"] == "metadata_invalid", out
+    assert not out["pass"] and out["reason"] == "metadata_invalid", out
     assert "description" in out["message"]
     assert "retarget" not in SEEN and "freeze" not in SEEN, "an operator ran before the refusal"
     assert set(bpy.data.actions) == actions and set(bpy.data.objects) == objects
@@ -324,7 +324,7 @@ def case_dry_run():
     basis = {pb.name: pb.matrix_basis.copy() for pb in rig.pose.bones}
     switches = {n: rig.pose.bones[n]["ik_fk_switch"] for n in SWITCHES}
     out = retarget(dry_run=True, clips=[clip("JogLaneLeft"), clip("JogLaneRight")])
-    assert out["ok"], (out["gates"], out["clips"])
+    assert out["pass"], (out["gates"], out["clips"])
     assert out["dry_run"] and out["clips_planned"] == 2 and len(out["clips"]) == 1
     assert len(SEEN["retarget"]) == 1
     assert out["clips"][0]["metadata"]["written"], out["clips"][0]
@@ -340,10 +340,10 @@ def case_clip_problems_named():
     scene()
     named = {"name": "metadata_take", "fbx": os.path.join(TMP, "missing.fbx"), "description": "x"}
     out = retarget(clips=[named])
-    assert not out["ok"] and out["reason"] == "clip_invalid", out
+    assert not out["pass"] and out["reason"] == "clip_invalid", out
     half = clip("JogLaneLeft", frame_start=2)
     out = retarget(clips=[half])
-    assert not out["ok"] and out["reason"] == "clip_invalid" and "frame_end" in out["message"], out
+    assert not out["pass"] and out["reason"] == "clip_invalid" and "frame_end" in out["message"], out
     assert "freeze" not in SEEN, "an operator ran before the refusal"
 
 
@@ -351,7 +351,7 @@ def case_first_failure_skips_rest():
     scene()
     bad = {**BASE["map"], "c_hand_fk.l": "RightHand"}      # a bone this skeleton does not have
     out = retarget(map=bad, clips=[clip("JogLaneLeft"), clip("JogLaneRight")])
-    assert not out["ok"]
+    assert not out["pass"]
     first, second = out["clips"]
     assert not first["bake"]["ok"] and "RightHand" in first["bake"]["error"], first
     assert first["bake"]["stage"] == "import bones", first["bake"]
@@ -367,7 +367,7 @@ def case_source_bones():
     names = {b["name"] for b in out["files"][0]["bones"]}
     assert {"Hips", "LeftArm", "LeftHandIndex1"} <= names, names
     assert out["files"][0]["map_missing"] == ["RightHand"], out["files"][0]
-    assert not out["ok"] and [g["name"] for g in out["gates"]] == ["arp.source_skeleton_found",
+    assert not out["pass"] and [g["name"] for g in out["gates"]] == ["arp.source_skeleton_found",
                                                                     "arp.map_sources_found"]
     assert set(bpy.data.objects) == objects, "source_bones left the import behind"
 
@@ -375,7 +375,7 @@ def case_source_bones():
 def case_keep_source_then_into_action():
     scene()
     out = retarget(keep_source=True, switches={}, clips=[clip("JogLaneLeft")])
-    assert out["ok"], (out["gates"], out["clips"])
+    assert out["pass"], (out["gates"], out["clips"])
     source = bpy.data.objects[out["clips"][0]["source_object"]]
     assert source.name == "JogLaneLeft_Source" and source["brt_clip"] == "JogLaneLeft"
     assert source.hide_render
@@ -384,7 +384,7 @@ def case_keep_source_then_into_action():
     assert not any("ik_fk_switch" in p for p in paths), "switches: {} keyed a switch"
     conv = R.run({"source": source.name, "target": "RunnerRig", "map": {"c_hand_fk.l": "LeftForeArm"},
                   "into_action": "JogLaneLeft"})
-    assert conv["ok"], conv["gates"]
+    assert conv["pass"] and "ok" not in conv, conv["gates"]
     after = {fc.data_path for fc in C.action_slot_fcurves(action)}
     assert after - paths == {'pose.bones["c_hand_fk.l"].rotation_quaternion'}, after - paths
 

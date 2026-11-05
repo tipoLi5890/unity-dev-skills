@@ -567,7 +567,7 @@ def run_bvh(a) -> tuple:
         still &= weights[s] == 0
     outside = float(max((_rot_change_deg(Wr[still, j], Wr2[still, j]).max() if still.any() else 0.0) for j in touched))
     gates, ok = finish(before, after, pen_after, info, a, contacts is not None)
-    rep = {"schema": "gate/1", "tool": "contact_bake", "mode": "bvh" + (" sample-only" if a.sample_only else ""), "pass": ok, "ok": ok,
+    rep = {"schema": "gate/1", "tool": "contact_bake", "mode": "bvh" + (" sample-only" if a.sample_only else ""), "pass": ok,
            "clip": str(a.clip), "frames": b.n_frames,
            "fps": round(b.fps, 4), "legs": preset, "leg_joints": {s: [b.names[j] if j is not None else None for j in legs[s]] for s in SIDES},
            "floor_m": _r(fl, 4), "sole_offsets": {b.names[j]: h for j, h in offsets.items()}, "plants": info,
@@ -697,7 +697,7 @@ def run_blender(a) -> tuple:
         still &= weights[s] == 0
     outside = float(max((_rot_change_deg(Wr[still, j], Wr2[still, j]).max() if still.any() else 0.0) for j in touched))
     gates, ok = finish(before, after, pen_after, info, a, contacts is not None)
-    rep = {"schema": "gate/1", "tool": "contact_bake", "mode": "blender" + (" sample-only" if a.sample_only else ""), "pass": ok, "ok": ok,
+    rep = {"schema": "gate/1", "tool": "contact_bake", "mode": "blender" + (" sample-only" if a.sample_only else ""), "pass": ok,
            "armature": obj.name, "action": act.name,
            "frame_range": [f0, f1], "frames": len(frames), "fps": round(fps, 4), "legs": preset,
            "leg_joints": {s: [names[j] if j is not None else None for j in legs[s]] for s in SIDES},
@@ -799,7 +799,7 @@ def main(argv=None) -> int:
                 raise Refused("give CLIP.bvh and --out (or --armature inside Blender)")
             rep, code = run_bvh(a)
     except (_ArgError, Refused, ValueError) as e:
-        print(json.dumps({"schema": "gate/1", "tool": "contact_bake", "pass": False, "ok": False, "gates": [], "refused": str(e)}))
+        print(json.dumps({"schema": "gate/1", "tool": "contact_bake", "pass": False, "gates": [], "refused": str(e)}))
         return 1
     text = json.dumps(rep, indent=1)
     if a.report:
@@ -928,7 +928,7 @@ def selftest() -> int:
         check("sliding feet fail the slide gate before the bake", sb.get("p95", 0) > 0.015, sb)
         check("and pass after it (exit 0)", code == 0 and sa.get("p95", 1) <= 0.002 and sa.get("max", 1) <= 0.005, (code, sa, rep.get("gates")))
         check("a passing gate/1 report: pass and ok true, every gate named with a pass",
-              rep.get("schema") == "gate/1" and rep.get("pass") is True and rep.get("ok") is True
+              rep.get("schema") == "gate/1" and rep.get("pass") is True and "ok" not in rep
               and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep.get("gates", [])), rep.get("gates"))
         contract_sample("contact_bake", "baked", rep)
         check("plants come from the contacts, both feet", all(rep["plants"][s]["source"] == "contacts"
@@ -989,7 +989,7 @@ def selftest() -> int:
         code, rep = cli(td / "high.bvh", "--out", td / "x.bvh", "--contacts", td / "swing.json")
         check("contacts on the swing fail contact_height (exit 2)", code == 2 and gate_of(rep, "contact_height_m").get("pass") is False,
               gate_of(rep, "contact_height_m"))
-        check("a failed gate/1 report", rep.get("pass") is False and rep.get("ok") is False, rep.get("pass"))
+        check("a failed gate/1 report", rep.get("pass") is False and "ok" not in rep, rep.get("pass"))
         contract_sample("contact_bake", "swing_contacts", rep)
         code, rep = cli(td / "nope.bvh", "--out", td / "x.bvh")
         check("an unreadable clip is refused (exit 1), a gate/1 report with no gates",

@@ -2028,7 +2028,7 @@ def run(a) -> tuple[dict, int]:
 
 def finish(report, gates):
     ok = bool(gates) and all(g["pass"] for g in gates)
-    report.update(gates=gates, **{"pass": ok, "ok": ok, "verdict": "green" if ok else "failed"})
+    report.update(gates=gates, **{"pass": ok, "verdict": "green" if ok else "failed"})
     return report, 0 if ok else 2
 
 
@@ -2077,7 +2077,7 @@ def main():
                 raise Refused("run inside Blender: blender -b RIG.blend -P secondary_chains.py -- ...")
             report, code = run(a)
     except Refused as e:
-        report, code = {"schema": "gate/1", "tool": TOOL, "pass": False, "ok": False, "verdict": "failed",
+        report, code = {"schema": "gate/1", "tool": TOOL, "pass": False, "verdict": "failed",
                         "gates": [], "refused": str(e)}, 1
     text = json.dumps(report, indent=1, default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o))
     if a is not None and a.report:
@@ -2470,7 +2470,7 @@ def selftest(a):
         and rep["weights"]["pony"]["from_parent"] < 0.9 and cols is not None and "Back" in str(cols)
         and all(g_["pass"] for g_ in rep["gates"]))
     ok = all(bool(v) for v in checks.values())
-    return {"schema": "gate/1", "tool": TOOL, "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
+    return {"schema": "gate/1", "tool": TOOL, "pass": ok, "verdict": "green" if ok else "failed",
             "gates": [{"name": f"selftest: {k}", "value": bool(v), "limit": True, "pass": bool(v)}
                       for k, v in checks.items()], "found_on_shell": found}, 0 if ok else 1
 

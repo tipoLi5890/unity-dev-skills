@@ -69,6 +69,8 @@ run `check`, and put the line back.
 | `auto-rig-pro` | a rig or weights made with Auto-Rig Pro (a paid add-on by Artell, on the user's own licence; its optional AI files are licensed per device and never redistributed: not in a project, a repository, CI or another machine). The rig is the user's | `"worldwide"` |
 | `hy-motion` | HY-Motion text-to-motion | `{"excludes": ["EU", "UK", "KR"]}` |
 | `qwen-image-edit-2511` | a texture repainted by `mesh-texture-paint` with Qwen-Image-Edit-2511 and its Lightning LoRA on local weights, both Apache-2.0 | `"worldwide"` |
+| `qwen-image-layered` | a scene split into depth layers by `comfyui-asset-generation` `scene_layers.py` with Qwen-Image-Layered on local weights; the model card states Apache 2.0 and names no territory | `"worldwide"` |
+| `openai-gpt-image` | an image rendered by gpt-image through `codex-visual` (`codex_generate.py`; the model is read from the file's C2PA manifest). OpenAI's Terms of Use: as between the user and OpenAI, the user owns the Output, and OpenAI assigns its rights in it, if any; the terms name no country where Output may not be used | `"worldwide"` |
 
 Not shippable, so never a `licence.source` on an approved asset: Qwen Image 2.1 is released for
 research and evaluation only (non-commercial), and nvdiffrast is non-commercial; `mesh-texture-paint`

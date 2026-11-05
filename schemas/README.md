@@ -12,11 +12,13 @@ misread the file. Adding an optional key does not need a new version.
 | Contract | Schema | Producers | Consumers |
 |---|---|---|---|
 | A frame set's `frames.json` | [`frames-1.json`](frames-1.json) | `codex-visual` `sheet_to_frames.py`, `breathe.py`; `sprite-from-video` `video_loop.py` | `audit_frames.py`, `audit_pixel.py`, `frames_to_anim.py`, `registry_ingest.py`, `unity-2d-sprites` `FramesJsonImporter`, `SheetToAnimationClip`, `SpriteFramesAudit` |
-| A gate script's report | [`gate-1.json`](gate-1.json) | `rig_gate`, `deform_gate`, `mesh_check`, `motion_metrics`, `clip_metrics`, `contact_bake`, `twocam/solve`, the Blender ops (`blender_common` / `bcommon` `report()`), `contract_map map`, `inspect_glb`, `audit_3d_source`, `camera_gate` | `autorig.py`, `twocam.py`, `registry_ingest.py`, `contact_sheet.py --require`, `bakeoff_report.py` |
+| A gate script's report | [`gate-1.json`](gate-1.json) | `rig_gate`, `deform_gate`, `mesh_check`, `motion_metrics`, `clip_metrics`, `contact_bake`, `twocam/solve`, the Blender ops (`blender_common` / `bcommon` `report()`), `contract_map map`, `inspect_glb`, `audit_3d_source`, `camera_gate`, `autorig.py all --repeat` (`autorig.stability.json`) | `autorig.py`, `rig_exam.py bench`, `twocam.py`, `registry_ingest.py`, `contact_sheet.py --require`, `bakeoff_report.py` |
 | A character's parts plan `<c>.parts.json` | [`parts-1.json`](parts-1.json) | `blender-character-rig` `part_math.py plan`; `comfyui-asset-generation` `part_views.py` (its own keys) | `part_views.py`, `assemble_parts.py` |
 | One line of a journey's `timeline.jsonl` | [`timeline-1.json`](timeline-1.json) | `unity-play-harness` `JourneyRecorder.cs` (samples from `GameProbe.ToJson`) | `journey_report.py`, `jump_report.py`, `camera_jitter.py` |
 | A rigged character's `<name>.secondary.json` | [`secondary-1.json`](secondary-1.json) | `character-autorig` `secondary_chains.py` | `unity-rigged-character` `SecondarySpec`, `SecondaryMotionSetup` |
 | A layered 2D character's `rig2d.json` | [`rig2d-1.json`](rig2d-1.json) | `comfyui-asset-generation` `layer_split.py split` | `unity-2d-animation` `AutoRig2D` |
+| The rig exam's files (`NAME.truth.json`, `fault.json`, `exam.json`) | [`exam-1.json`](exam-1.json) | `character-autorig` `rig_exam.py` (`reference`, `faults`, `score`), `rig_exam_blender.py` (`cast`) | `rig_exam.py score`, `bench` |
+| One version's rig readings, `<label>.bench.json` | [`bench-1.json`](bench-1.json) | `character-autorig` `rig_exam.py bench` | `rig_exam.py compare` |
 
 ## frames/1
 
@@ -53,15 +55,35 @@ misread the file. Adding an optional key does not need a new version.
 
 ## gate/1
 
-- The report is `{schema, pass, gates: [{name, value, limit, pass}]}`. Both levels accept extra
-  keys (`tool`, `clip`, `blender`, per-gate detail). The required keys are what catch a misspelt
-  or old-dialect verdict.
+- The report is `{schema, pass, gates: [{name, value, limit, pass, margin?}]}`. Both levels accept
+  extra keys (`tool`, `clip`, `blender`, per-gate detail). The required keys are what catch a
+  misspelt or old-dialect verdict.
 - **A gate without a boolean `pass` has failed. A report without a boolean `pass` has failed.**
   A reader never defaults to passing.
 - `pass: true` needs at least one gate, every gate passing, no `refused` and no `error`. A
   refused or harness report is `pass: false`, with `gates` possibly empty.
 - `value` and `limit` can be any JSON value, including null or a string such as `"<= 0.03"`.
-- A gate carrying `ok` is refused.
+- **`margin`** (optional, a number on a gate) is the signed distance from `value` to the limit,
+  scaled by the limit, so margins compare across gates, runs and characters. Positive is safe,
+  negative is failing, and 0 sits on the limit:
+
+  | Limit | `margin` |
+  |---|---|
+  | `<= L` (a ceiling) | `(L - v) / abs(L)` |
+  | `>= L` (a floor) | `(v - L) / abs(L)` |
+  | `[lo, hi]` (a range) | `min(v - lo, hi - v) / ((hi - lo) / 2)` |
+  | `L = 0`, or `hi = lo` | the plain difference, not scaled |
+  | a value or limit that is null, a bool, a string (other than `"<= L"` / `">= L"`) or not finite | no `margin` |
+
+  It is rounded to 4 decimals. Example: a self-intersection p95 of 0.06 against `<= 0.08` has a
+  margin of 0.25, and 0.10 has -0.25. Most limits in a report do not say whether they are a
+  ceiling or a floor, so the producer passes the direction itself. A gate whose verdict also rests
+  on a second condition carries no margin while that condition fails (a tear gate with too few
+  edges to read). Every
+  producer computes it with the same pasted `gate_margin(value, limit, op)`, from
+  `tools/shared-blocks/gate_margin.py`.
+- **`ok` is gone.** It was the old name of `pass`. No producer writes it, and the schema refuses a
+  stamped report or a gate that carries `ok`.
 
 ## timeline/1
 
@@ -100,26 +122,28 @@ misread the file. Adding an optional key does not need a new version.
   hair, are reserved: the tools refuse them.
 - `budget_share` is a fraction of the class's `3D budgets` row, never a triangle count.
 
-## Migration (one release)
+## Migration (the 0.34 dialect)
 
-Consumers still read the 0.34 dialect for one release. Each time they do, they print one `WARN`
-line naming the file and the old key:
+The pipeline readers (autorig.py, twocam.py and the frames readers) still read
+the unstamped 0.34 dialect. Each time they do, they print one `WARN` line naming the file and the
+old key. `registry.py ingest` does not: it refuses `ok` at every level (exit 3).
 
 - `frames.json` with no `schema`: read as the old dialect. `margin_px` is read as
   `foot_margin_px`. `set_metrics.key_color` is read as `key_color`. When there is no key at all,
   the fringe check reports `n/a` with a warning and is not counted as passed. A missing or zero
   `reference_core_height_px` skips the size check, with a warning.
 - A gate report with no `schema`: a gate's `ok` is read as `pass`, and a report's `ok` is read as
-  `pass`. For this one release producers still write the report-level `ok` beside `pass`, and
-  `gate-1.json` requires the two to be equal. A gate-level `ok` is not written.
+  `pass`. Producers no longer write `ok` at either level, and a stamped gate/1 report that carries
+  it is refused (see gate/1).
 - A timeline meta line with `"schema": 1` is read as `timeline/1`.
 
 Only an unstamped file gets this treatment. A file stamped `frames/1`, `gate/1` or
 `timeline/1` that is missing a required key is a producer bug, and the reader fails on it rather
 than warning. A Blender op that reports with zero gates is returning a result, not a gate report:
-it has no `schema` and keeps `ok`.
+it has no `schema` or `pass`, and carries `ok`.
 
-The release after this one removes the old dialect.
+This reading exists only for files written before the stamps. New files are never written in the
+old dialect.
 
 ## rig2d/1
 
@@ -131,3 +155,27 @@ The release after this one removes the old dialect.
 - **`view`** is `front` (sides `R`, `L`: the character's own) or `side` (sides `near`, `far`, with
   `facing` `right` or `left`). **`swaps`** names the layer pairs a Sprite Resolver switches
   (eyes open/closed, mouth closed/open).
+
+## exam/1
+
+- **One `kind` per file.** `truth` (a built body: `name`, `height`, `landmarks` in the GLB's frame,
+  `fingers.separate`, `expect_fail`), `reference` (the markers a person accepted, in the prepared
+  frame: `frame: "prepared"`), `fault` (`fault`, `base`, `steps` with each step's `failed_gates`) and
+  `report` (`summary`, `cases`, `faults`). A landmark is `[x, y, z]` in metres, +Z up.
+- **The summary** is what `bench` carries and `compare` reads: `outcomes` (case names per outcome),
+  `false_pass`, `false_fail`, `faults_caught`, `faults_slipped` (`fault@base`), `control_fail` (bases)
+  and `fingers_right`.
+- The exam folder and its files stay outside the repository: a reference case holds a real
+  character's mesh.
+
+## bench/1
+
+- **`exam`** is exam/1's report summary (the same required keys), or null when no exam case was
+  scored. **`real`** has one entry per character folder: `name`, `stages` (per `autorig.py` step,
+  `{pass, gates}`, each gate `{name, value, limit, pass, margin}` with `margin` null when the gate has
+  none), `stability` (the folder's `autorig.stability.json`, gate/1, or null) and `worst_margin`.
+- **`compare` keys a gate by character, step and gate name.** A margin is compared only when both
+  files carry a number for it; a gate a later version renames reads as not read.
+- Bench files are kept beside the exam folder, outside the repository; the repository holds the
+  tools, not the scores.
+

@@ -76,7 +76,7 @@ then the module that imports it. Every `run` returns the same envelope:
 
 ```python
 {"schema": "gate/1", "pass": True,          # every gate passed (gate/1; absent with no gates)
- "ok": True,                                  # pass's old name, equal to it, for one release
+                                              # with no gates, "ok": True instead: a result, not a verdict
  "gates": [{"name": "has_vertices", "value": 9994, "limit": "> 0", "pass": True}, ...],
  "created": {"objects": [...], ...},         # datablocks this call added; kinds with nothing are absent
  "blender": [major, minor, patch],

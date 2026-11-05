@@ -349,7 +349,7 @@ def selftest() -> int:
         (td / "s.json").write_text(json.dumps({"joints": (J + [0.02, 0, 0]).tolist()}))
         code, rep = _captured(main, ["score", str(td / "t.json"), str(td / "s.json")])
         check("score gate fails on a 2 cm error, exit 2, a failed gate/1 report", code == 2
-              and rep.get("schema") == "gate/1" and rep.get("pass") is False and rep.get("ok") is False)
+              and rep.get("schema") == "gate/1" and rep.get("pass") is False and "ok" not in rep)
         contract_sample("exam", "score_fails", rep)
         check("score gate passes under its limit, exit 0",
               main(["score", str(td / "t.json"), str(td / "s.json"), "--max-mean-cm", "2.5"], True) == 0)
@@ -404,7 +404,7 @@ def main(argv=None, quiet=False) -> int:
                 gates.append({"name": "exam.max_cm", "value": round(r["max_cm"], 3), "limit": a.max_worst_cm,
                               "pass": bool(r["max_cm"] <= a.max_worst_cm)})
             ok = all(g["pass"] for g in gates)
-            r.update({"tool": "exam.py", "op": "score", "gates": gates, "schema": "gate/1", "pass": bool(ok), "ok": bool(ok)})
+            r.update({"tool": "exam.py", "op": "score", "gates": gates, "schema": "gate/1", "pass": bool(ok)})
             emit(r)
             return 0 if ok else 2
         info = json.loads(pathlib.Path(a.rig_info).read_text())

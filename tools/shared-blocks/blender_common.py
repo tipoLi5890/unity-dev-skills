@@ -127,10 +127,10 @@ def report(params: dict, gates: list[dict], **extra) -> dict:
     """The dict every op returns. A `warnings` list in `extra` becomes the result's warnings.
 
     With gates it is a gate/1 report: `schema` "gate/1" and `pass`, true only when
-    every gate's `pass` is true (`ok`, its old name, equals it for one release).
-    With no gates it is an op's result, not a verdict: no `schema` or `pass`, and
-    `ok` is true. schema, pass, ok, file and record are set after the extras, so an
-    extra with one of those names cannot replace them. `record` is this call's
+    every gate's `pass` is true, and no `ok` (gate/1 refuses it). With no gates it is
+    an op's result, not a verdict: no `schema` or `pass`, and `ok` is true. schema,
+    pass, ok, file and record are set after the extras, so an extra with one of those
+    names cannot replace them. `record` is this call's
     partial ledger row: the tool, the params without any key naming a path
     (`backup_path` is kept), the gates and the verdict.
     """
@@ -138,13 +138,11 @@ def report(params: dict, gates: list[dict], **extra) -> dict:
     warnings = [str(w) for w in extra.pop("warnings", None) or []]
     out = {"gates": gates, "blender": list(bpy.app.version)}
     out.update(safe(extra))
-    for k in ("schema", "pass"):
+    for k in ("schema", "pass", "ok"):
         out.pop(k, None)
     kept = {k: v for k, v in safe(params).items() if "path" not in k or k == "backup_path"}
-    if gates:
-        out.update({"schema": "gate/1", "pass": ok})
+    out.update({"schema": "gate/1", "pass": ok} if gates else {"ok": ok})
     out.update({
-        "ok": ok,
         "file": file_state(),
         "warnings": warnings,
         "record": {"tool": {"skill": SKILL, "script": _script_name(sys._getframe(1).f_globals)},

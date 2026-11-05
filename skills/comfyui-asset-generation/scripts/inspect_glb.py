@@ -7,9 +7,9 @@ triangle count against the budget the graph was asked for, one material, UVs
 and normals on every primitive, the texture slots that were supposed to be
 baked, texture dimensions, and sane bounds.
 
-Stdlib only. Prints one gate/1 report (schemas/gate-1.json: `pass`, and `ok`,
-its old name, equal to it for one release); exit 0 = pass, 1 = a gate failed,
-2 = the file could not be read (with --budgets: nor the budget row).
+Stdlib only. Prints one gate/1 report (schemas/gate-1.json); exit 0 = pass,
+1 = a gate failed, 2 = the file could not be read (with --budgets: nor the
+budget row).
 
 Examples
   inspect_glb.py crate.glb --max-triangles 20000
@@ -33,6 +33,9 @@ drawn without back-face culling until the importing side says otherwise.
 file needs the matching decoder on the importing side.
 
 Every check that ran is also one entry of `gates` ({name, value, limit, pass});
+a count or size gate also carries `margin`, the signed distance to its limit
+(gate_margin: + safe, - failing; min_triangles and triangles are floors, the
+rest ceilings); attributes, slot.*, bounds carry none.
 `failures` keeps the same reasons as text. `sha256` pins the file, and
 `record` is the partial ledger record for skill art-asset-registry; its file
 path is the one given, so a JSON kept in the project carries no machine path
@@ -269,6 +272,55 @@ def finite(values: list) -> list:
     return [v if isinstance(v, (int, float)) and math.isfinite(v) else None for v in values]
 
 
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
+
+
 def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
             explicit: frozenset = frozenset()) -> tuple[dict, list[str]]:
     gltf, binary = parse_glb(path)
@@ -278,8 +330,12 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
     gates: list[dict] = []
     warnings: list[str] = []
 
-    def gate(name, value, limit, ok):
-        gates.append({"name": name, "value": value, "limit": limit, "pass": bool(ok)})
+    def gate(name, value, limit, ok, op=None):
+        g = {"name": name, "value": value, "limit": limit, "pass": bool(ok)}
+        m = gate_margin(value, limit, op) if op else None
+        if m is not None:
+            g["margin"] = m
+        gates.append(g)
 
     triangles, primitives, missing_attrs = 0, 0, set()
     used_materials: set[int] = set()
@@ -351,16 +407,16 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
         under = triangles < args.max_triangles * args.min_fraction
         if over:
             failures.append(f"triangles {triangles} over budget {args.max_triangles}")
-        gate("max_triangles", triangles, round(args.max_triangles * 1.05, 3), not over)
+        gate("max_triangles", triangles, round(args.max_triangles * 1.05, 3), not over, "<=")
         if under:
             failures.append(f"triangles {triangles} under {args.min_fraction:g} x budget: collapsed mesh")
-        gate("min_triangles", triangles, round(args.max_triangles * args.min_fraction, 3), not under)
+        gate("min_triangles", triangles, round(args.max_triangles * args.min_fraction, 3), not under, ">=")
     if triangles == 0:
         failures.append("no triangles")
-    gate("triangles", triangles, 1, triangles != 0)
+    gate("triangles", triangles, 1, triangles != 0, ">=")
     if len(used_materials) > materials_limit:
         failures.append(f"{len(used_materials)} materials, limit {materials_limit}")
-    gate("max_materials", len(used_materials), materials_limit, not len(used_materials) > materials_limit)
+    gate("max_materials", len(used_materials), materials_limit, not len(used_materials) > materials_limit, "<=")
     if missing_attrs:
         failures.append(f"primitive without {', '.join(sorted(missing_attrs))}")
     gate("attributes", sorted(missing_attrs), [], not missing_attrs)
@@ -374,7 +430,7 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
             if image["size"] and max(image["size"]) > args.texture_size:
                 failures.append(f"image {image['index']} is {image['size']}, limit {args.texture_size}")
                 over = True
-        gate("texture_size", largest_side, args.texture_size, not over)
+        gate("texture_size", largest_side, args.texture_size, not over, "<=")
     if not bounded:
         failures.append(f"degenerate bounds {finite(extents)}")
     gate("bounds", finite(extents), 0, bounded)
@@ -382,12 +438,12 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
     if args.max_bytes:
         if size_bytes > args.max_bytes:
             failures.append(f"file is {size_bytes} bytes, limit {args.max_bytes}")
-        gate("max_bytes", size_bytes, args.max_bytes, not size_bytes > args.max_bytes)
+        gate("max_bytes", size_bytes, args.max_bytes, not size_bytes > args.max_bytes, "<=")
 
     def over_limit(name, value, limit, ok, reason):
         """A ceiling or max_* column: a gate on a calibrated row, a warning on one that is not."""
         if calibrated:
-            gate(name, value, limit, ok)
+            gate(name, value, limit, ok, "<=")
             if not ok:
                 failures.append(f"{reason} (class {cls})")
         elif not ok:
@@ -452,7 +508,6 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
     report = {
         "schema": "gate/1",
         "pass": passed,
-        "ok": passed,
         "file": str(path),
         "bytes": size_bytes,
         "triangles": triangles,
@@ -476,7 +531,7 @@ def inspect(path: Path, args: argparse.Namespace, budget: dict | None = None,
 
 def harness(path: Path, error: str) -> dict:
     """A gate/1 report for a file that could not be measured: pass false, no gates."""
-    return {"schema": "gate/1", "pass": False, "ok": False, "gates": [], "file": str(path), "error": error}
+    return {"schema": "gate/1", "pass": False, "gates": [], "file": str(path), "error": error}
 
 
 def finish(obj: dict, code: int, json_out: Path | None, **dump) -> int:

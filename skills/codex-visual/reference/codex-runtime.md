@@ -20,17 +20,22 @@ python3 <skill>/scripts/codex_generate.py --prompt-file prompt.txt --out "$DEST"
 It probes the model with a one-word prompt (`--no-probe` once it has passed in a batch), runs from
 a scratch directory under a private, temporary `CODEX_HOME` (§3), copies the **original** out of
 its own session's `generated_images` folder (§2, §4), and prints its real `size` and whether it
-carries `alpha` (an RGBA render was keyed by the agent — ask again for an opaque one). **Exit 2** =
-`codex` missing, **3** = the model was rejected (pass another `-m`; a slug that worked yesterday
+carries `alpha` (an RGBA render was keyed by the agent — ask again for an opaque one). **Exit 1** =
+a usage error (a bad flag, a missing `-i` file), **2** = `codex` missing, **3** = the model was rejected (pass another `-m`; a slug that worked yesterday
 can be refused today), **4** = the call ran and made no image, **5** = it made more than one: all
 are written (`DEST`, then `<stem>.2.png`, `<stem>.3.png`, … in render order) and listed under
 `images`, and none is chosen — look at them, **6** = `--expect-size WxH` did not match (±1 px by
 default, because one 16:9 ask has come back both 1672x940 and 1672x941; the file is written so
 it can be looked at). 5 wins over 6.
 
-Every object it prints also pins the call for skill `art-asset-registry`: `model` (the `-m`
-value, `null` for the config's) and `record` (the call's partial ledger record — tool, params,
-inputs, files and a verdict: `green` on exit 0, `failed` on 4, 5 and 6, `harness` on 2 and 3);
+Every object it prints also pins the call for skill `art-asset-registry`: `model` (the image
+model, read from the written file's C2PA manifest as `image-model.md` §1 does: the
+`softwareAgent`'s name and version as the file states them, `gpt-image 2.0` or `ChatGPT
+gpt-image`; `null` before an image exists or when the file carries none, never guessed),
+`agent_model` (the `-m` value, `null` for the config's), `codex_version` (`codex --version`, `null`
+when it does not answer) and `record` (the call's partial ledger record — tool, params with those
+three and `prompt_sha256`, inputs, files and a verdict: `green` on exit 0, `failed` on 4, 5 and 6,
+`harness` on 2 and 3; each entry of `images` carries its own `model`);
 once the prompt has been read, `prompt_sha256` (of the prompt file's bytes, or of `--prompt` as
 given; the object carries the hash, not the text) and `inputs` (each `-i` with its `sha256`). A
 written image adds `out_sha256`. `--job-log PATH` appends that object as one JSON line with `ts`

@@ -24,8 +24,8 @@ Pass when both images have the same size (and equal --size, when given) and
 
 Prints one JSON line, a gate/1 report (schemas/gate-1.json): pass, gates
 (camera.size, camera.horizon_delta_px, each once it could be measured), delta,
-tol, why, and for ref and cand the path, size and horizon row; `ok`, pass's old
-name, equals pass for one release, and a run that measured nothing carries
+tol, why, and for ref and cand the path, size and horizon row; a run that
+measured nothing carries
 `error` (exit 3) or `refused` (exit 64). `which` names the image a failure belongs to ("ref",
 "cand" or "both"), so a retry loop can tell a bad roll from a bad setup.
 
@@ -118,7 +118,7 @@ def gate(ref: str, cand: str, column=0.1, tol=6, size=None, dist=40.0, run=3):
         gates.append({"name": "camera.horizon_delta_px", "value": rep["delta"], "limit": tol,
                       "pass": abs(rep["delta"]) <= tol})
     rep["pass"] = code == 0 and bool(gates) and all(g["pass"] for g in gates)
-    out = {"schema": "gate/1", "pass": rep["pass"], "ok": rep["pass"], "gates": gates, **rep}
+    out = {"schema": "gate/1", "pass": rep["pass"], "gates": gates, **rep}
     if code == 3:
         out["error"] = rep["why"]
     return code, out
@@ -194,7 +194,7 @@ def selftest() -> int:
         def check(name, args, code, extra=None):
             got, rep = gate(*args)
             ok = got == code and (extra is None or extra(rep))
-            ok = ok and rep["schema"] == "gate/1" and rep["pass"] is rep["ok"] is (got == 0)
+            ok = ok and rep["schema"] == "gate/1" and rep["pass"] is (got == 0) and "ok" not in rep
             ok = ok and all(set(g) == {"name", "value", "limit", "pass"} for g in rep["gates"])
             ok = ok and (got != 3 or "error" in rep)
             checks.append(name)
@@ -251,7 +251,7 @@ def main(argv=None) -> int:
             raise UsageError("--column must be in [0, 1], --run >= 1, --tol >= 0")
         size = parse_size(a.size)
     except UsageError as e:
-        print(json.dumps({"schema": "gate/1", "pass": False, "ok": False, "gates": [], "which": "args",
+        print(json.dumps({"schema": "gate/1", "pass": False, "gates": [], "which": "args",
                           "why": str(e), "refused": str(e)}))
         return USAGE
     code, rep = gate(a.ref, a.cand, a.column, a.tol, size, a.dist, a.run)

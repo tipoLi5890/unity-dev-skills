@@ -54,7 +54,7 @@ ok, ...}], body_markers {root, neck, chin, head_tip, shoulder.L ... foot.R}, fin
 count, fell_back, names, markers {thumb1.L ... pinky4.R}}, facial {enabled, ok, features,
 keypoints_found, keypoints_total, eye_proxies, eye_objects}, rig_matrix_world, refs {bone: {head, tail, roll,
 group body|finger|facial|ear, parent}}, ref_rolls_from, warnings, blend, blend_markers, elapsed_s,
-and gate/1's gates, pass, verdict (ok, pass's old name).
+and gate/1's gates, pass, verdict.
 Gates: smart.ai_files (version >= 1.20 and keypoint files written), smart.body_markers (all 18),
 smart.fingers (thumb1_loc), smart.facial (only with --facial: the face chain ran, its markers moved,
 the add-on kept the mouth and, unless --eyes none, the eyes), smart.go (the has_match_to_rig key on
@@ -329,7 +329,7 @@ def assemble(state: dict, opts: dict) -> tuple[dict, int]:
             rep[k] = str(state[k])
     passed = all(g["pass"] for g in rep["gates"]) and not rep.get("refused") and not rep.get("error")
     code = 1 if (rep.get("refused") or rep.get("error")) else 0 if passed else 2
-    rep.update({"pass": passed, "ok": passed, "verdict": "green" if passed else "harness" if code == 1 else "failed",
+    rep.update({"pass": passed, "verdict": "green" if passed else "harness" if code == 1 else "failed",
                 "exit_code": code, "warnings": warn, "blend": state.get("blend"),
                 "blend_markers": state.get("blend_markers"), "elapsed_s": state.get("elapsed_s")})
     return rep, code
@@ -341,11 +341,11 @@ def probe_report(info: dict) -> tuple[dict, int]:
           "pass": bool(info.get("module"))},
          {"name": "smart.operators", "value": info.get("operators_missing") or [], "limit": "all registered",
           "pass": bool(info.get("module")) and not info.get("operators_missing")},
-         {"name": "smart.ai_files", "value": info.get("ai_version"), "limit": f">= {MIN_AI_VERSION:.2f}",
+         {"name": "smart.ai_files", "value": info.get("ai_version"), "limit": f"version {MIN_AI_VERSION:.2f} or newer",
           "pass": (info.get("ai_version") or 0) >= MIN_AI_VERSION}]
     ready = all(g["pass"] for g in G)
     rep = {"schema": "gate/1", "tool": "arp_smart probe", "ready": ready, **info, "gates": G, "pass": ready,
-           "ok": ready, "verdict": "green" if ready else "failed", "exit_code": 0 if ready else 2}
+           "verdict": "green" if ready else "failed", "exit_code": 0 if ready else 2}
     return rep, rep["exit_code"]
 
 
@@ -1028,8 +1028,8 @@ def selftest() -> int:
           and rep["verdict"] == "green" and [g["name"] for g in rep["gates"]] == [
               "smart.ai_files", "smart.body_markers", "smart.fingers", "smart.facial", "smart.go", "smart.refs"],
           failed=[g for g in rep["gates"] if not g["pass"]])
-    check("gate/1 shape: name and pass on each gate, no ok in a gate, pass == ok",
-          all(set(g) >= {"name", "pass"} and "ok" not in g for g in rep["gates"]) and rep["ok"] == rep["pass"])
+    check("gate/1 shape: name and pass on each gate, no ok in a gate or the report",
+          all(set(g) >= {"name", "pass"} and "ok" not in g for g in rep["gates"]) and "ok" not in rep)
     bm = rep["body_markers"]
     check("_loc -> .L, _loc_sym -> .R, the centre markers bare; 18 in all",
           bm["shoulder.L"][0] > 0 and bm["shoulder.R"][0] < 0 and "root" in bm and "root.L" not in bm
@@ -1158,7 +1158,7 @@ def main() -> None:
     if eye_args_error(a):
         parser().error(eye_args_error(a))
     if not blender:
-        print(json.dumps({"tool": "arp_smart", "pass": False, "ok": False, "exit_code": 1,
+        print(json.dumps({"tool": "arp_smart", "pass": False, "exit_code": 1,
                           "refused": "run inside a windowed Blender: blender FILE.blend -P arp_smart.py -- "
                                      "--mesh NAME --out NAME.smart.json (or --selftest here)"}))
         sys.exit(1)

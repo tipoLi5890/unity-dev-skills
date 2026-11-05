@@ -76,6 +76,12 @@ The fills:
 A failing fill retries the next of `--seeds`. The armless fill usually widens the jacket into
 the gaps beside the arms. That is expected, because `split` clips it to the source.
 
+Each fill in `fills.json` keeps the `record` of the job that made it: the client's partial
+ledger record, with `workflow_sha256` of the graph as submitted, `overrides`, `prompt_id`, the
+`seed`, `prompt_sha256` of the prompt sent (never its text), the `models` file names, the upload
+by name and sha256, `raw/<fill>_s<seed>.png` with its sha256, and the fill's verdict (`green` only
+when its gates pass).
+
 ### The split
 
 The cut is geometric, never a body-part map. An edit-model part map follows clothing, not limbs:
@@ -222,6 +228,9 @@ python3 $S/scene_layers.py gate street.png --layers-dir street/raw --out street 
   steps, cfg 2.5, euler/simple, shift 1. `LatentCut` drops the composite frame.
   - The prompt describes the whole picture, not the layers.
   - Use the fp8mixed weights: the bf16 file is larger than a 32 GB card.
+- **Record:** `run.json` pins the job: `prompt_id`, `workflow_sha256` (the graph as submitted,
+  prompt and seed included), `seed`, `prompt_sha256`, the `models` file names, `layers`,
+  `max_size` and the client's partial ledger `record`.
 - **Order:** layers come back back to front. An empty layer is dropped.
 - **Band split:** a layer with a full-width transparent band of at least `--band` rows is cut in
   two. Typically that is sky above and road below. `--names` names the layers after both splits.

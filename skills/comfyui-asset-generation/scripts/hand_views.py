@@ -487,7 +487,7 @@ def paint_part(a, plan, part, base):
     cmd = [sys.executable, str(PAINT_LOOP), str(glb), "--concept", str(vd), "--sheet", str(vd / "sheet.png"),
            "--out", str(root / "paint" / name), "--kind", "object" if hand else "character",
            "--subject", f"{SIDE[part['region']]} hand and forearm" if hand else "character's head",
-           "--max-off-palette", str(MAX_OFF_PALETTE)]
+           "--max-off-palette", str(MAX_OFF_PALETTE), "--coverage-for", "part"]
     if hand:     # the hand job's own bake streaks the forearm grey and tints the palm olive; shown as context the
         cmd += ["--prior", ""]       # model continues them and redraws steep views: the nearest painted colour
     if a.server or base:

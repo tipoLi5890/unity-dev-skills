@@ -109,7 +109,7 @@ def case_export_ok():
     scene()
     fbx = os.path.join(TMP, "runner.fbx")
     out = export(fbx=fbx)
-    assert out["ok"], [g for g in out["gates"] if not g["pass"]] or out.get("reason")
+    assert out["pass"] and "ok" not in out, [g for g in out["gates"] if not g["pass"]] or out.get("reason")
     assert os.path.getsize(fbx) > 0
     assert SEEN == [{"arp_engine_type": "UNITY", "arp_export_rig_type": "HUMANOID",
                      "arp_ge_master_traj": True, "arp_units_x100": True}], SEEN
@@ -129,13 +129,13 @@ def case_not_limited_fails():
     scene()
     out = export(fbx=os.path.join(TMP, "five.fbx"), limit_influences=False)
     most = gate(out, "arp.export_max_influences")
-    assert most is not None and not most["pass"] and most["value"] == 5 and not out["ok"], most
+    assert most is not None and not most["pass"] and most["value"] == 5 and not out["pass"], most
 
 
 def case_not_bound_refuses():
     scene(weighted=False)
     out = export(fbx=os.path.join(TMP, "none.fbx"))
-    assert not out["ok"] and out.get("reason") == "not_bound", out.get("reason")
+    assert not out["pass"] and out.get("reason") == "not_bound", out.get("reason")
     assert not os.path.exists(os.path.join(TMP, "none.fbx")) and not SEEN
 
 
@@ -163,7 +163,7 @@ def case_packed_textures_keep_apart():
     mesh.data.materials.append(mat)
     fbx = os.path.join(TMP, "textured.fbx")
     out = export(fbx=fbx)
-    assert out["ok"], [g for g in out["gates"] if not g["pass"]] or out.get("reason")
+    assert out["pass"], [g for g in out["gates"] if not g["pass"]] or out.get("reason")
     seen = [PATHS[-1].get(i.name, "") for i in images]
     assert all(os.path.splitext(s)[1] for s in seen) and len(set(seen)) == 2, f"paths at export: {seen}"
     assert [i.filepath_raw for i in images] == ["", ""], "image paths not put back"

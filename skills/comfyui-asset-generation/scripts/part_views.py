@@ -544,7 +544,7 @@ def report(gates, **extra):
     ok = bool(gates) and all(g["pass"] or g.get("accepted") for g in gates) and "refused" not in extra \
         and "error" not in extra
     signed = sorted({g["name"].split(".")[-1] for g in gates if g.get("accepted")}) if ok else []
-    return {"schema": "gate/1", "tool": "part_views", "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
+    return {"schema": "gate/1", "tool": "part_views", "pass": ok, "verdict": "green" if ok else "failed",
             **({"accepted_views": signed} if signed else {}), "gates": gates, **extra}
 
 
@@ -1004,7 +1004,7 @@ def selftest() -> int:
         col = colours(np.asarray(Image.fromarray(ideal)), silhouette(ideal), g["chin_row"] * 1024 / g["L"])
         checks["colours_sampled"] = bool(col) and all(re.fullmatch(r"#[0-9a-f]{6}", c) for c in col.values())
         rep = report(gates, part="head")
-        checks["report_gate1"] = rep["schema"] == "gate/1" and rep["pass"] is rep["ok"] is True
+        checks["report_gate1"] = rep["schema"] == "gate/1" and rep["pass"] is True and "ok" not in rep
         # --accept: a near miss may be signed off (the verdict says so), a far miss may not
         thin = [dict(x, **({"value": 0.74, "pass": False} if "neck_width" in x["name"] else {})) for x in gates]
         far = [dict(x, **({"value": 0.6, "pass": False} if "redraw_iou" in x["name"] else {})) for x in thin]

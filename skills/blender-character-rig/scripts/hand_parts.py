@@ -632,7 +632,7 @@ def gate_part(plan, base, part, glb=None):
     g, rows, _ = finger_gate(Vr, Fp, wr, placed_region(Vr, Fp, wr), frame_axes=fr)
     gates.append(g)
     ok = all(x["pass"] for x in gates)
-    return {"schema": "gate/1", "tool": "hand_parts", "pass": ok, "ok": ok, "verdict": "green" if ok else "failed",
+    return {"schema": "gate/1", "tool": "hand_parts", "pass": ok, "verdict": "green" if ok else "failed",
             "part": part["name"], "glb": os.path.abspath(path), "register": detail,
             "fingers": {"part_rows": rows, "anchor_share": ga_["value"], "anchor_rows": rows_a,
                         "triangles": int(len(Fp))}, "gates": gates}
@@ -1003,7 +1003,7 @@ def assemble_hands(plan_path, assembly_dir, out_dir, ratio=HAND_RATIO, render=Tr
     detail["objects"] = {o.name: {"faces": len(o.data.polygons), "materials": [m.name for m in o.data.materials]}
                          for o in keep_objs}
     ok = all(g["pass"] for g in gates)
-    report = {"schema": "gate/1", "tool": "assemble_parts", "stage": "hands", "pass": ok, "ok": ok,
+    report = {"schema": "gate/1", "tool": "assemble_parts", "stage": "hands", "pass": ok,
               "verdict": "green" if ok else "failed", **detail, "outputs": outputs,
               "seconds": round(time.time() - t_start, 1), "warnings": warnings, "gates": gates}
     path = os.path.join(out_dir, f"{c}.hands.gate.json")
@@ -1245,7 +1245,7 @@ def selftest():
                   "parts": json.loads(json.dumps(pm.TIERS["three"])) + parts}
         contract_sample("hand_parts", "plan", sample, suffix=".parts.json")
         good = all(g["pass"] for g in gates_ok)
-        rep = {"schema": "gate/1", "tool": "hand_parts", "pass": good, "ok": good,
+        rep = {"schema": "gate/1", "tool": "hand_parts", "pass": good,
                "verdict": "green" if good else "failed", "gates": gates_ok}
         contract_sample("hand_parts", "gate", rep)
     except Refused as exc:

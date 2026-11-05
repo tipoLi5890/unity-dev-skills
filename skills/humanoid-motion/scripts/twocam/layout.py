@@ -207,7 +207,7 @@ def selftest() -> int:
         shown = main(["show"])
     rep = json.loads(buf.getvalue())
     check("show: a passing gate/1 report, exit 0", shown == 0 and rep.get("schema") == "gate/1"
-          and rep.get("pass") is True and rep.get("ok") is True and all("ok" not in g for g in rep["gates"]))
+          and rep.get("pass") is True and "ok" not in rep and all("ok" not in g for g in rep["gates"]))
     contract_sample("layout", "show", rep)
     try:
         import cv2
@@ -252,7 +252,7 @@ def main(argv=None) -> int:
     try:
         L = load_layout(a.rig_info, a.character, a.height)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(json.dumps({"schema": "gate/1", "tool": "layout.py", "pass": False, "ok": False, "gates": [], "error": f"refused: {exc}"})); return 1
+        print(json.dumps({"schema": "gate/1", "tool": "layout.py", "pass": False, "gates": [], "error": f"refused: {exc}"})); return 1
     gates = L.checks()
     out = {"schema": "gate/1", "tool": "layout.py", "op": a.cmd, "layout": L.as_dict(), "gates": gates}
     if a.cmd == "compose":
@@ -260,7 +260,7 @@ def main(argv=None) -> int:
             import cv2
             f, s = _read_rgba(a.front), _read_rgba(a.side)
         except (ImportError, ValueError) as exc:
-            print(json.dumps({**out, "pass": False, "ok": False, "error": f"refused: {exc}"})); return 1
+            print(json.dumps({**out, "pass": False, "error": f"refused: {exc}"})); return 1
         size_ok = f.shape[:2] == (L.H, L.W_FRONT) and s.shape[:2] == (L.H, L.W_SIDE)
         gates.append({"name": "layout.render_sizes", "value": [list(f.shape[:2]), list(s.shape[:2])],
                       "limit": [[L.H, L.W_FRONT], [L.H, L.W_SIDE]], "pass": size_ok})
@@ -268,7 +268,7 @@ def main(argv=None) -> int:
             Path(a.out).parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(a.out, L.compose(f, s)[..., ::-1])
             out["out"] = a.out
-    out["pass"] = out["ok"] = all(g["pass"] is True for g in gates)
+    out["pass"] = all(g["pass"] is True for g in gates)
     print(json.dumps(out))
     return 0 if out["pass"] else 2
 

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/exam-1.json",
+  "title": "exam/1 — the rig exam's files",
+  "description": "What character-autorig's rig_exam.py (and rig_exam_blender.py) writes, one `kind` per file: `truth` (a built body's joints), `reference` (the markers a person accepted, in the prepared frame), `fault` (one planted defect and the gates it failed) and `report` (score's summary, cases and faults). The required keys are what score, bench and compare read; every level stays open to extra keys.",
+  "type": "object",
+  "required": ["schema", "kind"],
+  "properties": {
+    "schema": {"const": "exam/1"},
+    "kind": {"enum": ["truth", "reference", "fault", "report"]}
+  },
+  "allOf": [
+    {"if": {"required": ["kind"], "properties": {"kind": {"enum": ["truth", "reference"]}}},
+     "then": {
+       "required": ["name", "height", "landmarks"],
+       "properties": {
+         "name": {"type": "string", "minLength": 1},
+         "height": {"type": "number", "exclusiveMinimum": 0},
+         "frame": {"enum": ["glb", "prepared"], "description": "glb: the built GLB's own frame, moved as the prep moves the mesh; prepared: already in the run's frame"},
+         "landmarks": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/xyz"}},
+         "fingers": {"type": "object", "properties": {"separate": {"type": "integer", "minimum": 0}}},
+         "expect_fail": {"type": "array", "items": {"type": "string"}}
+       }
+     }},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "fault"}}},
+     "then": {
+       "required": ["fault", "base", "steps"],
+       "properties": {
+         "fault": {"type": "string", "minLength": 1},
+         "base": {"type": "string", "minLength": 1},
+         "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}},
+         "base_failed": {"type": "array", "items": {"type": "string"}},
+         "error": {"type": "string"}
+       }
+     }},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "report"}}},
+     "then": {
+       "required": ["summary", "cases", "faults"],
+       "properties": {
+         "summary": {"$ref": "#/$defs/summary"},
+         "cases": {"type": "array", "items": {"type": "object", "required": ["name", "outcome"],
+                                              "properties": {"name": {"type": "string"}, "outcome": {"type": "string"}}}},
+         "faults": {"type": "array", "items": {"type": "object", "required": ["fault", "verdict"],
+                                               "properties": {"fault": {"type": "string"},
+                                                              "verdict": {"enum": ["caught", "caught_by_other_gate", "slipped", "not_run", "control_pass", "control_fail"]}}}}
+       }
+     }}
+  ],
+  "$defs": {
+    "xyz": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+    "names": {"type": "array", "items": {"type": "string"}},
+    "step": {
+      "type": "object",
+      "required": ["failed_gates"],
+      "properties": {"name": {"type": ["string", "null"]}, "exit_code": {"type": ["integer", "null"]},
+                     "failed_gates": {"$ref": "#/$defs/names"}}
+    },
+    "summary": {
+      "type": "object",
+      "description": "score's summary (rig_exam.py summarise()); bench/1 carries the same object as `exam`",
+      "required": ["tol", "outcomes", "false_pass", "false_fail", "faults_caught", "faults_slipped", "control_fail", "fingers_right"],
+      "properties": {
+        "tol": {"type": "number"},
+        "outcomes": {"type": "object", "additionalProperties": {"$ref": "#/$defs/names"}},
+        "false_pass": {"$ref": "#/$defs/names"},
+        "false_fail": {"$ref": "#/$defs/names"},
+        "faults_caught": {"$ref": "#/$defs/names"},
+        "faults_slipped": {"$ref": "#/$defs/names"},
+        "control_fail": {"$ref": "#/$defs/names"},
+        "fingers_right": {"type": "integer", "minimum": 0},
+        "fingers_cases": {"type": "integer", "minimum": 0},
+        "volume": {"type": "object"}
+      }
+    }
+  }
+}

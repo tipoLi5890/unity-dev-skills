@@ -9,7 +9,6 @@
     "schema": {"const": "gate/1"},
     "tool": {"type": "string"},
     "pass": {"type": "boolean", "description": "true only when every gate ran and passed"},
-    "ok": {"type": "boolean", "deprecated": true, "description": "the old name of `pass`, still written beside it for one release; must equal `pass`"},
     "gates": {
       "type": "array",
       "items": {"$ref": "#/$defs/gate"}
@@ -19,20 +18,19 @@
     "error": {"type": "string", "description": "why the harness could not measure; the report then fails"},
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
+  "not": {"required": ["ok"], "description": "`ok`, the old name of `pass`, is gone: a report carrying it is refused"},
   "allOf": [
     {"if": {"properties": {"pass": {"const": true}}},
      "then": {
        "properties": {
          "gates": {"minItems": 1, "items": {"properties": {"pass": {"const": true}}}},
-         "verdict": {"const": "green"},
-         "ok": {"const": true}
+         "verdict": {"const": "green"}
        },
        "not": {"anyOf": [{"required": ["refused"]}, {"required": ["error"]}]}
      },
      "else": {
        "properties": {
-         "verdict": {"enum": ["failed", "harness"]},
-         "ok": {"const": false}
+         "verdict": {"enum": ["failed", "harness"]}
        }
      }}
   ],
@@ -45,8 +43,9 @@
         "value": {"description": "what was measured; any JSON value, null when not measurable"},
         "limit": {"description": "what it was held to: a number, a string such as \"<= 0.03\", a list, or null"},
         "pass": {"type": "boolean"},
-        "ok": false
-      }
+        "margin": {"type": "number", "description": "the signed, normalised distance to the limit as defined in schemas/README.md (gate/1): positive is safe, negative is failing, 0 is on the limit; absent when the value or limit is not a number"}
+      },
+      "not": {"required": ["ok"], "description": "a gate carrying `ok` is refused"}
     }
   }
 }

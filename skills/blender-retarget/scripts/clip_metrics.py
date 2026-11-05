@@ -41,7 +41,7 @@ Definitions (the plant detector, slide, summaries and pop test are motion_metric
   Gated: count <= --pops-max (0).
 
 Prints one JSON report (also to --out): per-metric p50, p95, max, n; plants; gates; pass. It is a
-gate/1 report (schemas/gate-1.json); `ok`, pass's old name, equals pass for one release.
+gate/1 report (schemas/gate-1.json).
 Exit codes (motion_metrics.py's): 0 every gate passed (or selftest passed); 2 a gate failed;
 1 refused input (unreadable file, wrong schema, a required role missing, frame counts that
 differ, a non-finite value), a usage error or a failed selftest. Requires numpy.
@@ -180,7 +180,7 @@ def measure(doc: dict, a) -> dict:
                       "limit": f"<= {a.limb_p95}", "pass": bool(v <= a.limb_p95)})
     out["gates"] = gates
     out["schema"] = "gate/1"
-    out["pass"] = out["ok"] = all(g["pass"] is True for g in gates)
+    out["pass"] = all(g["pass"] is True for g in gates)
     return out
 
 
@@ -212,7 +212,7 @@ def run(argv) -> tuple:
         doc = json.loads(Path(a.samples).read_text(encoding="utf-8"))
         rep = measure(doc, a)
     except (OSError, ValueError, Refused) as e:
-        rep = {"schema": "gate/1", "tool": "clip_metrics.py", "pass": False, "ok": False, "gates": [],
+        rep = {"schema": "gate/1", "tool": "clip_metrics.py", "pass": False, "gates": [],
                "refused": str(e)}
         code = 1
     else:
@@ -277,7 +277,7 @@ def selftest() -> int:
         check("absolute slide over 1.5 cm", rep["foot_slide_m"]["max"] > 0.015)
         check("added slide ~0", rep["foot_slide_added_m"]["max"] < 1e-9)
         check("a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True
-              and rep.get("ok") is True and all("pass" in g and "ok" not in g for g in rep["gates"]))
+              and "ok" not in rep and all("pass" in g and "ok" not in g for g in rep["gates"]))
         contract_sample("clip_metrics", "drifting_reference", rep)
         # 2. the character drifts 6 cm per plant where the reference drifts 1 cm: added ~5 cm fails
         doc["character"] = _walk(80, 0.06)

@@ -60,6 +60,12 @@ def gate(result, name):
     return next((g for g in result.get("gates", []) if g["name"] == name), None)
 
 
+def passed(result):
+    """A brt_arp result's verdict. Every op this test calls reports gates (a refusal too), so each
+    result is gate/1: `pass`, and an `ok` beside it is the old dialect, not a pass."""
+    return result.get("pass") is True and "ok" not in result
+
+
 def runner(name, spine_bones=3):
     body, _ = A.build_runner(name)
     V, F = A.mesh_arrays(body)
@@ -140,7 +146,7 @@ probe = B.run({"op": "probe"})
 if not probe["addon_present"]:
     body, _, path = runner("RunnerA")
     r = B.run({"op": "pipeline", "mesh": body.name, "markers": path, "fbx": os.path.join(TMP, "a.fbx")})
-    case("no add-on: pipeline refuses addon_missing", not r["ok"] and r.get("reason") == "addon_missing", r.get("reason"))
+    case("no add-on: pipeline refuses addon_missing", not passed(r) and r.get("reason") == "addon_missing", r.get("reason"))
     for name in ("pipeline on the runner", "contract tier", "deform gate on the export", "export op",
                  "two spine bones", "facial references", "given rolls", "ref_rolls for an unplaced bone",
                  "influences not limited", "unknown reference bone", "markers missing a bone",
@@ -151,7 +157,7 @@ else:
     body, markers, path = runner("RunnerA")
     fbx = os.path.join(TMP, "runner_a.fbx")
     r = B.run({"op": "pipeline", "mesh": body.name, "markers": path, "fbx": fbx})
-    case("pipeline on the runner: ok", r["ok"], [g for g in r["gates"] if not g["pass"]] or r.get("reason"))
+    case("pipeline on the runner: ok", passed(r), [g for g in r["gates"] if not g["pass"]] or r.get("reason"))
     case("pipeline: licence on the record", r["record"].get("licence", {}).get("source") == "auto-rig-pro")
     case("pipeline: influences limited to 4", (gate(r, "arp.export_max_influences") or {}).get("value", 99) <= 4)
     if r.get("skeleton"):
@@ -171,7 +177,7 @@ else:
         rx = B.run({"op": "export", "armature": r["armature"], "fbx": again})
         names = lambda path: [b["name"] for b in json.load(open(path))["bones"]]  # noqa: E731
         case("export op re-exports the bound rig: ok, licence, the same skeleton",
-             rx["ok"] and rx["record"].get("licence", {}).get("source") == "auto-rig-pro"
+             passed(rx) and rx["record"].get("licence", {}).get("source") == "auto-rig-pro"
              and rx.get("skeleton") and names(rx["skeleton"]) == names(r["skeleton"]),
              [g for g in rx.get("gates", []) if not g["pass"]] or rx.get("reason"))
     body2, _, path2 = runner("RunnerB", spine_bones=2)
@@ -195,7 +201,7 @@ else:
     print("face:", json.dumps({"face_refs_added": rf.get("face_refs_added"), "refs": rf.get("refs"),
                                "jaw_deform": jaw, "warnings": rf.get("warnings")}))
     case("facial references: pipeline ok, face and ears added, all 58+4 placed, none left unplaced, jaw deforms",
-         rf["ok"] and (gate(rf, "arp.face_added") or {}).get("pass") and face_all <= names_f
+         passed(rf) and (gate(rf, "arp.face_added") or {}).get("pass") and face_all <= names_f
          and not any("which the markers do not place" in w for w in rf.get("warnings", [])) and jaw,
          [g for g in rf.get("gates", []) if not g["pass"]] or rf.get("reason") or rf.get("warnings"))
     misses = roll_misses(rig_f, markersf) if rig_f else {}
@@ -213,13 +219,13 @@ else:
                 "limit_influences": False})
     most = gate(r6, "arp.export_max_influences")
     case("influences not limited: export_max_influences fails", most is not None and not most["pass"]
-         and not r6["ok"], most)
+         and not passed(r6), most)
     body3, markers3, _ = runner("RunnerC")
     markers3["arp_refs"]["tail_00_ref.x"] = {"head": [0, 0.1, 1.0], "tail": [0, 0.2, 0.9]}
     r3 = B.run({"op": "pipeline", "mesh": body3.name, "markers": markers3, "fbx": os.path.join(TMP, "c.fbx")})
     placed = gate(r3, "arp.refs_placed")
     case("unknown reference bone: refs_placed fails, rig rolled back",
-         not r3["ok"] and placed is not None and not placed["pass"] and bpy.data.objects.get("RunnerCRig") is None,
+         not passed(r3) and placed is not None and not placed["pass"] and bpy.data.objects.get("RunnerCRig") is None,
          (placed, r3.get("stopped_at")))
     bad = dict(markers3, arp_refs={k: v for k, v in markers3["arp_refs"].items() if k != "hand_ref.l"})
     r4 = B.run({"op": "pipeline", "mesh": body3.name, "markers": bad, "fbx": os.path.join(TMP, "d.fbx")})

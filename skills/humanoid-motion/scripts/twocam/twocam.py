@@ -488,10 +488,11 @@ print("progress \u00e9\u4e2d", file=sys.stderr)
 if script == "train.py":
     print("epoch 0 val mean px error (layout pixels) front 3.0 side 3.0", file=sys.stderr)
 key = "ok" if os.environ.get("FAKE_OLD_DIALECT") == script else "pass"
-rep = {"schema": "gate/1", "tool": script, "pass": code == 0, "ok": code == 0,
+rep = {"schema": "gate/1", "tool": script, "pass": code == 0,
        "gates": [{"name": "fake.gate", key: code == 0}], "exit_code": code}
 if key == "ok":
-    del rep["schema"], rep["pass"]
+    del rep["schema"]
+    rep["ok"] = rep.pop("pass")
 if script == "contact_bake.py" and "--report" in args:
     open(args[args.index("--report") + 1], "w").write(json.dumps(rep))
 if script == "motion_metrics.py" and "--out" in args and not os.environ.get("FAKE_NO_OUT"):

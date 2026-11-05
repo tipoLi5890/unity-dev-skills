@@ -276,3 +276,45 @@ side by side in its summary.
 | `secondary.rest_penetration` fails | a joint deep inside a body capsule | move the marker chain's joints onto the surface |
 | refused: the rig already has `cc_` bones | a second run on the chained rig | run on the rig before the chains (`repair/aN/` or `rig/`) |
 
+## Margins, repeated runs and the `stable` gate
+
+**A margin** says how far a reading sits from its limit: positive is safe, negative fails, 0 is on
+the limit, scaled by the limit so that gates, runs and characters compare (`schemas/README.md`,
+gate/1). `deform_gate.py` and `mesh_check.py` write `margin` on each numeric gate. A reader takes a
+gate's own margin, else reads one from a limit that states its direction (`"<= 0.08"`) or a
+`[lo, hi]` range; a bool, a dict or a bare number without a direction has none. A margin never
+changes a verdict, and no limit is widened to gain one.
+
+**Repeated runs.** Auto-Rig Pro's AI and its bind differ from run to run, so a reading near its
+limit passes one run and fails the next. `autorig.py all --repeat N` runs prep and check once, then
+smart, markers, arp, contract and deform (with the repair ladder) N times, each in its own
+`repeat/rN/` on a copy of the prepped mesh:
+
+```bash
+python3 scripts/autorig.py all couriers/runner Runner.glb --repeat 3
+python3 scripts/autorig.py all couriers/mascot Mascot.glb --body chibi --repeat 3 --min-margin 0.05
+```
+
+- **`autorig.stability.json`** (gate/1): per gate those stages read, the value's `min`, `median`
+  and `max` over the runs, `runs` and `passed` (how many read it and passed), `pass` when it passed
+  in every run that read it, and `margin` the worst run's (none when a run failed the gate without
+  one: its worst is not known). `runs` lists each run's exit code, worst
+  margin and failed gates; `chosen_run` names the run kept.
+- **`stable`** passes when every run exited 0 and every numeric margin of every run is at least
+  `--min-margin` (default 0). It fails the command with exit 2 even when the kept run passed.
+- **The kept run** is the one whose worst margin is the median (for an even N, the lower of the two
+  middle ones; a run that stopped on an error counts as the worst). Its `rig/`, `export/`,
+  `repair/` and `logs/` are copied into the character's folder, the summary names those copies
+  (`repeat.chosen` says which run they came from), and the spring chains run once, on its rig.
+- **Reading it.** A gate that passed in two runs of three is a reading on its limit: fix its cause
+  (`reference/failures.md`). A raised `--min-margin` asks for room, never for a looser limit.
+
+**The finger vote (opt-in).** `autorig.py markers|all --finger-votes K` (arp_markers.py's; default 1)
+reads the fingers K times and takes the majority, a tie reading `fixed` (`reference/markers.md`,
+Fingers): fingers held a sample gap apart no longer flip between `detected` and `fixed` with a
+wrist moved by a few millimetres. It matters beyond the hand: a hand the slices read `fixed` takes
+the AI's fingers when smart passed, and those move from run to run, so the elbow's volume can move
+with them. When `stable` shows a deform margin wandering on a character with separate fingers whose markers
+say `fingers.mode` `ai`, run `--repeat 3` once more with `--finger-votes 5` and keep the steadier. It is not the
+default: on the rig exam it reads one body's fingers right and another's wrong.
+

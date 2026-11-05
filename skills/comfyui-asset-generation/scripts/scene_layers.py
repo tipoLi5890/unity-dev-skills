@@ -10,7 +10,10 @@ write the strips, the props and a layered PSD for parallax.
 
 `run` submits templates/qwen_image_layered_api.json (the official graph: 20 steps, cfg 2.5,
 euler/simple, shift 1; LatentCut drops the composite frame) after an empty queue, downloads the
-layers and runs `gate` on them. The model returns the layers back to front, each RGBA with the
+layers and runs `gate` on them. DIR/run.json pins the job: prompt_id, elapsed_seconds, overrides,
+workflow_sha256 (the client's hash of the graph as submitted), seed, prompt_sha256 (of --prompt as
+sent; the text is not stored), models (the unet/clip/vae file names), layers, max_size, and the
+client's partial ledger `record` (its upload named by file name and sha256). The model returns the layers back to front, each RGBA with the
 hidden parts filled (the sky behind the skyline, the shops behind the props). It splits a scene by
 depth; it does not split a character into body parts (layer_split.py does that).
 
@@ -151,9 +154,23 @@ def run_job(scene: Path, out: Path, a) -> list:
     files = sorted(Path(f["path"]) for f in res.get("output_files", []) if str(f.get("path", "")).endswith(".png"))
     if not files:
         raise JobFailed("the job finished without layer images")
-    (out / "run.json").write_text(json.dumps({k: res.get(k) for k in ("prompt_id", "elapsed_seconds", "overrides")},
+    (out / "run.json").write_text(json.dumps(run_record(res, a.prompt or "", a.seed, a.layers, a.max_size),
                                              indent=1), encoding="utf-8")
     return files
+
+
+def run_record(res: dict, prompt: str, seed: int, layers: int, max_size: int, models=MODELS) -> dict:
+    """run.json: what pins one Qwen-Image-Layered job. The graph is built in code, so the client's
+    workflow_sha256 (the graph file as submitted, prompt and seed included) is its hash; the
+    prompt is kept as its sha256 only. The client's record names its upload by file name, since
+    the upload lived in a temporary folder."""
+    job = dict(res.get("record")) if isinstance(res.get("record"), dict) else None
+    if job is not None:
+        job["inputs"] = [{"path": Path(str(i.get("path"))).name, "sha256": i.get("sha256")}
+                         for i in job.get("inputs") or [] if isinstance(i, dict)]
+    return {**{k: res.get(k) for k in ("prompt_id", "elapsed_seconds", "overrides", "workflow_sha256")},
+            "seed": seed, "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "models": dict(models), "layers": layers, "max_size": max_size, "record": job}
 
 
 # --------------------------------------------------------------------------------------- gate
@@ -524,6 +541,18 @@ def selftest() -> int:
         checks["template_matches"] = set(tpl) == {"client_id", "prompt"} and tpl["prompt"] == graph(*TEMPLATE_ARGS)
     except (OSError, json.JSONDecodeError):
         checks["template_matches"] = False
+    res = {"prompt_id": "job-3", "elapsed_seconds": 41.5, "overrides": {}, "workflow_sha256": "ab" * 32,
+           "record": {"tool": {"skill": "comfyui-asset-generation", "script": "comfy_asset_client.py"},
+                      "params": {"workflow_sha256": "ab" * 32}, "verdict": "green",
+                      "inputs": [{"path": "/tmp/job/scene_0a1b.png", "sha256": "cd" * 32}],
+                      "files": [{"path": "/proj/scenes/street/raw/layer_00001_.png", "sha256": "ef" * 32, "bytes": 9}]}}
+    rr = run_record(res, "a street of shops with parcels", 7, 4, 1024)
+    checks["run_record"] = (rr["workflow_sha256"] == "ab" * 32 and rr["seed"] == 7 and rr["models"] == MODELS
+                            and rr["prompt_sha256"] == hashlib.sha256(b"a street of shops with parcels").hexdigest()
+                            and rr["prompt_id"] == "job-3" and rr["layers"] == 4
+                            and rr["record"]["inputs"] == [{"path": "scene_0a1b.png", "sha256": "cd" * 32}]
+                            and "parcels" not in json.dumps(rr) and "/tmp/job" not in json.dumps(rr)
+                            and run_record({}, "", 1, 4, 1024)["record"] is None)
     gr = graph("s.png", "p", layers=5, max_size=640, seed=9)
     links = [v for n in gr.values() for v in n["inputs"].values() if isinstance(v, list)]
     checks["graph_links"] = all(v[0] in gr for v in links) and gr["118"]["inputs"]["layers"] == 5 \

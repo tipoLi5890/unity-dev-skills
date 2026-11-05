@@ -803,7 +803,7 @@ def ship(parts_path, out_dir, name=None, plan_path=None, objects=None, atlas=Non
     if render:
         outputs["merge"] = render_merge(outs + eye_objs, img_bc, out_dir, has_hands)
     passed = all(g["pass"] for g in gates)
-    report = {"schema": "gate/1", "tool": "ship_merge", "pass": passed, "ok": passed,
+    report = {"schema": "gate/1", "tool": "ship_merge", "pass": passed,
               "verdict": "green" if passed else "failed", "character": name, "parts_file": os.path.abspath(parts_path),
               "plan": os.path.abspath(plan_path) if plan_path else None, "gates": gates, "warnings": warnings,
               **detail, "outputs": outputs, "seconds": round(time.time() - t_start, 1)}
@@ -1141,12 +1141,12 @@ def main(argv=None, prog="ship_merge.py"):
                                 args.separate, args.max_tris, args.budgets, args.cls, args.min_density,
                                 not args.no_render, args.eyes)
     except Refused as exc:
-        code, report = 1, {"schema": "gate/1", "tool": "ship_merge", "pass": False, "ok": False,
+        code, report = 1, {"schema": "gate/1", "tool": "ship_merge", "pass": False,
                            "verdict": "failed", "gates": [], "refused": str(exc)}
     except Exception as exc:              # Blender -b exits 0 on an uncaught error: make it a failure
         import traceback
         traceback.print_exc()
-        code, report = 1, {"schema": "gate/1", "tool": "ship_merge", "pass": False, "ok": False,
+        code, report = 1, {"schema": "gate/1", "tool": "ship_merge", "pass": False,
                            "verdict": "harness", "gates": [], "error": f"{type(exc).__name__}: {exc}"}
     if getattr(args, "report", None):
         os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)

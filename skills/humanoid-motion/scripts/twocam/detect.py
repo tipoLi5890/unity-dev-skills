@@ -171,7 +171,7 @@ def detect(a, net=None, names=None, ck_layout=None) -> dict:
         overlay(frames, fuv, suv, names, a.overlay, fps, L)
     ok = all(g["pass"] is True for g in gates)
     return {"tool": "detect.py", "out": a.out, "frames": len(frames), "fps": fps, "joints": len(names),
-            "device": dev, "calib": A.round(4).tolist(), "schema": "gate/1", "gates": gates, "pass": ok, "ok": ok,
+            "device": dev, "calib": A.round(4).tolist(), "schema": "gate/1", "gates": gates, "pass": ok,
             "overlay": a.overlay}
 
 
@@ -198,11 +198,11 @@ def run(argv) -> int:
         import torch  # noqa: F401
         import cv2  # noqa: F401
     except ImportError as exc:
-        print(json.dumps({"schema": "gate/1", "tool": "detect.py", "pass": False, "ok": False, "gates": [], "error": f"refused: {exc}"})); return 1
+        print(json.dumps({"schema": "gate/1", "tool": "detect.py", "pass": False, "gates": [], "error": f"refused: {exc}"})); return 1
     try:
         r = detect(a)
     except (OSError, ValueError, RuntimeError, KeyError, json.JSONDecodeError) as exc:
-        print(json.dumps({"schema": "gate/1", "tool": "detect.py", "pass": False, "ok": False, "gates": [], "error": f"{type(exc).__name__}: {exc}"})); return 1
+        print(json.dumps({"schema": "gate/1", "tool": "detect.py", "pass": False, "gates": [], "error": f"{type(exc).__name__}: {exc}"})); return 1
     print(json.dumps(r))
     return 0 if r["pass"] is True else 2
 
@@ -286,7 +286,7 @@ def selftest() -> int:
         want = np.array([224 * side / M.SIZE - (side - L.W_FRONT) // 2, 300 * side / M.SIZE - (side - L.H) // 2])
         check("decode undoes the square padding", np.abs(uv - want).max() < 0.5, err=float(np.abs(uv - want).max()))
         check("calibrated clip passes, exit 0", code == 0 and r["gates"][0]["pass"], code=code)
-        check("a passing gate/1 report", r.get("schema") == "gate/1" and r.get("pass") is True and r.get("ok") is True)
+        check("a passing gate/1 report", r.get("schema") == "gate/1" and r.get("pass") is True and "ok" not in r)
         contract_sample("detect", "calibrated", r)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):

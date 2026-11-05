@@ -2,6 +2,129 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.43.0
+
+A measurement round. Quality has been read one character at a time, and each 0.42.x fixed one
+case; what was left open were readings at the edge of a limit and runs of Auto-Rig Pro's AI that
+differ. This release makes those visible and comparable: every gate says how far it is from its
+limit, a rig can be run N times and judged on its worst run, and a release can be benched and
+compared with the last. No limit was widened.
+
+- **gate/1 gains `margin`; `ok` is gone.**
+  - **`margin`** is the signed, normalised distance to the limit: `<= L` gives (L − v) / |L|,
+    `>= L` gives (v − L) / |L|, a range [lo, hi] gives min(v − lo, hi − v) / ((hi − lo) / 2), a
+    zero limit the plain difference. Positive is safe, negative fails, 0 sits on the limit. A
+    bool, a string or a dict value has none. `schemas/README.md` has the table.
+  - **One copy** in `tools/shared-blocks/gate_margin.py`, pasted into each producer and kept equal
+    by `check-consistency.py`: `deform_gate.py`, `mesh_check.py`, `arp_markers.py`,
+    `motion_metrics.py`, `inspect_glb.py`, `autorig.py`, `rig_exam.py`, `paint_loop.py` and
+    `video_loop.py`. The markers' symmetry, arm angle, limb ratios (the worst limb) and finger
+    lengths now carry one.
+  - **`ok`**, the old name of `pass`, is no longer written by any gate report, and
+    `schemas/gate-1.json` refuses a report or a gate that carries it. A Blender op that reports
+    with no gates is a result, not a verdict, and keeps `ok`. The pipeline readers still read an
+    unstamped 0.34 report with a warning; `registry.py ingest` refuses `ok` at every level
+    (exit 3).
+  - `smart.ai_files` says its limit as `version 1.20 or newer`: a version is not a reading, so it
+    has no margin.
+- **`character-autorig`: `autorig.py all --repeat N [--min-margin X]`.**
+  - Prep and check run once. Smart, markers, arp, contract and deform (with the repair ladder) run
+    N times, each in `OUT/repeat/rN/`.
+  - **`OUT/autorig.stability.json`** (gate/1): per gate the value's min, median and max, how many
+    runs passed it, and the worst margin; a gate failed in a run that read no margin carries none.
+    A `stable` gate passes when every run exited 0 and every margin is at least `--min-margin`
+    (default 0, never negative).
+  - **The run kept** is the median one: runs are ordered errors first, then failed gates, then
+    passes, each by its worst margin. Its rig, export, repair and logs are copied into OUT, and the
+    spring chains run once on it. The exit code is that run's, plus 2 when `stable` fails.
+  - `--repeat 1` (the default) is the single run as before.
+- **`rig_exam.py bench` and `compare`.**
+  - **`bench EXAM [--real OUT ...] --out FILE [--label]`** writes `bench/1`: the exam's summary
+    and, for each real character, every gate its stages read with the margin, its stability, its
+    worst margin and its failed gates.
+  - **`compare OLD NEW [--margin-drop 0.02]`** exits 2 on a gate that went from pass to fail or is
+    no longer read, a new gate that fails, a margin that fell by more than the drop, a lost case,
+    exam outcome or finger read, and a new false pass, slipped fault or failed control. An empty
+    baseline is refused. Improvements are listed.
+  - Bench files stay outside the repository, in the exam's own folder.
+  - New schemas `schemas/bench-1.json` and `schemas/exam-1.json` (truth, reference, fault and
+    report). `CONTRIBUTING.md` lists all eight stamps.
+- **The finger vote (opt-in).** `arp_markers.py --finger-votes K`, passed through by
+  `autorig.py markers|all --finger-votes K`: K readings of the hand (seed k, stations shifted by
+  0, ±0.005 L, ±0.01 L …), the majority wins, a tie reads `fixed`, and `fingers.votes` records
+  each reading. The default is 1, the single reading, unchanged (see below).
+- **`mesh-texture-paint`: `OUT/gates.json`** (gate/1) beside `report.json`, which is unchanged.
+  - `paint.coverage` holds `coverage_seeable` to `--min-coverage`, by default from
+    `--coverage-for`: character 0.85, prop 0.75, part reported only. `paint.seam_delta` and
+    `paint.views_refused` are reported only.
+  - A run stopped by a paint server error adds a failing `paint.run_complete`. A run that paints
+    nothing leaves no `gates.json`, and an earlier one is removed first.
+  - It carries a partial ledger record (the painted GLB, its inputs, the seeds and models of the
+    views used), so `registry.py ingest --json gates.json --write` records it.
+  - `hand_views.py` paints its parts with `--coverage-for part`.
+- **`sprite-from-video`: `OUT/NAME.gates.json`** beside `frames.json` (unchanged): `frames.cut`,
+  `frames.periodicity`, `frames.seam`, `frames.seam_source_rate` and `frames.faults`, with the
+  source clip as an input.
+- **What made an asset is kept.**
+  - **`layer_split.py fills`:** each fill in `fills.json` keeps its job's `record`: workflow
+    sha256, overrides, prompt id, seed, prompt sha256 and model files. A fill whose gates failed is
+    recorded as failed.
+  - **`scene_layers.py`:** `run.json` records the seed, prompt sha256, models, workflow sha256
+    and the client's record.
+  - **`codex_generate.py`:** `model` is now the image model, read from the PNG's C2PA manifest
+    (null when unreadable); the agent's `-m` moved to `agent_model`, and `codex_version` is new.
+    Readers of `model` see a different value. Usage errors exit 1 (they exited 2, the code for a
+    missing `codex`).
+- **`art-asset-registry`: licences follow the inputs.** An input already in the ledger, matched by
+  sha256 or else by path, becomes a `depends-on` link on every shape ingest reads. Frames cut from
+  a MiniMax H3 clip now inherit its excluded territories, and `check` refuses them for a project
+  sold there. `licences.md` gains `qwen-image-layered` and `openai-gpt-image`.
+- **`VERSIONS.md`: an asset toolchain section.** Blender, Auto-Rig Pro (version and licence),
+  ComfyUI (0.37.0 or newer for every shipped template), and each model the templates load
+  (Pixal3D, TRELLIS.2, the DINOv3 encoder, MoGe-2, BiRefNet, Qwen-Image-Edit-2511 and its
+  Lightning LoRA, Qwen-Image-Layered, MiniMax H3, MiniMax Music 3, Stable Audio 3 Medium,
+  gpt-image), each with its licence, territory, official source and check date.
+  `THIRD_PARTY_NOTICES.md` links each licence; no weights ship. Auto-Rig Pro now lists Blender
+  5.2, and the docs say so.
+- **Tests.** The Blender tests in `blender-retarget/scripts/tests/` and `test_arp_pipeline.py`
+  read `pass` (all pass in Blender 5.2.1; the pipeline test with Auto-Rig Pro ends 16/16).
+  `codex_generate.py` has a selftest and a row in `run-selftests.py`.
+- **Benched against 0.42.3** (the exam on four bases, the four real characters with `--repeat
+  3`): `compare` exits 0. 0.42.3's deform reports wrote bare limits, so this first compare saw
+  pass and fail only; margins compare from 0.43.0 on.
+  - **Rig exam:** unchanged. Eight true passes, `spiky_hair` a true fail; joints p50 / p95
+    0.0094 / 0.0294 H; fingers right on 8 of 9; 31 planted faults caught, no false pass, every
+    control passes. The accepted runner's base (seven more faults) was not rebuilt for either
+    version: its accepted FBX was not at hand.
+  - **The runner:** three of three pass. Worst margin 0.168–0.189, on `deform.volume_loss_max`
+    (0.284–0.291 against 0.35).
+  - **The gatekeeper:** three of three pass, but with 0.004, 0.011 and 0.030 to spare: its elbow
+    volume reads 0.340–0.349 against 0.35. It takes the AI's fingers, and they move from run to
+    run. On 0.42.3 the same elbow read 0.340 in one run and needed the repair ladder in two.
+  - **The mascot:** stops at `markers.limb_ratio` in every run, the legs at 0.847 against 0.85
+    (margin −0.0052). 0.42.2's and 0.42.3's code read the same on this file; 0.42.3's pass came
+    from inputs that can no longer be traced.
+  - **The guard:** stops at deform in every run, `self_intersection_p95` 0.0809 against 0.08
+    (−0.0112); `skirt_tear` passes with 0.01 to spare.
+  - **On the host:** the mascot's repaint used two views and stopped after three rejections
+    (coverage 0.32); its `gates.json` fails with margin −0.624 and is recorded as failed. The
+    courier's four layer fills pass, each with its record.
+- **Still open.**
+  - **The finger vote** with five readings turned `spiky_hair` to `detected` (4 of 5) and gave the
+    gatekeeper its own fingers (3 of 5): the same elbow read 0.2885 in every run (margin 0.176).
+    It also turned `thin` to `fixed` (2 of 5), which sent it down the mitten route and failed
+    `deform.mitten_tear` (0.0026 against 0.002), and `compare` caught it. The separable hands read
+    2–5 of 5 and the closed or mittened ones 0–1, one vote apart, so the default stays one reading
+    until a second opinion on the hand (0.45) can settle it.
+  - **The mascot's legs** (−0.0052) and **the guard's plates over cloth** (−0.0112).
+  - **BiRefNet's weights:** the file the templates load is the author's MIT model, not BRIA's
+    non-commercial RMBG-2.0, but its card says it was trained on DIS5K, whose terms allow only
+    non-commercial research use of the data. Whether that reaches the weights is a legal call.
+  - **OpenAI's terms pages** refused a direct read (HTTP 403); the gpt-image rows rest on their
+    indexed text.
+  - `audit_3d_source.py` and `inspect_glb.py` exit 2 on a bad flag, a code their docstrings give
+    to an unreadable file.
+
 ## 0.42.3
 
 A strengthening round from a fourth 3D character, an armoured depot guard in a tunic and a cape

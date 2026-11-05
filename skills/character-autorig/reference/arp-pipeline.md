@@ -24,10 +24,10 @@ r = brt_arp.run({"op": "pipeline", "mesh": "Runner", "markers": "rig/runner.mark
   the pipeline needs `arp.append_arp`, `arp.show_limb_params`, `arp.match_to_rig`,
   `arp.bind_to_rig` and `arp.arp_export_fbx_panel`, and refuses with `operator_missing` naming any
   that is absent; markers with ear references need `arp.add_limb` too.
-- **The Blender version.** The add-on lists support up to Blender 5.1. On a newer Blender, run
+- **The Blender version.** The add-on lists support up to Blender 5.2. On a newer Blender, run
   `blender -b --python <skill>/scripts/tests/test_arp_pipeline.py` (no `--factory-startup`) once:
   it builds a procedural runner and runs every step below; it must end `16/16 passed`. If a step
-  fails, rig in Blender 5.1 with the same scripts, or take the hand-built route.
+  fails, rig in Blender 5.2 with the same scripts, or take the hand-built route.
 - **Save first, work on a copy.** A failure before the bind removes the rig it appended; after the
   bind the mesh keeps its vertex groups and Armature modifier.
 - **One body mesh.** Join the body's parts, and separate a held prop before the call: the voxel

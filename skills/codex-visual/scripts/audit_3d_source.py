@@ -43,8 +43,7 @@ alpha; an opaque one by distance from its corner colour (--bg-tol).
 
 --json-out PATH also writes a gate/1 report (the repo's schemas/gate-1.json): {"schema":
 "gate/1", "pass", "gates": [{name, value, limit, pass}, ...], "verdict"} (green, failed, or
-harness with "error" when a file could not be read; `ok`, the old name of `pass`, is written
-beside it for one release) for a script to read; the text above is unchanged. A single image's gates are named <file name>/<check>.
+harness with "error" when a file could not be read) for a script to read; the text above is unchanged. A single image's gates are named <file name>/<check>.
 
 --selftest builds synthetic views (a profile with a forward nose and feet) in a temp dir and
 runs them through main(): opposite-facing passes, same-facing fails, a symmetric pair is
@@ -284,7 +283,7 @@ def selftest():
             rep = json.load(handle)
         facing_gate = next(g for g in rep["gates"] if g["name"] == "facing")
         check(f"{os.path.basename(folder)}: gate/1 report, pass matches the exit code",
-              rep.get("schema") == "gate/1" and rep.get("pass") is (code == 0) and rep.get("ok") is rep.get("pass")
+              rep.get("schema") == "gate/1" and rep.get("pass") is (code == 0) and "ok" not in rep
               and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep["gates"]))
         contract_out(out, os.path.basename(folder))
         return code, buf.getvalue(), facing_gate
@@ -347,13 +346,13 @@ def main():
                 failed = failed or bool(fails)
     except OSError as exc:
         print(f"unreadable: {exc}")
-        write_json(args.json_out, {"schema": "gate/1", "tool": "audit_3d_source.py", "pass": False, "ok": False,
+        write_json(args.json_out, {"schema": "gate/1", "tool": "audit_3d_source.py", "pass": False,
                                    "gates": gates, "verdict": "harness", "error": str(exc)})
         return 2
     print("FAIL" if failed else "PASS")
-    # gate/1 (schemas/gate-1.json): `pass` is the verdict; `ok` is its old name, written beside it for one release
+    # gate/1 (schemas/gate-1.json): `pass` is the verdict
     passed = not failed and bool(gates) and all(g["pass"] is True for g in gates)
-    write_json(args.json_out, {"schema": "gate/1", "tool": "audit_3d_source.py", "pass": passed, "ok": passed,
+    write_json(args.json_out, {"schema": "gate/1", "tool": "audit_3d_source.py", "pass": passed,
                                "gates": gates, "verdict": "green" if passed else "failed"})
     return 1 if failed else 0
 

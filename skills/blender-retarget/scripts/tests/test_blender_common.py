@@ -4,7 +4,7 @@
 
 Prints `PASS <name>` or `FAIL <name>: <why>` per case and exits 1 when any case
 fails. Covers: every result carries file, warnings and record, and a gated one is a
-gate/1 report (schema, pass, ok equal to pass) while one with no gates carries no
+gate/1 report (schema and pass, no ok) while one with no gates carries ok and no
 schema or pass; an extra
 named `file` cannot replace the file state; destructive_guard on a clean file,
 a dirty file, with acknowledge_destructive and with strict; brt_weights transfer,
@@ -112,7 +112,7 @@ def main() -> int:
 
     def result_keys_retarget():
         r = W.run(region(op="probe", backup_path=snap, report_path=report_path))
-        assert r["schema"] == "gate/1" and r["pass"] is r["ok"] is True, (r.get("schema"), r.get("pass"))
+        assert r["schema"] == "gate/1" and r["pass"] is True and "ok" not in r, (r.get("schema"), r.get("pass"))
         assert all("ok" not in g and isinstance(g["pass"], bool) for g in r["gates"]), r["gates"]
         assert r["file"] == {"path": "", "saved": False, "dirty": False}, r["file"]
         assert r["warnings"] == [], r["warnings"]
@@ -120,7 +120,7 @@ def main() -> int:
         assert rec["tool"] == {"skill": "blender-retarget", "script": "brt_weights"}, rec["tool"]
         assert "report_path" not in rec["params"] and rec["params"]["backup_path"] == snap, rec["params"]
         assert rec["params"]["mesh"] == "Runner" and rec["gates"] == r["gates"], rec
-        assert rec["verdict"] == ("green" if r["ok"] else "failed") == "green", rec["verdict"]
+        assert rec["verdict"] == ("green" if r["pass"] else "failed") == "green", rec["verdict"]
         with open(report_path, encoding="utf-8") as handle:
             written = json.load(handle)
         assert {"schema", "file", "warnings", "record"} <= set(written), sorted(written)
@@ -134,7 +134,7 @@ def main() -> int:
         import bcr_common
         r = bcr_common.report({"mesh": "Runner", "fbx_path": "/x/Runner.fbx"},
                               [bcr_common.gate("skin.max_influences", 5, "<= 4", False)], bones=4)
-        assert r["schema"] == "gate/1" and r["pass"] is False and r["ok"] is False and r["bones"] == 4, r
+        assert r["schema"] == "gate/1" and r["pass"] is False and "ok" not in r and r["bones"] == 4, r
         assert set(r["file"]) == {"path", "saved", "dirty"}, r["file"]
         assert r["record"]["tool"] == {"skill": "blender-character-rig",
                                        "script": "test_blender_common"}, r["record"]["tool"]
@@ -152,7 +152,7 @@ def main() -> int:
         assert C.destructive_guard({"strict": True}, "op") is None
         W.run(region(op="snapshot", backup_path=snap))
         r = W.run(region(op="transfer", backup_path=snap, amount=0.5))
-        assert r["ok"] and r["warnings"] == [], (r["ok"], r["warnings"])
+        assert r["pass"] and r["warnings"] == [], (r["pass"], r["warnings"])
 
     check("result_keys_retarget", result_keys_retarget)
     check("result_keys_character_rig", result_keys_character_rig)
@@ -178,17 +178,17 @@ def main() -> int:
     def dirty_ops_warn_without_raising():
         before = weights_of(mesh)
         r = W.run(region(op="transfer", backup_path=snap, amount=0.6))
-        assert r["ok"] and r["changed_vertices"] > 0, (r["ok"], r["changed_vertices"])
+        assert r["pass"] and r["changed_vertices"] > 0, (r["pass"], r["changed_vertices"])
         assert r["warnings"] == [f"brt_weights transfer {WARN}"], r["warnings"]
         assert weights_of(mesh) != before, "the transfer wrote nothing"
         r = W.run(region(op="normalize"))
-        assert r["ok"] and r["warnings"] == [f"brt_weights normalize {WARN}"], (r["ok"], r["warnings"])
+        assert r["pass"] and r["warnings"] == [f"brt_weights normalize {WARN}"], (r["pass"], r["warnings"])
         r = W.run(region(op="restore", backup_path=snap))
-        assert r["ok"] and r["warnings"] == [f"brt_weights restore {WARN}"], (r["ok"], r["warnings"])
+        assert r["pass"] and r["warnings"] == [f"brt_weights restore {WARN}"], (r["pass"], r["warnings"])
 
     def acknowledged_is_silent():
         r = W.run(region(op="transfer", backup_path=snap, amount=0.65, acknowledge_destructive=True))
-        assert r["ok"] and r["warnings"] == [], (r["ok"], r["warnings"])
+        assert r["pass"] and r["warnings"] == [], (r["pass"], r["warnings"])
         W.run(region(op="restore", backup_path=snap, acknowledge_destructive=True))
 
     def strict_raises_before_writing():

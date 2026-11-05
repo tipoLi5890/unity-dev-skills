@@ -69,8 +69,9 @@ degree A-pose on short arms hang near 0.35-0.45 H, the armpit near 0.55 H). Both
 
 Report: {tool, file, body, height, triangles, vertices, midline_x, crotch_h, legs{band, cuts, separated,
 ratio, first_fused_h}, arms{band, cuts, run_h, armpit_h, left, right}, double_shell{ratio, inner_shell,
-samples, gap}, skirt?, skirt_hint?, gates[{name, value, limit, pass}], schema, pass, ok}: a gate/1 report
-(schemas/gate-1.json); `ok`, pass's old name, equals it for one release. Heights ending in `_h` are
+samples, gap}, skirt?, skirt_hint?, gates[{name, value, limit, pass, margin?}], schema, pass}: a gate/1 report
+(schemas/gate-1.json). legs_separated, arms_separated (>=) and double_shell (<=) carry `margin`, the signed
+distance to the limit (gate_margin: + safe, - failing); skirt_hem carries none. Heights ending in `_h` are
 fractions of H.
 
 Prints one JSON object. Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed;
@@ -100,6 +101,56 @@ CHIBI_CROTCH_FROM = 0.10  # --body chibi: the crotch is searched from here up (x
 CHIBI_LEG_FROM = 0.06     # --body chibi: the leg band's foot (x H), over the shoe soles
 CHIBI_ARM_BAND = (0.35, 0.65)   # --body chibi: hands near 0.35-0.45 H, armpit near 0.55 H
 FEET, MIDLINE_SHIFT = 0.15, 0.02   # the midline from the feet when the extent under 0.4 H is off it by more (x H)
+MARGIN_OPS = {"legs_separated": ">=", "arms_separated": ">=", "double_shell": "<="}   # each limit's direction
+
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
+
 
 # ------------------------------------------------------------------------------ loading
 
@@ -568,10 +619,14 @@ def check(v: np.ndarray, f: np.ndarray, args) -> dict:
     if sk:
         gates.insert(1, {"name": "skirt_hem", "value": sk["hem_h"], "limit": f"legs shown >= {SKIRT_MIN_LEGS}",
                          "pass": bool(sk["hem_h"] is not None and "why" not in sk)})
+    for g in gates:
+        m = gate_margin(g["value"], float(g["limit"][2:]), MARGIN_OPS[g["name"]]) if g["name"] in MARGIN_OPS else None
+        if m is not None:
+            g["margin"] = m
     ds["gap"] = round(ds["gap"], 6)
     ok = all(g["pass"] is True for g in gates)
     crotch_h = chibi["crotch_h"] if chibi else crotch(prof)
-    rep = {"schema": "gate/1", "tool": "mesh_check", "pass": ok, "ok": ok, "body": body, "height": round(height, 6),
+    rep = {"schema": "gate/1", "tool": "mesh_check", "pass": ok, "body": body, "height": round(height, 6),
            "triangles": int(len(f)), "vertices": int(len(v)), "midline_x": round(prof["midline_x"], 6),
            "crotch_h": crotch_h, "legs": lg, "arms": am, "double_shell": ds, "gates": gates}
     if sk:
@@ -627,12 +682,12 @@ def parser() -> argparse.ArgumentParser:
 def run(argv: list[str]) -> tuple[int, dict]:
     args = parser().parse_args(argv)
     if args.mesh is None:
-        return 1, {"schema": "gate/1", "tool": "mesh_check", "pass": False, "ok": False, "gates": [],
+        return 1, {"schema": "gate/1", "tool": "mesh_check", "pass": False, "gates": [],
                    "refused": "a mesh file is required (or --selftest)"}
     try:
         v, f = load_mesh(args.mesh, args.up)
     except (OSError, ValueError, KeyError, IndexError, struct.error, Refused) as exc:
-        return 1, {"schema": "gate/1", "tool": "mesh_check", "pass": False, "ok": False, "gates": [],
+        return 1, {"schema": "gate/1", "tool": "mesh_check", "pass": False, "gates": [],
                    "refused": str(exc), "error": str(exc)}
     report = check(v, f, args)
     report["file"] = str(args.mesh)
@@ -807,14 +862,24 @@ def selftest() -> int:
         ok("separated body: exit 0", code == 0)
         ok("separated body: crotch found near 0.5 H", rep["crotch_h"] is not None and 0.45 <= rep["crotch_h"] <= 0.6)
         ok("separated body: height 1.7", abs(rep["height"] - 1.70) < 0.02)
-        ok("separated body: a passing gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is True
-           and rep["ok"] is True and len(rep["gates"]) == 3)
+        ok("separated body: a passing gate/1 report, no `ok`", rep["schema"] == "gate/1" and rep["pass"] is True
+           and "ok" not in rep and len(rep["gates"]) == 3)
+        ok("every gate carries a margin, + on a pass and - on a failure, in every case", all(
+            isinstance(g.get("margin"), float) and (g["margin"] <= 0 or g["pass"]) and (g["margin"] >= 0 or not g["pass"])
+            for _, r in reports.values() for g in r["gates"]) and gate(reports["legs"][1], "legs_separated")["margin"] < 0)
+        ok("gate_margin: <=, >=, range, a zero limit, a string limit; bool, string and NaN give none",
+           gate_margin(0.06, 0.08, "<=") == 0.25 and gate_margin(0.1, 0.08, "<=") == -0.25
+           and gate_margin(0.95, 0.9, ">=") == 0.0556 and gate_margin(5, [0, 10], "range") == 1.0
+           and gate_margin(-1, [0, 10], "range") == -0.2 and gate_margin(0.5, 0, "<=") == -0.5
+           and gate_margin(0.06, "<= 0.08") == 0.25 and gate_margin(0.06, 0.08) is None
+           and gate_margin(True, 1, "<=") is None and gate_margin("x", 1, "<=") is None
+           and gate_margin(float("nan"), 1, "<=") is None)
         contract_sample("mesh_check", "good", rep)
         code, rep = reports["legs"]
         ok("fused legs: exit 2, legs gate fails", code == 2 and not gate(rep, "legs_separated")["pass"]
            and gate(rep, "arms_separated")["pass"])
         ok("fused legs: a failed gate/1 report", rep["schema"] == "gate/1" and rep["pass"] is False
-           and rep["ok"] is False and all(set(g) >= {"name", "value", "limit", "pass"} and "ok" not in g
+           and "ok" not in rep and all(set(g) >= {"name", "value", "limit", "pass"} and "ok" not in g
                                           for g in rep["gates"]))
         contract_sample("mesh_check", "fused_legs", rep)
         code, rep = reports["arms"]

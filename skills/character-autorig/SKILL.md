@@ -19,7 +19,7 @@ so every clip made for any contract character plays on it.
 | "Auto-rig this character", "rig this character": the default route, one command | [The stages](#the-stages), `scripts/autorig.py` |
 | "Auto-Rig Pro without the UI": the `pipeline` op step by step (append, reference bones, Match, bind, Unity humanoid FBX), export settings, the read-back skeleton, refusals | `reference/arp-pipeline.md` |
 | Is the mesh riggable — "arms fused to the body", legs one tube, a double shell; what mesh_check and deform_gate measure | `reference/gates.md` |
-| "How good is the rig", scoring a change: known-joint bodies, planted faults | `reference/rig-exam.md` |
+| "How good is the rig", a change scored: known joints, faults, bench/compare | `reference/rig-exam.md` |
 | "Use Auto-Rig Pro's AI", gloved or closed fingers, face bones, hair pushing a marker out of its window: the `smart` stage, options, gates, fallbacks | `reference/arp-ai.md` |
 | "Markers are off": how each marker is found from slices, the windows, the front/side pictures for a person, `--adjust`, the output file | `reference/markers.md` |
 | "Elbow collapses when bent", "skin pokes through in a squat", or any failed gate | `reference/failures.md`; the elbow/knee weight repair in `reference/arp-pipeline.md` |
@@ -111,10 +111,10 @@ The contract report's `retarget_map` feeds `deform_gate.py --map` and `blender-r
 | every marker inside its body's windows (adult, `--body skirt`, `--body chibi`), or confirmed by the AI | a marker outside them |
 | one body mesh, limbs clear of the torso | (both need stage 1 to pass: no route rigs fused limbs well) |
 
-**Check the Blender version first.** Auto-Rig Pro lists support up to Blender 5.1. On any newer
+**Check the Blender version first.** Auto-Rig Pro lists support up to Blender 5.2. On any newer
 Blender, run `blender -b --python scripts/tests/test_arp_pipeline.py` (without
 `--factory-startup`) before the first character: it must end `16/16 passed`. If append, Match,
-bind or export fails there, rig in Blender 5.1 (same scripts, same gates) or take the hand-built
+bind or export fails there, rig in Blender 5.2 (same scripts, same gates) or take the hand-built
 route.
 
 The hand-built route builds `contract_bones` from the same markers with `blender-character-rig`'s

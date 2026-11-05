@@ -102,3 +102,30 @@ Per view:
 
 `turntable.png` is the eye check that goes with it: eight yaws at pitch 10 (`--compare GLB` adds
 the original texture as a first row for a before/after).
+
+## 7. gates.json
+
+Written beside `report.json` when the run painted at least one view: the run as a gate/1 report
+(`schemas/gate-1.json` in the plugin repo), the file `art-asset-registry` ingests. A run first
+removes any earlier `gates.json` from `--out`, so a run that paints nothing leaves none.
+
+| Gate | Value | Limit |
+|---|---|---|
+| `paint.coverage` | `coverage_seeable` | `>= --min-coverage`, with its `margin` (+ safe, − short); the default follows `--coverage-for`: `character` 0.85, `prop` 0.75, `part` reported only |
+| `paint.seam_delta` | `seam_delta` | reported only |
+| `paint.views_refused` | `rejected` | reported only |
+
+A reported-only gate has `limit: null`, `pass: true` and `report_only: true`. `--coverage-for`
+defaults to `character` for `--kind character` and `prop` for `--kind object`; a part painted
+alone (a hand, a head) passes `--coverage-for part`. A coverage under the floor shows as `pass:
+false` here and on stderr; the exit code stays the run's, so a caller that reads the exit code
+reads the paint, and the registry reads the gate.
+
+The report also carries `path` (the painted GLB) and `record`: the tool, the painted GLB,
+`basecolor.png` and `report.json` as files, the GLB, the sheet and the concept views as inputs,
+and as params the kind, `coverage_for`, the models and the seed of every used view.
+
+```bash
+python3 scripts/paint_loop.py prop.glb --concept views/backpack --out paint/backpack \
+  --kind object --coverage-for prop --min-coverage 0.75
+```

@@ -812,7 +812,7 @@ def solve(det: dict, info: dict, a, compat=None) -> dict:
               "align": align, "swaps": swapped, "reproj_px": {k: round(v, 3) for k, v in res["reproj_px"].items()},
               "reproj_frame_p95_px": round(float(np.percentile(reproj, 95)), 3), "limb_worst": limb_worst,
               "despiked": despiked,
-              "gates": gates, "pass": ok, "ok": ok, "warnings": warnings}
+              "gates": gates, "pass": ok, "warnings": warnings}
     return {"motion": motion, "report": report, "readings": readings}
 
 
@@ -866,13 +866,13 @@ def run(argv) -> int:
     try:
         need_torch()
     except ImportError:
-        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "ok": False, "gates": [],
+        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "gates": [],
                           "refused": "torch is not installed", "error": "refused: torch is not installed (see "
                           "reference/two-camera.md for the venv)"})); return 1
     if a.device == "auto":
         a.device = "cuda" if torch.cuda.is_available() else "cpu"
     if a.device == "cuda" and not torch.cuda.is_available():
-        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "ok": False, "gates": [],
+        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "gates": [],
                           "refused": "--device cuda but CUDA is not available",
                           "error": "refused: --device cuda but CUDA is not available"}))
         return 1
@@ -886,7 +886,7 @@ def run(argv) -> int:
             compat = {"feet": compat.get("feet", LEGACY_FEET)}
         out = solve(det, info, a, compat)
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
-        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "ok": False, "gates": [],
+        print(json.dumps({"schema": "gate/1", "tool": "solve.py", "pass": False, "gates": [],
                           "refused": f"{type(exc).__name__}: {exc}", "error": f"refused: {type(exc).__name__}: {exc}"}))
         return 1
     motion, report = out["motion"], out["report"]
@@ -989,7 +989,7 @@ def selftest() -> int:
             rep0 = json.loads(buf_last[0]) if buf_last else {}
             check("clean readings: nothing despiked", rep0.get("despiked") == [], despiked=rep0.get("despiked"))
             check("clean readings: a passing gate/1 report, its record's gates the same",
-                  rep0.get("schema") == "gate/1" and rep0.get("pass") is True and rep0.get("ok") is True
+                  rep0.get("schema") == "gate/1" and rep0.get("pass") is True and "ok" not in rep0
                   and rep0.get("record", {}).get("gates") == [{k: g.get(k) for k in ("name", "value", "limit", "pass")}
                                                              for g in rep0.get("gates", [])])
             contract_sample("solve", "clean", rep0)

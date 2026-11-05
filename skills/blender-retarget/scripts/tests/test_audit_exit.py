@@ -81,7 +81,7 @@ def build():
     mallet.parent, mallet.parent_type, mallet.parent_bone = rig, 'BONE', "Hand.R"
 
     r = L.run({"armature": "RunnerRig", "actions": ["RunnerIdle", "Runner_HurdleVault"]})
-    assert r["ok"], r["gates"]
+    assert r["pass"], r["gates"]
     bpy.ops.wm.save_as_mainfile(filepath=BLEND)
 
 
@@ -104,7 +104,7 @@ def main() -> int:
     def empty_expect_exits_2():
         for args in (("--expect", "{}"), (), ("--expect", "[1, 2]"), ("--expect", "{not json")):
             code, result = audit(*args)
-            assert code == 2 and result["ok"] is False, (args, code, result)
+            assert code == 2 and result["pass"] is False and "ok" not in result, (args, code, result)
 
     def library_actions_only():
         code, result = audit("--expect", json.dumps({"actions": 2, "unregistered_actions_include": ["TestTake"],
@@ -118,7 +118,7 @@ def main() -> int:
 
     def wrong_count_exits_1():
         code, result = audit("--expect", json.dumps({"actions": 3}))
-        assert code == 1 and not result["ok"], (code, result.get("gates"))
+        assert code == 1 and result["pass"] is False, (code, result.get("gates"))
 
     def wrong_parent_bone_exits_1():
         code, result = audit("--expect", json.dumps({"actions": 2}), "--props", PROP_BAD)

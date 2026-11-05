@@ -274,9 +274,9 @@ def main() -> int:
 
     def run_transfer_writes_reference_weights():
         r = W.run({**REGION, "op": "snapshot", "backup_path": snap})
-        assert r["ok"] and r["format"] == 2 and r["topology"] == W._topology(mesh.data), r
+        assert r["pass"] and "ok" not in r and r["format"] == 2 and r["topology"] == W._topology(mesh.data), r
         r = W.run({**REGION, **BONES, "op": "transfer", "backup_path": snap, "amount": AMOUNT})
-        assert r["ok"], [g for g in r["gates"] if not g["pass"]]
+        assert r["pass"], [g for g in r["gates"] if not g["pass"]]
         table, deform = ref["z_split"], args["deform"]
         assert r["changed_vertices"] == len(table), (r["changed_vertices"], len(table))
         written = {v: {n: w for n, w in row.items() if n in deform}     # the table holds deform rows
@@ -291,7 +291,7 @@ def main() -> int:
 
     def restore_puts_back():
         r = W.run({**REGION, "op": "restore", "backup_path": snap})
-        assert r["ok"] and r["warnings"] == [], (r["ok"], r["warnings"])
+        assert r["pass"] and r["warnings"] == [], (r["pass"], r["warnings"])
         assert W._read(mesh, range(count)) == original, "weights differ from before the transfer"
 
     def legacy_format_1_restores_with_warning():
@@ -302,7 +302,7 @@ def main() -> int:
         W.run({**REGION, "op": "normalize", "acknowledge_destructive": True})
         assert W._read(mesh, range(count)) != original, "normalize changed nothing to restore"
         r = W.run({**REGION, "op": "restore", "backup_path": legacy})
-        assert r["ok"], [g for g in r["gates"] if not g["pass"]]
+        assert r["pass"], [g for g in r["gates"] if not g["pass"]]
         assert r["warnings"] == ["legacy snapshot format 1: topology not verified"], r["warnings"]
         assert W._read(mesh, range(count)) == original, "legacy restore did not put the weights back"
 
@@ -318,12 +318,12 @@ def main() -> int:
         W.run({**REGION, "op": "normalize", "acknowledge_destructive": True})
         changed = W._read(mesh, range(count))
         r = W.run({**REGION, "op": "restore", "backup_path": snap})
-        assert r["ok"] is False and r["reason"] == "topology_mismatch", (r["ok"], r.get("reason"))
+        assert r["pass"] is False and r["reason"] == "topology_mismatch", (r["pass"], r.get("reason"))
         assert [g["name"] for g in r["gates"] if not g["pass"]] == ["weights.topology"], r["gates"]
         assert r["record"]["verdict"] == "failed", r["record"]["verdict"]
         assert W._read(mesh, range(count)) == changed, "a refused restore wrote weights"
         r = W.run({**REGION, "op": "restore", "backup_path": snap, "allow_topology_mismatch": True})
-        assert r["ok"] and any("topology changed" in w for w in r["warnings"]), (r["ok"], r["warnings"])
+        assert r["pass"] and any("topology changed" in w for w in r["warnings"]), (r["pass"], r["warnings"])
         assert W._read(mesh, range(count)) == original, "the allowed restore did not put the weights back"
 
     check("run_transfer_writes_reference_weights", run_transfer_writes_reference_weights)

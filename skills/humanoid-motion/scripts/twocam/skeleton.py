@@ -382,7 +382,7 @@ def selftest() -> int:
         o = Path(td) / "ri.json"
         code, rep = _captured(main, ["rig-info", str(p), "--out", str(o)])
         check("CLI writes rig_info, exit 0", code == 0 and o.exists())
-        check("CLI: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True and rep.get("ok") is True)
+        check("CLI: a passing gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True and "ok" not in rep)
         contract_sample("skeleton", "rig_info", rep)
         sk = demo_skeleton(); sk["bones"] = [b for b in sk["bones"] if b["name"] != "Toes.R"]
         p.write_text(json.dumps(sk))
@@ -428,7 +428,7 @@ def main(argv=None, quiet=False) -> int:
     from layout import Layout
     info, gates = build_rig_info(skel, role)
     ok = bool(gates) and all(g["pass"] is True for g in gates)
-    out = {"schema": "gate/1", "tool": "skeleton.py", "op": "rig-info", "gates": gates, "pass": ok, "ok": ok}
+    out = {"schema": "gate/1", "tool": "skeleton.py", "op": "rig-info", "gates": gates, "pass": ok}
     if info is not None:
         top = max(b["head"][2] for b in skel.values()) if a.height is None else a.height
         top = max(top, max(b["tail"][2] for b in skel.values())) if a.height is None else top

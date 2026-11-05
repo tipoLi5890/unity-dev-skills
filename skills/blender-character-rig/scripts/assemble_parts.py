@@ -94,8 +94,7 @@ parts.transform_residual (<= 1e-5 x height), parts.hair_bound. character-autorig
 <c>_rig.glb --hair <c>_hair.glb` runs it as its parts_bind step, after the contract and before deform;
 run by hand after a rig made without --hair, run `autorig.py deform OUT` again: the FBX changed.
 
-Report: gate/1 (schemas/gate-1.json) with `degraded`, per-part detail and the outputs; `ok`, pass's
-old name, equals it. Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed;
+Report: gate/1 (schemas/gate-1.json) with `degraded`, per-part detail and the outputs. Exit codes: 0 every gate passed (or --selftest passed); 2 a gate failed;
 1 usage error, refused input (a stale plan, a missing part) or a failed --selftest. The bcr headless
 stages use 1 for a gate; this script follows gate/1 as character-autorig does. Arguments are parsed
 before bpy or numpy is imported.
@@ -908,7 +907,7 @@ def assemble(plan_path, out_dir, seam_mode=None, accept_joined=False, render=Tru
 
     hard = [g for g in gates if not g["pass"] and not g.get("accepted")]
     ok = all(g["pass"] for g in gates)
-    report = {"schema": "gate/1", "tool": "assemble_parts", "pass": ok, "ok": ok,
+    report = {"schema": "gate/1", "tool": "assemble_parts", "pass": ok,
               "verdict": "green" if ok else "failed", "degraded": degraded, **detail, "outputs": outputs,
               "seconds": round(time.time() - t_start, 1), "warnings": warnings, "gates": gates}
     if degraded and accept_joined:
@@ -1292,7 +1291,7 @@ def bind(out, hair_glb, rig_glb, name=None):
         gates += [g for g in export.get("gates", [])]
         bpy.ops.wm.save_as_mainfile(filepath=blend)
     ok = all(g["pass"] for g in gates)
-    rep = {"schema": "gate/1", "tool": "assemble_parts", "op": "bind", "pass": ok, "ok": ok,
+    rep = {"schema": "gate/1", "tool": "assemble_parts", "op": "bind", "pass": ok,
            "verdict": "green" if ok else "failed", "name": name, "head_bone": head_bone, "scale": s,
            "shift": [float(x) for x in t], "hair_vertices": len(hair.data.vertices), "materials_shared": shared,
            "export": {k: v for k, v in export.items() if k in ("export", "meshes", "refused", "reason")},
@@ -1395,7 +1394,7 @@ def selftest():
         notes["good"] = {g["name"]: g["value"] for g in rep["gates"]}
         ok("good: exit 0, every gate passes", code == 0 and rep["pass"] is True,
            [g["name"] for g in rep["gates"] if not g["pass"]])
-        ok("good: a gate/1 report", rep.get("schema") == "gate/1" and rep.get("ok") is True
+        ok("good: a gate/1 report", rep.get("schema") == "gate/1" and rep.get("pass") is True and "ok" not in rep
            and all("pass" in g and "ok" not in g for g in rep["gates"]))
         names = {o.name for o in bpy.data.collections["Parts"].objects}
         ok("good: Body, Head and Hair objects", {"Body", "Head", "Hair"} <= names, sorted(names))
@@ -1575,12 +1574,12 @@ def main():
         else:
             code, report = bind(args.autorig_out, args.hair, args.rig_glb, args.name)
     except Refused as exc:
-        code, report = 1, {"schema": "gate/1", "tool": "assemble_parts", "pass": False, "ok": False,
+        code, report = 1, {"schema": "gate/1", "tool": "assemble_parts", "pass": False,
                            "verdict": "failed", "gates": [], "refused": str(exc)}
     except Exception as exc:              # Blender -b exits 0 on an uncaught error: make it a failure
         import traceback
         traceback.print_exc()
-        code, report = 1, {"schema": "gate/1", "tool": "assemble_parts", "pass": False, "ok": False,
+        code, report = 1, {"schema": "gate/1", "tool": "assemble_parts", "pass": False,
                            "verdict": "harness", "gates": [], "error": f"{type(exc).__name__}: {exc}"}
     if getattr(args, "report", None):     # bind's report, refusals and errors included
         os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)

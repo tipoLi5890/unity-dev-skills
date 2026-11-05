@@ -86,14 +86,14 @@ def main() -> int:
 
     def suffix_is_a_warning():
         r = L.run({"armature": "RunnerRig", "actions": ["RunnerIdle", "Runner_GateLatchSwing.001"]})
-        assert r["ok"], r["gates"]
+        assert r["pass"] and "ok" not in r, r["gates"]
         assert "library.no_duplicate_suffix" not in {g["name"] for g in r["gates"]}, r["gates"]
         assert r["duplicate_suffixes"] == ["Runner_GateLatchSwing.001"], r["duplicate_suffixes"]
         assert any(".NNN" in w for w in r["warnings"]), r["warnings"]
 
     def name_resolves_through_property():
         r = L.run({"armature": "RunnerRig", "actions": ["RunnerIdle", "/clips/stock/JogLaneLeft.fbx"]})
-        assert r["ok"], r["gates"]
+        assert r["pass"], r["gates"]
         assert r["resolved"] == {"RunnerIdle": "RunnerIdle",
                                  "/clips/stock/JogLaneLeft.fbx": "Runner_JogLaneLeft"}, r["resolved"]
         assert [e["name"] for e in r["catalog"]] == ["RunnerIdle", "Runner_JogLaneLeft"], r["catalog"]
@@ -108,7 +108,7 @@ def main() -> int:
                      "action": "Runner_GateLatchSwing.001"},
                     {"name": "RunnerIdle", "file": "stock/RunnerIdle.fbx", "action": None}]
         r = L.run({"armature": "RunnerRig", "manifest": manifest})
-        assert r["ok"], r["gates"]
+        assert r["pass"], r["gates"]
         assert r["resolved"] == {"JogLaneLeft": "Runner_JogLaneLeft",
                                  "GateLatchSwing": "Runner_GateLatchSwing.001",
                                  "RunnerIdle": "RunnerIdle"}, r["resolved"]
@@ -127,7 +127,7 @@ def main() -> int:
         stamped = clip(rig, "HurdleVault.001", "/clips/stock/HurdleVault.fbx")
         stamped["brt_clip"] = "HurdleVault"
         r = L.run({"armature": "RunnerRig", "actions": ["HurdleVault"], "provenance_key": "brt_clip"})
-        assert r["ok"] and r["resolved"] == {"HurdleVault": "HurdleVault.001"}, r["resolved"]
+        assert r["pass"] and r["resolved"] == {"HurdleVault": "HurdleVault.001"}, r["resolved"]
         clip(rig, "HurdleVault")                     # a stale test take, no property
         try:
             L.run({"armature": "RunnerRig", "actions": ["HurdleVault"], "provenance_key": "brt_clip"})

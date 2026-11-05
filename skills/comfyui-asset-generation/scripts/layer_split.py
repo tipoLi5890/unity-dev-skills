@@ -42,6 +42,10 @@ box is found without the props. --only redoes the named fills and keeps the rest
 A failing fill retries the next seed. The armless fill may widen the clothes into the
 gaps beside the arms: split clips it to the source. Writes FILLS_DIR/fills.json, the placed
 fills, source_keyed.png and head_crop/*.png (1024 px crops for cubism_psd.py's eye split).
+Each fill in fills.json keeps its job's `record` (comfy_asset_client.py's partial ledger record):
+tool, params (workflow_sha256 of the submitted graph, overrides, prompt_id, seed, prompt_sha256 of
+the prompt sent, models: the unet/clip/vae/lora file names), inputs (the upload's name and sha256),
+files (raw/<fill>_s<seed>.png with its sha256) and verdict (the fill's: green only when its gates pass).
 
 `split` (offline), cut by geometry, never by a body-part map:
   landmarks  from the armless fill's silhouette: neck = the narrowest row in the top 8-30 %,
@@ -2095,6 +2099,43 @@ def parse_props(text):
     return out
 
 
+def fill_record(client_stdout: str, raw: Path, out: Path, seed: int, prompt: str, models=MODELS) -> dict:
+    """One fill job's record, kept in fills.json: the partial ledger record comfy_asset_client.py
+    prints (tool, params with workflow_sha256 and overrides, inputs, files, verdict), with the
+    seed, the sha256 of the prompt sent and the model file names added to its params. The client
+    names files in the job's temporary folder: the input keeps the upload's name and sha256, the
+    output becomes the raw file kept here. Client output that is not JSON keeps only what this
+    script knows, with `client_output: "unreadable"`."""
+    try:
+        res = json.loads(client_stdout)
+    except (TypeError, ValueError):
+        res = None
+    res = res if isinstance(res, dict) else {}
+    job = res.get("record") if isinstance(res.get("record"), dict) else {}
+    params = dict(job.get("params") or {}) if isinstance(job.get("params"), dict) else {}
+    for k in ("workflow_sha256", "workflow_name", "overrides"):
+        if k not in params and k in res:
+            params[k] = res[k]
+    params.update(prompt_id=res.get("prompt_id"), seed=seed,
+                  prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(), models=dict(models))
+    inputs = [{"path": Path(str(i.get("path"))).name, "sha256": i.get("sha256")}
+              for i in job.get("inputs") or [] if isinstance(i, dict)]
+    rel = raw.relative_to(out).as_posix() if raw.is_relative_to(out) else raw.name
+    record = {"tool": job.get("tool") or {"skill": "comfyui-asset-generation", "script": "comfy_asset_client.py"},
+              "params": params, "inputs": inputs,
+              "files": [{"path": rel, "sha256": hashlib.sha256(raw.read_bytes()).hexdigest(),
+                         "bytes": raw.stat().st_size}],
+              "verdict": job.get("verdict", "green")}
+    if not res:
+        record["client_output"] = "unreadable"
+    return record
+
+
+def fill_verdict(job: dict, passed: bool) -> dict:
+    """The fill's record with the fill's own verdict: the client's says only that the job ran."""
+    return dict(job, verdict="green" if passed else "failed")
+
+
 def cmd_fills(a) -> int:
     np = _np()
     from PIL import Image
@@ -2178,6 +2219,7 @@ def cmd_fills(a) -> int:
                     raise JobFailed(f"{name}: client exit {r.returncode}: {r.stderr[-400:]}")
                 raw = out / "raw" / f"{name}_s{seed}.png"
                 shutil.copyfile(pngs[0], raw)
+                job = fill_record(r.stdout, raw, out, seed, prompt + (KEEP_PROP if name.startswith("prop_") else KEEP))
             keyed = key_rgba(raw, out / "raw" / f"{name}_s{seed}_keyed.png", key)
             ks = load(keyed)
             placed = place(ks, square, W, H)
@@ -2196,8 +2238,9 @@ def cmd_fills(a) -> int:
             gs = fill_gates(name, placed, S, A, box, ign)
             if name.startswith("noprop_"):
                 gs.append(removed_gate(placed, S, A, pm))
+            passed = all(g["pass"] for g in gs)
             rec = {"png": f"{name}.png", "raw": f"raw/{name}_s{seed}.png", "seed": seed, "box": box,
-                   "pass": all(g["pass"] for g in gs), "gates": gs}
+                   "pass": passed, "gates": gs, "record": fill_verdict(job, passed)}
             print(json.dumps({"fill": name, "seed": seed, "pass": rec["pass"],
                               "gates": {g["name"]: g["value"] for g in gs}}), flush=True)
             if rec["pass"]:
@@ -2453,6 +2496,35 @@ def selftest() -> int:
     finally:
         SIDES.clear()
         SIDES.update(keep)
+    # a fill's job record: the client's partial record kept, its temporary paths cut to names, the
+    # seed, the prompt's hash and the model files added; no prompt text, no temporary folder
+    with tempfile.TemporaryDirectory() as td:
+        o = Path(td)
+        (o / "raw").mkdir()
+        raw = o / "raw" / "noarms_s1.png"
+        raw.write_bytes(b"placed fill bytes")
+        wsha, isha = "ab" * 32, "cd" * 32
+        client = {"prompt_id": "job-17", "workflow_sha256": wsha, "overrides": {},
+                  "record": {"tool": {"skill": "comfyui-asset-generation", "script": "comfy_asset_client.py"},
+                             "params": {"workflow_sha256": wsha, "workflow_name": "graph.json", "overrides": {},
+                                        "server_label": None},
+                             "inputs": [{"path": "/tmp/job/layer_split_noarms_0a1b.png", "sha256": isha}],
+                             "files": [{"path": "/tmp/job/o/layer_split_00001_.png", "sha256": "ef" * 32,
+                                        "bytes": 17}], "verdict": "green"}}
+        fr = fill_record(json.dumps(client, indent=2), raw, o, 1, "Remove both arms.")
+        text = json.dumps(fr)
+        checks["fill_record"] = (fr["params"]["workflow_sha256"] == wsha and fr["params"]["seed"] == 1
+                                 and fr["params"]["models"] == MODELS and fr["params"]["prompt_id"] == "job-17"
+                                 and fr["params"]["prompt_sha256"] == hashlib.sha256(b"Remove both arms.").hexdigest()
+                                 and fr["inputs"] == [{"path": "layer_split_noarms_0a1b.png", "sha256": isha}]
+                                 and fr["files"] == [{"path": "raw/noarms_s1.png", "bytes": 17,
+                                                      "sha256": hashlib.sha256(b"placed fill bytes").hexdigest()}]
+                                 and fr["verdict"] == "green" and "/tmp/job" not in text and "Remove both" not in text)
+        bad = fill_record("comfy_asset_client: no JSON", raw, o, 2, "p")
+        checks["fill_verdict"] = (fill_verdict(fr, False)["verdict"] == "failed"
+                                  and fill_verdict(fr, True)["verdict"] == "green" and fr["verdict"] == "green")
+        checks["fill_record_unreadable"] = (bad["client_output"] == "unreadable" and bad["params"]["seed"] == 2
+                                            and "workflow_sha256" not in bad["params"] and bad["files"][0]["bytes"] == 17)
     try:
         tpl = json.loads(TEMPLATE.read_text(encoding="utf-8"))
         checks["template_matches"] = set(tpl) == {"client_id", "prompt"} and tpl["prompt"] == graph(*TEMPLATE_ARGS)

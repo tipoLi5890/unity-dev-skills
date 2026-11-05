@@ -7,9 +7,9 @@
 A change to the markers, the pipeline or a gate is scored before it ships. The exam rigs a fixed cast
 of procedural bodies whose skeletons are known, compares every marker and exported joint with the
 truth, plants known defects in a good rig, and checks that the gates fail each one. Run it on the
-current version first and keep the report as the baseline. Then make the change and run the exam
-again. Compare the two reports: the change should improve scores or catch more faults, and it should
-not add a false pass.
+current version first and keep its bench file as the baseline. Then make the change, run the exam
+again and compare the two (`bench`, `compare` below): the change should improve scores or catch more
+faults, and it should not add a false pass.
 
 ## Commands
 
@@ -22,6 +22,8 @@ python3 scripts/rig_exam.py reference exam/ runner --glb Runner.glb --markers ri
 python3 scripts/rig_exam.py faults exam/ --base runner --fbx exam/refs/runner/accepted.fbx \
   --contract exam/refs/runner/accepted.contract.json
 python3 scripts/rig_exam.py score exam/ [--tol 0.04] [--volume-max 0.35]   # exam/exam.json, exam/sheet.png
+python3 scripts/rig_exam.py bench exam/ --real couriers/runner --out bench/before.bench.json   # bench/1
+python3 scripts/rig_exam.py compare bench/before.bench.json bench/after.bench.json [--margin-drop 0.02]
 python3 scripts/rig_exam.py --selftest                       # numpy, planted data; runs in CI
 ```
 
@@ -183,3 +185,60 @@ licence covers running it on the user's device, not training or tuning on its ou
 `exam/sheet.png` shows the front and side of each case, with the truth in green, the markers in red
 and a red line where they differ. `score` exits 2 when a case is a false pass or a fault slipped
 through, so the exit code reads as a verdict on the version.
+
+## Bench and compare — one version against another
+
+`bench` writes one file per version (`bench/1`, `schemas/bench-1.json`); `compare` reads two of
+them. Neither needs Blender.
+
+- **`exam`**: `score`'s summary of the exam folder (outcomes, false passes, faults caught and
+  slipped, failed controls, fingers right, the volume check), or null when no case has run.
+  `--no-exam` benches real characters alone.
+- **`real`**, one entry per `--real OUT` (a character's `autorig.py` folder): its name, body, and per
+  step of `autorig.all.json` every gate of the step's report with `value`, `limit`, `pass` and
+  `margin` (null when the gate has none). `deform` is the reading after the repair ladder.
+  `stability` is `autorig.stability.json` when the folder was run with `--repeat`, and
+  `worst_margin` is the least margin over its gates.
+- **`made_with`**: `--label` (say, the version), the plugin version when its manifest is found, and
+  a short hash of each script in this folder.
+
+`compare OLD NEW` exits 2 on any regression and lists each one: a gate that passed and now fails or
+is no longer read, a gate new to a step OLD read that fails, a margin that drops by more than
+`--margin-drop` (0.02), a real character or exam case of OLD missing from NEW, a case that was a
+true pass or an expected fail and is not now, fewer fingers right, or a new false pass, slipped
+fault or failed control. Improvements, the same changes the other way, are listed too and never
+fail it. A change ships when `compare` exits 0 against the last baseline. `bench` refuses to write
+a file with nothing in it (no scored exam case, no `--real`), and `compare` refuses such an OLD.
+A gate compares margins only when both files carry one. Reports from before 0.43 say a bare limit
+(`0.35`, not `<= 0.35`), so against such a baseline `compare` sees pass and fail alone on those
+gates; bench the next baseline on 0.43 or later.
+
+**Keep bench files outside the repository**, beside the exam folder: they hold paths to real
+characters and change with every run. The repository holds the tools, not the scores.
+
+**A worked example.** The courier-run cast: the runner, the gatekeeper (a long coat), the mascot (a
+chibi with mittens) and the guard (armour plates). Before a change to the markers:
+
+```bash
+python3 scripts/rig_exam.py build exam/ && python3 scripts/rig_exam.py run exam/
+python3 scripts/rig_exam.py faults exam/ --base standard && python3 scripts/rig_exam.py score exam/
+python3 scripts/autorig.py all couriers/runner Runner.glb --repeat 3
+python3 scripts/autorig.py all couriers/gatekeeper Gatekeeper.glb --body skirt --repeat 3
+python3 scripts/autorig.py all couriers/mascot Mascot.glb --body chibi --repeat 3
+python3 scripts/autorig.py all couriers/guard Guard.glb --body skirt --repeat 3
+python3 scripts/rig_exam.py bench exam/ --real couriers/runner couriers/gatekeeper couriers/mascot \
+  couriers/guard --out bench/before.bench.json --label before
+```
+
+After the change, the same commands into `bench/after.bench.json`, then:
+
+```bash
+python3 scripts/rig_exam.py compare bench/before.bench.json bench/after.bench.json
+```
+
+A guard that stopped at deform in both files is no regression, as long as its deform margins held.
+If the mascot's elbow self-intersection went from a margin of 0.31 to 0.25, `compare` lists a
+`margin_drop` for `Mascot`, `deform`, `deform.self_intersection_p95` and exits 2, though the gate
+still passes: look at that pose's render before the change ships. If `spiky_hair`'s fingers read
+`detected` again, the higher `fingers_right` shows under `improvements`.
+

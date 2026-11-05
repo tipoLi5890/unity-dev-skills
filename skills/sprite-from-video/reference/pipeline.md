@@ -226,6 +226,20 @@ python3 "$R/registry.py" ingest --json out/runner_walk/frames.json --write    # 
   input, which `--write` hashes when that path is on disk, and `verdict.ok` gives its
   verdict. Record the generation run too (the
   client's `record` from stage 2), so the seed that made the clip is on file.
+  `out/runner_walk.gates.json` is the same cut as gate/1: `frames.cut`, `frames.periodicity`,
+  `frames.seam`, `frames.seam_source_rate` and `frames.faults`, each number with its `margin`,
+  and a `record` naming the frames, the report, the GIF and the clip. Ingest it instead of
+  `frames.json` to keep every gate and margin on the record (one of the two, not both: they
+  record the same frames). On exit 2 it says `refused` and names no frames.
+
+**Licence.** Frames inherit the video model's licence and its sales territory. Record the clip
+first, with its `licence` object (`art-asset-registry` → `reference/licences.md`): a clip from
+the local H3 weights is `minimax-h3-local`, which excludes the US, the EU, the UK and South Korea;
+an H3 run on fal is `fal-h3`, worldwide. `ingest` then finds the clip by its sha256 (the one
+`frames.report.json` carries) and links the frames `depends-on` it, so `registry.py check` refuses
+approved frames where the game is sold in an excluded territory, exactly as it refuses the clip.
+Frames ingested before the clip was recorded carry no link: record the clip, then ingest the
+frames again.
 
 ## 8. Re-roll budget
 

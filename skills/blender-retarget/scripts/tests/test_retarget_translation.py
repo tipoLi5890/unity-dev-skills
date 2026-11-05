@@ -141,7 +141,7 @@ def case_world_move_is_k_times_source():
     src, tgt = scene()
     action = clip(src, "CourierWalk")
     out = R.run(base())
-    assert out["ok"], out["gates"]
+    assert out["pass"] and "ok" not in out, out["gates"]
     assert out["translation"] == "retargeted", out["translation"]
     assert abs(out["translation_k"] - 2.0) < 1e-9, out["translation_k"]
     assert abs(out["source_hip_height_m"] - 1.0) < 1e-9 and abs(out["target_hip_height_m"] - 2.0) < 1e-9
@@ -167,7 +167,7 @@ def case_translate_false_fails_gate():
     clip(src, "CourierWalk")
     out = R.run(base(translate=False))
     gate = next(g for g in out["gates"] if g["name"] == "retarget.translation_kept")
-    assert not gate["pass"] and not out["ok"], out["gates"]
+    assert not gate["pass"] and not out["pass"], out["gates"]
     assert out["translation"] == "dropped" and gate["value"] == ["Hips"], (out["translation"], gate)
     action = bpy.data.actions["Runner_Walk"]
     assert not [fc for fc in C.action_slot_fcurves(action) if fc.data_path.endswith(".location")]
@@ -177,7 +177,7 @@ def case_in_place_keeps_rise():
     src, tgt = scene()
     action = clip(src, "CourierWalk")
     out = R.run(base(translate="in_place"))
-    assert out["ok"] and out["translation"] == "in place", out["gates"]
+    assert out["pass"] and out["translation"] == "in place", out["gates"]
     t_moves = moves(tgt, "Hips", bpy.data.actions["Runner_Walk"])
     s_moves = moves(src, "hips", action)
     t_rest, s_rest = rest_head(tgt, "Hips"), rest_head(src, "hips")
@@ -191,7 +191,7 @@ def case_translation_scale_overrides_k():
     src, tgt = scene()
     clip(src, "CourierWalk")
     out = R.run(base(translation_scale=1.5))
-    assert out["ok"] and abs(out["translation_k"] - 1.5) < 1e-12, out
+    assert out["pass"] and abs(out["translation_k"] - 1.5) < 1e-12, out
     assert "source_hip_height_m" not in out
 
 
@@ -199,7 +199,7 @@ def case_stray_location_below_hip_not_written():
     src, tgt = scene()
     clip(src, "CourierWalk", spine_location=True)
     out = R.run(base())
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     assert out["translation_keyed"] == ["hips", "spine"] and out["translation_bones"] == {"Hips": "hips"}
     paths = {fc.data_path for fc in C.action_slot_fcurves(bpy.data.actions["Runner_Walk"])}
     assert 'pose.bones["Spine"].location' not in paths and 'pose.bones["Hips"].location' in paths, paths
@@ -209,7 +209,7 @@ def case_rotation_only_clip_unchanged():
     src, tgt = scene()
     clip(src, "CourierWalk", location=False)
     out = R.run(base())
-    assert out["ok"], out["gates"]
+    assert out["pass"], out["gates"]
     assert out["translation"] == "not retargeted"
     assert [g["name"] for g in out["gates"]] == ["retarget.output_is_new", "retarget.finite_keys"]
     paths = {fc.data_path for fc in C.action_slot_fcurves(bpy.data.actions["Runner_Walk"])}
@@ -234,7 +234,7 @@ def case_root_on_floor_reads_k_on_hip():
     # a hip bob under the travelling root: not copied, and said so
     key(action, slot, 'pose.bones["hips"].location', 1, [0.03 * math.sin(j) for j in range(FRAMES)])
     out = R.run(base(map={"Root": "root", "Hips": "hips"}))
-    assert out["ok"] and out["translation_bones"] == {"Root": "root"}, out
+    assert out["pass"] and out["translation_bones"] == {"Root": "root"}, out
     assert out["hip_bones"] == {"source": "hips", "target": "Hips"} and abs(out["translation_k"] - 1.5) < 1e-9, out
     assert any("['hips'] moves over 1 cm under a translation bone" in w for w in out["warnings"]), out["warnings"]
 
@@ -257,7 +257,7 @@ def case_in_place_pure_travel():
             key(action, slot, f'pose.bones["{b}"].rotation_quaternion', i, [1.0 if i == 0 else 0.0] * FRAMES)
     key(action, slot, 'pose.bones["root"].location', 1, [0.2 * j for j in range(FRAMES)])
     out = R.run(base(map={"Root": "root", "Hips": "hips"}, translate="in_place"))
-    assert out["ok"] and out["translation"] == "in place", out["gates"]
+    assert out["pass"] and out["translation"] == "in place", out["gates"]
     assert "retarget.translation_kept" not in [g["name"] for g in out["gates"]], out["gates"]
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
     vx, vy = out["in_place_travel_mps"]["Root"]
@@ -269,7 +269,7 @@ def case_unmapped_carrier_warns():
     src, tgt = scene()
     clip(src, "CourierWalk")
     out = R.run(base(map={"Spine": "spine"}))
-    assert out["ok"] and out["translation"] == "not retargeted", out
+    assert out["pass"] and out["translation"] == "not retargeted", out
     assert not [g for g in out["gates"] if g["name"] == "retarget.translation_kept"]
     assert any("['hips'] move but are not mapped" in w for w in out["warnings"]), out["warnings"]
 

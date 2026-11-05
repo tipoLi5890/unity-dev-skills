@@ -65,8 +65,11 @@ reached the method: a compile error.
 
 A file that one skill writes and another reads is a contract, defined once in
 [`schemas/`](../schemas/) as JSON Schema: `frames/1` (a frame set's `frames.json`), `gate/1` (a
-gate script's report) and `timeline/1` (one line of a journey's `timeline.jsonl`). The producer
-stamps the file with `"schema": "<name>/<major>"`. [`schemas/README.md`](../schemas/README.md)
+gate script's report), `timeline/1` (one line of a journey's `timeline.jsonl`), `secondary/1` (a
+rigged character's `<name>.secondary.json`), `parts/1` (a character's parts plan
+`<c>.parts.json`), `rig2d/1` (a layered 2D character's `rig2d.json`), `exam/1` (the rig exam's
+truth, reference, fault and report files) and `bench/1` (one version's rig readings, for `rig_exam.py compare`).
+The producer stamps the file with `"schema": "<name>/<major>"`. [`schemas/README.md`](../schemas/README.md)
 says what each field means and who reads it.
 
 - **Changing a contract.** Adding an optional key keeps the major. Anything that would make an

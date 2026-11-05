@@ -5,12 +5,13 @@ usage (in this order; `all` runs them one after another):
     autorig.py prep     OUT GLB [--name NAME] [--height 1.75] [--hair HAIR.glb] [--eyes EYES.glb] -> OUT/NAME.glb, .blend
     autorig.py check    OUT [--name NAME] [--body human|skirt|chibi] -> rig/NAME.mesh.json
     autorig.py smart    OUT [--name NAME] [--facial] [--fingers 5|4] -> rig/NAME.smart.json, rig/NAME_smart.blend
-    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] [--body human|skirt|chibi] -> rig/NAME.markers.json
+    autorig.py markers  OUT [--name NAME] [--no-render] [--no-smart] [--body human|skirt|chibi] [--finger-votes K]
+                                                                                  -> rig/NAME.markers.json
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
     autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json [rig/NAME.bind.json]
     autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
     autorig.py secondary OUT [--name NAME] [--no-render] [--secondary-markers FILE] [--hair-chains] -> secondary/
-    autorig.py all      OUT GLB [any of the options above] [--no-secondary]
+    autorig.py all      OUT GLB [any of the options above] [--no-secondary] [--repeat N] [--min-margin X]
     autorig.py --selftest
 Every stage takes --blender PATH (env BLENDER, default blender on PATH, else the usual install folder),
 --python PATH (env PYTHON, default this interpreter; numpy for mesh_check), --threads N (Blender -t N) and
@@ -84,6 +85,19 @@ on the other side to their mirrored twins (brt_weights, share reach; --cross-sid
 after it stops the ladder (rebind). The limits are never changed. A finer bind and a moved marker are not
 automated: the failure message names them (reference/arp-pipeline.md).
 
+Repeat (all --repeat N, N 2 or more; default 1, one run as above): Auto-Rig Pro's AI and its bind differ from run to
+run, so one pass says little about a reading near its limit. prep and check run once in OUT; smart, markers, arp,
+contract and deform (with the repair ladder) run N times, each in OUT/repeat/rN/ on a copy of the prepped mesh,
+each with its own rN/autorig.all.json. OUT/autorig.stability.json (gate/1) holds per gate read in those stages
+the value's min, median and max over the runs, pass when it passed in every run that read it, and margin the
+worst run's (a gate's own margin, else one read from a "<= L" / ">= L" or [lo, hi] limit; none when a run failed
+the gate without one); then the gate
+`stable`: every run exited 0 and every numeric margin of every run is at least --min-margin (default 0). The run
+whose worst margin is the median (the lower of the two middle ones for an even N; a run that stopped on an error
+counts as the worst) is kept: its rig/, export/, repair/ and logs/ are copied into OUT, the summary names those
+copies (repeat.chosen says which run), and secondary runs once, in OUT, on its rig. The exit code is the chosen
+run's as one run gives it, and 2 when `stable` fails. No limit is changed.
+
 Blender runs headless except smart (the AI reads pictures of the 3D view; --python-exit-code 1 closes its window
 on a script error, and it is killed after its timeout plus margins); prep, markers and deform with
 --factory-startup, smart, arp, parts_bind, repair and secondary without it (Auto-Rig Pro is an add-on). Commands are argument lists
@@ -98,6 +112,7 @@ from __future__ import annotations
 import argparse
 import glob as globmod
 import json
+import math
 import os
 import re
 import shutil
@@ -146,6 +161,55 @@ MANUAL_RUNGS = ("by hand, one at a time, each gated again (autorig.py deform): a
 ECHO = re.compile(r"^(AUTORIG_JSON|Error|Traceback|.*Exception)")
 
 
+# Between the shared:gate_margin markers: a copy of tools/shared-blocks/gate_margin.py;
+# check-consistency keeps every copy equal.
+# >>> shared:gate_margin
+def gate_margin(value, limit, op=None):
+    """A gate's signed distance to its limit (gate/1 `margin`, schemas/README.md): positive is safe,
+    negative is failing, 0 sits on the limit. op "<=": (L - v) / |L|; ">=": (v - L) / |L|; "range"
+    (limit [lo, hi]): min(v - lo, hi - v) / ((hi - lo) / 2). A zero |L| or hi - lo keeps the plain
+    difference. With op None a string limit such as "<= 0.08" or ">= 0.9" gives both. None when the
+    value or limit is a bool, a string, not finite, or the op is not known: write no margin then."""
+    import math
+
+    def num(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        return float(x) if math.isfinite(x) else None
+
+    if op is None and isinstance(limit, str):
+        s = limit.strip()
+        for o in ("<=", ">="):
+            if s.startswith(o):
+                try:
+                    op, limit = o, float(s[len(o):].strip())
+                except ValueError:
+                    return None
+                break
+    v = num(value)
+    if v is None:
+        return None
+    if op == "range":
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            return None
+        lo, hi = num(limit[0]), num(limit[1])
+        if lo is None or hi is None or hi < lo:
+            return None
+        d = min(v - lo, hi - v)
+        half = (hi - lo) / 2
+        m = d / half if half > 0 else d
+    elif op in ("<=", ">="):
+        lim = num(limit)
+        if lim is None:
+            return None
+        d = lim - v if op == "<=" else v - lim
+        m = d / abs(lim) if lim != 0 else d
+    else:
+        return None
+    return round(m, 4) if math.isfinite(m) else None
+# <<< shared:gate_margin
+
+
 class Refused(Exception):
     pass
 
@@ -185,9 +249,9 @@ OVERRIDE = {}   # the selftest's stand-ins for Blender and Python: {"blender": [
 
 
 class Ctx:
-    def __init__(self, a, osname=None, env=None):
+    def __init__(self, a, osname=None, env=None, out=None):
         env = os.environ if env is None else env
-        self.out = Path(os.path.abspath(a.out))
+        self.out = Path(os.path.abspath(out or a.out))
         self.blender = OVERRIDE.get("blender") or ([a.blender] if a.blender else [default_blender(osname, env)])
         self.python = OVERRIDE.get("python") or [a.python or env.get("PYTHON") or sys.executable]
         self.threads = a.threads
@@ -219,6 +283,11 @@ class Ctx:
         self.markers_smart = []   # the --smart the markers were given
         self.smart_why = None     # the probe's failed gates, or the smart step's failed gates or error
         self.args = a
+        self.done = []            # the steps run so far (done_entry), the repair attempts' too
+        self.rc = 0               # the stages' exit code so far (smart's apart, in smart_rc)
+        self.smart_rc = 0
+        self.stopped = False      # a stage stopped the run (an error, a gate later stages need, a failed bind)
+        self.error = None         # a refusal or a missing executable part-way: the run's exit is 1
 
 
 def safe_name(stem: str) -> str:
@@ -426,6 +495,7 @@ def plan(c: Ctx, stage: str, a) -> list:
         c.markers_smart = smart_args(c, a)
         adj = ["--adjust", Path(os.path.abspath(a.adjust))] if a.adjust else []
         adj += ["--body", a.body] if a.body in ("skirt", "chibi") else []
+        adj += ["--finger-votes", str(a.finger_votes)] if a.finger_votes else []
         return [step("markers", blender_cmd(c, HERE / "arp_markers.py", "--mesh", c.name, "--out", f["markers"],
                                             *c.markers_smart, *adj, *prev, blend=f["blend"]), f["markers"],
                      logs / "markers.log")]
@@ -777,6 +847,16 @@ def ladder(c: Ctx, a, base: dict, done: list) -> dict:
 
 
 # --- the command line -------------------------------------------------------------------------------------------
+def _positive_int(text: str) -> int:
+    try:
+        n = int(text)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"a whole number, 1 or more (got {text!r})")
+    return n
+
+
 def parser() -> Parser:
     common = Parser(add_help=False, allow_abbrev=False)
     common.add_argument("out", help="the character's folder")
@@ -802,6 +882,9 @@ def parser() -> Parser:
                                 "off the thighs' seam); chibi: a big head on short limbs (its own bands and windows)")
         if s in ("markers", "all"):
             p.add_argument("--adjust", help="arp_markers.py --adjust: JSON {marker: [x, y, z]} a person placed")
+            p.add_argument("--finger-votes", type=_positive_int, default=None,
+                           help="arp_markers.py --finger-votes: readings of the hand the finger read votes over "
+                                "(default 1, the single reading)")
         if s in ("arp", "all"):
             p.add_argument("--resolution", type=int, help="the bind's voxel resolution (brt_arp; default 7): "
                                                           "one step up at a time for a finer bind")
@@ -817,6 +900,10 @@ def parser() -> Parser:
             p.add_argument("--hair-chains", action="store_true", help="spring chains on the separate hair object")
         if s == "all":
             p.add_argument("--no-secondary", action="store_true", help="no spring chains")
+            p.add_argument("--repeat", type=int, default=1, help="run smart, markers, arp, contract and deform N "
+                           "times (OUT/repeat/rN/), write OUT/autorig.stability.json, keep the median run (default 1)")
+            p.add_argument("--min-margin", type=float, default=0.0, help="with --repeat: the least margin every "
+                           "numeric gate keeps in every run for the stable gate (default 0)")
     return ap
 
 
@@ -825,7 +912,7 @@ def parse(argv) -> argparse.Namespace:
     for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
                  ("no_smart", False), ("facial", False), ("fingers", 5), ("no_secondary", False),
                  ("secondary_markers", None), ("hair", None), ("hair_chains", False), ("eyes", None),
-                 ("adjust", None), ("resolution", None), ("body", "human")):
+                 ("adjust", None), ("resolution", None), ("body", "human"), ("repeat", 1), ("min_margin", 0.0)):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -840,6 +927,12 @@ def main(argv=None, osname=None, env=None) -> int:
             stream.reconfigure(errors="replace")
     try:
         a = parse(argv)
+        if a.repeat < 1:
+            raise Refused(f"--repeat {a.repeat}: one run or more")
+        if not math.isfinite(a.min_margin):
+            raise Refused(f"--min-margin {a.min_margin}: a finite number")
+        if a.min_margin != 0.0 and a.repeat < 2:
+            raise Refused("--min-margin reads the runs of --repeat N (N 2 or more)")
         c = Ctx(a, osname, env)
         stages = list(STAGES) if a.stage == "all" else [a.stage]
         if c.dry:
@@ -855,11 +948,23 @@ def main(argv=None, osname=None, env=None) -> int:
     if c.dry:
         out.update({"dry_run": True, "steps": [s_ for s in stages for s_ in planned[s]],
                     "repair_example": example, "exit_code": 0, "ok": True})
+        if a.stage == "all" and a.repeat > 1:
+            out.update(plan_repeat(c, a, osname, env))
         print(json.dumps(out))
         return 0
     c.out.mkdir(parents=True, exist_ok=True)
-    done, rc, repair, smart_rc = [], 0, None, 0    # smart's exit is kept apart: it never stops a later stage
-    stop = False
+    if a.stage == "all" and a.repeat > 1:
+        return run_repeat(c, a, out, osname, env)
+    run_stages(c, a, stages)
+    return _emit(c, a, out, finish(c, a, stages, out))
+
+
+def run_stages(c: Ctx, a, stages: list) -> None:
+    """Run the stages' steps in order on c (its folder), the repair ladder after a failed deform gate; the
+    steps, exit code, smart's outcome and any stop or error are kept on c. Called again on the same c, it goes
+    on from there (all --repeat runs secondary on the chosen run's state)."""
+    if a.no_smart:
+        c.smart = "skipped"
     try:
         if "prep" in stages and c.glb and c.glb != c.f["glb"]:
             shutil.copyfile(c.glb, c.f["glb"])
@@ -874,8 +979,6 @@ def main(argv=None, osname=None, env=None) -> int:
                 shutil.copyfile(eyes, c.f["eyes"])
             elif eyes is None and c.f["eyes"].exists():
                 c.f["eyes"].unlink()
-        if a.no_smart:
-            c.smart = "skipped"
         for s in stages:
             for st in plan(c, s, a):
                 if st.get("after_probe") and c.smart == "skipped":
@@ -883,38 +986,48 @@ def main(argv=None, osname=None, env=None) -> int:
                 if st.get("after_chains") and (not c.chains or not c.f["sec_fbx"].exists()):
                     continue          # nothing loose (the rig is unchanged), or no export to check
                 code, rep, sec = run_step(st, c.env)
-                done.append(done_entry(st, code, rep, sec))
+                c.done.append(done_entry(st, code, rep, sec))
                 if s == "smart":
-                    smart_rc = max(smart_rc, smart_outcome(c, st, code, rep, alone=a.stage == "smart"))
+                    c.smart_rc = max(c.smart_rc, smart_outcome(c, st, code, rep, alone=a.stage == "smart"))
                     continue
                 if st["name"] == "secondary":
                     c.chains = len((rep or {}).get("chains") or []) if code != 1 else None
+                repair = None
                 if s == "deform" and code == 2 and not a.no_repair and rep:
-                    repair = ladder(c, a, rep, done)
+                    repair = ladder(c, a, rep, c.done)
                     code = 0 if repair["result"] == "passed" else 1 if repair["result"] == "error" else 2
                 if s == "deform":
                     c.deform_ran, c.repair = True, repair
                 if code == 1:
-                    rc = 1
-                    break
-                rc = max(rc, code)
+                    c.rc, c.stopped = 1, True
+                    return
+                c.rc = max(c.rc, code)
                 if code == 2 and st["name"] in STOP_STEPS:
-                    stop = True
-                    break
-            if rc == 1 or stop or (rc == 2 and s in STOP_ON_GATE):
-                break
+                    c.stopped = True
+                    return
+            if c.rc == 2 and s in STOP_ON_GATE:
+                c.stopped = True
+                return
     except Refused as exc:
-        out.update({"steps": done, "ok": False, "exit_code": 1, "error": f"refused: {exc}"})
-        return _emit(c, a, out, 1)
+        c.error = f"refused: {exc}"
     except OSError as exc:   # the Blender or Python executable is missing
-        out.update({"steps": done, "ok": False, "exit_code": 1, "error": f"{type(exc).__name__}: {exc}"})
-        return _emit(c, a, out, 1)
+        c.error = f"{type(exc).__name__}: {exc}"
+    if c.error:
+        c.rc, c.stopped = 1, True
+
+
+def finish(c: Ctx, a, stages: list, out: dict) -> int:
+    """The summary of what run_stages did on c, into out; returns the exit code."""
+    if c.error:
+        out.update({"steps": c.done, "ok": False, "exit_code": 1, "error": c.error})
+        return 1
+    smart_rc = c.smart_rc
     mitten_agrees = (smart_rc == 2 and c.smart == "failed" and c.smart_why == ["smart.fingers"]
                      and "markers" in stages and fingers_fixed(c) is True)
     if mitten_agrees:   # the AI found no fingers where the slices read a closed hand: both say mitten
         smart_rc = 0
-    rc = rc if rc == 1 else max(rc, smart_rc)
-    out["steps"] = done
+    rc = c.rc if c.rc == 1 else max(c.rc, smart_rc)
+    out["steps"] = c.done
     out["smart"] = {"result": c.smart or "not_run",
                     "report": str(c.f["smart"]) if c.smart in ("passed", "failed") and c.f["smart"].exists() else None,
                     "markers_used_it": bool(c.markers_smart)}
@@ -926,10 +1039,10 @@ def main(argv=None, osname=None, env=None) -> int:
     if c.smart in ("failed", "skipped") and "markers" in stages and not a.no_smart:
         out["smart"]["note"] = ("the markers took what passed in the AI's report, slices for the rest"
                                 if c.markers_smart else "the markers came from slices alone")
-    if repair is not None:
-        out["repair"] = repair
+    if c.repair is not None:
+        out["repair"] = c.repair
     files = {"blend": c.f["arp_blend"], "fbx": c.f["fbx"], "contract": c.f["contract"], "deform": c.f["deform"]}
-    files.update((repair or {}).get("files") or {})
+    files.update((c.repair or {}).get("files") or {})
     if c.chains is not None:
         out["secondary"] = secondary_summary(c)
         files["secondary"] = c.f["sec_json"]
@@ -940,6 +1053,166 @@ def main(argv=None, osname=None, env=None) -> int:
     hint = (read_json(c.f["mesh"]) or {}).get("skirt_hint") if "check" in stages else None
     if hint:
         out["skirt_hint"] = hint
+    out.update({"exit_code": rc, "ok": rc == 0})
+    return rc
+
+
+# --- all --repeat N: the stages that vary between runs, N times; their stability; the median run kept ------------
+VARY = ("smart", "markers", "arp", "contract", "deform")     # Auto-Rig Pro's AI and bind differ run to run
+
+
+def repeat_dir(c: Ctx, r: int) -> Path:
+    return c.out / "repeat" / f"r{r}"
+
+
+def seed_repeat(c: Ctx, d: Path) -> None:
+    """A fresh run folder holding the prepped mesh and the check's report (prep and check ran once, in OUT)."""
+    if d.exists():
+        shutil.rmtree(d)
+    (d / "rig").mkdir(parents=True)
+    for k in ("glb", "blend", "hair", "eyes", "prep", "mesh"):
+        if c.f[k].exists():
+            shutil.copy2(c.f[k], d / c.f[k].relative_to(c.out))
+
+
+def plan_repeat(c: Ctx, a, osname=None, env=None) -> dict:
+    """--dry-run with --repeat: prep and check in OUT, the varying stages in each run folder."""
+    steps = [st for s in ("prep", "check") for st in plan(c, s, a)]
+    for r in range(1, a.repeat + 1):
+        cr = Ctx(a, osname, env, out=repeat_dir(c, r))
+        cr.smart = "planned" if not a.no_smart else None
+        steps += [st for s in VARY for st in plan(cr, s, a)]
+    steps += plan(c, "secondary", a)
+    return {"steps": steps, "repeat": {"n": a.repeat, "min_margin": a.min_margin,
+                                       "runs": [str(repeat_dir(c, r)) for r in range(1, a.repeat + 1)],
+                                       "secondary": "once, in OUT, on the chosen run's rig"}}
+
+
+def gate_margin_of(g: dict):
+    """A gate's margin: its own, else one read from a limit that says its direction or a [lo, hi] range."""
+    m = g.get("margin")
+    if isinstance(m, (int, float)) and not isinstance(m, bool):
+        return m
+    lim = g.get("limit")
+    return gate_margin(g.get("value"), lim, "range" if isinstance(lim, list) else None)
+
+
+def run_gates(done: list) -> dict:
+    """{gate name: gate} over a run's step reports, in order: a repair attempt's deform reading replaces the
+    first (the final reading stands); the repair's own steps are actions, not readings."""
+    out = {}
+    for st in done:
+        if str(st.get("name")).startswith("repair_"):
+            continue
+        rep = read_json(st.get("report") or "")
+        for g in (rep or {}).get("gates") or []:
+            if isinstance(g, dict) and g.get("name"):
+                out[str(g["name"])] = g
+    return out
+
+
+def stability(runs: list, min_margin: float) -> dict:
+    """gate/1 over N runs ({run, dir, exit_code, gates}): per gate the value's min, median and max, pass when it
+    passed in every run that read it, margin the worst; `stable` when every run exited 0 and every numeric margin
+    of every run is at least min_margin. Also each run's worst margin and which run is kept (chosen_run)."""
+    import statistics
+    names = list(dict.fromkeys(n for r in runs for n in r["gates"]))
+    gates = []
+    for n in names:
+        got = [r["gates"][n] for r in runs if n in r["gates"]]
+        vals = [g.get("value") for g in got if isinstance(g.get("value"), (int, float))
+                and not isinstance(g.get("value"), bool)]
+        margins = [m for m in (gate_margin_of(g) for g in got) if m is not None]
+        gate = {"name": n, "value": {"min": min(vals), "median": round(statistics.median(vals), 6), "max": max(vals)}
+                if vals else None, "limit": got[0].get("limit"), "pass": all(g.get("pass") is True for g in got),
+                "runs": len(got), "passed": sum(1 for g in got if g.get("pass") is True)}
+        blind = any(g.get("pass") is not True and gate_margin_of(g) is None for g in got)
+        if margins and (not blind or min(margins) <= 0):   # a run failed it with no margin: its worst is not known
+            gate["margin"] = min(margins)
+        gates.append(gate)
+    for r in runs:
+        ms = [m for m in (gate_margin_of(g) for g in r["gates"].values()) if m is not None]
+        r["worst_margin"] = min(ms) if ms else None
+    worst = [r["worst_margin"] for r in runs if r["worst_margin"] is not None]
+    w = min(worst) if worst else None
+    ok_runs = sum(1 for r in runs if r["exit_code"] == 0)
+    stable = {"name": "stable", "value": w, "limit": min_margin,
+              "pass": ok_runs == len(runs) and (w is None or w >= min_margin), "runs": len(runs), "passed": ok_runs}
+    m = gate_margin(w, min_margin, ">=")
+    if m is not None and (ok_runs == len(runs) or m <= 0):   # a failed run: the pass does not rest on w alone
+        stable["margin"] = m
+    gates.append(stable)
+    rank = {1: 0, 2: 1, 0: 2}     # an error, then a failed gate (with or without a margin), then a pass
+    order = sorted(runs, key=lambda r: (rank.get(r["exit_code"], 0), r["worst_margin"] if r["worst_margin"]
+                                        is not None else float("-inf")))
+    chosen = order[(len(order) - 1) // 2]
+    return {"schema": "gate/1", "tool": "autorig.py", "repeat": len(runs), "min_margin": min_margin,
+            "chosen_run": chosen["run"],
+            "runs": [{k: r[k] for k in ("run", "dir", "exit_code", "worst_margin")} |
+                     {"failed_gates": [n for n, g in r["gates"].items() if g.get("pass") is not True]} for r in runs],
+            "gates": gates, "pass": all(g["pass"] for g in gates)}
+
+
+def _repath(obj, old: str, new: str):
+    """Every string in obj that is the path `old` or under it, moved under `new`."""
+    if isinstance(obj, dict):
+        return {k: _repath(v, old, new) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_repath(v, old, new) for v in obj]
+    if isinstance(obj, str) and (obj == old or obj.startswith(old + os.sep)):
+        return new + obj[len(old):]
+    return obj
+
+
+def run_repeat(c: Ctx, a, out: dict, osname=None, env=None) -> int:
+    """all --repeat N: prep and check once in OUT; smart, markers, arp, contract and deform (the repair ladder
+    with it) N times, each in its own OUT/repeat/rN/ holding a copy of the prepped mesh (its own summary
+    rN/autorig.all.json); OUT/autorig.stability.json over the N runs. The run whose worst margin is the median
+    (the lower of the two middle ones for an even N; a run that errored counts as the worst) is copied into OUT
+    (rig/, export/, repair/, logs/) and the summary names those copies; secondary then runs once, in OUT, on its
+    rig. Exit: as one run would give for the chosen run, and 2 when the stable gate fails."""
+    pre = ["prep", "check"]
+    run_stages(c, a, pre)
+    if c.stopped:
+        return _emit(c, a, out, finish(c, a, pre, out))
+    runs, ctxs = [], {}
+    for r in range(1, a.repeat + 1):
+        d = repeat_dir(c, r)
+        seed_repeat(c, d)
+        cr = Ctx(a, osname, env, out=d)
+        run_stages(cr, a, list(VARY))
+        o = {"tool": "autorig.py", "stage": "all", "name": cr.name, "out": str(d), "repeat_run": r}
+        code = finish(cr, a, list(VARY), o)
+        (d / "autorig.all.json").write_text(json.dumps(o, indent=1), encoding="utf-8")
+        ctxs[f"r{r}"] = cr
+        runs.append({"run": f"r{r}", "dir": str(d), "exit_code": code, "gates": run_gates(cr.done)})
+    stab = stability(runs, a.min_margin)
+    stab["name"] = c.name
+    stab_path = c.out / "autorig.stability.json"
+    stab_path.write_text(json.dumps(stab, indent=1), encoding="utf-8")
+    ch = ctxs[stab["chosen_run"]]
+    old, new = str(ch.out), str(c.out)
+    if (c.out / "repair").exists():
+        shutil.rmtree(c.out / "repair")      # an older run's attempts must not stand beside the chosen run's
+    for sub in ("rig", "export", "repair", "logs"):
+        if (ch.out / sub).is_dir():
+            shutil.copytree(ch.out / sub, c.out / sub, dirs_exist_ok=True)
+    c.done += _repath(ch.done, old, new)
+    c.rc = c.rc if c.rc == 1 else max(c.rc, ch.rc)
+    c.smart_rc, c.smart, c.smart_why = ch.smart_rc, ch.smart, ch.smart_why
+    c.markers_smart = _repath([str(x) for x in ch.markers_smart], old, new)
+    c.repair, c.deform_ran = _repath(ch.repair, old, new), ch.deform_ran
+    c.stopped, c.error = ch.stopped, ch.error
+    stages = list(STAGES)
+    if not c.stopped and not c.error:
+        run_stages(c, a, ["secondary"])
+    rc = finish(c, a, stages, out)
+    stable = next(g for g in stab["gates"] if g["name"] == "stable")
+    if rc == 0 and not stable["pass"]:
+        rc = 2
+    out["repeat"] = {"n": a.repeat, "min_margin": a.min_margin, "chosen": stab["chosen_run"],
+                     "chosen_dir": old, "stability": str(stab_path), "stable": stable["pass"],
+                     "runs": stab["runs"]}
     out.update({"exit_code": rc, "ok": rc == 0})
     return _emit(c, a, out, rc)
 
@@ -1034,7 +1307,7 @@ def _in_arp(a):
             x = brt_arp.run({"op": "export", "armature": r["hand_reach"]["armature"], "fbx": a.fbx})
             r["gates"].append({"name": "arp.hand_reach_export", "value": bool(report_passed(x)), "limit": True,
                                "pass": bool(report_passed(x))})
-            r["pass"] = r["ok"] = all(g.get("pass") is True for g in r["gates"])
+            r["pass"] = all(g.get("pass") is True for g in r["gates"])
         Path(a.save).parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=a.save)
     refused = any(g.get("name") == "arp.precondition" and gate_failed(g) for g in r.get("gates", []))
@@ -1362,7 +1635,7 @@ def _in_skirt(a):
     log["export_failed_gates"] = [g.get("name") for g in x.get("gates", []) if gate_failed(g)]
     bpy.ops.wm.save_as_mainfile(filepath=a.save)
     ok = all(g["pass"] for g in gates)
-    return {"ok": ok, "pass": ok, "gates": gates, **log}, 0 if ok else 2
+    return {"pass": ok, "gates": gates, **log}, 0 if ok else 2
 
 
 MITTEN_FOLD = ("Index", "Ring", "Little")    # mitten_bind: these chains' weight goes to Middle, phalanx by phalanx
@@ -1435,7 +1708,7 @@ def _in_mitten(a):
     gates.append({"name": "mitten.export", "value": bool(report_passed(x)), "limit": True, "pass": bool(report_passed(x))})
     bpy.ops.wm.save_as_mainfile(filepath=a.save)
     ok = all(g["pass"] for g in gates)
-    return {"ok": ok, "pass": ok, "gates": gates, "mesh": mesh.name, "armature": rig.name, "moved": moved,
+    return {"pass": ok, "gates": gates, "mesh": mesh.name, "armature": rig.name, "moved": moved,
             "vertices": int(len(touched)), "export_failed_gates": [g.get("name") for g in x.get("gates", [])
                                                                    if gate_failed(g)]}, 0 if ok else 2
 
@@ -1492,7 +1765,7 @@ def _in_cross_side(brt_weights, mesh, rig, rmap, deform, cross, backup, short, b
 
 # --- selftest -----------------------------------------------------------------------------------------------------
 FAKE = r'''
-import json, os, sys
+import json, os, re, sys
 argv = sys.argv[1:]
 blender = "-P" in argv
 script = os.path.basename(argv[argv.index("-P") + 1] if blender else argv[0])
@@ -1511,7 +1784,7 @@ with open(os.environ["FAKE_TRACE"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"script": script, "argv": argv}) + "\n")
 print("progress \u00e9\u4e2d", file=sys.stderr)
 code = codes.get(script, 0)
-rep = {"schema": "gate/1", "pass": code == 0, "ok": code == 0, "gates": [{"name": "fake.gate", "pass": code == 0}]}
+rep = {"schema": "gate/1", "pass": code == 0, "gates": [{"name": "fake.gate", "pass": code == 0}]}
 if script == "inside_prep":
     touch(opt("--save"))
 elif script == "arp_markers.py":
@@ -1539,12 +1812,12 @@ elif script in ("arp_smart_probe", "arp_smart.py"):
     mode = os.environ.get("FAKE_SMART", "pass")
     if script == "arp_smart_probe":
         ready = mode != "noai"
-        rep = {"schema": "gate/1", "ready": ready, "pass": ready, "ok": ready,
+        rep = {"schema": "gate/1", "ready": ready, "pass": ready,
                "gates": [{"name": "smart.ai_files", "pass": ready}]}
         code = 0 if ready else 2
     else:
         code = {"pass": 0, "fail": 2, "error": 1}[mode]
-        rep = {"schema": "autorig-smart/1", "pass": code == 0, "ok": code == 0, "exit_code": code,
+        rep = {"schema": "autorig-smart/1", "pass": code == 0, "exit_code": code,
                "gates": [{"name": "smart.fingers", "pass": code == 0}]}
     if mode != "error" or script == "arp_smart_probe":
         touch(opt("--out"), json.dumps(rep))
@@ -1554,16 +1827,20 @@ elif script == "deform_gate.py":
     fbx = opt("--fbx")
     att = os.path.basename(os.path.dirname(fbx)) if "repair" in fbx else "sec" if "secondary" in fbx else "a0"
     plan = json.loads(os.environ.get("FAKE_DEFORM", "{}"))
-    joint, v, si, *cross = plan.get(att, ["LowerArm.R", 0.2 if att == "sec" else 0.53, 0.04])
-    vol = {"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "pass": v <= 0.35}
-    sig = {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "pass": si <= 0.08}
+    run = re.search(r"repeat[\\/](r[0-9]+)[\\/]", fbx)
+    joint, v, si, *cross = plan.get(f"{run.group(1)}:{att}" if run else att) or \
+        plan.get(att, ["LowerArm.R", 0.2 if att == "sec" else 0.53, 0.04])
+    vol = {"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "pass": v <= 0.35,
+           "margin": round((0.35 - v) / 0.35, 4)}
+    sig = {"name": "deform.self_intersection_p95", "value": si, "limit": 0.08, "pass": si <= 0.08,
+           "margin": round((0.08 - si) / 0.08, 4)}
     gates = [vol, sig] + ([{"name": "deform.cross_side_weight", "value": {"share": 0.01, "held": 9}, "pass": False}]
                           if cross else [])
     ok = all(g["pass"] for g in gates)
     rep = {"schema": "gate/1", "poses": {"p": {"samples": [{"volume_loss": {joint: v}}]}},
            "volume_loss_max": {"value": v, "joint": joint}, "self_intersection": {"p95": si}, "gates": gates,
            "skin": {"cross_side": {"band_m": 0.06, "R": {"bones": {b: 1.0 for b in (cross[0] if cross else [])}}}},
-           "pass": ok, "ok": ok}
+           "pass": ok}
     code = 0 if rep["pass"] else 2
 if script in ("mesh_check.py", "contract_map.py", "arp_markers.py", "deform_gate.py"):
     if not os.environ.get("FAKE_NO_OUT") == script:
@@ -1577,6 +1854,103 @@ elif script.startswith("inside_"):
         print("AUTORIG_JSON " + json.dumps(rep))
 sys.exit(code)
 '''
+
+
+def contract_sample(case: str, doc: dict) -> None:
+    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as autorig__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"autorig__{case}.gate.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1)
+    print(f"selftest-output: {path}")
+
+
+def selftest_repeat(check, go, real, td: Path, glb: Path) -> None:
+    """all --repeat: dry-run plans, refusals, and three runs through the stand-ins (the median run kept, the
+    stability file, the stable gate's exit)."""
+    out = td / "rep"
+    code, r, _ = go(["all", str(out), str(glb), "--repeat", "3", "--dry-run"], None, {"BLENDER": "B"})
+    names = [st["name"] for st in r.get("steps", [])]
+    mk = [st["cmd"] for st in r.get("steps", []) if st["name"] == "markers"]
+    check("--repeat 3 dry run: prep and check once in OUT, the varying stages in repeat/r1..r3, secondary once in OUT",
+          code == 0 and names.count("prep") == 1 and names.count("check") == 1 and names.count("markers") == 3
+          and names.count("deform") == 3 and names.count("secondary") == 1
+          and [c_[c_.index("--out") + 1] for c_ in mk] == [str(out / "repeat" / f"r{i}" / "rig" / "Runner_Courier.markers.json")
+                                                          for i in (1, 2, 3)]
+          and r["repeat"]["n"] == 3, names=names)
+    for argv in (["--repeat", "0"], ["--min-margin", "0.1"], ["--repeat", "x"], ["--repeat", "2", "--min-margin", "nan"]):
+        code, r, _ = go(["all", str(out), str(glb), *argv, "--dry-run"], None, {"BLENDER": "B"})
+        check(f"refused, exit 1: all {' '.join(argv)}", code == 1 and "refused" in r.get("error", ""))
+    code, r, _ = go(["deform", str(out), "--name", "R", "--repeat", "2", "--dry-run"], None, {"BLENDER": "B"})
+    check("--repeat belongs to all alone: refused on a stage, exit 1", code == 1)
+    # three runs: volume 0.30 / 0.20 / 0.25 (worst margins 0.1429 / 0.4286 / 0.2857): r3 is the median
+    plan3 = {"r1:a0": ["LowerArm.R", 0.30, 0.04], "r2:a0": ["LowerArm.R", 0.20, 0.04],
+             "r3:a0": ["LowerArm.R", 0.25, 0.04]}
+    rd = td / "rep_run"
+    code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "3"],
+                             FAKE_DEFORM=plan3)
+    st = read_json(rd / "autorig.stability.json") or {}
+    g = {x["name"]: x for x in st.get("gates", [])}
+    vol = g.get("deform.volume_loss_max", {})
+    check("--repeat 3: prep and the mesh check once, markers to deform three times, the chains once; exit 0",
+          code == 0 and ran.count("inside_prep") == 1 and ran.count("mesh_check.py") == 1
+          and ran.count("arp_markers.py") == 3 and ran.count("inside_arp") == 3 and ran.count("secondary_chains.py") == 1
+          and all((rd / "repeat" / f"r{i}" / "autorig.all.json").exists() for i in (1, 2, 3)), code=code, ran=ran)
+    check("--repeat 3: the stability file is gate/1, the volume gate's min/median/max over the runs and its worst "
+          "margin; stable passes at --min-margin 0; the median run r3 is kept",
+          st.get("schema") == "gate/1" and st.get("pass") is True and "ok" not in st
+          and vol.get("value") == {"min": 0.2, "median": 0.25, "max": 0.3} and vol.get("margin") == 0.1429
+          and vol.get("runs") == 3 and g["stable"]["pass"] and g["stable"]["value"] == 0.1429
+          and st.get("chosen_run") == "r3" and r.get("repeat", {}).get("chosen") == "r3", st=st)
+    dep = read_json(rd / "rig" / "Runner.deform.json") or {}
+    sa = next((x["argv"] for x in map(json.loads, (td / "trace.jsonl").read_text().splitlines())
+               if x["script"] == "secondary_chains.py"), [])
+    check("--repeat 3: the chosen run's files are in OUT and the summary names them; the chains run in OUT on it",
+          (dep.get("volume_loss_max") or {}).get("value") == 0.25 and r["result"]["deform"].startswith(str(rd / "secondary"))
+          and all(not str(s_["report"]).startswith(str(rd / "repeat")) for s_ in r["steps"])
+          and sa and os.path.dirname(sa[sa.index("--save") + 1]) == str(rd / "secondary"), res=r.get("result"))
+    contract_sample("repeat_stable", st)
+    code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "3",
+                              "--min-margin", "0.2", "--no-secondary"], FAKE_DEFORM=plan3)
+    st = read_json(rd / "autorig.stability.json") or {}
+    check("--min-margin 0.2: run r1's margin 0.1429 is under it, stable fails, exit 2 (every gate still passed)",
+          code == 2 and st.get("pass") is False and r["repeat"]["stable"] is False
+          and all(x["pass"] for x in st["gates"] if x["name"] != "stable"), code=code)
+    plan_f = dict(plan3, **{"r2:a0": ["LowerArm.R", 0.53, 0.04], "r2:a1": ["LowerArm.R", 0.41, 0.05]})
+    code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "3",
+                              "--no-secondary"], FAKE_DEFORM=plan_f)
+    st = read_json(rd / "autorig.stability.json") or {}
+    vol = next((x for x in st.get("gates", []) if x["name"] == "deform.volume_loss_max"), {})
+    check("one run of three fails deform after the repair: the gate passed in 2 of 3, stable fails, the median "
+          "run r1 is kept and passed, exit 2; the failed run's repair stays in its own folder",
+          code == 2 and st.get("chosen_run") == "r1" and vol.get("passed") == 2 and vol.get("pass") is False
+          and vol.get("value", {}).get("max") == 0.41 and (rd / "repeat" / "r2" / "repair" / "a1").is_dir()
+          and not (rd / "repair").exists() and "repair" not in r, code=code, st=st)
+    contract_sample("repeat_unstable", st)
+    g_ = lambda n_, v_, p_, m_=None: {"name": n_, "value": v_, "limit": 0.5, "pass": p_, **({"margin": m_} if m_ is not None else {})}
+    blind = stability([{"run": "r1", "dir": "a", "exit_code": 2, "gates": {"deform.hinge_blended": g_("deform.hinge_blended", None, False),
+                                                                           "arp.export": g_("arp.export", True, False)}},
+                       {"run": "r2", "dir": "b", "exit_code": 0, "gates": {"deform.hinge_blended": g_("deform.hinge_blended", 0.9, True, 0.8)}}], 0.0)
+    bg = {x["name"]: x for x in blind["gates"]}
+    check("stability: a gate failed in a run that read no margin, and stable failed by a run's exit, carry no "
+          "positive margin", not bg["deform.hinge_blended"]["pass"] and "margin" not in bg["deform.hinge_blended"]
+          and not bg["stable"]["pass"] and "margin" not in bg["stable"]
+          and all(not (x.get("margin", 0) > 0 and not x["pass"]) for x in blind["gates"]), gates=blind["gates"])
+    mixed = stability([{"run": "r1", "dir": "a", "exit_code": 0, "gates": {"x": g_("x", 1, True, 0.3)}},
+                       {"run": "r2", "dir": "b", "exit_code": 2, "gates": {"x": g_("x", 1, True, 0.5),
+                                                                           "y": g_("y", None, False)}},
+                       {"run": "r3", "dir": "c", "exit_code": 0, "gates": {"x": g_("x", 1, True, 0.1)}}], 0.0)
+    check("stability: a run that failed a gate with no margin ranks below every pass, whatever its other "
+          "margins, so the median kept is the worse pass (r3)", mixed["chosen_run"] == "r3", st=mixed)
+    code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "2",
+                              "--no-secondary"], FAKE_DEFORM={"r1:a0": ["LowerArm.R", 0.20, 0.04],
+                                                              "r2:a0": ["LowerArm.R", 0.30, 0.04]})
+    check("--repeat 2: the lower of the two middle runs (r2, margin 0.1429 against 0.4286) is kept, exit 0",
+          code == 0 and r.get("repeat", {}).get("chosen") == "r2"
+          and ((read_json(rd / "rig" / "Runner.deform.json") or {}).get("volume_loss_max") or {}).get("value") == 0.30,
+          code=code, rep=r.get("repeat"))
 
 
 def selftest() -> int:
@@ -1734,6 +2108,12 @@ def selftest() -> int:
                   and cs["markers"][cs["markers"].index("--body") + 1] == "chibi"
                   and all(c_[c_.index("--body") + 1] == "chibi" for c_ in (cs["deform"], cs["secondary_deform"]))
                   and not any("--skirt" in c_ for c_ in cs.values()) and "--body" not in steps["deform"], steps=list(cs))
+            _, rv, _ = go(["all", str(out), str(glb), "--finger-votes", "5", "--dry-run"], osname, {"BLENDER": bl})
+            vs = {s_["name"]: s_["cmd"] for s_ in rv.get("steps", [])}
+            check(f"{osname}: --finger-votes 5 reaches the markers alone; without it the markers get none (one reading)",
+                  vs["markers"][vs["markers"].index("--finger-votes") + 1] == "5"
+                  and sum("--finger-votes" in c_ for c_ in vs.values()) == 1 and "--finger-votes" not in steps["markers"],
+                  steps=list(vs))
             _, r7, _ = go(["all", str(out), str(glb), "--adjust", "adj.json", "--resolution", "8", "--dry-run"], osname,
                           {"BLENDER": bl})
             s7 = {s["name"]: s["cmd"] for s in r7.get("steps", [])}
@@ -2173,6 +2553,7 @@ def selftest() -> int:
               and deform_poses(DEFORM_POSES + ("jaw_open",), False, True) == "all,jaw_open"
               and deform_poses(DEFORM_POSES + ("jaw_open",), False, False) is None
               and set(DEFORM_POSES) <= set(known))
+        selftest_repeat(check, go, real, td, glb)
         code, r, err, ran = real(["markers", str(run_dir), "--name", "Runner"], FAKE_NO_OUT="arp_markers.py")
         check("a step that writes no report is an error, exit 1", code == 1)
         code, r, err, ran = real(["prep", str(run_dir), str(glb), "--name", "Runner"], FAKE_SILENT="inside_prep")

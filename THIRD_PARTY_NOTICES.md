@@ -1,7 +1,8 @@
 # Third-party notices
 
 This repository is released under the licence in [LICENSE](LICENSE). The files below contain code
-ported from other projects and carry those projects' licences.
+ported from other projects and carry those projects' licences. The last section links the licences
+of the model weights and tools the skills call but do not ship.
 
 ## Real-PixelArt
 
@@ -382,3 +383,39 @@ from that release's rife-v4.6 model, which sprite-gen does not ship.
   above states its changes from the upstream code in its header, as §4(b) asks. anymove ships no NOTICE
   file. Its licence does not cover the Patch name and marks, which are not used here; MiniMax H3's weights
   and outputs carry their own community licence, and hosted H3 on fal goes through fal's terms.
+
+## Model weights and tools the skills call
+
+Nothing in this section is shipped or ported. The ComfyUI templates under
+`skills/comfyui-asset-generation/templates/` and `skills/mesh-texture-paint/templates/` name weight
+files that the user downloads, and the Blender skills drive an add-on that the user buys. Each one is
+governed by its own licence, linked below. `VERSIONS.md` → Asset toolchain lists the file names, the
+versions and each licence's limits (commercial use, territory, attribution).
+
+- **Pixal3D** — MIT: <https://huggingface.co/TencentARC/Pixal3D/blob/main/LICENSE> (repackaged at
+  <https://huggingface.co/Comfy-Org/Pixal3D>)
+- **TRELLIS.2** — MIT: <https://huggingface.co/microsoft/TRELLIS.2-4B> (repackaged at
+  <https://huggingface.co/Comfy-Org/TRELLIS.2>)
+- **DINOv3 image encoder** — DINOv3 License: <https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md>;
+  its bundled NAF upsampler — Apache-2.0: <https://github.com/valeoai/NAF>
+- **MoGe-2** — MIT: <https://huggingface.co/Ruicheng/moge-2-vitl-normal> (repackaged at
+  <https://huggingface.co/Comfy-Org/MoGe>)
+- **BiRefNet** — MIT on the model card: <https://huggingface.co/ZhengPeng7/BiRefNet> (repackaged at
+  <https://huggingface.co/Comfy-Org/BiRefNet>); its training set's terms:
+  <https://github.com/xuebinqin/DIS/blob/main/DIS5K-Dataset-Terms-of-Use.pdf>
+- **Qwen-Image-Edit-2511**, its **Lightning LoRA**, the **Qwen2.5-VL-7B** text encoder and the
+  **Qwen-Image VAE** — Apache-2.0: <https://huggingface.co/Qwen/Qwen-Image-Edit-2511>,
+  <https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning>,
+  <https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct>, <https://huggingface.co/Qwen/Qwen-Image>
+- **Qwen-Image-Layered** — Apache-2.0: <https://huggingface.co/Qwen/Qwen-Image-Layered>
+- **MiniMax H3** — MiniMax H3 Community License Agreement:
+  <https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE>
+- **MiniMax Music 3** — MiniMax-Music3 Community License:
+  <https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/main/LICENSE>
+- **Stable Audio 3 Medium** — Stability AI Community License: <https://stability.ai/license>
+- **gpt-image** (through Codex) — OpenAI's terms: <https://openai.com/policies/row-terms-of-use/>,
+  <https://openai.com/policies/services-agreement/>
+- **Auto-Rig Pro** — a paid add-on by Artell, under the author's licences:
+  <https://www.lucky3d.fr/auto-rig-pro/doc/license.html>
+- **ComfyUI** — GPL-3.0: <https://github.com/Comfy-Org/ComfyUI>; **Blender** — GPL:
+  <https://www.blender.org/about/license/>
