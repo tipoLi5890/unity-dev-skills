@@ -9,7 +9,7 @@ usage:
     rig_exam.py reference EXAM NAME --glb G --markers M [--fbx F --contract C]  add a rig a person accepted -> EXAM/refs/NAME/
     rig_exam.py score  EXAM [--tol 0.04] [--out EXAM/exam.json] [--sheet EXAM/sheet.png]
     rig_exam.py bench  EXAM|--no-exam [--real OUT ...] --out FILE [--label TEXT] [--tol 0.04] [--volume-max 0.35]
-    rig_exam.py compare OLD.json NEW.json [--margin-drop 0.02]
+    rig_exam.py compare OLD.json NEW.json [--margin-drop 0.02] [--near 1.0] [--tradeoff-floor 0.05]
     rig_exam.py --selftest
 build, run, faults and reference's rig check take --blender PATH (env BLENDER, else autorig.py's default) and
 --threads N; they run Blender one call at a time. score is numpy (Pillow for the sheet) and needs no Blender.
@@ -64,14 +64,30 @@ is score's summary of EXAM (null when no case was scored; leave EXAM out with --
 --real OUT (a character's autorig.py folder): name, out, body (its markers'), per step of OUT/autorig.all.json
 (else each OUT/autorig.<stage>.json) the gates {name, value, limit, pass, margin} of its report (`deform` the
 reading after the repair ladder; repair attempts left out; a report moved with OUT is found under the given OUT),
-`stability` (OUT/autorig.stability.json from `all --repeat`, else null) and worst_margin (the least margin over its
-gates). made_with: --label (say, the version benched), the plugin version when the plugin's manifest is found, and
+`stability` (OUT/autorig.stability.json from `all --repeat`, else null), `repair` (what the repair ladder did: in
+the chosen run, OUT/autorig.all.json, and with `all --repeat` in each OUT/repeat/rN/autorig.all.json: result,
+trigger (failed, near_limit), fired, used (the bind taken on is the repair: passed, kept_repair), each rung's
+hinges, amount and cross-side bones, how many runs were repaired and used it; `deform` reads the kept bind:
+kept_original leaves the first reading) and worst_margin (the least
+margin over its gates). made_with: --label (say, the version benched), the plugin version when the plugin's manifest is found, and
 a sha256 prefix of each script of this folder. A bench with no scored exam case and no --real is refused.
 compare (two bench/1 files, OLD then NEW): a regression is a gate that passed in OLD and fails or is not read in
-NEW, a gate new to a step OLD read that fails in NEW, a margin that drops by more than --margin-drop (0.02), a real character or exam case of OLD missing in NEW,
+NEW, a gate new to a step OLD read that fails in NEW, a margin that drops by more than --margin-drop (0.02) to
+under --near (1.0: one limit's size from the limit) or by more than --near, a real character or exam case of OLD missing in NEW,
 a case that was a true pass or an expected fail and is not now, fewer fingers right, or a new false pass,
-slipped fault or failed control. Improvements are the reverse. Prints one JSON object {regressions,
-improvements, pass}. Keep the bench files outside the repository, beside the exam folder.
+slipped fault or failed control. Improvements are the reverse. A drop of at most --near that ends at --near or
+more (a ">=" gate past twice its limit; a "<=" or range gate's margin never exceeds 1) is listed under
+`informational`: the detector's noise floor, not a gate limit. `repair` lists per character repair_now /
+repair_gone (the chosen run's bind is a repair on one side only, else its ladder fired on one side only) /
+repair_changed (the chosen run's rungs, or the share of runs repaired or whose bind is the repair, one run
+without --repeat, differ) or repair_unknown (a bench without the reading, or a run whose summary was not read: then nothing is
+excused); while it differs and a side's bind is the repair (used), a still-passing drop of one of the pair the
+ladder trades (deform.volume_loss_max, deform.self_intersection_p95) paid for by a rise (past --margin-drop) of
+the other in the same step is the ladder's trade-off and goes to `repair_tradeoffs`, not `regressions`,
+unless its new margin is under --tradeoff-floor (0.05: a drop onto the edge of a limit regresses whatever the repair
+did). A failing gate, the stable gate and the exam are never excused. Prints
+one JSON object {regressions, improvements, repair, repair_tradeoffs, informational, pass}. Keep the bench files
+outside the repository, beside the exam folder.
 
 Prints one JSON object. Exit codes: 0 done (score: no false pass and no slipped fault; compare: no regression), 2
 the score found a false pass or a slipped fault, or compare found a regression (build/run/faults: a Blender step
@@ -510,12 +526,9 @@ def run_files(run_dir: Path, name: str) -> dict:
     summary = read_json(run_dir / "autorig.all.json") or {}
     steps = [{"name": s.get("name"), "failed_gates": s.get("failed_gates") or []} for s in summary.get("steps", [])]
     repair = summary.get("repair") or {}
-    attempts = repair.get("attempts") or []
-    final = None
-    repaired = False
-    if attempts:
-        final = read_json(attempts[-1].get("deform") or "")
-        repaired = repair.get("result") == "passed"
+    final_path = kept_deform(repair)
+    final = read_json(final_path) if final_path else None
+    repaired = repair.get("result") in KEPT_REPAIR
     steps = [s for s in steps if not str(s["name"]).startswith(("repair", "deform_a"))]
     return {"markers": read_json(rig / f"{name}.markers.json"), "markers_only": read_json(rig / f"{name}.markers_only.json"), "contract": read_json(rig / f"{name}.contract.json"),
             "skeleton": read_json(run_dir / "export" / f"{name}.skeleton.json"), "steps": steps,
@@ -627,6 +640,81 @@ def _rebase(path, ran_in, out: Path) -> Path:
         return p
 
 
+def _bones(cross) -> list:
+    """The bones a rung's cross-side move names ({L: [...], R: [...]} or {L: {bones: {...}}}), sorted."""
+    if not isinstance(cross, dict):
+        return []
+    out = set()
+    for v in cross.values():
+        v = v.get("bones", v) if isinstance(v, dict) else v
+        out |= {str(b) for b in (v or [])} if isinstance(v, (list, dict)) else set()
+    return sorted(out)
+
+
+KEPT_REPAIR = ("passed", "kept_repair")     # autorig.KEPT_REPAIR: a repair whose bind is the one taken on
+
+
+def kept_deform(repair: dict | None):
+    """The deform report that stands for a run after its repair ladder: the kept attempt's (kept_repair), none
+    (kept_original: the first reading stands), else the last attempt's (passed, exhausted); None without one."""
+    repair = repair if isinstance(repair, dict) else {}
+    attempts = [x for x in repair.get("attempts") or [] if isinstance(x, dict)]
+    if not attempts or repair.get("result") == "kept_original":
+        return None
+    if repair.get("result") == "kept_repair":
+        return next((x.get("deform") for x in attempts if x.get("attempt") == repair.get("kept")),
+                    (repair.get("files") or {}).get("deform"))
+    return attempts[-1].get("deform")
+
+
+def repair_of(summary: dict | None) -> dict:
+    """What the repair ladder did in one autorig.py run (its summary): `result` the ladder's (passed, exhausted,
+    error, not_applicable; after a deform that passed near its limit kept_repair or kept_original), `none` when
+    deform ran and no ladder ran, `not_reached` when deform did not run, `unknown` when the run's summary is gone;
+    `trigger` failed or near_limit (an older summary: failed); `fired` an attempt was made; `used` the bind taken on
+    is a repair (passed, kept_repair; null when unknown); each rung's hinges, amount, the cross-side bones it moved
+    and whether it passed."""
+    if not isinstance(summary, dict):
+        return {"result": "unknown", "fired": None, "used": None, "attempts": None, "hinges": [], "rungs": []}
+    rep = summary.get("repair")
+    if not isinstance(rep, dict):
+        ran = any(str(st.get("name")) == "deform" for st in summary.get("steps") or [])
+        return {"result": "none" if ran else "not_reached", "fired": False, "used": False, "attempts": 0,
+                "hinges": [], "rungs": []}
+    rungs = [{"hinges": sorted(str(h) for h in a.get("hinges") or []), "amount": a.get("amount"),
+              "cross_side": _bones(a.get("cross_side")), "passed": a.get("passed") is True}
+             for a in rep.get("attempts") or [] if isinstance(a, dict)]
+    return {"result": str(rep.get("result")), "trigger": str(rep.get("trigger") or "failed"), "fired": bool(rungs),
+            "used": rep.get("result") in KEPT_REPAIR, "attempts": len(rungs),
+            "hinges": sorted({h for r in rungs for h in r["hinges"]}), "rungs": rungs}
+
+
+def _used(r: dict):
+    """A repair_of reading's `used` (a bench before it: read from its result); None when not known."""
+    if "used" in r:
+        return r["used"]
+    return None if r.get("fired") is None else r.get("result") in KEPT_REPAIR
+
+
+def repair_reading(out: Path, summary: dict, ran_in) -> dict:
+    """bench/1's `repair` for one character: the chosen run's ladder (OUT/autorig.all.json) and, after
+    `all --repeat`, each run's (OUT/repeat/rN/autorig.all.json) with how many were repaired."""
+    doc = {"chosen": repair_of(summary), "runs": None}
+    rep = summary.get("repeat")
+    if isinstance(rep, dict) and isinstance(rep.get("runs"), list):
+        per = []
+        for i, r in enumerate(rep["runs"]):
+            r = r if isinstance(r, dict) else {}
+            name = str(r.get("run") or f"r{i + 1}")
+            d = _rebase(r.get("dir"), ran_in, out) if r.get("dir") else out / "repeat" / name
+            per.append({"run": name, **repair_of(read_json(Path(d) / "autorig.all.json"))})
+        doc["runs"] = {"n": len(per), "chosen": rep.get("chosen"),
+                       "read": sum(p["fired"] is not None for p in per),
+                       "repaired": sum(p["fired"] is True for p in per),
+                       "used": sum(_used(p) is True for p in per), "per_run": per}
+    return doc
+
+
 def real_reading(out: Path) -> dict:
     """One character's autorig.py folder as bench/1's `real` entry."""
     summary = read_json(out / "autorig.all.json")
@@ -650,17 +738,20 @@ def real_reading(out: Path) -> dict:
         if isinstance(rep, dict) and isinstance(rep.get("gates"), list):
             stages[step] = {"pass": rep.get("pass") is True, "gates": [bench_gate(g) for g in rep["gates"]
                                                                        if isinstance(g, dict)]}
-    attempts = (summary.get("repair") or {}).get("attempts") or []
-    if attempts and "deform" in stages:
-        final = read_json(_rebase(attempts[-1].get("deform"), ran_in, out))
+    kept = kept_deform(summary.get("repair"))
+    if kept and "deform" in stages:
+        final = read_json(_rebase(kept, ran_in, out))
         if isinstance(final, dict) and isinstance(final.get("gates"), list):
             stages["deform"] = {"pass": final.get("pass") is True, "repair": summary["repair"].get("result"),
                                 "gates": [bench_gate(g) for g in final["gates"] if isinstance(g, dict)]}
+    elif (summary.get("repair") or {}).get("result") == "kept_original" and "deform" in stages:
+        stages["deform"]["repair"] = "kept_original"      # the ladder ran near the limit; the first reading stands
     markers = read_json(out / "rig" / f"{name}.markers.json") or {}
     margins = [g["margin"] for v in stages.values() for g in v["gates"] if _number(g["margin"])]
     failed = [f"{st}:{g['name']}" for st, v in stages.items() for g in v["gates"] if g["pass"] is not True]
     return {"name": name, "out": str(out), "body": markers.get("body", "human"), "exit_code": summary.get("exit_code"),
             "stages": stages, "stability": read_json(out / "autorig.stability.json"),
+            "repair": repair_reading(out, summary, ran_in),
             "worst_margin": min(margins) if margins else None, "failed_gates": failed}
 
 
@@ -704,7 +795,10 @@ def cmd_bench(a) -> tuple[int, dict]:
     write_json(a.out, doc)
     return 0, {"tool": "rig_exam", "op": "bench", "out": a.out, "exam": doc["exam"] is not None,
                "real": {r["name"]: {"exit_code": r["exit_code"], "worst_margin": r["worst_margin"],
-                                    "failed_gates": r["failed_gates"]} for r in doc["real"]}}
+                                    "failed_gates": r["failed_gates"], "repair": r["repair"]["chosen"]["result"],
+                                    "runs_repaired": (r["repair"]["runs"] or {}).get("repaired"),
+                                    "runs_used": (r["repair"]["runs"] or {}).get("used")}
+                        for r in doc["real"]}}
 
 
 GOOD_OUTCOMES = ("true_pass", "expected_fail")
@@ -714,9 +808,69 @@ def _cases(exam: dict | None) -> dict:
     return {n: o for o, names in ((exam or {}).get("outcomes") or {}).items() for n in names}
 
 
-def compare(old: dict, new: dict, margin_drop: float = 0.02) -> dict:
-    """Regressions and improvements from OLD to NEW, two bench/1 documents (see the docstring)."""
-    reg, imp = [], []
+def repair_key(r: dict):
+    """What compare holds a character's repair to: (fired in the chosen run, its rungs, the share of runs
+    repaired: without --repeat the one run, so 0 or 1 either way, whether the chosen run's bind is the repair,
+    the share of runs whose bind is). None when the bench carries no `repair` (a bench written before 0.46) or a
+    run's summary was not read: the status is unknown. `used` is read from the result on a bench without it."""
+    rp = r.get("repair")
+    if not isinstance(rp, dict) or not isinstance(rp.get("chosen"), dict):
+        return None
+    ch, runs = rp["chosen"], rp.get("runs")
+    if not isinstance(ch.get("fired"), bool):
+        return None                     # the chosen run's summary was gone: not read, so not "no repair"
+    if isinstance(runs, dict) and not (_number(runs.get("read")) and runs.get("read") == runs.get("n")):
+        return None                     # a --repeat run's summary was gone: the share repaired is not known
+    fired, used = ch["fired"], _used(ch) is True
+    rungs = tuple((tuple(x.get("hinges") or []), x.get("amount"), tuple(x.get("cross_side") or []))
+                  for x in ch.get("rungs") or [])
+    read = runs.get("read") if isinstance(runs, dict) else None
+    per = [p for p in (runs.get("per_run") or []) if isinstance(p, dict)] if isinstance(runs, dict) else []
+    share = (round(runs.get("repaired", 0) / read, 4) if read > 0 else None) if isinstance(runs, dict) \
+        else float(fired)
+    used_share = (round(sum(_used(p) is True for p in per) / read, 4) if read > 0 else None) \
+        if isinstance(runs, dict) else float(used)
+    return (fired, rungs, share, used, used_share)
+
+
+def _rungs_text(r: dict) -> list:
+    return [" + ".join((x.get("hinges") or []) + (["cross_side"] if x.get("cross_side") else []))
+            + f" @{x.get('amount')}" for x in ((r.get("repair") or {}).get("chosen") or {}).get("rungs") or []]
+
+
+def repair_line(name: str, o: dict, n: dict) -> dict | None:
+    """The `repair` list's line for one character: repair_unknown (a side carries no repair reading),
+    repair_now / repair_gone (the chosen run's bind is a repair on one side only, else its ladder fired on one
+    side only: a near-limit ladder that kept the original fired but is not used), repair_changed (other rungs,
+    another count of repaired runs or of runs whose bind is the repair); None when both sides read the same."""
+    ko, kn = repair_key(o), repair_key(n)
+    if ko is None or kn is None:
+        side = "both" if ko is None and kn is None else "old" if ko is None else "new"
+        return {"what": "repair_unknown", "real": name, "missing_in": side}
+    if ko == kn:
+        return None
+    on = (ko[3], kn[3]) if ko[3] != kn[3] else (ko[0], kn[0])
+    what = "repair_now" if on[1] and not on[0] else "repair_gone" if on[0] and not on[1] else "repair_changed"
+
+    def side(r):
+        rp, runs = r["repair"], r["repair"].get("runs")
+        return {"rungs": _rungs_text(r), "result": rp["chosen"].get("result"),
+                "runs_repaired": runs.get("repaired") if isinstance(runs, dict) else None,
+                "runs_used": sum(_used(p) is True for p in runs.get("per_run") or [] if isinstance(p, dict))
+                if isinstance(runs, dict) else None, "runs": runs.get("n") if isinstance(runs, dict) else None}
+    return {"what": what, "real": name, "old": side(o), "new": side(n)}
+
+
+TRADED = ("deform.volume_loss_max", "deform.self_intersection_p95")   # what the hinge hand-over trades: no other gate
+
+
+def compare(old: dict, new: dict, margin_drop: float = 0.02, near: float = 1.0, tradeoff_floor: float = 0.05) -> dict:
+    """Regressions and improvements from OLD to NEW, two bench/1 documents (see the docstring). A margin drop
+    past MARGIN_DROP regresses unless it is at most NEAR and the new margin stays at NEAR or more (then
+    `informational`; never the stable gate), or it is on a still-passing gate of TRADED of a character whose
+    repair changed with a repair bind on a side, its new margin at least TRADEOFF_FLOOR, and the other gate of
+    TRADED in the step rose past MARGIN_DROP (then `repair_tradeoffs`)."""
+    reg, imp, rep_lines, trade, info = [], [], [], [], []
     if old.get("exam") is not None and new.get("exam") is None:
         reg.append({"what": "exam_missing"})
     oe, ne = old.get("exam"), new.get("exam")
@@ -750,6 +904,11 @@ def compare(old: dict, new: dict, margin_drop: float = 0.02) -> dict:
         if name not in nr:
             reg.append({"what": "real_missing", "real": name})
             continue
+        line = repair_line(name, r, nr[name])
+        if line:
+            rep_lines.append(line)
+        repair_moved = bool(line) and line["what"] != "repair_unknown" and any(       # a repair bind on a side:
+            _used(x["repair"]["chosen"]) is True for x in (r, nr[name]))          # kept_original alone moved nothing
         for st, v in sorted((r.get("stages") or {}).items()):     # a step OLD read: a gate new to it that fails
             w = (nr[name].get("stages") or {}).get(st)
             known = {g.get("name") for g in v.get("gates") or []}
@@ -758,6 +917,14 @@ def compare(old: dict, new: dict, margin_drop: float = 0.02) -> dict:
                     reg.append({"what": "new_gate_failed", "real": name, "stage": st, "gate": g.get("name"),
                                 "new": g.get("value")})
         og, ng = gates(r), gates(nr[name])
+
+        def bought(st, gn):
+            """A rise past --margin-drop of the other still-passing gate of TRADED in the same step: what the
+            repair ladder's trade paid for (the volume a sharper hinge saved). Without one, a drop is no trade."""
+            return any(s2 == st and g2 in TRADED and g2 != gn and h2.get("pass") is True
+                       and _number(h2.get("margin")) and _number((og.get((s2, g2)) or {}).get("margin"))
+                       and h2["margin"] - og[(s2, g2)]["margin"] > margin_drop
+                       for (s2, g2), h2 in ng.items())
         for (st, gn), g in sorted(og.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))):
             where = {"real": name, "stage": st, "gate": gn}
             h = ng.get((st, gn))
@@ -772,10 +939,18 @@ def compare(old: dict, new: dict, margin_drop: float = 0.02) -> dict:
             mo, mn = g.get("margin"), h.get("margin")
             if _number(mo) and _number(mn):
                 if mo - mn > margin_drop:
-                    reg.append({"what": "margin_drop", **where, "old": mo, "new": mn, "drop": round(mo - mn, 4)})
+                    drop = {"what": "margin_drop", **where, "old": mo, "new": mn, "drop": round(mo - mn, 4)}
+                    if repair_moved and gn in TRADED and h.get("pass") is True \
+                            and mn >= tradeoff_floor and bought(st, gn):
+                        trade.append({**drop, "repair": line["what"]})
+                    elif mn >= near and mo - mn <= near and gn != "stable":
+                        info.append(drop)
+                    else:
+                        reg.append(drop)
                 elif mn - mo > margin_drop:
                     imp.append({"what": "margin_rise", **where, "old": mo, "new": mn, "rise": round(mn - mo, 4)})
-    return {"regressions": reg, "improvements": imp, "pass": not reg}
+    return {"regressions": reg, "improvements": imp, "repair": rep_lines, "repair_tradeoffs": trade,
+            "informational": info, "pass": not reg}
 
 
 def cmd_compare(a) -> tuple[int, dict]:
@@ -789,8 +964,13 @@ def cmd_compare(a) -> tuple[int, dict]:
         raise Refused(f"{a.old}: benches nothing (no exam summary, no real character): no baseline to compare with")
     if not _number(a.margin_drop) or a.margin_drop < 0:
         raise Refused("--margin-drop: a number, 0 or more")
-    out = compare(docs[0], docs[1], a.margin_drop)
-    out = {"tool": "rig_exam", "op": "compare", "old": a.old, "new": a.new, "margin_drop": a.margin_drop, **out}
+    if not _number(a.near) or a.near < 0:
+        raise Refused("--near: a finite number, 0 or more")
+    if not _number(a.tradeoff_floor) or a.tradeoff_floor < 0:
+        raise Refused("--tradeoff-floor: a finite number, 0 or more")
+    out = compare(docs[0], docs[1], a.margin_drop, a.near, a.tradeoff_floor)
+    out = {"tool": "rig_exam", "op": "compare", "old": a.old, "new": a.new, "margin_drop": a.margin_drop,
+           "near": a.near, "tradeoff_floor": a.tradeoff_floor, **out}
     return (0 if out["pass"] else 2), out
 
 
@@ -1076,9 +1256,12 @@ def planted(name="planted", shift=None, H=1.75, fingers=4, failed=(), expect_fai
             "deform_first": {"volume_loss_max": {"value": 0.08, "joint": "LowerArm.L"}, "gates": [], "poses": {}}}
 
 
-def fake_real(out: Path, name: str, vol: float, si: float, repaired: bool = False) -> None:
+def fake_real(out: Path, name: str, vol: float, si: float, repaired: bool = False, repeat: int = 0,
+              finger: float = 0.09, near: str | None = None) -> None:
     """An autorig.py folder as `all` leaves it: the summary, the markers and deform reports (the repair's when
-    `repaired`: the first deform failed, attempt 1 passed), and a stability file."""
+    `repaired`: the first deform failed, attempt 1 on the elbow passed), and a stability file; with REPEAT the
+    runs' own summaries under OUT/repeat/rN/ (each repaired alike). NEAR (kept_repair, kept_original): the first
+    deform passed at 0.345 (si 0.04), the near-limit ladder's attempt 1 read VOL and SI, and NEAR is what it kept."""
     def deform(v, s_):
         gates = [{"name": "deform.volume_loss_max", "value": v, "limit": 0.35, "pass": v <= 0.35,
                   "margin": gate_margin(v, 0.35, "<=")},
@@ -1088,19 +1271,36 @@ def fake_real(out: Path, name: str, vol: float, si: float, repaired: bool = Fals
     rig = out / "rig"
     markers = {"schema": "autorig-markers/1", "body": "skirt", "pass": True,
                "gates": [{"name": "markers.symmetry", "value": 0.004, "limit": 0.035, "pass": True},
-                         {"name": "markers.arm_angle", "value": 44.0, "limit": [30.0, 60.0], "pass": True}]}
+                         {"name": "markers.arm_angle", "value": 44.0, "limit": [30.0, 60.0], "pass": True},
+                         {"name": "markers.finger_lengths", "value": finger, "limit": 0.01, "pass": finger >= 0.01,
+                          "margin": gate_margin(finger, 0.01, ">=")}]}
     write_json(rig / f"{name}.markers.json", markers)
     steps = [{"name": "markers", "report": str(rig / f"{name}.markers.json"), "failed_gates": []},
              {"name": "deform", "report": str(rig / f"{name}.deform.json"), "failed_gates": []}]
     summary = {"tool": "autorig.py", "stage": "all", "name": name, "out": str(out), "steps": steps, "exit_code": 0}
-    if repaired:
+    if near:
+        write_json(rig / f"{name}.deform.json", deform(0.345, 0.04))
+        write_json(out / "repair" / "a1" / f"{name}.deform.json", deform(vol, si))
+        steps += [{"name": "repair_a1", "report": str(out / "repair" / "a1" / "repair.json"), "failed_gates": []},
+                  {"name": "deform_a1", "report": str(out / "repair" / "a1" / f"{name}.deform.json"), "failed_gates": []}]
+        summary["repair"] = {"trigger": "near_limit", "result": near, "attempts": [
+            {"attempt": 1, "hinges": ["elbow"], "amount": 1.0, "cross_side": {}, "passed": True,
+             "deform": str(out / "repair" / "a1" / f"{name}.deform.json")}], **({"kept": 1} if near == "kept_repair" else {})}
+    elif repaired:
         write_json(rig / f"{name}.deform.json", deform(0.41, si))
         write_json(out / "repair" / "a1" / f"{name}.deform.json", deform(vol, si))
         steps += [{"name": "repair_a1", "report": str(out / "repair" / "a1" / "repair.json"), "failed_gates": []},
                   {"name": "deform_a1", "report": str(out / "repair" / "a1" / f"{name}.deform.json"), "failed_gates": []}]
-        summary["repair"] = {"result": "passed", "attempts": [{"deform": str(out / "repair" / "a1" / f"{name}.deform.json")}]}
+        summary["repair"] = {"result": "passed", "attempts": [
+            {"attempt": 1, "hinges": ["elbow"], "amount": 1.0, "cross_side": {}, "passed": True,
+             "deform": str(out / "repair" / "a1" / f"{name}.deform.json")}]}
     else:
         write_json(rig / f"{name}.deform.json", deform(vol, si))
+    if repeat:
+        runs = [{"run": f"r{i}", "dir": str(out / "repeat" / f"r{i}"), "exit_code": 0} for i in range(1, repeat + 1)]
+        for r in runs:
+            write_json(Path(r["dir"]) / "autorig.all.json", {k: v for k, v in summary.items() if k != "out"})
+        summary["repeat"] = {"n": repeat, "chosen": "r1", "runs": runs}
     write_json(out / "autorig.all.json", summary)
     write_json(out / "autorig.stability.json", {"schema": "gate/1", "pass": True, "gates": [
         {"name": "stable", "value": 0.2, "limit": 0.0, "pass": True, "margin": 0.2}]})
@@ -1191,6 +1391,7 @@ def selftest_bench(ok, exam: Path, real: Path) -> None:
             ok(f"refused, nothing to compare: {argv[0]}", False)
         except Refused:
             ok(f"refused, nothing to compare: {argv[0]}", True)
+    selftest_repair(ok, real.parent)
     for argv in (["bench", "--real", str(moved / "runner"), "--out", str(newp)],
                  ["bench", str(exam), "--no-exam", "--out", str(newp)],
                  ["bench", "--no-exam", "--out", str(newp)],
@@ -1202,6 +1403,180 @@ def selftest_bench(ok, exam: Path, real: Path) -> None:
             ok(f"refused: {argv[:2]}", False)
         except Refused:
             ok(f"refused: {argv[:2]}", True)
+
+
+def selftest_repair(ok, tmp: Path) -> None:
+    """compare beside the repair ladder and the noise floor: a repair that appears moves its deform margin drops to
+    repair_tradeoffs; a failing gate, a near drop and an unknown repair status still regress; a far drop informs."""
+    fake_real(tmp / "rp_old" / "gk", "Gatekeeper", 0.30, 0.03, repeat=3)            # si margin 0.625
+    fake_real(tmp / "rp_new" / "gk", "Gatekeeper", 0.10, 0.06, repaired=True, repeat=3)     # si 0.25 after the ladder
+    paths = {}
+    for side in ("rp_old", "rp_new"):
+        paths[side] = tmp / f"{side}.bench.json"
+        cmd_bench(parser().parse_args(["bench", "--no-exam", "--real", str(tmp / side / "gk"), "--out",
+                                       str(paths[side])]))
+    bo, bn = read_json(paths["rp_old"]), read_json(paths["rp_new"])
+    rn = bn["real"][0]["repair"]
+    ok("bench: the repair ladder's rungs, per chosen run and per --repeat run (3 of 3 repaired); none before",
+       rn["chosen"] == {"result": "passed", "trigger": "failed", "fired": True, "used": True, "attempts": 1,
+                        "hinges": ["elbow"],
+                        "rungs": [{"hinges": ["elbow"], "amount": 1.0, "cross_side": [], "passed": True}]}
+       and rn["runs"]["repaired"] == 3 and rn["runs"]["used"] == 3 and rn["runs"]["read"] == 3 and rn["runs"]["chosen"] == "r1"
+       and bo["real"][0]["repair"]["chosen"]["result"] == "none" and bo["real"][0]["repair"]["runs"]["repaired"] == 0)
+    contract_sample("bench_repair", bn)
+
+    def run(o, n, *extra):
+        write_json(tmp / "rp_a.json", o)
+        write_json(tmp / "rp_b.json", n)
+        return cmd_compare(parser().parse_args(["compare", str(tmp / "rp_a.json"), str(tmp / "rp_b.json"), *extra]))
+    code, c = run(bo, bn)
+    ok("compare: a repair that appears is listed (repair_now, its rungs); its deform margin drop is a trade-off, "
+       "not a regression: exit 0", code == 0 and [x["what"] for x in c["repair"]] == ["repair_now"]
+       and c["repair"][0]["new"] == {"rungs": ["elbow @1.0"], "result": "passed", "runs_repaired": 3, "runs_used": 3,
+                                     "runs": 3}
+       and [(x["stage"], x["gate"]) for x in c["repair_tradeoffs"]] == [("deform", "deform.self_intersection_p95")]
+       and not c["regressions"])
+    code_r, c_r = run(bn, bo)
+    ok("compare: a repair that is gone is listed too (repair_gone)", code_r == 0
+       and [x["what"] for x in c_r["repair"]] == ["repair_gone"])
+    fail = json.loads(json.dumps(bn))
+    fail["real"][0]["stages"]["deform"]["gates"][1].update(value=0.09, margin=gate_margin(0.09, 0.08, "<="))
+    fail["real"][0]["stages"]["deform"]["gates"][1]["pass"] = False
+    fail["real"][0]["stability"]["gates"][0].update({"pass": False, "value": -0.1, "margin": -0.1})
+    code_f, c_f = run(bo, fail)
+    ok("compare: a repair appears and its gate fails, and the stable gate fails: regressions all the same, exit 2",
+       code_f == 2 and {(x["what"], x["gate"]) for x in c_f["regressions"]} >= {
+           ("gate_failed", "deform.self_intersection_p95"), ("margin_drop", "deform.self_intersection_p95"),
+           ("gate_failed", "stable")} and not c_f["repair_tradeoffs"])
+    unbought = json.loads(json.dumps(bn))
+    unbought["real"][0]["stages"]["deform"]["gates"][0].update(value=0.30, margin=gate_margin(0.30, 0.35, "<="))
+    code_ub, c_ub = run(bo, unbought)
+    ok("compare: a repair appears but no other deform gate of the step rose: no trade-off, exit 2",
+       code_ub == 2 and [x["gate"] for x in c_ub["regressions"]] == ["deform.self_intersection_p95"]
+       and not c_ub["repair_tradeoffs"] and [x["what"] for x in c_ub["repair"]] == ["repair_now"])
+    wide_o, wide_n = json.loads(json.dumps(bo)), json.loads(json.dumps(unbought))
+    for doc, tear, blend in ((wide_o, 0.9, 1.0), (wide_n, 0.3, 2.0)):     # another gate drops, a third one rises
+        doc["real"][0]["stages"]["deform"]["gates"] += [
+            {"name": "deform.skirt_tear", "value": 1 - tear, "limit": "<= 1", "pass": True, "margin": tear},
+            {"name": "deform.hinge_blended", "value": blend, "limit": ">= 0.03", "pass": True, "margin": blend}]
+    code_w, c_w = run(wide_o, wide_n)
+    ok("compare: a repair appears, skirt_tear and self-intersection drop, only hinge_blended rose: no trade-off "
+       "(the ladder trades volume against self-intersection alone), both regress, exit 2",
+       code_w == 2 and sorted(x["gate"] for x in c_w["regressions"])
+       == ["deform.self_intersection_p95", "deform.skirt_tear"] and not c_w["repair_tradeoffs"])
+    far, close, big = (json.loads(json.dumps(bo)) for _ in range(3))
+    for doc, v in ((far, 0.085), (close, 0.014), (big, 0.022)):   # finger margin 8.0 -> 7.5, -> 0.4, -> 1.2
+        g = next(x for x in doc["real"][0]["stages"]["markers"]["gates"] if x["name"] == "markers.finger_lengths")
+        g.update(value=v, margin=gate_margin(v, 0.01, ">="))
+    code_far, c_far = run(bo, far)
+    ok("compare: a margin drop under --near (1.0) that stays at --near or more, far from the limit: "
+       "informational, exit 0", code_far == 0 and [(x["gate"], x["old"], x["new"]) for x in c_far["informational"]]
+       == [("markers.finger_lengths", 8.0, 7.5)] and not c_far["regressions"])
+    code_b, c_b = run(bo, big)
+    ok("compare: a drop larger than --near (8.0 -> 1.2) regresses though it stays past the floor, exit 2",
+       code_b == 2 and [(x["gate"], x["new"]) for x in c_b["regressions"]] == [("markers.finger_lengths", 1.2)]
+       and not c_b["informational"])
+    st_o, st_n = json.loads(json.dumps(bo)), json.loads(json.dumps(bo))
+    st_o["real"][0]["stability"]["gates"][0].update(value=5.0, margin=5.0)
+    st_n["real"][0]["stability"]["gates"][0].update(value=4.5, margin=4.5)
+    code_s, c_s = run(st_o, st_n)
+    ok("compare: the stable gate is never informational, however far from its limit, exit 2",
+       code_s == 2 and [x["gate"] for x in c_s["regressions"]] == ["stable"] and not c_s["informational"])
+    code_n, c_n = run(bo, close)
+    small = json.loads(json.dumps(close))
+    g = next(x for x in small["real"][0]["stages"]["markers"]["gates"] if x["name"] == "markers.finger_lengths")
+    g.update(value=0.016, margin=gate_margin(0.016, 0.01, ">="))                       # margin 0.6 (then 0.4)
+    ok("compare: a drop that brings the gate under --near is a regression, exit 2; --near 0.3 lets 0.6 -> 0.4 "
+       "through, not 8.0 -> 0.4", code_n == 2 and [x["gate"] for x in c_n["regressions"]] == ["markers.finger_lengths"]
+       and run(small, close, "--near", "0.3")[0] == 0 and run(bo, close, "--near", "0.3")[0] == 2)
+    unknown = json.loads(json.dumps(bo))
+    unknown["real"][0].pop("repair")                       # a bench written before the repair reading
+    code_u, c_u = run(unknown, bn)
+    ok("compare: an old bench without the repair reading: repair_unknown, its drops stay regressions, exit 2",
+       code_u == 2 and c_u["repair"] == [{"what": "repair_unknown", "real": "Gatekeeper", "missing_in": "old"}]
+       and [x["gate"] for x in c_u["regressions"]] == ["deform.self_intersection_p95"] and not c_u["repair_tradeoffs"])
+    for label, edit in (("the chosen run's summary was not read", lambda rp: rp["chosen"].update(
+            result="unknown", fired=None, attempts=None)),
+                        ("a --repeat run's summary was not read", lambda rp: rp["runs"].update(read=2))):
+        gone = json.loads(json.dumps(bo))
+        edit(gone["real"][0]["repair"])
+        code_g, c_g = run(gone, bn)
+        ok(f"compare: {label}: repair_unknown, not repair_now; its drops stay regressions, exit 2",
+           code_g == 2 and c_g["repair"] == [{"what": "repair_unknown", "real": "Gatekeeper", "missing_in": "old"}]
+           and [x["gate"] for x in c_g["regressions"]] == ["deform.self_intersection_p95"]
+           and not c_g["repair_tradeoffs"])
+    fake_real(tmp / "rp_one" / "gk", "Gatekeeper", 0.30, 0.03)                          # one run, no --repeat
+    cmd_bench(parser().parse_args(["bench", "--no-exam", "--real", str(tmp / "rp_one" / "gk"), "--out",
+                                   str(tmp / "rp_one.bench.json")]))
+    one, three = read_json(tmp / "rp_one.bench.json"), json.loads(json.dumps(bo))
+    g = three["real"][0]["stages"]["deform"]["gates"][1]
+    g.update(value=0.05, margin=gate_margin(0.05, 0.08, "<="))                          # si margin 0.625 -> 0.375
+    code_1, c_1 = run(one, three)
+    ok("compare: one run against --repeat 3, the ladder fired in neither: the same repair, the drop regresses",
+       code_1 == 2 and not c_1["repair"] and [x["gate"] for x in c_1["regressions"]]
+       == ["deform.self_intersection_p95"] and not c_1["repair_tradeoffs"])
+    try:
+        run(bo, bn, "--near", "-1")
+        ok("refused: --near -1", False)
+    except Refused:
+        ok("refused: --near -1", True)
+    edge = json.loads(json.dumps(bo))                  # the repair gone, the volume on the edge of its limit
+    for g, v, lim in ((edge["real"][0]["stages"]["deform"]["gates"][0], 0.3472, 0.35),
+                      (edge["real"][0]["stages"]["deform"]["gates"][1], 0.03, 0.08)):
+        g.update(value=v, margin=gate_margin(v, lim, "<="))
+    code_e, c_e = run(bn, edge)
+    code_e0, c_e0 = run(bn, edge, "--tradeoff-floor", "0")
+    ok("compare: the repair gone and the volume's margin down to 0.008, self-intersection rising: under "
+       "--tradeoff-floor (0.05) a regression, not a trade-off, exit 2; --tradeoff-floor 0 lets it through as a trade",
+       code_e == 2 and [x["what"] for x in c_e["repair"]] == ["repair_gone"]
+       and [(x["gate"], x["new"]) for x in c_e["regressions"]] == [("deform.volume_loss_max", 0.008)]
+       and not c_e["repair_tradeoffs"] and c_e["tradeoff_floor"] == 0.05
+       and code_e0 == 0 and [x["gate"] for x in c_e0["repair_tradeoffs"]] == ["deform.volume_loss_max"])
+    try:
+        run(bn, edge, "--tradeoff-floor", "nan")
+        ok("refused: --tradeoff-floor nan", False)
+    except Refused:
+        ok("refused: --tradeoff-floor nan", True)
+    benches = {}
+    for kept in ("kept_repair", "kept_original"):
+        fake_real(tmp / f"rp_{kept}" / "gk", "Gatekeeper", 0.0775, 0.0725, repeat=3, near=kept)
+        cmd_bench(parser().parse_args(["bench", "--no-exam", "--real", str(tmp / f"rp_{kept}" / "gk"), "--out",
+                                       str(tmp / f"rp_{kept}.bench.json")]))
+        benches[kept] = read_json(tmp / f"rp_{kept}.bench.json")
+    kr, ko = (benches[k]["real"][0] for k in ("kept_repair", "kept_original"))
+    vol_of = lambda r: next(g["value"] for g in r["stages"]["deform"]["gates"] if g["name"] == "deform.volume_loss_max")
+    ok("bench: a near-limit ladder that kept the repair reads fired and used, deform the attempt's reading; one "
+       "that kept the original reads fired, not used, deform the first reading",
+       kr["repair"]["chosen"]["trigger"] == "near_limit" and kr["repair"]["chosen"]["fired"] is True
+       and kr["repair"]["chosen"]["used"] is True and kr["repair"]["runs"]["used"] == 3 and vol_of(kr) == 0.0775
+       and ko["repair"]["chosen"]["fired"] is True and ko["repair"]["chosen"]["used"] is False
+       and ko["repair"]["runs"]["used"] == 0 and ko["repair"]["runs"]["repaired"] == 3 and vol_of(ko) == 0.345
+       and ko["stages"]["deform"]["repair"] == "kept_original")
+    code_k, c_k = run(bn, benches["kept_repair"])
+    ok("compare: a failed-gate repair (old) against a kept near-limit repair on the same rung: the same repair, "
+       "no repair line", not c_k["repair"])
+    code_o, c_o = run(bn, benches["kept_original"])
+    ok("compare: a repair against a near-limit ladder that kept the original: repair_gone, and the volume's margin "
+       "at 0.014 regresses, exit 2", code_o == 2 and [x["what"] for x in c_o["repair"]] == ["repair_gone"]
+       and c_o["repair"][0]["new"]["result"] == "kept_original"
+       and ("deform", "deform.volume_loss_max") in [(x["stage"], x["gate"]) for x in c_o["regressions"]]
+       and not c_o["repair_tradeoffs"])
+    unmoved = json.loads(json.dumps(benches["kept_original"]))
+    for g, v, lim in ((unmoved["real"][0]["stages"]["deform"]["gates"][0], 0.20, 0.35),
+                      (unmoved["real"][0]["stages"]["deform"]["gates"][1], 0.05, 0.08)):
+        g.update(value=v, margin=gate_margin(v, lim, "<="))
+    code_m, c_m = run(bo, unmoved)
+    ok("compare: no ladder against a near-limit ladder that kept the original: repair_now is listed, but neither "
+       "bind is a repair, so a self-intersection drop bought by a volume rise is no trade-off: a regression, exit 2",
+       code_m == 2 and [x["what"] for x in c_m["repair"]] == ["repair_now"] and not c_m["repair_tradeoffs"]
+       and ("deform", "deform.self_intersection_p95") in [(x["stage"], x["gate"]) for x in c_m["regressions"]])
+    ok("kept_deform: the kept attempt's report, none for kept_original, else the last attempt's",
+       kept_deform({"result": "kept_repair", "kept": 1, "attempts": [{"attempt": 1, "deform": "a1"},
+                                                                     {"attempt": 2, "deform": "a2"}]}) == "a1"
+       and kept_deform({"result": "kept_original", "attempts": [{"attempt": 1, "deform": "a1"}]}) is None
+       and kept_deform({"result": "exhausted", "attempts": [{"attempt": 1, "deform": "a1"},
+                                                            {"attempt": 2, "deform": "a2"}]}) == "a2"
+       and kept_deform(None) is None)
 
 
 def selftest() -> int:
@@ -1327,7 +1702,7 @@ def selftest() -> int:
         except Refused:
             ok(f"usage error refused: {argv}", True)
     print(json.dumps({"tool": "rig_exam", "selftest": True, "checks": checks, "failed": failed, "ok": not failed}))
-    return 0 if not failed else 1
+    return 0 if not failed else 2
 
 
 def parser() -> Parser:
@@ -1374,6 +1749,12 @@ def parser() -> Parser:
     cp.add_argument("old", help="the earlier bench/1 file")
     cp.add_argument("new", help="the later bench/1 file")
     cp.add_argument("--margin-drop", type=float, default=0.02, help="a margin falling by more than this regresses")
+    cp.add_argument("--near", type=float, default=1.0,
+                    help="... unless it drops by at most this and the new margin stays at this or more (x the limit's "
+                         "size): then informational")
+    cp.add_argument("--tradeoff-floor", type=float, default=0.05,
+                    help="a deform margin drop is the repair's trade-off only when the new margin stays at this or "
+                         "more (default 0.05); under it, a regression")
     p.add_argument("--selftest", action="store_true")
     return p
 

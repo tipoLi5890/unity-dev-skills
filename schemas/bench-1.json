@@ -67,6 +67,77 @@
               "null"
             ],
             "description": "the least margin over the stages' gates; null when none carries one"
+          },
+          "repair": {
+            "type": "object",
+            "required": [
+              "chosen"
+            ],
+            "description": "what autorig.py's repair ladder did (0.46 and later; a bench without it reads to compare as repair status unknown): `chosen` the run OUT/autorig.all.json stands for, `runs` each `all --repeat` run (null without --repeat)",
+            "properties": {
+              "chosen": {
+                "$ref": "#/$defs/repair_run"
+              },
+              "runs": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "n",
+                      "repaired"
+                    ],
+                    "properties": {
+                      "n": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "chosen": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "read": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "runs whose own summary was found"
+                      },
+                      "repaired": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "runs where the ladder made an attempt"
+                      },
+                      "per_run": {
+                        "type": "array",
+                        "items": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/repair_run"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "run": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "used": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "runs whose bind is the repair"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -191,6 +262,92 @@
         },
         "volume": {
           "type": "object"
+        }
+      }
+    },
+    "repair_run": {
+      "type": "object",
+      "required": [
+        "result",
+        "fired"
+      ],
+      "properties": {
+        "result": {
+          "type": "string",
+          "description": "the ladder's result (passed, exhausted, error, not_applicable; after a near-limit ladder kept_repair or kept_original); none: deform ran and passed, no ladder; not_reached: deform did not run; unknown: the run's summary is gone"
+        },
+        "fired": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "an attempt was made; null when unknown"
+        },
+        "attempts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "hinges": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rungs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "hinges",
+              "amount"
+            ],
+            "properties": {
+              "hinges": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "amount": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cross_side": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "the bones the cross-side move gave weight from"
+              },
+              "passed": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "trigger": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "failed",
+            "near_limit",
+            null
+          ],
+          "description": "why the ladder ran: a failed deform gate, or a passing elbow or knee volume within autorig.py --repair-near of its limit"
+        },
+        "used": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "the bind taken on is a repair (passed or kept_repair); null when unknown"
         }
       }
     }

@@ -159,6 +159,21 @@ gates; no rung loosens a limit:
    from the midline (faded in from half of it) each one's weight there goes in full to its mirrored
    twin (`brt_weights` `transfer`, share `reach`, so its own side keeps it). A sole bound to the
    other foot is that case. Still failing after the move: rebind.
+   **Near the limit.** The ladder also runs when every deform gate passed but an elbow's or knee's
+   volume margin is under `--repair-near` (default 0.05, a loss past 0.35 × 0.95 = 0.3325): those
+   hinges at amount 1.0, then the rungs above. The bind kept is the one with the larger worst
+   margin over the deform gates, the original or an attempt that passed every gate (an attempt
+   that fails any gate never is); the stage still exits 0. The summary's `repair` block says
+   `trigger` `near_limit` (`failed` on a failed gate), `result` `kept_repair` (its files are taken
+   on, as after a failed gate) or `kept_original`, and both worst margins. Why 0.05: a wrist that
+   moved by millimetres from run to run moved one elbow's loss by about ±0.01 (margin ±0.03), and
+   `--min-margin 0.05` is the room asked of a repeated run; an elbow inside that band passes or
+   fails by chance, and at 120° a 34 % loss shows where 8 % does not. It takes 0 up to (not
+   including) 1; `0` turns it off:
+
+   ```bash
+   python3 scripts/autorig.py deform out/runner --repair-near 0
+   ```
 2. **A finer bind** (by hand). `pipeline` (or `bind`) again from the unrigged file with a higher
    `resolution`, one step at a time (`autorig.py arp OUT --resolution 8`, then `contract` and `deform`):
    each step costs much more memory and time, and the top of the range may not finish.
@@ -197,7 +212,7 @@ marker and the views, not a looser limit.
 ## The stages by hand
 
 What `autorig.py all` runs, one stage at a time (paths relative to the character's folder; the
-rig to chain is the passing repair's `repair/aN/Runner_arp.blend` when there was one). Relative paths
+rig to chain is the passing or kept repair's `repair/aN/Runner_arp.blend` when there was one). Relative paths
 are read from the working directory (`//` from the .blend).
 
 ```bash

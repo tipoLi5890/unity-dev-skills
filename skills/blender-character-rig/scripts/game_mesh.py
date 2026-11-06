@@ -10,7 +10,7 @@ the ship track rigs once, on this mesh.
 usage:
     python3 game_mesh.py SHOWCASE.glb|SHOWCASE.blend --out DIR --target-tris N [--tex-px 2048]
             [--name NAME] [--object NAME] [--body human|skirt|chibi] [--symmetry]
-            [--autoremesher PATH] [--timeout S] [--voxel 0.005] [--cage 0.02] [--ray 0.06]
+            [--autoremesher PATH] [--timeout S] [--voxel 0.005] [--tips 0.005] [--cage 0.02] [--ray 0.10]
             [--margin-px 4] [--ao-samples 32] [--seed 0] [--blender PATH]
     blender -b --factory-startup -P game_mesh.py -- SHOWCASE ... (the same, inside Blender)
     python3 game_mesh.py --selftest                                  (the gate maths, numpy only)
@@ -25,7 +25,10 @@ route      1 voxel remesh of a copy at --voxel x H (H the height; default 0.005)
              MIN_PIECE of its vertices dropped (specks); then the cavity filled (fill_cavity: an
              inward-facing inner shell joined to the skin at the hems survives the remesh as the inside
              of a thin hollow wall; openings up to about 2 x FILL_CLOSE voxels are closed) and remeshed
-             again: a solid (a part the grid leaves apart, such as legs under a hem, stays its own piece);
+             again: a solid. When that leaves pieces apart (legs that go up a hem without touching it),
+             the fill closes wider, FILL_CLOSE + 1 up to FILL_CLOSE_MAX, and keeps the first reach that
+             gives one piece and a solid (voxel.close, voxel.close_tries); if none does, the first fill
+             stays and the legs stay their own pieces (game.one_surface says so);
            2 retopology to --target-tris: with --autoremesher PATH (the binary or its macOS .app),
              AutoRemesher on an OBJ of that surface, --target-quads target/2, under --timeout seconds
              (default 600) with QT_QPA_PLATFORM=offscreen; a timeout, a crash, no output or a result
@@ -35,13 +38,19 @@ route      1 voxel remesh of a copy at --voxel x H (H the height; default 0.005)
              about 6 x the target triangles), then target_faces = target/2, --symmetry for a
              symmetric character, --seed; up to QF_ATTEMPTS runs, the face target rescaled toward
              QF_AIM x target after each, the input decimated by 0.6 more after a cancel;
+             then the thin features it rounded off pulled back (--tips, default 0.005 = EXTENT_MAX / 2:
+             a loss under it on each side cannot fail game.extent alone; 0 off): restore_tips moves the
+             game vertex nearest the farthest point of each spot the retopology lost onto it, its
+             neighbours following, no vertex added; recorded under tips;
            3 Smart UV Project (UV_ANGLE), then each of its islands unwrapped angle-based from seams
              at the island borders (a projected island can fold onto itself); faces that still
              overlap (a band-shaped island flattens onto itself) projected again, up to 3 times;
              island scales averaged, packed; island margin --margin-px / --tex-px;
            4 Cycles bake from the showcase at --tex-px: base colour (Diffuse colour pass, sRGB),
              tangent normal and occlusion (--ao-samples), cage_extrusion --cage x H, max_ray_distance
-             --ray x H. The base colour is baked with the showcase's metallic held at 0 (Cycles' Diffuse
+             --ray x H (Blender takes the first front-facing hit along the ray and drops it past the
+             distance, so a longer ray changes only texels that would otherwise miss: those under a
+             closed hem). The base colour is baked with the showcase's metallic held at 0 (Cycles' Diffuse
              colour is base colour x (1 - metallic)); it is baked once more with no margin to count
              the missed texels. Roughness and metallic are not carried: the game material reads 0.7, 0.
 gates      game.tris            the triangle count in [TRIS_FLOOR x target, target]
@@ -107,6 +116,7 @@ VIEW_PX = 512
 AZIMUTHS = (0, 45, 90, 135, 180, 225, 270, 315)
 SHEET_AZ = (0, 45, 90, 180)
 FILL_CLOSE = 1            # cavity fill: openings up to about 2 x this many voxels are closed
+FILL_CLOSE_MAX = 4        # when the first fill leaves pieces apart (legs up a hem), close wider, up to this
 SOLID_MIN = 0.9           # game.solid: enclosed volume / the volume of a coarse remesh of the same mesh
 SOLID_VOXEL = 0.02        # that coarse remesh's voxel, fraction of the height: it fills any thin hollow wall
 MIN_PIECE = 0.01          # voxel pieces under this share of the vertices are specks, dropped
@@ -114,6 +124,12 @@ UV_ANGLE = 45             # Smart UV Project's angle limit, degrees
 PRE_DECIMATE = 4          # QuadriFlow input: this many times the target triangles (it cancels past ~6)
 QF_ATTEMPTS = 3
 QF_AIM = 0.95             # aim the triangle count at this share of the target
+TIP_FLOOR = 0.003         # thin features: a voxel-surface vertex this far (x H) outside the retopology is lost
+TIP_ROUNDS = 8            # pull rounds (a pull can uncover the next lost spot of the same feature)
+TIP_REACH = 2.0           # vertices within this many pull lengths follow the pull, projected back onto the surface
+TIP_TURN = 0.2            # a pull that turns a face's normal past acos(this), or lifts a face off the surface,
+                          # is halved, twice, then refused
+TIP_MAX_EDGE = 3.0        # a pull longer than this many local edge lengths is refused: a spike, not a tip
 BODIES = ("human", "skirt", "chibi")
 
 
@@ -143,8 +159,11 @@ def parser():
     p.add_argument("--autoremesher", help="the AutoRemesher binary or .app: retopology by it, QuadriFlow on failure")
     p.add_argument("--timeout", type=float, default=600.0, help="seconds AutoRemesher may run (default 600)")
     p.add_argument("--voxel", type=float, default=0.005, help="voxel size, fraction of the height")
+    p.add_argument("--tips", type=float, default=EXTENT_MAX / 2,
+                   help="pull back a thin feature the retopology lost by more than this fraction of the height "
+                        f"(a fingertip, a hair tip); 0 turns it off (default {EXTENT_MAX / 2:g})")
     p.add_argument("--cage", type=float, default=0.02, help="bake cage_extrusion, fraction of the height")
-    p.add_argument("--ray", type=float, default=0.06, help="bake max_ray_distance, fraction of the height")
+    p.add_argument("--ray", type=float, default=0.10, help="bake max_ray_distance, fraction of the height")
     p.add_argument("--margin-px", type=int, default=4, help="UV island and bake margin in texels")
     p.add_argument("--ao-samples", type=int, default=32)
     p.add_argument("--seed", type=int, default=0)
@@ -164,6 +183,8 @@ def check_args(a):
     for k in ("voxel", "cage", "ray"):
         if not 0 < getattr(a, k) < 0.5:
             return f"--{k} must be a fraction of the height in (0, 0.5)"
+    if not 0 <= a.tips < 0.5:
+        return "--tips must be 0 (off) or a fraction of the height in (0, 0.5)"
     if a.timeout <= 0:
         return "--timeout must be positive"
     if a.margin_px < 0 or a.ao_samples < 1:
@@ -382,6 +403,38 @@ def bake_miss(UV, F, alpha, px):
     return (float(missed.sum()) / n if n else None), n, missed
 
 
+def lost_tips(d, E, floor, least):
+    """The thin features a retopology lost. d (n,) is how far each vertex of the reference surface sits
+    outside the retopology (0 inside), E (m, 2) the surface's edges. Vertices with d > floor are grouped
+    into connected spots; each spot whose farthest vertex lies more than `least` out gives a tip:
+    (distance, vertex index, spot size), farthest first."""
+    np = _np()
+    d, E = np.asarray(d, float), np.asarray(E, np.int64).reshape(-1, 2)
+    lost = d > floor
+    parent = np.arange(len(d))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for a, b in E[lost[E[:, 0]] & lost[E[:, 1]]]:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+    idx = np.nonzero(lost)[0]
+    if not len(idx):
+        return []
+    roots = np.array([find(i) for i in idx])
+    tips = []
+    for r in np.unique(roots):
+        members = idx[roots == r]
+        k = members[np.argmax(d[members])]
+        if d[k] > least:
+            tips.append((float(d[k]), int(k), int(len(members))))
+    return sorted(tips, key=lambda t: (-t[0], t[1]))
+
+
 def iou(a, b):
     np = _np()
     u = np.logical_or(a, b).sum()
@@ -596,6 +649,42 @@ def fill_cavity(obj, vs, k=FILL_CLOSE):
     return int(fill.sum())
 
 
+def close_surface(surf, vs, H):
+    """Fill the cavity of a voxel surface (fill_cavity, reach FILL_CLOSE) and remesh it. When that leaves
+    pieces apart (legs that go up a hem without touching it), close wider, reach FILL_CLOSE + 1 up to
+    FILL_CLOSE_MAX, and keep the first reach that gives one piece and a solid (solid_ratio >= SOLID_MIN): the
+    hem's opening closes round the legs and the space inside fills. If no reach does, the first fill stays.
+    Returns (cells filled, reach kept, vertex counts of the pieces kept, specks dropped, their vertices,
+    the wider tries)."""
+    import bpy
+    first = surf.data.copy()
+    tries, firstfill = [], None
+    for k in range(FILL_CLOSE, FILL_CLOSE_MAX + 1):
+        if k > FILL_CLOSE:
+            surf.data = first.copy()
+        filled = fill_cavity(surf, vs, k)
+        d2, v2 = 0, 0
+        cnt, _ = pieces(surf.data)
+        kept = sorted(cnt.tolist(), reverse=True)
+        if filled:
+            only(surf, active=surf)
+            bpy.ops.object.voxel_remesh()
+            d2, v2, kept = drop_specks(surf)
+        if k == FILL_CLOSE:
+            firstfill = (filled, k, kept, d2, v2, surf.data.copy())
+            if len(kept) == 1:
+                break
+            tries.append({"close": k, "cells_filled": filled, "pieces_kept": kept, "solid": r4(solid_ratio(surf, H))})
+            continue
+        sr = solid_ratio(surf, H)
+        tries.append({"close": k, "cells_filled": filled, "pieces_kept": kept, "solid": r4(sr)})
+        if len(kept) == 1 and sr is not None and sr >= SOLID_MIN:
+            return filled, k, kept, d2, v2, tries          # the specks of the fill kept, not the first one
+    else:
+        surf.data = firstfill[5]
+    return firstfill[0], firstfill[1], firstfill[2], firstfill[3], firstfill[4], tries
+
+
 def volume(me):
     import bmesh
     bm = bmesh.new()
@@ -745,6 +834,131 @@ def autoremesher(exe, obj, target, timeout, work):
         bpy.data.objects.remove(out, do_unlink=True)
         return None, rec
     return out, rec
+
+
+def outside_distance(Vr, game):
+    """How far each point of Vr sits outside the game mesh's surface (0 where it is inside or on it)."""
+    import bmesh
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    np = _np()
+    bm = bmesh.new()
+    bm.from_mesh(game.data)
+    bm.normal_update()
+    bvh = BVHTree.FromBMesh(bm)
+    d = np.zeros(len(Vr))
+    for i, p in enumerate(Vr):
+        p = Vector(p)
+        loc, nor, _, dist = bvh.find_nearest(p)
+        if loc is not None and (p - loc).dot(nor) > 0:
+            d[i] = dist
+    bm.free()
+    return d
+
+
+def restore_tips(game, surf, H, least):
+    """Pull back the thin features the retopology rounded off. QuadriFlow spreads its vertices evenly, so a
+    fingertip or a hair tip thinner than its edge length comes out short (the voxel surface still has it).
+    Each spot of the voxel surface more than TIP_FLOOR x H outside the game mesh whose farthest vertex lies
+    more than least x H out is a tip: the game vertex nearest that farthest vertex moves onto it, and the
+    game vertices within TIP_REACH x the pull follow with a smooth falloff, then are projected back onto the
+    voxel surface. A pull that turns a face past TIP_TURN, or leaves a face's centre further off the voxel
+    surface than it was and than least x H (a face across the air between two strands, where no ray would
+    find the showcase), is halved, twice, then refused; one longer than
+    TIP_MAX_EDGE x the vertex's mean edge length is refused (a spike, not a tip: the budget cannot carry
+    it). No vertex or face is added. Up to TIP_ROUNDS rounds; a vertex moves once per round."""
+    import bmesh
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    from mathutils.kdtree import KDTree
+    np = _np()
+    t0 = time.time()
+    Vr = np.empty(len(surf.data.vertices) * 3)
+    surf.data.vertices.foreach_get("co", Vr)
+    Vr = Vr.reshape(-1, 3)
+    E = np.empty(len(surf.data.edges) * 2, np.int64)
+    surf.data.edges.foreach_get("vertices", E)
+    bs = bmesh.new()
+    bs.from_mesh(surf.data)
+    bvh_s = BVHTree.FromBMesh(bs)
+
+    def off_surface(f):
+        loc = bvh_s.find_nearest(f.calc_center_median())[0]
+        return 0.0 if loc is None else (loc - f.calc_center_median()).length
+
+    rec = {"limit": r4(least), "floor": TIP_FLOOR, "rounds": 0, "pulled": 0, "halved": 0, "refused_turn": 0,
+           "refused_spike": 0, "pull_edges_max": None}
+    d = outside_distance(Vr, game)
+    rec["outside_before"] = {f"{q:g}": int((d > q * H).sum()) for q in (TIP_FLOOR, least, 2 * least)}
+    rec["farthest_before"] = r4(d.max() / H)
+    ratios, refused = [], {}
+    for _ in range(TIP_ROUNDS):
+        tips = [t for t in lost_tips(d, E, TIP_FLOOR * H, least * H) if t[1] not in refused]
+        if not tips:
+            break
+        rec["rounds"] += 1
+        bm = bmesh.new()
+        bm.from_mesh(game.data)
+        bm.verts.ensure_lookup_table()
+        bm.normal_update()
+        kd = KDTree(len(bm.verts))
+        for v in bm.verts:
+            kd.insert(v.co, v.index)
+        kd.balance()
+        moved = set()
+        for _dist, k, _size in tips:
+            t = Vector(Vr[k])
+            _, vi, _ = kd.find(t)
+            if vi in moved:
+                continue                        # its neighbourhood moved this round: measured again next round
+            v = bm.verts[vi]
+            pull = t - v.co
+            edge = sum(e.calc_length() for e in v.link_edges) / max(1, len(v.link_edges))
+            if edge <= 0 or pull.length > TIP_MAX_EDGE * edge:
+                refused[k] = "spike"
+                rec["refused_spike"] += 1
+                continue
+            reach = TIP_REACH * pull.length
+            near = kd.find_range(v.co, reach)
+            old = {j: bm.verts[j].co.copy() for _, j, _ in near}
+            faces = {f for j in old for f in bm.verts[j].link_faces}
+            n0 = {f: f.normal.copy() for f in faces}
+            off0 = max(off_surface(f) for f in faces)
+            for scale in (1.0, 0.5, 0.25):
+                for _, j, dist in near:
+                    w = 1.0 if j == vi else (1 - dist / reach) ** 2
+                    p = old[j] + pull * (scale * w)
+                    if j != vi:
+                        loc = bvh_s.find_nearest(p)[0]
+                        if loc is not None:
+                            p = loc
+                    bm.verts[j].co = p
+                for f in faces:
+                    f.normal_update()
+                if all(f.normal.dot(n0[f]) > TIP_TURN for f in faces) and \
+                        max(off_surface(f) for f in faces) <= max(off0, least * H):
+                    rec["pulled"] += 1
+                    rec["halved"] += scale < 1
+                    ratios.append(scale * pull.length / edge)
+                    moved.update(old)
+                    break
+                for j, c in old.items():
+                    bm.verts[j].co = c
+                for f in faces:
+                    f.normal_update()
+            else:
+                refused[k] = "turn"
+                rec["refused_turn"] += 1
+        bm.to_mesh(game.data)
+        bm.free()
+        game.data.update()
+        d = outside_distance(Vr, game)
+    bs.free()
+    rec["outside_after"] = {f"{q:g}": int((d > q * H).sum()) for q in (TIP_FLOOR, least, 2 * least)}
+    rec["farthest_after"] = r4(d.max() / H)
+    rec["pull_edges_max"] = r4(max(ratios)) if ratios else None
+    rec["seconds"] = round(time.time() - t0, 1)
+    return rec
 
 
 def mesh_arrays(obj):
@@ -1002,16 +1216,14 @@ def run(a, stop_after_retopo=False):
     only(surf, active=surf)
     bpy.ops.object.voxel_remesh()
     dropped, dropped_v, kept = drop_specks(surf)
-    filled = fill_cavity(surf, a.voxel * H)
-    if filled:
-        only(surf, active=surf)
-        bpy.ops.object.voxel_remesh()
-        d2, v2, kept = drop_specks(surf)
-        dropped, dropped_v = dropped + d2, dropped_v + v2
+    filled, k, kept, d2, v2, closes = close_surface(surf, a.voxel * H, H)
+    dropped, dropped_v = dropped + d2, dropped_v + v2
     info["voxel"] = {"cells_filled": filled, "size": r4(a.voxel * H), "tris": tri_count(surf.data),
-                     "pieces_dropped": dropped,
+                     "close": k, "pieces_dropped": dropped,
                      "vertices_dropped": dropped_v, "pieces_kept": kept,
                      "non_manifold_edges": non_manifold_edges(surf.data)}
+    if closes:
+        info["voxel"]["close_tries"] = closes
     secs["voxel"] = round(time.time() - t0, 1)
 
     # 2 retopology
@@ -1037,12 +1249,16 @@ def run(a, stop_after_retopo=False):
         game.name = game.data.name = f"{name}_game"
     secs["retopo"] = round(time.time() - t0, 1)
     info["retopo"] = retopo
-    bpy.data.objects.remove(surf, do_unlink=True)
     gates = []
     if game is None:
+        bpy.data.objects.remove(surf, do_unlink=True)
         gates.append(gate("game.tris", None, [int(TRIS_FLOOR * T), T], "range",
                           why="the retopology gave no mesh inside the budget (retopo.attempts)"))
         return 2, report_doc(gates, **info, seconds=secs)
+    if a.tips > 0 and not stop_after_retopo:
+        info["tips"] = restore_tips(game, surf, H, a.tips)
+        secs["tips"] = info["tips"]["seconds"]
+    bpy.data.objects.remove(surf, do_unlink=True)
     if stop_after_retopo:
         return 0, report_doc([gate("game.tris", tri_count(game.data), [int(TRIS_FLOOR * T), T], "range")],
                              **info, seconds=secs)
@@ -1324,6 +1540,14 @@ def selftest():
     m, inside, missed = bake_miss(uv, F, alpha, 256)
     ok("bake_miss: a 20 x 20 hole reads its share", abs(m - 400 / inside) < 1e-9 and missed.sum() == 400, r4(m))
 
+    # lost_tips: a path 0-1-2-3 and a pair 5-6; vertex 4 alone
+    d = np.array([0.02, 0.05, 0.03, 0.001, 0.009, 0.004, 0.008])
+    E = np.array([[0, 1], [1, 2], [2, 3], [3, 4], [5, 6]])
+    tips = lost_tips(d, E, 0.003, 0.006)
+    ok("lost_tips: connected spots, each by its farthest vertex, farthest first, shallow spots left",
+       tips == [(0.05, 1, 3), (0.009, 4, 1), (0.008, 6, 2)], tips)
+    ok("lost_tips: nothing past the limit reads no tip", lost_tips(d, E, 0.003, 0.06) == [] and
+       lost_tips(np.zeros(7), E, 0.003, 0.006) == [])
     ok("gate: a range reads its margin", gate("game.tris", 7600, [4000, 8000], "range")["margin"] == 0.2)
     gs = [gate("game.tris", 7600, [4000, 8000], "range"), gate("game.uv_overlap", 0.0, UV_OVERLAP_MAX, "<="),
           gate("game.silhouette_iou_min", 0.97, IOU_MIN, ">=")]
@@ -1351,9 +1575,12 @@ def selftest():
     return 0 if not failed else 2
 
 
-def _figure(path, inner_shell=True):
+def _figure(path, inner_shell=True, spike=None, skirt=None):
     """A synthetic showcase: a stick figure in an A-pose (torso, head, legs, arms) with an image texture,
-    and an inward-facing inner shell 1.5 mm inside it, as an image-to-3D generator writes one."""
+    and an inward-facing inner shell 1.5 mm inside it, as an image-to-3D generator writes one. spike
+    (radius, length): a thin rod on from the right hand along the arm, a finger the budget rounds off.
+    skirt (hem radius): a skirt flaring from the waist, open at the hem; the legs stop short of the torso
+    inside it and never touch it."""
     import bpy
     import bmesh
     np = _np()
@@ -1371,8 +1598,21 @@ def _figure(path, inner_shell=True):
 
     cyl(0.16, (0, 0, 0.78), (0, 0, 1.32))                         # torso
     for s in (-1, 1):
-        cyl(0.07, (0.1 * s, 0, 0.0), (0.1 * s, 0, 0.84))          # legs
+        cyl(0.07, (0.1 * s, 0, 0.0), (0.1 * s, 0, 0.7 if skirt else 0.84))   # legs
         cyl(0.05, (0.2 * s, 0, 1.26), (0.2 * s + 0.36 * s, 0, 0.84))  # arms, about 40 deg out
+    if spike:
+        from mathutils import Vector
+        a, b = Vector((0.56, 0, 0.84)), Vector((0.2, 0, 1.26))
+        d = (a - b).normalized()
+        cyl(spike[0], a - d * 0.03, a + d * spike[1])
+    if skirt:                                                     # flares from the waist, open at the hem
+        bpy.ops.mesh.primitive_cone_add(vertices=32, radius1=skirt, radius2=0.15, depth=0.3, location=(0, 0, 0.72),
+                                        end_fill_type='NOTHING')
+        o = bpy.context.object
+        o.modifiers.new("wall", "SOLIDIFY").thickness = 0.02
+        bpy.context.view_layer.objects.active = o
+        bpy.ops.object.modifier_apply(modifier="wall")
+        parts.append(o)
     bpy.ops.mesh.primitive_uv_sphere_add(radius=0.14, location=(0, 0, 1.46), segments=24, ring_count=12)
     parts.append(bpy.context.object)
     only(*parts, active=parts[0])
@@ -1424,7 +1664,8 @@ def _stub(path, body):
 
 
 def selftest_blender():
-    """The whole route on a synthetic figure, a planted bake fault, and AutoRemesher's three failures."""
+    """The whole route on a synthetic figure, a finger the budget rounds off and the pull back, legs apart
+    inside a skirt and the wider close, a planted bake fault, and AutoRemesher's failures."""
     failed = []
 
     def ok(name, cond, value=None):
@@ -1479,6 +1720,62 @@ def selftest_blender():
         filled = solid_ratio(shell, 1.0)
         ok("game.solid: a 1 cm hollow ball reads its wall's share; fill_cavity makes it solid",
            hollow is not None and hollow < 0.2 and cells > 0 and filled > SOLID_MIN, (r4(hollow), r4(filled)))
+
+        def surface(path, voxel=0.006):
+            show = load_showcase(path, None)
+            V, _, _ = mesh_arrays(show)
+            H = float(V[:, 2].max() - V[:, 2].min())
+            surf = duplicate(show, "surf")
+            surf.data.materials.clear()
+            surf.data.remesh_voxel_size = voxel * H
+            only(surf, active=surf)
+            bpy.ops.object.voxel_remesh()
+            drop_specks(surf)
+            return show, surf, H, V.max(0) - V.min(0)
+
+        def extent(obj, ext_show, H):
+            V, _, _ = mesh_arrays(obj)
+            return float(abs((V.max(0) - V.min(0)) - ext_show).max() / H)
+
+        finger = os.path.join(tmp, "finger.glb")
+        _figure(finger, spike=(0.02, 0.1))
+        show, surf, H, ext_show = surface(finger)
+        close_surface(surf, 0.006 * H, H)
+        game = duplicate(surf, "game")
+        done, _ = quadriflow(game, 3000, False, 0)
+        before, nv, nf = extent(game, ext_show, H), len(game.data.vertices), len(game.data.polygons)
+        rec = restore_tips(game, surf, H, 0.005)
+        after = extent(game, ext_show, H)
+        ok("tips: a finger 2 voxels thick, rounded off by QuadriFlow at 3000 (extent over 0.01), is pulled back "
+           "(extent under 0.01), no vertex or face added", done and before > EXTENT_MAX and after <= EXTENT_MAX
+           and rec["pulled"] > 0 and rec["outside_after"]["0.005"] < rec["outside_before"]["0.005"]
+           and (len(game.data.vertices), len(game.data.polygons)) == (nv, nf),
+           (r4(before), r4(after), rec["pulled"], rec["outside_before"], rec["outside_after"]))
+
+        skirt = os.path.join(tmp, "skirt.glb")
+        _figure(skirt, skirt=0.3)
+        show, surf, H, _ = surface(skirt)
+        filled, k, kept, _, _, tries = close_surface(surf, 0.006 * H, H)
+        sr = solid_ratio(surf, H)
+        ok("close: legs that stop inside a skirt are joined by a wider close, one solid piece, the tries recorded",
+           k > FILL_CLOSE and len(kept) == 1 and sr >= SOLID_MIN and len(tries[0]["pieces_kept"]) == 3,
+           (k, kept[:3], r4(sr), [(t["close"], len(t["pieces_kept"])) for t in tries]))
+
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        for x in (-0.6, 0.6):
+            bpy.ops.mesh.primitive_uv_sphere_add(radius=0.3, location=(x, 0, 0), segments=32, ring_count=16)
+        balls = bpy.context.scene.objects[:]
+        for o in balls:
+            bake_world(o)                   # the route works in world coordinates (load_showcase)
+        only(*balls, active=balls[0])
+        bpy.ops.object.join()
+        surf = balls[0]
+        surf.data.remesh_voxel_size = 0.01
+        bpy.ops.object.voxel_remesh()
+        filled, k, kept, _, _, tries = close_surface(surf, 0.01, 1.0)
+        ok("close: two balls 0.6 apart are never joined: the first fill stays, every reach tried",
+           k == FILL_CLOSE and len(kept) == 2 and [t["close"] for t in tries] == list(range(FILL_CLOSE, FILL_CLOSE_MAX + 1))
+           and len(pieces(surf.data)[0]) == 2, (k, kept, [(t["close"], len(t["pieces_kept"])) for t in tries]))
 
         code, doc = run(args("missed", "--cage", "0.0001", "--ray", "0.0002"))
         g = {x["name"]: x for x in doc["gates"]}

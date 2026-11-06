@@ -101,8 +101,9 @@ folder, set in memory only; an empty folder tries the fallback without touching 
 | `--fingers` | 5 | how many fingers the AI fits: 5, or 4 (thumb, middle, ring, little: the add-on's four-finger hand has no index); 5 that fails is tried again with 4. The AI fits whatever count it is asked for and does not tell a four-fingered hand from five |
 | `--facial`, `--no-facial` | on | the face step |
 | `--eyes` | proxy | `proxy` or `none`, as above; `auto` lets the add-on find separate eyeball objects (a mesh that has them; it fails on a single-mesh character); `objects` takes `--eye-glb` and `--eye-frame-glb` (autorig passes them with `--eyes`) |
-| `--body-samples`, `--finger-samples` | the add-on's | front pictures per body guess, hand pictures per finger guess |
-| `--body-runs` | 3 | body guesses: per marker the guess nearest the markers' median is put back. The hand marker is the wrist Go! builds on when the AI's wrist is taken, so its run-to-run drift reaches the rig |
+| `--body-samples` | 30 | front pictures per body guess (1–30; 0 leaves the add-on's setting as the file holds it, 10 in a new file). The add-on averages them, the camera turned a random whole degree in −15..15 for each after the first: at 10 a guess scatters about 2 mm rms per marker (about 7 mm at the knee, up to 15 mm), at 30 nearly every angle is used and it scatters under a millimetre (the wrist about 0.3 mm); a guess takes somewhat longer |
+| `--finger-samples` | the add-on's | hand pictures per finger guess |
+| `--body-runs` | 3 | body guesses: per marker the guess nearest the markers' median is put back, one of the AI's own (a marker and its mirror move together, so they keep the same guess). The hand marker is the wrist Go! builds on when the AI's wrist is taken, so its run-to-run drift reaches the rig, and the elbow placed from the wrist with it |
 | `--finger-runs` | 5 | finger guesses per count: a finger joint moves by up to about a centimetre from run to run, so per finger the run nearest that finger's per-marker median is put back on the markers Go! reads (each finger one guess). 1 is the add-on's single guess |
 | `--timeout` | 600 s | the whole chain; on a timeout the result is written and Blender quits. The inference programs are CPU-bound, so a busy machine is slow |
 
@@ -113,7 +114,7 @@ World space, metres, +Z up, facing −Y, `.L` on +X: the frame of `autorig-marke
 | Key | Holds |
 |---|---|
 | `body_markers` | `root`, `neck`, `chin`, `head_tip` and the sided `shoulder`, `elbow`, `hand`, `hand_tip`, `thigh`, `knee`, `foot` `.L/.R` |
-| `body_runs` | `runs`, `spread_m` (the worst marker's distance from the median); `failed_after` and `error` when a later guess failed and the good ones were kept |
+| `body_runs` | `runs`, `spread_m` (the worst marker's distance from the median), `marker_spread_m` (each marker's); `failed_after` and `error` when a later guess failed and the good ones were kept |
 | `fingers` | `requested`, `count`, `fell_back` (5 failed, 4 used), `names`, `markers` per joint (`thumb1.L` … `pinky4.R`, 4 the tip), and `runs`: how many guesses, the run `kept` per finger, and `spread_m` (the worst marker's distance from the median) |
 | `facial` | whether it ran, the features the add-on kept, keypoints found, the eye proxies |
 | `refs` | per reference bone: `head`, `tail`, `roll`, `group` (body, finger, facial, ear), `parent` |

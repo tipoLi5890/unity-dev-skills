@@ -122,7 +122,7 @@ type a person picks at G0, like the skirt: `autorig.py all --body chibi` passes 
 | crotch | as above, searched from 0.10 H up (short legs part low) |
 | hip | the crotch + the leg's half-width just under it, as above, without the 0.02 H floor or the 1.1 x shin cap |
 | ankle | the highest cut under the shin's narrowest whose depth reaches 1.3 x the shin's: where a big shoe starts |
-| knee | as above (cue, else 52 % of ankle → hip) |
+| knee | as above (cue, else 52 % of ankle → hip); a hem 35–70 % of the way up where the section steps out going up is shorts over the knee: above it the leg is not seen, so a bulge or a narrowing there (a pocket, a fold) is the cloth's and is not used; a cue on the bare leg under the hem still is. A knee pad's lower edge reads as such a hem too: its bulge is refused and the knee falls back to 52 % (check the pictures) |
 | shoulder | where the arm's axis crosses the torso's edge at the armpit (a thick arm joins there, not a quarter of its radius outside); the arm is followed down to 0.2 H |
 | wrist, elbow | a narrowing within 0.52–0.80 of shoulder → hand_tip, else 0.66; the elbow at 0.36 / 0.66 of shoulder → wrist (a mitten is a third of a short arm) |
 | neck | the narrowest central cut from the shoulder up to 0.15 H above it (under the head, never inside it) |

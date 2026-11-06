@@ -320,3 +320,12 @@ with them. When `stable` shows a deform margin wandering on a character with sep
 say `fingers.mode` `ai`, run `--repeat 3` once more with `--finger-votes 5` and keep the steadier. It is not the
 default: on the rig exam it reads one body's fingers right and another's wrong.
 
+**The AI's body guess.** When the AI's wrist is taken, it and the elbow placed from it move with the AI's body
+guess. Each guess averages `--body-samples` front pictures (default 30, the add-on's most): at 30 the wrist moves
+by tenths of a millimetre from run to run, at the add-on's own 10 by millimetres, enough to carry an elbow's volume
+across its limit and to fire the repair ladder in one run and not the next (`reference/arp-ai.md`). A steady
+wrist makes a reading on its limit steady too, so the ladder also runs on a pass: an elbow or knee whose volume
+margin is under `--repair-near` (default 0.05) gets the same rungs, and the bind with the larger worst margin
+over the deform gates is kept (`reference/arp-pipeline.md`). Without it an elbow that sits just under its limit
+stays unrepaired in every run, and `stable` shows it as a small margin.
+

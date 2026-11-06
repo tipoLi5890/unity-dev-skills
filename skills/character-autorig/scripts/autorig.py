@@ -9,7 +9,8 @@ usage (in this order; `all` runs them one after another):
                                                                                   -> rig/NAME.markers.json
     autorig.py arp      OUT [--name NAME]                           -> rig/NAME_arp.blend, export/NAME.fbx
     autorig.py contract OUT [--name NAME] [--min-fingers 30]        -> rig/NAME.contract.json [rig/NAME.bind.json]
-    autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] -> rig/NAME.deform.json [repair/aN/]
+    autorig.py deform   OUT [--name NAME] [--no-render] [--no-repair] [--repair-near 0.05]
+                                                                    -> rig/NAME.deform.json [repair/aN/]
     autorig.py secondary OUT [--name NAME] [--no-render] [--secondary-markers FILE] [--hair-chains] -> secondary/
     autorig.py all      OUT GLB [any of the options above] [--no-secondary] [--repeat N] [--min-margin X]
     autorig.py --selftest
@@ -46,7 +47,7 @@ contract's retarget_map (--render rig/poses/ unless --no-render; mitten instead 
 fixed; --body chibi when the markers say chibi; with
 jaw_open when deform_gate knows that pose, the markers carry the face and the contract maps a Jaw).
 secondary (last, after the repair; --no-secondary skips it): secondary_chains.py on the rig to take on (the
-passing repair's repair/aN/NAME_arp.blend, else rig/NAME_arp.blend; run alone, the newest autorig.deform.json or
+passing or kept repair's repair/aN/NAME_arp.blend, else rig/NAME_arp.blend; run alone, the newest autorig.deform.json or
 autorig.all.json says which) with the contract report as --map, writing secondary/NAME_sec.blend, NAME.fbx (the
 brt_arp export), NAME.secondary.json (secondary/1) and NAME.secondary.gate.json; then contract_map.py and
 deform_gate.py again on that export (secondary/NAME.contract.json, NAME.deform.json), which deform_gate reads as
@@ -85,6 +86,12 @@ cross-side move to the attempt: the bones the report's skin.cross_side names giv
 on the other side to their mirrored twins (brt_weights, share reach; --cross-side, --cross-band); still failing
 after it stops the ladder (rebind). The limits are never changed. A finer bind and a moved marker are not
 automated: the failure message names them (reference/arp-pipeline.md).
+Near the limit (--repair-near M, default 0.05; 0 turns it off): when deform PASSED and an elbow's or knee's
+volume margin is under M (a loss past limit x (1 - M)), the ladder runs too (trigger near_limit; those hinges at
+amount 1.0, then the same rungs). The bind with the larger worst margin over the deform gates is kept: an attempt
+that passed every gate (kept_repair, its files taken on as after a failed gate) or the original (kept_original);
+one that fails any gate never is, and the stage's exit stays 0 (an attempt's error too). A failed gate's ladder
+writes trigger failed. 0.05: the AI's noisy wrist moved one elbow's volume by about +-0.01 (margin +-0.03).
 
 Repeat (all --repeat N, N 2 or more; default 1, one run as above): Auto-Rig Pro's AI and its bind differ from run to
 run, so one pass says little about a reading near its limit. prep and check run once in OUT; smart, markers, arp,
@@ -150,6 +157,8 @@ AMOUNTS = (1.0, 0.8, 0.6)
 CROSS = "deform.cross_side_weight"
 CROSS_BAND = 0.5          # deform_gate.CROSS_BAND: x the hip half-width either side of the Hips is left alone
 MAX_ATTEMPTS = 3
+KEPT_REPAIR = ("passed", "kept_repair")   # a repair block whose bind is the one taken on
+REPAIR_NEAR = 0.05        # --repair-near: the volume margin under which a passing elbow or knee is repaired too
 SKIRT_LEG_MAX = 0.85      # skirt_bind: the thighs' share at the hem (the rest stays on Hips)
 SKIRT_FEATHER = 0.03      # skirt_bind: x H under the band's top over which the new weights blend into the bind
 HAND_REACH = 1.0          # arp: x wrist -> hand_tip, how far over the skin a hand's bones may hold weight
@@ -445,7 +454,7 @@ def has_jaw(c: Ctx) -> bool:
 
 
 def take_on(c: Ctx) -> tuple:
-    """(blend, deform report) of the rig to take on: a passing repair's copy, else rig/NAME_arp.blend. When the
+    """(blend, deform report) of the rig to take on: a passing (or kept) repair's copy, else rig/NAME_arp.blend. When the
     deform stage ran in this run its repair decides; else the newest autorig.deform.json / autorig.all.json."""
     blocks = [c.repair] if c.deform_ran else [
         (read_json(p) or {}).get("repair") for p in sorted((c.out / f"autorig.{s}.json" for s in ("deform", "all")),
@@ -453,7 +462,7 @@ def take_on(c: Ctx) -> tuple:
                                                           reverse=True) if p.exists()][:1]
     for r in blocks:
         files = (r or {}).get("files") or {}
-        if (r or {}).get("result") == "passed" and files.get("blend"):
+        if (r or {}).get("result") in KEPT_REPAIR and files.get("blend"):
             return Path(files["blend"]), Path(files.get("deform") or c.f["deform"])
     return c.f["arp_blend"], c.f["deform"]
 
@@ -594,20 +603,26 @@ def repair_steps(c: Ctx, n: int, rung: dict, render: bool) -> tuple[list, dict]:
 
 
 # --- the repair ladder: pure decisions on deform reports -----------------------------------------------------------
-def classify(rep: dict) -> dict:
+def classify(rep: dict, near: float = 0.0) -> dict:
     """What a deform report failed: the failing gates, every gated joint over the volume limit, the hinges among
-    them, and whether the weight transfer is the documented fix (volume loss alone, at elbows or knees alone)."""
+    them, and whether the weight transfer is the documented fix (volume loss alone, at elbows or knees alone).
+    near > 0 (a report that passed): `over` holds the gated joints within the band, margin under `near`, i.e. a
+    loss past limit x (1 - near)."""
     gates = rep.get("gates") or []
     failed = [g.get("name") for g in gates if gate_failed(g)]
     limit = next((g.get("limit") for g in gates if g.get("name") == "deform.volume_loss_max"), 0.35)
+    if not isinstance(limit, (int, float)) or isinstance(limit, bool):
+        limit = 0.35
+    edge = limit - near * abs(limit)
     over = {}
     for pose in (rep.get("poses") or {}).values():
         for smp in pose.get("samples") or []:
             for joint, v in (smp.get("volume_loss") or {}).items():
-                if joint.split(".")[0] in GATED and v is not None and v > limit:
+                if joint.split(".")[0] in GATED and isinstance(v, (int, float)) and v > edge:
                     over[joint] = max(v, over.get(joint, v))
     worst = rep.get("volume_loss_max") or {}
-    if not over and "deform.volume_loss_max" in failed and worst.get("joint"):
+    if not over and worst.get("joint") and ("deform.volume_loss_max" in failed or (
+            near > 0 and isinstance(worst.get("value"), (int, float)) and worst["value"] > edge)):
         over[worst["joint"]] = worst.get("value")
     hinges = sorted({HINGE_OF[j.split(".")[0]] for j in over if j.split(".")[0] in HINGE_OF})
     volume_ok = "deform.volume_loss_max" not in failed or (bool(over) and all(j.split(".")[0] in HINGE_OF for j in over))
@@ -626,13 +641,38 @@ def _why(k: dict) -> str:
                       if k["cross_side"] else []) + (["volume loss at " + ", ".join(sorted(k["over"]))] if k["over"] else []))
 
 
-def next_rung(base: dict, attempts: list) -> dict | None:
+def near_rung(base: dict, near: float) -> dict | None:
+    """The first attempt on a report that passed every gate with an elbow or a knee within the near band (its
+    volume margin under `near`): those hinges at AMOUNTS[0]; None when near is 0, a gate failed, or no hinge is in
+    the band (another gated joint in it is neither repaired nor in the way)."""
+    if not near or near <= 0:
+        return None
+    k = classify(base, near)
+    if not k["passed"]:
+        return None
+    hinge = {j: v for j, v in k["over"].items() if j.split(".")[0] in HINGE_OF}
+    if not hinge:
+        return None
+    return {"hinges": sorted({HINGE_OF[j.split(".")[0]] for j in hinge}), "amount": AMOUNTS[0], "cross_side": {},
+            "cross_band": None, "why": "volume loss near the limit at " + ", ".join(sorted(hinge))}
+
+
+def worst_margin(rep: dict | None):
+    """The least margin over a deform report's gates (gate_margin_of), None when none is numeric."""
+    ms = [m for m in (gate_margin_of(g) for g in (rep or {}).get("gates") or [] if isinstance(g, dict)) if m is not None]
+    return min(ms) if ms else None
+
+
+def next_rung(base: dict, attempts: list, near: float = 0.0) -> dict | None:
     """The next attempt ({hinges, amount, cross_side, why}) or None: passed, not a hinge-only volume loss or a
     cross-side weight, or exhausted. cross_side {L, R}: the other side's bones holding each side's skin (the
-    deform report names them); their weight there moves to their mirrored twins, always in full."""
+    deform report names them); their weight there moves to their mirrored twins, always in full. near > 0 and a
+    base that passed: the first rung is near_rung's; the attempts after it are read as on a failed gate."""
     if len(attempts) >= MAX_ATTEMPTS:
         return None
     if not attempts:
+        if near and classify(base)["passed"]:
+            return near_rung(base, near)
         k = classify(base)
         return {"hinges": k["hinges"], "amount": AMOUNTS[0], "cross_side": k["cross_side"],
                 "cross_band": k["cross_band"], "why": _why(k)} if k["repairable"] else None
@@ -808,9 +848,12 @@ def done_entry(st, code, rep, sec) -> dict:
             "error": (rep or {}).get("error") or (rep or {}).get("message")}
 
 
-def ladder(c: Ctx, a, base: dict, done: list) -> dict:
-    """The repair attempts after a failed deform gate; returns the summary's `repair` block."""
-    out = {"attempts": [], "result": "not_applicable"}
+def ladder(c: Ctx, a, base: dict, done: list, near: float = 0.0) -> dict:
+    """The repair attempts after a failed deform gate, or (near > 0, a base that passed) after an elbow or knee
+    reading within the near band; returns the summary's `repair` block (`trigger` failed or near_limit)."""
+    if near and classify(base)["passed"]:
+        return near_ladder(c, a, base, done, near)
+    out = {"trigger": "failed", "attempts": [], "result": "not_applicable"}
     attempts = []
     markers = read_json(c.f["markers"]) or {}
     while True:
@@ -818,22 +861,11 @@ def ladder(c: Ctx, a, base: dict, done: list) -> dict:
         if rung is None:
             break
         n = len(attempts) + 1
-        regions = {h: repair_regions(markers, h) for h in rung["hinges"]}
-        if rung.get("cross_side"):
-            regions["cross_side"] = {"band_m": rung.get("cross_band")}
-        steps, files = repair_steps(c, n, rung, not a.no_render)
-        sdone, rep = [], None
-        for st in steps:
-            code, rep, sec = run_step(st, c.env)
-            sdone.append(done_entry(st, code, rep, sec))
-            if code == 1:
-                break
-        done.extend(sdone)
-        s = attempt_summary(n, rung, regions, sdone, files, rep if sdone[-1]["name"].startswith("deform") else None)
+        s, rep = run_attempt(c, a, n, rung, markers, done)
         out["attempts"].append(s)
-        attempts.append({**rung, "report": rep if s["exit_code"] != 1 else {}})
+        attempts.append({**rung, "report": rep})
         if s["exit_code"] == 1:
-            out.update(result="error", message=f"attempt {n} stopped on an error: {sdone[-1]['error'] or sdone[-1]['log']}")
+            out.update(result="error", message=f"attempt {n} stopped on an error: {done[-1]['error'] or done[-1]['log']}")
             return out
         if s["passed"]:
             out.update(result="passed", message=f"attempt {n} passed the deformation gates",
@@ -846,6 +878,63 @@ def ladder(c: Ctx, a, base: dict, done: list) -> dict:
         k = classify(base)
         out["message"] = ("not a hinge-only volume loss (" + ", ".join(k["failed_gates"]) + "; over the limit: "
                           + (", ".join(sorted(k["over"])) or "none") + "): read the failures table in SKILL.md")
+    return out
+
+
+def run_attempt(c: Ctx, a, n: int, rung: dict, markers: dict, done: list) -> tuple[dict, dict]:
+    """One rung: the repair and its deform gate into repair/aN/; (attempt summary, its deform report or {})."""
+    regions = {h: repair_regions(markers, h) for h in rung["hinges"]}
+    if rung.get("cross_side"):
+        regions["cross_side"] = {"band_m": rung.get("cross_band")}
+    steps, files = repair_steps(c, n, rung, not a.no_render)
+    sdone, rep = [], None
+    for st in steps:
+        code, rep, sec = run_step(st, c.env)
+        sdone.append(done_entry(st, code, rep, sec))
+        if code == 1:
+            break
+    done.extend(sdone)
+    s = attempt_summary(n, rung, regions, sdone, files, rep if sdone[-1]["name"].startswith("deform") else None)
+    return s, (rep if s["exit_code"] != 1 else {}) or {}
+
+
+def near_ladder(c: Ctx, a, base: dict, done: list, near: float) -> dict:
+    """The ladder on a deform report that passed with an elbow or knee within the near band: the rungs as after a
+    failed gate (near_rung first), then the bind with the larger worst margin over the deform gates is kept, the
+    original or an attempt that passed every gate (one that fails any gate never is). The original passed, so
+    whatever happens (an attempt's error too) the stage passes."""
+    w0 = worst_margin(base)
+    out = {"trigger": "near_limit", "near": near, "attempts": [], "result": "kept_original",
+           "worst_margin": {"original": w0, "repair": None}}
+    attempts = []
+    markers = read_json(c.f["markers"]) or {}
+    best = None
+    while True:
+        rung = next_rung(base, attempts, near)
+        if rung is None:
+            break
+        n = len(attempts) + 1
+        s, rep = run_attempt(c, a, n, rung, markers, done)
+        out["attempts"].append(s)
+        attempts.append({**rung, "report": rep})
+        if s["exit_code"] == 1:
+            out["error"] = f"attempt {n} stopped on an error: {done[-1]['error'] or done[-1]['log']}"
+            break
+        if s["passed"]:
+            w = worst_margin(rep)
+            if w is not None and (best is None or w > best[0]):
+                best = (w, s)
+    if best is not None:
+        out["worst_margin"]["repair"] = best[0]
+    if best is not None and (w0 is None or best[0] > w0):
+        s = best[1]
+        out.update(result="kept_repair", kept=s["attempt"],
+                   message=f"attempt {s['attempt']} passed with the larger worst margin ({best[0]} against {w0}): "
+                           "its bind is taken on", files={"fbx": s["fbx"], "blend": s["blend"], "deform": s["deform"]})
+    else:
+        out["message"] = ("the original bind is kept: " + ("no attempt passed every gate" if best is None else
+                          f"its worst margin {w0} is not under the repair's {best[0]}") +
+                          ("; " + out["error"] if out.get("error") else ""))
     return out
 
 
@@ -898,6 +987,9 @@ def parser() -> Parser:
             p.add_argument("--min-fingers", type=int, default=30)
         if s in ("deform", "all"):
             p.add_argument("--no-repair", action="store_true")
+            p.add_argument("--repair-near", type=float, default=REPAIR_NEAR,
+                           help="the ladder also runs when deform passed with an elbow or knee's volume margin under "
+                                "this; the bind with the larger worst margin is kept (default 0.05; 0 turns it off)")
         if s in ("secondary", "all"):
             p.add_argument("--secondary-markers", help="manual chains for secondary_chains.py --markers")
             p.add_argument("--hair-chains", action="store_true", help="spring chains on the separate hair object")
@@ -915,7 +1007,8 @@ def parse(argv) -> argparse.Namespace:
     for k, v in (("glb", None), ("height", 1.75), ("no_render", False), ("min_fingers", 30), ("no_repair", False),
                  ("no_smart", False), ("facial", False), ("fingers", 5), ("no_secondary", False),
                  ("secondary_markers", None), ("hair", None), ("hair_chains", False), ("eyes", None),
-                 ("adjust", None), ("resolution", None), ("body", "human"), ("repeat", 1), ("min_margin", 0.0)):
+                 ("adjust", None), ("resolution", None), ("body", "human"), ("repeat", 1), ("min_margin", 0.0),
+                 ("repair_near", REPAIR_NEAR)):
         if not hasattr(a, k):
             setattr(a, k, v)
     return a
@@ -934,6 +1027,8 @@ def main(argv=None, osname=None, env=None) -> int:
             raise Refused(f"--repeat {a.repeat}: one run or more")
         if not math.isfinite(a.min_margin):
             raise Refused(f"--min-margin {a.min_margin}: a finite number")
+        if not (math.isfinite(a.repair_near) and 0.0 <= a.repair_near < 1.0):
+            raise Refused(f"--repair-near {a.repair_near}: a margin from 0 (off) up to, not including, 1")
         if a.min_margin != 0.0 and a.repeat < 2:
             raise Refused("--min-margin reads the runs of --repeat N (N 2 or more)")
         c = Ctx(a, osname, env)
@@ -999,6 +1094,8 @@ def run_stages(c: Ctx, a, stages: list) -> None:
                 if s == "deform" and code == 2 and not a.no_repair and rep:
                     repair = ladder(c, a, rep, c.done)
                     code = 0 if repair["result"] == "passed" else 1 if repair["result"] == "error" else 2
+                elif s == "deform" and code == 0 and not a.no_repair and rep and near_rung(rep, a.repair_near):
+                    repair = ladder(c, a, rep, c.done, a.repair_near)     # it passed: the stage's exit stays 0
                 if s == "deform":
                     c.deform_ran, c.repair = True, repair
                 if code == 1:
@@ -1100,12 +1197,16 @@ def gate_margin_of(g: dict):
     return gate_margin(g.get("value"), lim, "range" if isinstance(lim, list) else None)
 
 
-def run_gates(done: list) -> dict:
+def run_gates(done: list, repair: dict | None = None) -> dict:
     """{gate name: gate} over a run's step reports, in order: a repair attempt's deform reading replaces the
-    first (the final reading stands); the repair's own steps are actions, not readings."""
+    first (the final reading stands); the repair's own steps are actions, not readings. A near-limit ladder's
+    reading is the bind it kept: the first (kept_original) or its kept attempt's (kept_repair)."""
     out = {}
+    res = (repair or {}).get("result")
+    kept = {"kept_original": None, "kept_repair": f"deform_a{(repair or {}).get('kept')}"}
     for st in done:
-        if str(st.get("name")).startswith("repair_"):
+        name = str(st.get("name"))
+        if name.startswith("repair_") or (res in kept and name.startswith("deform_a") and name != kept[res]):
             continue
         rep = read_json(st.get("report") or "")
         for g in (rep or {}).get("gates") or []:
@@ -1188,7 +1289,7 @@ def run_repeat(c: Ctx, a, out: dict, osname=None, env=None) -> int:
         code = finish(cr, a, list(VARY), o)
         (d / "autorig.all.json").write_text(json.dumps(o, indent=1), encoding="utf-8")
         ctxs[f"r{r}"] = cr
-        runs.append({"run": f"r{r}", "dir": str(d), "exit_code": code, "gates": run_gates(cr.done)})
+        runs.append({"run": f"r{r}", "dir": str(d), "exit_code": code, "gates": run_gates(cr.done, cr.repair)})
     stab = stability(runs, a.min_margin)
     stab["name"] = c.name
     stab_path = c.out / "autorig.stability.json"
@@ -1917,6 +2018,60 @@ def contract_sample(case: str, doc: dict) -> None:
     print(f"selftest-output: {path}")
 
 
+def selftest_near(check, real, argv_of, run_dir: Path, glb: Path, chain: list, SEC: list) -> None:
+    """The near band through the stand-ins: deform passes with the elbow at 0.345 (margins 0.0143 volume, 0.5
+    self-intersection); the bind with the larger worst margin is kept, never one that fails a gate, exit 0."""
+    near0 = ["LowerArm.R", 0.345, 0.04]
+    blend_of = lambda: (lambda sa: sa[sa.index("-P") - 1] if sa else "")(argv_of("secondary_chains.py"))
+    code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"],
+                             FAKE_DEFORM={"a0": near0, "a1": ["LowerArm.R", 0.0775, 0.0725]})
+    rp = r.get("repair") or {}
+    check("near: deform passed at 0.345, attempt 1 passes with worst margin 0.0938 > 0.0143: kept_repair, its bind "
+          "goes to the chains and the result, exit 0",
+          code == 0 and ran == chain + ["inside_repair", "deform_gate.py"] + SEC and rp.get("trigger") == "near_limit"
+          and rp.get("result") == "kept_repair" and rp.get("kept") == 1
+          and rp.get("worst_margin") == {"original": 0.0143, "repair": 0.0938}
+          and blend_of().endswith(os.path.join("repair", "a1", "Runner_arp.blend"))
+          and r["result"]["contract"].startswith(str(run_dir / "secondary"))
+          and r["secondary"]["volume_loss_max"]["without_chains"] == 0.0775, code=code, rp=rp, ran=ran)
+    code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner"],
+                             FAKE_DEFORM={"a0": near0, "a1": ["LowerArm.R", 0.0775, 0.079]})
+    rp = r.get("repair") or {}
+    check("near: attempt 1 passes but its worst margin (0.0125) is under the original's: kept_original, the "
+          "chains on rig/NAME_arp.blend, no repair file in the result, exit 0",
+          code == 0 and rp.get("result") == "kept_original" and "files" not in rp
+          and blend_of() == str(run_dir / "rig" / "Runner_arp.blend")
+          and r["secondary"]["volume_loss_max"]["without_chains"] == 0.345, code=code, rp=rp)
+    code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-secondary"],
+                             FAKE_DEFORM={"a0": near0, "a1": ["LowerArm.R", 0.0775, 0.04, ["foot.l"]]})
+    rp = r.get("repair") or {}
+    check("near: an attempt that fails a gate (cross-side, no margin) is never kept, however high its numeric "
+          "margins; the ladder goes on as after a failed gate; kept_original, exit 0",
+          code == 0 and rp.get("result") == "kept_original" and len(rp.get("attempts") or []) == 2
+          and rp["attempts"][1]["cross_side"] == {"L": [], "R": ["foot.l"]}
+          and rp["worst_margin"]["repair"] is None and "repair" not in r["result"].get("fbx", ""), code=code, rp=rp)
+    code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-secondary"],
+                             FAKE_DEFORM={"a0": near0, "a1": ["LowerArm.R", 0.0775, 0.09], "a2": ["LowerArm.R", 0.1, 0.07]})
+    rp = r.get("repair") or {}
+    check("near: attempt 1 fails self-intersection, 0.8 passes on attempt 2 (worst margin 0.125): attempt 2 kept",
+          code == 0 and [x["amount"] for x in rp.get("attempts", [])] == [1.0, 0.8] and rp.get("kept") == 2
+          and r["result"]["fbx"].endswith(os.path.join("repair", "a2", "Runner.fbx")), code=code, rp=rp)
+    code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-secondary"], {"inside_repair": 1},
+                             FAKE_DEFORM={"a0": near0})
+    rp = r.get("repair") or {}
+    check("near: an attempt that stops on an error keeps the original, says why, exit 0",
+          code == 0 and rp.get("result") == "kept_original" and "error" in rp.get("error", "") + rp.get("message", "")
+          and ran == chain + ["inside_repair"], code=code, rp=rp)
+    for extra, plan_, why in ((["--repair-near", "0"], {"a0": near0}, "--repair-near 0: no ladder on a pass"),
+                              ([], {"a0": ["LowerArm.R", 0.30, 0.04]}, "a pass outside the band (0.30): no ladder"),
+                              (["--no-repair"], {"a0": near0}, "--no-repair: no near ladder either")):
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-secondary", *extra],
+                                 FAKE_DEFORM=plan_)
+        check(f"near: {why}, exit 0", code == 0 and "repair" not in r and ran == chain, code=code, ran=ran)
+    code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--repair-near", "1"])
+    check("--repair-near 1 (or past it, or negative) is refused, exit 1", code == 1 and ran == [], code=code)
+
+
 def selftest_repeat(check, go, real, td: Path, glb: Path) -> None:
     """all --repeat: dry-run plans, refusals, and three runs through the stand-ins (the median run kept, the
     stability file, the stable gate's exit)."""
@@ -1994,6 +2149,22 @@ def selftest_repeat(check, go, real, td: Path, glb: Path) -> None:
                        {"run": "r3", "dir": "c", "exit_code": 0, "gates": {"x": g_("x", 1, True, 0.1)}}], 0.0)
     check("stability: a run that failed a gate with no margin ranks below every pass, whatever its other "
           "margins, so the median kept is the worse pass (r3)", mixed["chosen_run"] == "r3", st=mixed)
+    near_plan = {f"r{i}:a0": ["LowerArm.R", 0.345, 0.04] for i in (1, 2, 3)}
+    near_plan.update({"r1:a1": ["LowerArm.R", 0.0775, 0.0725], "r2:a1": ["LowerArm.R", 0.0775, 0.072],
+                      "r3:a1": ["LowerArm.R", 0.0775, 0.079]})
+    code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "3"],
+                             FAKE_DEFORM=near_plan)
+    st = read_json(rd / "autorig.stability.json") or {}
+    vol = next((x for x in st.get("gates", []) if x["name"] == "deform.volume_loss_max"), {})
+    wm = {x["run"]: x["worst_margin"] for x in st.get("runs", [])}
+    sa = next((x["argv"] for x in map(json.loads, (td / "trace.jsonl").read_text().splitlines())
+               if x["script"] == "secondary_chains.py"), [])
+    check("--repeat 3, near band: r1 and r2 keep the repair, r3 the original; stability reads each run's kept bind "
+          "(volume 0.0775 to 0.345); the median run r1 is kept and the chains go on OUT/repair/a1, exit 0",
+          code == 0 and vol.get("value") == {"min": 0.0775, "median": 0.0775, "max": 0.345}
+          and wm == {"r1": 0.0938, "r2": 0.1, "r3": 0.0143} and st.get("chosen_run") == "r1"
+          and r.get("repair", {}).get("result") == "kept_repair"
+          and sa and sa[sa.index("-P") - 1] == str(rd / "repair" / "a1" / "Runner_arp.blend"), st=st, sa=sa)
     code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "2",
                               "--no-secondary"], FAKE_DEFORM={"r1:a0": ["LowerArm.R", 0.20, 0.04],
                                                               "r2:a0": ["LowerArm.R", 0.30, 0.04]})
@@ -2363,6 +2534,24 @@ def selftest() -> int:
               and cross_arg(c1["cross_side"], 0.062)[2:] == ["--cross-band", 0.062])
         lim40 = rep({"LowerArm.L": 0.38}, lim=0.40)
         check("the limit is read from the report, never changed", classify(lim40)["passed"] and not classify(lim40)["over"])
+        near_e = rep({"LowerArm.L": 0.345, "LowerArm.R": 0.31})
+        check("near band: a passing elbow at 0.345 (margin 0.014 < 0.05) gets the elbow at 1.0, the one outside "
+              "the band named nowhere; at 0.30 (margin 0.14), with --repair-near 0, or failing, no near rung",
+              next_rung(near_e, [], 0.05) == {"hinges": ["elbow"], "amount": 1.0, "cross_side": {}, "cross_band": None,
+                                              "why": "volume loss near the limit at LowerArm.L"}
+              and next_rung(rep({"LowerArm.L": 0.30}), [], 0.05) is None and next_rung(near_e, [], 0.0) is None
+              and near_rung(rep({"LowerArm.L": 0.345}, si=0.1), 0.05) is None
+              and next_rung(rep({"LowerArm.L": 0.36}), [], 0.05)["why"] == "volume loss at LowerArm.L")
+        check("near band: a spine in the band alone is no rung; beside an elbow in it the elbow alone is repaired",
+              next_rung(rep({"Spine": 0.345}), [], 0.05) is None
+              and next_rung(rep({"Spine": 0.345, "LowerLeg.R": 0.34}), [], 0.05)["hinges"] == ["knee"])
+        check("near band: the attempts after it read as on a failed gate (passed: stop; self-intersection: 0.8)",
+              next_rung(near_e, [{**a1, "report": rep({"LowerArm.L": 0.08}, si=0.06)}], 0.05) is None
+              and next_rung(near_e, [{**a1, "report": rep({"LowerArm.L": 0.08}, si=0.09)}], 0.05)["amount"] == 0.8)
+        check("worst_margin: the least gate margin of a report, read from its limit",
+              worst_margin({"gates": [{"name": "v", "value": 0.345, "limit": 0.35, "margin": 0.0143, "pass": True},
+                                      {"name": "s", "value": 0.079, "limit": "<= 0.08", "pass": True}]}) == 0.0125
+              and worst_margin({"gates": [{"name": "x", "pass": True}]}) is None)
         mk = {"height": 1.75, "landmarks": {"elbow.L": [0.37175, 0.07, 1.09901], "elbow.R": [-0.37175, 0.07, 1.09901],
                                             "shoulder.L": [0.20523, 0.1, 1.33], "shoulder.R": [-0.20523, 0.1, 1.33],
                                             "wrist.L": [0.53827, 0.04, 0.86802], "wrist.R": [-0.53827, 0.04, 0.86802],
@@ -2465,6 +2654,7 @@ def selftest() -> int:
         code, r, err, ran = real(["deform", str(run_dir), "--name", "Runner"], FAKE_DEFORM={"a0": ["Spine", 0.4, 0.04]})
         check("deform alone: a spine loss is not repaired, exit 2, said why",
               code == 2 and r["repair"]["result"] == "not_applicable" and ran == ["deform_gate.py"])
+        selftest_near(check, real, trace_argv_all, run_dir, glb, chain, SEC)
         hair = td / "src" / "runner_hair.glb"
         hair.write_text("h")
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-smart", "--hair", str(hair)],

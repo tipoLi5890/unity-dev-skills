@@ -45,7 +45,10 @@ in the user's Blender.
    with a voxel smaller than the thinnest part that must survive (a finger, an ear), delete the
    specks it leaves (pieces of a few vertices), then check: one loose part, extents within e.g. 1%
    of the showcase's. Never keep only the largest piece: legs the grid leaves apart from a hem
-   above them are a piece too. **A voxel remesh does not remove a back-to-back inward-facing inner
+   above them are a piece too. Close the hem round them instead: `game_mesh.py` widens the cavity
+   fill's closing reach, one voxel at a time up to 4, until the surface is one piece and solid, and
+   keeps the first fill if no reach gets there. The closed hem is a floor with nothing behind it
+   for the bake (step 4). **A voxel remesh does not remove a back-to-back inward-facing inner
    shell** when it is joined to the skin at the hems and cuffs: it comes out as the inside of a
    thin hollow wall, one piece, closed, and QuadriFlow then spends about half the budget on the
    inside. Check the enclosed volume against a coarse (2% of the height) voxel copy, which fills
@@ -59,7 +62,15 @@ in the user's Blender.
    return and the face count; collapse-decimate the voxel mesh to 4 times the target first. It
    returns somewhat fewer faces than asked: rescale `target_faces` by target / result and rerun.
    A retopology service or another tool is checked the same way. QuadriFlow does not place loops
-   at joints; the deformation test is what says whether its flow is good enough.
+   at joints; the deformation test is what says whether its flow is good enough. It spreads its
+   vertices evenly, so a part thinner than its edge comes out short — a fingertip, a hair tip, a
+   ponytail — while the voxel surface still has it: the loss is in the retopology, not the voxel,
+   and a finer voxel does not bring it back. Pull it back: group the voxel-surface points lying
+   outside the retopology into spots, move the game vertex nearest each spot's farthest point onto
+   it, let its neighbours follow with a falloff and project them back onto the voxel surface. No
+   vertex is added. Refuse a pull that flips a face, lifts a face off the surface (a face across the
+   air between two strands, which no bake ray can fill), or runs past about 3 edge lengths (a spike
+   the budget cannot carry).
 3. **UVs.** Smart UV Project, or seams and Unwrap where islands should follow the body. A
    projected island can fold onto itself (a hem, a sleeve cuff): at a 66° angle limit that is a few
    percent of the texels on a coat. Project at 45°, mark seams from the islands, unwrap them
@@ -68,8 +79,11 @@ in the user's Blender.
    `4 / target_tex_px`. Check for overlaps (`uv.select_overlap`).
 4. **Rebake from the showcase**, Selected-to-Active in Cycles: one image per map at
    `target_tex_px` — base colour (Diffuse, colour pass only, sRGB), normal (tangent, Non-Color),
-   occlusion. `cage_extrusion` and `max_ray_distance` scale with the character: start around 2–3%
-   of its height, e.g. 0.03 and 0.1 for a 1.7 m runner. The Diffuse colour pass is base colour ×
+   occlusion. `cage_extrusion` and `max_ray_distance` scale with the character: start around 2% and
+   10% of its height, e.g. 0.03 and 0.17 for a 1.7 m runner. Blender takes the first front-facing hit
+   along each ray and drops it past `max_ray_distance`, so a longer ray changes only the texels that
+   would otherwise miss — a floor closing a coat's or a skirt's hem, whose rays travel up inside
+   before they meet anything. The Diffuse colour pass is base colour ×
    (1 − metallic): hold the showcase's Metallic at 0 for that bake, or a metal button bakes black.
    Save each image to a file.
 5. **Look at it.** The game mesh textured, beside the showcase, from the same camera — front, side,
@@ -105,7 +119,7 @@ mat = bpy.data.materials.new("Runner_game"); mat.use_nodes = True; game.data.mat
 scene = bpy.context.scene
 scene.render.engine = "CYCLES"
 bake = scene.render.bake
-bake.use_selected_to_active, bake.cage_extrusion, bake.max_ray_distance, bake.margin = True, 0.03, 0.1, 4
+bake.use_selected_to_active, bake.cage_extrusion, bake.max_ray_distance, bake.margin = True, 0.03, 0.17, 4
 only(show, game, active=game)
 for name, kind, space, extra in (("BaseColor", "DIFFUSE", "sRGB", {"pass_filter": {"COLOR"}}),
                                  ("Normal", "NORMAL", "Non-Color", {}),
@@ -155,17 +169,21 @@ textured, game textured, showcase clay, game clay; columns front, three-quarter,
 The knobs, each a fraction of the height H where it is a length:
 
 ```bash
-python3 scripts/game_mesh.py SHOWCASE.glb --out DIR --target-tris N --voxel 0.005 --cage 0.02 --ray 0.06 \
-        --margin-px 4 --ao-samples 32 --seed 0
+python3 scripts/game_mesh.py SHOWCASE.glb --out DIR --target-tris N --voxel 0.005 --tips 0.005 \
+        --cage 0.02 --ray 0.10 --margin-px 4 --ao-samples 32 --seed 0
 ```
 
-`--voxel` under the thinnest part to keep; `--cage` and `--ray` the bake's `cage_extrusion` and
-`max_ray_distance`; `--margin-px` the island and bake margin in texels. A failed
-`game.bake_miss` is a cage or ray too short, or webbing the retopology stretched across a gap
-(an armpit, a crotch under a coat) with no showcase surface behind it: the miss map says which.
-A failed `game.silhouette_iou_min` or `game.extent`
-at a sound bake is detail the budget cannot carry (spiky hair tips, fingers merged into a
-mitten): look at the sheet, then a larger budget, hair cards, or the regenerate route.
+`--voxel` under the thinnest part to keep; `--tips` the loss past which a thin part the
+retopology rounded off is pulled back (step 2; half the `game.extent` limit, so a loss under it on
+each side cannot fail that gate alone; 0 off); `--cage` and `--ray` the bake's `cage_extrusion`
+and `max_ray_distance`; `--margin-px` the island and bake margin in texels. The report records the
+pulls under `tips` (pulled, refused, the voxel-surface points still outside before and after) and
+a wider hem close under `voxel.close`. A failed `game.bake_miss` is a cage or ray too short,
+webbing the retopology stretched across a gap (an armpit, between fingers), or a closed hem floor
+whose rays first meet the back of a face inside the hem — no ray length reaches past that: the miss
+map says which. A failed `game.silhouette_iou_min` or `game.extent` at a sound bake is detail the
+budget cannot carry (a spike the pull refused, fingers merged into a mitten): look at the sheet,
+then a larger budget, hair cards, or the regenerate route.
 
 **AutoRemesher** (MIT, a desktop app with a command line; OBJ only) is the alternative retopology:
 

@@ -181,8 +181,24 @@ old dialect.
   scored. **`real`** has one entry per character folder: `name`, `stages` (per `autorig.py` step,
   `{pass, gates}`, each gate `{name, value, limit, pass, margin}` with `margin` null when the gate has
   none), `stability` (the folder's `autorig.stability.json`, gate/1, or null) and `worst_margin`.
+- **`repair`** (optional, per character) is what `autorig.py`'s repair ladder did:
+  - `chosen`, for the run `OUT/autorig.all.json` stands for:
+    - `result`: passed, exhausted, error or not_applicable; kept_repair or kept_original after a
+      near-limit ladder; or none, not_reached or unknown;
+    - `trigger`: failed or near_limit;
+    - `fired`, `used`, `attempts`, `hinges` and `rungs` [{hinges, amount, cross_side, passed}].
+  - `runs`, after `--repeat`: {n, chosen, read, repaired, used, per_run}; null without it.
+
+  A bench without `repair`, or with a run that was not read, reads to `compare` as `repair_unknown`.
 - **`compare` keys a gate by character, step and gate name.** A margin is compared only when both
-  files carry a number for it; a gate a later version renames reads as not read.
+  files carry a number for it; a gate a later version renames reads as not read. It prints:
+  - `regressions` and `improvements`;
+  - `repair`: repair_now, repair_gone, repair_changed or repair_unknown;
+  - `repair_tradeoffs`: a volume or self-intersection drop paid for by a rise in the other, when one
+    side's bind is a repair and the new margin stays at `--tradeoff-floor` or above;
+  - `informational`: a drop of at most `--near` that ends at `--near` or above.
+
+  A pass to fail, `stable` and a gate no longer read always regress.
 - Bench files are kept beside the exam folder, outside the repository; the repository holds the
   tools, not the scores.
 

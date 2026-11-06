@@ -2,6 +2,82 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.46.0
+
+Steadier and fairer measurements: the AI's body guess barely moves from run to run, a chibi knee no
+longer comes from a pocket, `compare` tells a designed repair and far-off noise from a regression,
+and the game mesh keeps the tips the remesher rounds off. No limit was widened.
+
+- **`arp_smart.py`: each AI body guess averages 30 front pictures** (`--body-samples`, the add-on's
+  most; it used the add-on's 10). Each picture turns the camera by a random whole degree, and which
+  angles get drawn is what moved the guess. One guess's wrist scattered 1.97 mm (sd) and now
+  scatters 0.22 mm, at a somewhat longer time per guess. Across separate runs the wrist's height sd
+  went from 1.40 mm to 0.17 mm. `body_runs` gains `marker_spread_m`. `--body-runs` stays 3 with the
+  per-marker medoid (a coordinate median was within noise at 30 pictures). `--body-samples` takes
+  1–30; 0 leaves the add-on's setting.
+- **`arp_markers.py --body chibi`: shorts over the knee.** A hem 35–70 % of the way up the leg where
+  the section steps out going up is shorts over the knee, and no knee cue above it is used (a cargo
+  pocket read as a kneecap); the knee takes the 0.52 fallback. A knee pad's lower edge reads the same
+  way (documented).
+- **`autorig.py --repair-near M` (default 0.05; 0 turns it off): a reading on its limit is repaired
+  too.** With the wrist steady, an elbow that sat just under its limit stayed unrepaired in every
+  run. The repair ladder now also runs when deform passed with an elbow or knee volume margin under
+  M, and keeps the bind with the larger worst margin over the deform gates. It never keeps one that
+  fails a gate, and the stage's exit stays 0. The repair block gains `trigger` (failed /
+  near_limit), `kept_repair` / `kept_original` and both worst margins. Why 0.05: the AI's noisy
+  wrist moved such an elbow's volume by about ±0.01 (margin ±0.03), and `--min-margin 0.05` is the
+  room a repeated run asks for. No limit changed.
+- **`rig_exam.py` bench records the repair ladder** per character (the chosen run and each
+  `--repeat` run). `compare` lists `repair_now` / `repair_gone` / `repair_changed` /
+  `repair_unknown` (no repair key, or a run's summary not read). A still-passing `deform.*` margin
+  drop goes to `repair_tradeoffs` only when the character's repair changed and another still-passing
+  `deform.*` gate of the same step rose by more than `--margin-drop`. A drop of at most `--near`
+  (1.0) that ends at `--near` or more goes to `informational` (only `>=` gates past twice their
+  limit; never `stable`). Pass → fail, `stable`, a gate no longer read and the exam lines always
+  regress. `--tradeoff-floor` (0.05): a trade-off is only the ladder's own pair (volume loss and
+  self-intersection), only when one side's bind is a repair, and only when the new margin stays at
+  the floor or above. bench/1's repair reading has `trigger`, `used` and `runs.used`, and the
+  deform stage reads the kept bind. `--selftest` exits 2 on failure (was 1). These are the
+  detector's floors, not gate limits.
+- **`game_mesh.py` pulls back the tips QuadriFlow rounds off** (`--tips`, default half the extent
+  limit). The voxel surface keeps extent within 0.0014 H; QuadriFlow loses it, so a finer voxel
+  cannot fix it (and breaks the fill: solid 0.41–0.44). Each lost spot's nearest game vertex moves
+  onto its farthest point, neighbours follow and are projected back; no vertex or face is added. A
+  pull that flips a face, lifts one off the surface or runs past 3 edge lengths is refused.
+  - When the cavity fill leaves pieces apart (legs up a shorts hem), the fill closes wider, up to 4
+    voxels, until there is one solid piece.
+  - Default `--ray` 0.06 → 0.10 × H: Blender keeps the first front-facing hit and only drops it past
+    the distance (of 2,098,050 texels hit at 0.08, none changed at 0.10).
+- **Run on real assets** (rig exam and `autorig.py all --repeat 3` on the four characters, benched
+  and compared with 0.45.0 re-benched with its repair reading).
+  - **All four characters pass `stable` for the first time.**
+    - The mascot's leg ratio goes from 0.847 to 0.925 (margin −0.0052 → +0.1304).
+    - The gatekeeper's elbow sat at 0.344–0.347 (margin 0.0074) once the wrist was steady. It is now
+      repaired in 3 of 3 runs to 0.071–0.072 (margin 0.79), with self-intersection p95 at 0.073
+      (margin 0.077). In 0.45 the noisy wrist got it repaired by chance.
+    - The runner and the guard are unchanged: stable 0.189 and 0.01.
+  - **AI wrist spread:** across separate runs, the wrist's height sd went from 1.40 mm to 0.17 mm.
+  - **Rig exam:** identical to 0.45.0. The near-limit ladder fired on no exam body, whose highest
+    hinge reads 0.27.
+  - **`compare` against 0.45.0 exits 2 on one pair:** the runner's self-intersection margin
+    0.45 → 0.42 (p95 0.0443 → 0.0464) in the chosen run. Its three runs read 0.0442–0.0464, inside
+    the 0.0442–0.0575 its runs have read since 0.43, so it is run-to-run spread, not a change.
+    Informational: one finger-length margin 7.66 → 7.43. Improvements: 11, mascot and finger lengths.
+  - **`game_mesh.py` at 8,000 triangles:**
+    - runner and gatekeeper now pass every gate. `game.extent` goes 0.0111 → 0.0025 and
+      0.0183 → 0.0045, and the gatekeeper's bake misses 0.0063 → 0.0045. The guard still passes.
+    - Silhouette IoU is up on all four: 0.961 → 0.970, 0.964 → 0.971, 0.954 → 0.963 and
+      0.959 → 0.972.
+    - The mascot is now one surface (3 → 1) and solid (0.821 → 1.003). It fails bake misses instead
+      (0.004 → 0.0088): the closed floor under its shorts hem, whose rays first meet a culled
+      backface.
+- **Still open.**
+  - The mascot's knee is the 0.52 fallback, because the real knee is hidden under the shorts.
+  - The shorts-hem rule is chibi only.
+  - The near-limit ladder stops at the first attempt that passes, without trying a softer amount.
+  - `game_mesh.py`: the mascot's bake misses under the shorts. The extent at another seed sits
+    close to the limit (0.0084 and 0.0097).
+
 ## 0.45.0
 
 The 3D chain's generated mesh, made lighter and gated. Pixal3D's hidden inner shell can be cut

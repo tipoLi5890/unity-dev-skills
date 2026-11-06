@@ -69,7 +69,9 @@ or outside SKIRT_KNEE_BAND is refused. The report adds body and `skirt` (skirt_b
 skirt_region turns into the skirt's own skin for the bind, deform_gate and secondary_chains.
 --body chibi (a big head, a third of H or more, on short limbs; chosen at G0): its own windows
 (CHIBI_WINDOWS) and these rules, the gates' limits unchanged. The crotch is searched from 0.10 H; the hip
-is the crotch + the leg's half-width just under it, with no floor or cap; the ankle is the highest cut
+is the crotch + the leg's half-width just under it, with no floor or cap; a hem in VALLEY_BAND where the leg's
+section steps out going up is shorts over the knee, and no knee cue above it is used (the cloth's pocket or fold,
+not a kneecap); the ankle is the highest cut
 under the shin's narrowest whose depth reaches CHIBI_FOOT_DEPTH x the shin's (where a big shoe starts); the
 arm is followed down to 0.2 H and its shoulder sits where its axis crosses the torso's edge at the
 armpit (a thick arm joins there, not SHOULDER_OUT of its radius outside), the wrist is a narrowing within
@@ -432,7 +434,7 @@ def _until(idx, g, top):
     return out
 
 
-def knee_on_leg(V, F, hip, ankle, cont=False, avoid_z=None, band=None):
+def knee_on_leg(V, F, hip, ankle, cont=False, avoid_z=None, band=None, garment=False):
     """(t along ankle -> hip, cue) of the knee, or (None, why). Two cues, in this order:
     kneecap  a bulge rising >= SWELL_MIN above the shin below and narrowing >= DIP_MIN above it
              (not a pinch under a hem), its rise FRONT_SHARE x more in front than at the back
@@ -441,7 +443,9 @@ def knee_on_leg(V, F, hip, ankle, cont=False, avoid_z=None, band=None):
              not at a hem (a girth step >= HEM_JUMP between neighbouring stations): its lowest point.
     Where a hem cuts a side short, that side is compared only up to the hem. avoid_z (lo, hi), world z:
     a cue there is not used (the skirt route: a skirt's hem pinches the leg under its lip); band (lo, hi):
-    a cue outside that share of the way is not used (the skirt route: a boot top sits under a covered knee)."""
+    a cue outside that share of the way is not used (the skirt route: a boot top sits under a covered knee).
+    garment (the chibi route): a hem inside VALLEY_BAND where the section steps out going up is shorts over the
+    knee; above it the leg is not seen (a pocket or a fold is the cloth's), so no cue above it is used."""
     rows = [r for r in leg_sections(V, F, hip, ankle, cont=cont) if r is not None]
     if len(rows) < 20:
         return None, "too few leg sections along the hip -> ankle line"
@@ -454,6 +458,13 @@ def knee_on_leg(V, F, hip, ankle, cont=False, avoid_z=None, band=None):
         clear &= (t >= band[0]) & (t <= band[1])
     jump = np.abs(np.diff(g)) / np.minimum(g[:-1], g[1:]) >= HEM_JUMP
     hems = [(t[i] + t[i + 1]) / 2 for i in np.nonzero(jump)[0]]
+    covered = None
+    if garment:
+        out = [(t[i] + t[i + 1]) / 2 for i in np.nonzero(jump)[0] if g[i + 1] > g[i]]
+        out = [h for h in out if VALLEY_BAND[0] <= h <= VALLEY_BAND[1]]
+        if out:
+            covered = out[0]
+            clear &= t < covered
 
     def side(i, sgn):
         """Indices on one side of i within SPAN, stopping at a hem."""
@@ -491,6 +502,8 @@ def knee_on_leg(V, F, hip, ankle, cont=False, avoid_z=None, band=None):
         return max(caps)[1], "kneecap"
     if valleys:
         return max(valleys)[1], "valley"
+    if covered is not None:
+        return None, f"no kneecap and no narrowing under the shorts' hem at {covered:.3f} (above it the cloth)"
     return None, "no kneecap and no narrowing between calf and thigh" + (" (a hem there)" if hems else "")
 
 
@@ -694,7 +707,7 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         half = 0.5 * float(np.ptp(p["x"])) / H
         hip_h = crotch_h + (half if chibi else max(HIP_ABOVE_CROTCH, half))
         out["hip"], how["hip"] = np.array([p["cx"], p["cy"], z0 + hip_h * H]), "measured"
-        kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"])
+        kt, cue = knee_on_leg(V, F, out["hip"], out["ankle"], garment=chibi)
     else:
         out["hip"], how["hip"], kt, cue = skirt_hip(V, F, prof, s, skirt, out["ankle"])
     tag = "L" if s > 0 else "R"
@@ -1942,6 +1955,13 @@ KNEECAP = [(0.05, 0.036, 0.036, 0.036), (0.40, 0.042, 0.042, 0.042), (0.49, 0.05
            (0.58, 0.046, 0.046, 0.046), (0.66, 0.050, 0.050, 0.050), (0.95, 0.070, 0.070, 0.070)]
 
 
+# a chibi's bare shin narrowing up to the hem of shorts over the knee (a step out at 0.43), a pocket bulging in
+# front of the shorts at 0.55
+SHORTS_KNEE = [(0.05, 0.035, 0.035, 0.035), (0.12, 0.034, 0.034, 0.034), (0.30, 0.048, 0.042, 0.064),
+               (0.43, 0.038, 0.038, 0.038), (0.435, 0.075, 0.075, 0.075), (0.50, 0.075, 0.075, 0.075),
+               (0.55, 0.088, 0.105, 0.080), (0.60, 0.075, 0.075, 0.075), (0.95, 0.085, 0.085, 0.085)]
+
+
 def selftest_knee(ok, opts) -> None:
     """The knee on the leg's own sections: a hem above it, a change of H, a kneecap."""
     lower_hem = [(z - 0.03 if z >= 0.56 else z, *r) for z, *r in CALF_HEM]
@@ -1962,6 +1982,18 @@ def selftest_knee(ok, opts) -> None:
     rep = build_report(v, f, dict(opts, no_window_gate=True))
     ok("knee, a hem over a straight leg: proportion", rep["methods"]["knee.L"] == "proportion"
        and rep["landmarks"]["knee.L"][2] < 0.56)
+    # shorts over the knee: the pocket above the hem reads as a kneecap, except on the chibi route (garment)
+    hip, ank = np.array([0.11, 0.0, 0.90]), np.array([0.11, 0.0, 0.10])
+    v, f = _leg_body(SHORTS_KNEE)
+    t_open, cue_open = knee_on_leg(v, f, hip, ank)
+    t_shut, cue_shut = knee_on_leg(v, f, hip, ank, garment=True)
+    ok("knee, shorts over the knee: the pocket above the hem is a kneecap on the default route, the chibi route "
+       "(garment) takes no cue above the hem", cue_open == "kneecap" and 0.52 < t_open < 0.60 and t_shut is None
+       and "shorts' hem" in cue_shut)
+    v, f = _leg_body(CALF_HEM)          # its hem at 0.60 lies in the band: the valley under it is still read
+    t_hem, cue_hem = knee_on_leg(v, f, hip, ank, garment=True)
+    ok("knee, garment: a valley under the hem is still the knee", cue_hem == "valley"
+       and abs(float(ank[2] + t_hem * (hip[2] - ank[2])) - 0.48) < 0.01)
 
 
 def selftest_hip(ok, opts) -> None:

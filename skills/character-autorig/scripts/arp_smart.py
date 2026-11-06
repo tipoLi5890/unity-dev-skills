@@ -21,10 +21,14 @@ The chain, one step per timer tick:
                AI files' info.dat version >= 1.20, the mesh present, no Auto-Rig Pro rig in the file.
   select       id.get_selected_objects (EXEC; INVOKE opens a dialog) -> the add-on's working body.
   body         arp.guess_markers -> root neck chin head_tip and shoulder elbow hand hand_tip thigh knee
-               foot (_loc = .L on +X, _loc_sym = .R). It runs --body-runs times (3): the guess moves by
-               millimetres from run to run (the hand marker is the wrist Go! builds on), so per marker
-               the guess nearest the markers' median is put back (body_runs: runs, spread in metres; a
-               later guess that fails keeps the good ones: failed_after, error).
+               foot (_loc = .L on +X, _loc_sym = .R). Each guess averages --body-samples front pictures
+               (30, the add-on's most; its own default is 10), the camera turned a random whole degree in
+               -15..15 for each after the first: at 10 the guess moves by millimetres from run to run (the
+               hand marker is the wrist Go! builds on), at 30 nearly every angle is used and it moves by
+               tenths of one. It runs --body-runs times (3) and per marker the guess nearest the markers'
+               median is put back, one of the AI's own (body_runs: runs, spread_m the worst marker's largest
+               distance from its median, marker_spread_m per marker; a later guess that fails keeps the
+               good ones: failed_after, error).
   fingers      arp.guess_fingers with --fingers; 5 that fails is tried again with 4 (the add-on's
                four-finger hand is thumb, middle, ring, pinky: no index). A failure is a popup that
                raises nothing: judged by thumb1_loc. Both failing turns fingers off for Go!. The guess
@@ -93,6 +97,7 @@ BODY_REFS = ("root_ref.x", "spine_01_ref.x", "neck_ref.x", "head_ref.x") + tuple
 BODY_PFX = ("root", "spine", "neck", "head", "shoulder", "arm", "forearm", "hand", "thigh", "leg",
             "foot", "toes", "bot_bend", "breast", "tail")
 PROXY = "arp_smart_eyeball"
+BODY_SAMPLES = 30               # front pictures per body guess: the add-on's most (its own default is 10)
 BROW_AHEAD = 0.020              # a brow more than this (x H / 1.75) in front of the eyelids: a fringe
 
 
@@ -102,6 +107,13 @@ class UsageParser(argparse.ArgumentParser):
     def error(self, message):
         self.print_usage(sys.stderr)
         self.exit(1, f"{self.prog}: error: {message}\n")
+
+
+def _samples(v: str) -> int:
+    n = int(v)
+    if not 0 <= n <= 30:            # the add-on's own bounds (1-30); 0 leaves its setting alone
+        raise argparse.ArgumentTypeError(f"{n}: front pictures per body guess are 1-30 (0: the add-on's)")
+    return n
 
 
 def parser() -> UsageParser:
@@ -116,7 +128,8 @@ def parser() -> UsageParser:
     p.add_argument("--eyes", choices=("proxy", "none", "auto", "objects"), default="proxy")
     p.add_argument("--eye-glb", help="--eyes objects: the eyeballs (eye_fit.py fit's <c>_eyes.glb)")
     p.add_argument("--eye-frame-glb", help="--eyes objects: the GLB the open file was prepped from (its frame)")
-    p.add_argument("--body-samples", type=int, default=0, help="front pictures per body guess (0: the add-on's)")
+    p.add_argument("--body-samples", type=_samples, default=BODY_SAMPLES,
+                   help=f"front pictures per body guess, 1-30 (default {BODY_SAMPLES}; 0: the add-on's setting, 10 in a new file)")
     p.add_argument("--finger-samples", type=int, default=0, help="per finger guess (0: the add-on's)")
     p.add_argument("--body-runs", type=int, default=3, help="body guesses; per marker the one nearest their median")
     p.add_argument("--finger-runs", type=int, default=5, help="finger guesses; per finger the one nearest their median")
@@ -203,6 +216,16 @@ def medoid_run(runs: list, group=lambda k: "") -> tuple:
         mean[g] = [sum(dist[k][i] for k in ks) / len(ks) for i in range(len(runs))]
         kept[g] = min(range(len(runs)), key=lambda i: mean[g][i])
     return kept, max(max(d) for d in dist.values()), mean
+
+
+def body_runs_block(runs: list) -> tuple:
+    """The body guesses ({marker_loc: xyz} each): per marker the run nearest its per-coordinate median
+    (medoid_run, a group per marker, so a marker and its mirror, the same in every run, keep the same run).
+    Returns ({marker_loc: run index}, body_runs {runs, spread_m, marker_spread_m {marker: its largest
+    distance from its median}})."""
+    kept, spread, dist = medoid_run(runs, lambda k: k)
+    per = {side_name(k) or k: round(max(d), 5) for k, d in dist.items()}
+    return kept, {"runs": len(runs), "spread_m": round(spread, 5), "marker_spread_m": dict(sorted(per.items()))}
 
 
 def finger_of(marker: str) -> str:
@@ -599,14 +622,13 @@ class Run:
                 break
             runs.append({k: v for k, v in self.locs().items() if is_body(k)})
         if runs:                 # a later guess that failed: the good ones are kept, the failure reported
-            kept, spread, _ = medoid_run(runs, lambda k: k)
+            kept, block = body_runs_block(runs)
             for name in set.intersection(*[set(x) for x in runs]):
                 o = bpy.data.objects.get(name)
                 if o is not None:
                     o.matrix_world.translation = runs[kept[name]][name]
             bpy.context.view_layer.update()
-            self.S["body_runs"] = {"runs": len(runs), "spread_m": round(spread, 5),
-                                   **({"failed_after": len(runs), "error": failed} if failed else {})}
+            self.S["body_runs"] = {**block, **({"failed_after": len(runs), "error": failed} if failed else {})}
         self.S["body_loc"] = {k: v for k, v in self.locs().items() if is_body(k)}
         missing = [n for n in body_required() if n not in body_markers(self.S["body_loc"])]
         err = failed if not runs or missing else None     # ok and error never both
@@ -1014,7 +1036,7 @@ def selftest() -> int:
           and eye_args_error(parser().parse_args(["--eye-glb", here])) is not None
           and opts("--eyes", "objects")["eyes"] == "objects")
     check("--no-facial drops the eyes option", opts("--no-facial")["facial"] is False and opts("--no-facial")["eyes"] is None)
-    for bad in (["--fingers", "3"], ["--eyes", "glass"], ["--no-such-flag"]):
+    for bad in (["--fingers", "3"], ["--eyes", "glass"], ["--body-samples", "31"], ["--no-such-flag"]):
         with contextlib.redirect_stderr(io.StringIO()):
             try:
                 parser().parse_args(bad)
@@ -1043,6 +1065,23 @@ def selftest() -> int:
           kept["thumb"] in (0, 1) and kept["index"] in (0, 2) and abs(spread - math.dist([0.52, 0, 0.88], [0.503, 0, 0.9])) < 1e-9
           and medoid_run(runs[:1], finger_of)[0] == {"thumb": 0, "index": 0} and medoid_run(runs[:1])[1] == 0.0,
           kept=kept, spread=spread)
+    # body runs: a marker and its mirror move together; per marker the run nearest its median, never the outlier
+    br = [{"hand_loc": [0.550, 0.045, 1.0060], "hand_loc_sym": [-0.550, 0.045, 1.0060], "root_loc": [0, 0, 0.981]},
+          {"hand_loc": [0.549, 0.045, 1.0050], "hand_loc_sym": [-0.549, 0.045, 1.0050], "root_loc": [0, 0, 0.990]},
+          {"hand_loc": [0.556, 0.045, 1.0150], "hand_loc_sym": [-0.556, 0.045, 1.0150], "root_loc": [0, 0, 0.982]}]
+    bk, bb = body_runs_block(br)
+    check("body runs: per marker the run nearest its median, a marker and its mirror the same run, the outlier "
+          "never kept; spread_m the worst marker's, marker_spread_m per marker",
+          bk["hand_loc"] == bk["hand_loc_sym"] == 0 and bk["root_loc"] == 2 and bb["runs"] == 3
+          and set(bb["marker_spread_m"]) == {"hand.L", "hand.R", "root"}
+          and bb["marker_spread_m"]["hand.L"] == bb["marker_spread_m"]["hand.R"]
+          == round(math.dist([0.556, 0.045, 1.015], [0.550, 0.045, 1.006]), 5)
+          and bb["spread_m"] == max(bb["marker_spread_m"].values()) and body_runs_block(br[:1])[1]["spread_m"] == 0.0,
+          kept=bk, block=bb)
+    p0 = parser().parse_args([])
+    check("defaults: 3 body guesses of 30 front pictures each (the add-on's most), reported in options",
+          p0.body_runs == 3 and p0.body_samples == BODY_SAMPLES == 30 and options(p0)["body_samples"] == 30
+          and options(parser().parse_args(["--body-samples", "0"]))["body_samples"] is None)
     rr, _ = assemble(_fake_state(finger_tries=[{"count": 5, "ok": True}] * 5,
                                  finger_runs={"runs": 5, "kept": {"thumb": 1}, "spread_m": 0.004}), opts())
     check("five runs at five fingers are no fallback; fingers.runs reported",

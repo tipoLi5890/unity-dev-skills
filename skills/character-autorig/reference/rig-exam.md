@@ -23,7 +23,7 @@ python3 scripts/rig_exam.py faults exam/ --base runner --fbx exam/refs/runner/ac
   --contract exam/refs/runner/accepted.contract.json
 python3 scripts/rig_exam.py score exam/ [--tol 0.04] [--volume-max 0.35]   # exam/exam.json, exam/sheet.png
 python3 scripts/rig_exam.py bench exam/ --real couriers/runner --out bench/before.bench.json   # bench/1
-python3 scripts/rig_exam.py compare bench/before.bench.json bench/after.bench.json [--margin-drop 0.02]
+python3 scripts/rig_exam.py compare bench/before.bench.json bench/after.bench.json [--margin-drop 0.02] [--near 1.0] [--tradeoff-floor 0.05]
 python3 scripts/rig_exam.py --selftest                       # numpy, planted data; runs in CI
 ```
 
@@ -198,16 +198,52 @@ them. Neither needs Blender.
   step of `autorig.all.json` every gate of the step's report with `value`, `limit`, `pass` and
   `margin` (null when the gate has none). `deform` is the reading after the repair ladder.
   `stability` is `autorig.stability.json` when the folder was run with `--repeat`, and
-  `worst_margin` is the least margin over its gates.
+  `worst_margin` is the least margin over its gates. `repair` says what the repair ladder did:
+  `chosen` for the run `autorig.all.json` stands for (`result`: the ladder's `passed`, `exhausted`,
+  `error` or `not_applicable`, after a pass near the limit `kept_repair` or `kept_original`, `none`
+  when no ladder ran, `not_reached` when deform did not run; `trigger` `failed` or `near_limit`;
+  `fired`, an attempt was made; `used`, the bind taken on is the repair; each rung's hinges, amount
+  and cross-side bones), and with `--repeat` `runs`: each `repeat/rN/autorig.all.json` read the
+  same way, how many of them were `repaired` (fired) and how many `used` it. After `kept_original`
+  `deform` is the first reading.
 - **`made_with`**: `--label` (say, the version), the plugin version when its manifest is found, and
   a short hash of each script in this folder.
 
 `compare OLD NEW` exits 2 on any regression and lists each one: a gate that passed and now fails or
 is no longer read, a gate new to a step OLD read that fails, a margin that drops by more than
-`--margin-drop` (0.02), a real character or exam case of OLD missing from NEW, a case that was a
-true pass or an expected fail and is not now, fewer fingers right, or a new false pass, slipped
-fault or failed control. Improvements, the same changes the other way, are listed too and never
-fail it. A change ships when `compare` exits 0 against the last baseline. `bench` refuses to write
+`--margin-drop` (0.02) and ends under `--near` (1.0) or drops by more than it, a real character or exam case of OLD missing
+from NEW, a case that was a true pass or an expected fail and is not now, fewer fingers right, or a
+new false pass, slipped fault or failed control. Improvements, the same changes the other way, are
+listed too and never fail it. Two more lists hold drops that are not regressions:
+
+- **`informational`: the noise floor.** A margin is in units of the limit (gate/1), so a margin of
+  1.0 sits one limit's size away from it. A `<=` gate (a loss, a tear, an intersection) or a range
+  never reads a margin above 1.0, so the floor never excuses one of them; it only lets through a
+  `>=` gate whose value is more than twice its limit (a finger 9 cm long against a 1 cm minimum,
+  margin 8) moving by run-to-run noise: a drop of at most `--near` that ends at `--near` or more. A
+  drop from 8 to 0.6 lands under the floor and regresses; one from 8 to 1.2 moves more than one
+  limit's size and regresses too. The `stable` gate is never listed there. This is the detector's
+  floor, not a gate limit: no gate passes or fails differently, and `--near` changes only which
+  list a drop is printed in. A large value (`--near 1000`) turns the floor off.
+- **`repair_tradeoffs`: a designed repair.** The repair ladder moves weight across a hinge to bring
+  the volume loss under its limit, and a sharper hinge self-intersects a little more. When a
+  character's repair differs between the two files (the `repair` list: `repair_now`, `repair_gone`,
+  `repair_changed`: other rungs, or another share of runs repaired or using it, a folder without
+  `--repeat` being one run; `repair_now` and `repair_gone` follow `used` first, so a near-limit
+  ladder that kept the original reads as gone against a used repair), a still-passing margin drop
+  of `deform.volume_loss_max` or `deform.self_intersection_p95` (the pair the ladder trades; no
+  other gate) on that character, in `deform`, `secondary_deform` or `stability`, is listed there
+  when the other of the pair, still passing in the same step, rose by more than `--margin-drop`
+  (the rise it bought), a side's bind is the repair (`used`), and its new margin is at least `--tradeoff-floor` (0.05, the
+  ladder's near band: a drop onto the edge of a limit regresses whatever the repair did); otherwise
+  it stays a regression. Never excused: a gate going from pass to fail, the `stable` gate, a
+  new false pass, a slipped fault or a failed control. Read the rung's renders before the change
+  ships, as for any repair.
+- **`repair_unknown`.** A bench written before the repair reading (no `repair` key), or one whose
+  chosen or `--repeat` run's `autorig.all.json` was not found, says nothing about the ladder, so
+  `compare` lists the character as `repair_unknown` and every drop stays under the plain rule; bench the baseline again from its folders to get the reading.
+
+A change ships when `compare` exits 0 against the last baseline. `bench` refuses to write
 a file with nothing in it (no scored exam case, no `--real`), and `compare` refuses such an OLD.
 A gate compares margins only when both files carry one. Reports from before 0.43 say a bare limit
 (`0.35`, not `<= 0.35`), so against such a baseline `compare` sees pass and fail alone on those
@@ -239,6 +275,10 @@ python3 scripts/rig_exam.py compare bench/before.bench.json bench/after.bench.js
 A guard that stopped at deform in both files is no regression, as long as its deform margins held.
 If the mascot's elbow self-intersection went from a margin of 0.31 to 0.25, `compare` lists a
 `margin_drop` for `Mascot`, `deform`, `deform.self_intersection_p95` and exits 2, though the gate
-still passes: look at that pose's render before the change ships. If `spiky_hair`'s fingers read
-`detected` again, the higher `fingers_right` shows under `improvements`.
+still passes: look at that pose's render before the change ships. If the gatekeeper's elbow now
+needs the ladder (an elbow rung at amount 1.0) and its self-intersection margin went from 0.15 to
+0.10 while the volume margin rose from 0.02 to 0.75, `compare` lists `repair_now` and puts the
+self-intersection drop under `repair_tradeoffs`; the runner's finger lengths moving from a margin of
+8 to 7.5 go under `informational`. If `spiky_hair`'s fingers read `detected` again, the higher
+`fingers_right` shows under `improvements`.
 
