@@ -335,9 +335,9 @@ flowchart LR
 | Skill | 使うとき |
 |---|---|
 | [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 画像からリグ付きキャラクターを作るなら**まずここから**。S0–S13 の各工程に、それぞれゲート |
-| [`codex-visual`](../skills/codex-visual/SKILL.md) | `codex` の画像モデルで作る 2D アート。一冊のアートバイブルでスタイルを保つ |
+| [`codex-visual`](../skills/codex-visual/SKILL.md) | `codex` の画像モデルで作る 2D アート。一冊のアートバイブルでスタイルを保つ。フレーム列のキャラクターの一貫性と動きを測り、人が見る前にレビューシートを事前チェックする |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 自前の ComfyUI で作る音楽、効果音、動画、3D モデル、レイヤー分けした 2D アート。それぞれ一つのジョブで |
-| [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 生成した 3D モデルのくすんだテクスチャを、コンセプトアートから一視点ずつ塗り直す。メッシュと UV はそのまま |
+| [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 生成した 3D モデルのくすんだテクスチャを、コンセプトアートから一視点ずつ塗り直す。メッシュと UV はそのまま。メッシュがコンセプト画にどれだけ近いかも測る |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | キャラクターの静止画一枚を、生成した動画を通して透過スプライトのループにする |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` が合わないときに Blender で手作りするリグ。FBX は再インポートで証明 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 既製のクリップを自分の Blender のリグへ。足滑り、ジッター、ポップでゲート |

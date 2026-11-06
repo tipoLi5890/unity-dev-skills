@@ -8,7 +8,10 @@ Four checks, each over the whole repository:
              each sample validates against schemas/<name>-<major>.json, picked by its `schema`
              stamp (`frames/1` -> frames-1.json). A `.jsonl` timeline is validated line by line,
              plus the file rules: the meta line first, at most one end line and only last, and
-             end.samples equal to the number of samples. Fenced JSON examples in skills/**/*.md
+             end.samples equal to the number of samples. A `.npz` (motion-samples/1 as
+             contact_bake writes it: positions, names, fps, optional contacts, reading_joints,
+             reading_names and a JSON `meta`) is rebuilt as motion_metrics reads it, its array
+             shapes checked, and validated the same way. Fenced JSON examples in skills/**/*.md
              that carry a known stamp are validated the same way. Rows whose dependencies are
              missing print SKIP, as in tools/run-selftests.py, whose table this reuses.
   flags      each long flag in a documented command line (`scripts/....py --flag` inside a code
@@ -27,7 +30,8 @@ Four checks, each over the whole repository:
   python3 tools/check-contracts.py --only flags    # one check (repeatable)
   python3 tools/check-contracts.py --blender PATH  # also the selftests that run inside Blender
 
-Needs jsonschema for `outputs` (pip install jsonschema); the other checks are standard library.
+Needs jsonschema for `outputs` (pip install jsonschema), and numpy for a `.npz` sample; the other
+checks are standard library.
 Skills never import a validator: this file is the only place schemas are enforced.
 
 Exit codes: 0 every check held; 2 a contract was violated; 3 harness error (a selftest that
@@ -57,7 +61,9 @@ HANDS_OFF = re.compile(r'selftest-output|contract_sample\(|contract_out\(')
 OUTPUT_LINE = re.compile(r'^selftest-output:\s*(.+?)\s*$', re.M)
 SUFFIX_STAMP = {'.frames.json': 'frames/1', '.gate.json': 'gate/1', '.timeline.jsonl': 'timeline/1',
                 '.secondary.json': 'secondary/1', '.parts.json': 'parts/1',
-                '.rig2d.json': 'rig2d/1'}
+                '.rig2d.json': 'rig2d/1', '.skeleton.json': 'skeleton/1',
+                '.motion-samples.json': 'motion-samples/1', '.motion-samples.npz': 'motion-samples/1',
+                '.review.json': 'review/1'}
 
 
 class Report:
@@ -175,8 +181,62 @@ def check_timeline(validators, lines: list, where: str, rep: Report) -> bool:
     return ok
 
 
+def npz_samples(path: pathlib.Path, where: str, rep: Report):
+    """A motion-samples .npz as motion_metrics.load() rebuilds it, or None (reported) when its arrays are
+    not the documented shapes: positions (F, J, 3), names (J,), fps, contacts (F, 2), reading_joints
+    (F, R, 3) with reading_names (R,), meta a JSON object."""
+    import numpy as np      # only a .npz sample needs it
+    try:
+        with np.load(path, allow_pickle=False) as f:
+            z = {k: f[k] for k in f.files}
+    except (OSError, ValueError) as e:
+        rep.bad(f'{where}: unreadable npz ({e})')
+        return None
+    bad = [k for k in ('positions', 'names', 'fps') if k not in z]
+    if bad:
+        rep.bad(f'{where}: motion-samples/1 npz has no {", ".join(bad)}')
+        return None
+    pos, names = np.asarray(z['positions']), [str(s) for s in z['names']]
+    shapes = []
+    if pos.ndim != 3 or pos.shape[1:] != (len(names), 3):
+        shapes.append(f'positions {list(pos.shape)} is not (frames, {len(names)} names, 3)')
+    if 'contacts' in z and (z['contacts'].ndim != 2 or z['contacts'].shape != (len(pos), 2)):
+        shapes.append(f'contacts {list(z["contacts"].shape)} is not ({len(pos)} frames, 2)')
+    if 'reading_joints' in z:
+        rn = [str(s) for s in z['reading_names']] if 'reading_names' in z else None
+        if rn is None or z['reading_joints'].shape != (len(pos), len(rn), 3):
+            shapes.append(f'reading_joints {list(z["reading_joints"].shape)} is not (frames, reading_names, 3)')
+    try:
+        doc = load_json(str(z['meta'])) if 'meta' in z else {}
+    except ValueError as e:
+        shapes.append(f'meta is not JSON ({e})')
+        doc = None
+    if doc is not None and not isinstance(doc, dict):
+        shapes.append('meta is not a JSON object')
+    for msg in shapes:
+        rep.bad(f'{where}: {msg}')
+    if shapes:
+        return None
+    doc.update(schema=doc.get('schema', 'motion-samples/1'), fps=float(z['fps']),
+               joints={nm: pos[:, j].tolist() for j, nm in enumerate(names)})
+    if 'contacts' in z:
+        doc['contacts'] = {'l': z['contacts'][:, 0].tolist(), 'r': z['contacts'][:, 1].tolist()}
+    if 'reading_joints' in z:
+        doc['reading_joints'] = z['reading_joints'].tolist()
+        doc['reading_names'] = [str(s) for s in z['reading_names']]
+    return doc
+
+
 def check_file(validators, path: pathlib.Path, rep: Report) -> bool:
     where = rel(path)
+    if path.suffix == '.npz':
+        doc = npz_samples(path, where, rep)
+        if doc is None:
+            return False
+        errs = schema_errors(validators['motion-samples/1'], doc)
+        for err in errs:
+            rep.bad(f'{where}: motion-samples/1 {err}')
+        return not errs
     try:
         text = path.read_text(encoding='utf-8')
     except OSError as e:
@@ -245,7 +305,8 @@ def check_outputs(rep: Report, blender, only_rows) -> None:
     validators = load_schemas(rep)
     if validators is None:
         return
-    for need in ('frames/1', 'gate/1', 'timeline/1', 'secondary/1', 'parts/1'):
+    for need in ('frames/1', 'gate/1', 'timeline/1', 'secondary/1', 'parts/1', 'skeleton/1', 'motion-samples/1',
+                 'review/1'):
         if need not in validators:
             rep.broken(f'outputs: schemas/ has no schema for {need}')
             return

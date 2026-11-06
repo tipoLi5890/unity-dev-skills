@@ -68,7 +68,8 @@ A file that one skill writes and another reads is a contract, defined once in
 gate script's report), `timeline/1` (one line of a journey's `timeline.jsonl`), `secondary/1` (a
 rigged character's `<name>.secondary.json`), `parts/1` (a character's parts plan
 `<c>.parts.json`), `rig2d/1` (a layered 2D character's `rig2d.json`), `exam/1` (the rig exam's
-truth, reference, fault and report files) and `bench/1` (one version's rig readings, for `rig_exam.py compare`).
+truth, reference, fault and report files), `bench/1` (one version's rig readings, for `rig_exam.py compare`), `review/1` (a pre-review of a
+review sheet), `skeleton/1` (a rest skeleton) and `motion-samples/1` (one clip's joint positions).
 The producer stamps the file with `"schema": "<name>/<major>"`. [`schemas/README.md`](../schemas/README.md)
 says what each field means and who reads it.
 

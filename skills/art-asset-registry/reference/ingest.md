@@ -35,6 +35,7 @@ Tried in this order; the first that fits is used.
 | a record | a `record` object, from any producer that writes one (every Blender skill report carries one; the ComfyUI and codex clients where they add one) | that object; keys it leaves out are filled from the shape below it, and a top-level `file` (`{path, saved, dirty}`) is carried in and hashed. A ComfyUI job is read only through its `record` |
 | frames | `"schema": "frames/1"` (`schemas/frames-1.json` in the plugin repo); also, for one release, `sheet_to_frames.py`'s unstamped `frames.json` (`tool`, or `frames` with `cell` and `verdict`), or any `frames.json` with `frames` and a `producer` (`breathe.py`, `video_loop.py`) | the sidecar first, then every frame (read next to it), the sheet (else `source`, a path or `{file, sha256}`) as an input, a `frames.faults` gate, `verdict` from `verdict.ok`, fault kinds in `note`; `params` keep what a re-import needs: `pivot_norm`, `key_color`, `canvas`, `fps_hint`, `loop`, `hold_last`, `block_px` (from `pixel`), `reference_core_height_px` and `foot_margin_px` (from `register`); `tool` is the `producer`'s `{skill, script}` when it names one (both strings, else exit 3), else `codex-visual`/`sheet_to_frames.py`. A stamped file missing a required key exits 3 |
 | gate | `"schema": "gate/1"` (`schemas/gate-1.json` in the plugin repo); also an unstamped Blender report (`gates` and `blender`) | its gates (with any `margin`) and verdict (`pass`), `source: authored` unless its `record` says otherwise (`paint_loop.py`'s `gates.json`, `video_loop.py`'s `<name>.gates.json`); the file comes from `--file`, else the report's top-level `path` (an FBX export), else the saved `.blend` from `file.path` as `role: source, mutable: true`, hashed like any file. A gate without a boolean `pass` has failed; a stamped report whose `pass` or a gate's `pass` is missing exits 3, and so does a refused report with no gates |
+| review | `"schema": "review/1"` (`schemas/review-1.json` in the plugin repo), from `codex-visual` → `scripts/prereview.py check` | `kind: qa-sheet`, `source: authored`: the review file, then its two sheets (read next to it, `role: preview`), the subject as an input with its sha256, so a subject already in the ledger gets a `depends-on` link; `params` keep `review`, `stage`, `verdict` (`clear` or `flagged`), `flagged`, `reviewer` and `model`; `note` names the flagged ids. No gate, no record `verdict`, and no status changes anywhere. A draft (`verdict: draft`, never checked) exits 2, and so do a review whose answers no longer give its `flagged` ids (edited after `check`), a sheet whose bytes changed since the review, and `--status approved`: a person approves the subject, never the review. A stamped file missing a required key exits 3 |
 | codex | `out` and `size` | the image, `source: generated`; `params` keep `model` (the image model read from the file's C2PA manifest), `agent_model` (`-m`), `codex_version` and `prompt_sha256`; with `--expect-size`, a `codex.size` gate; an alpha render adds a warning |
 
 `ok`, the old name of `pass`, is never read. A report or a gate that carries it exits 3 (a
@@ -63,6 +64,8 @@ Rules that hold for every shape:
   The Blender file's own path is made relative too, or cut to its name when it lies outside.
 - **No file, no record.** A Blender report from before `record` existed names no output: pass
   `--file`, or it exits 3.
+- **A review approves nothing.** A flagged review/1 is recorded as it is; `check` then warns
+  `review-flagged` while its subject is approved (`reference/ledger-schema.md`).
 - **Several images, no record.** `codex_generate.py` exits 5 when one call made more than one
   image, because which one was meant is a person's call. `ingest` refuses that output (exit 2):
   pick the image, then `record` it.
@@ -100,5 +103,5 @@ run made only to learn something (a downstream-only rerun) is ingested with `--s
 | Exit | When |
 |---|---|
 | 0 | printed, or recorded |
-| 2 | `record` refused it, a file outside `--root`, several images from one call |
+| 2 | `record` refused it, a file outside `--root`, several images from one call, a review/1 draft, edited after `check` or with a changed sheet, or `--status approved` on a review |
 | 3 | not JSON, not an object, not a shape listed above, an error output, no file named |

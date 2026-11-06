@@ -301,12 +301,13 @@ def demo_skeleton(height=1.7) -> dict:
                       for n, (h, t) in P.items()]}
 
 
-def contract_sample(script: str, case: str, doc: dict) -> None:
-    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
-    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+def contract_sample(script: str, case: str, doc: dict, suffix: str = ".gate.json") -> None:
+    """Hand one selftest sample to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case><suffix> (.gate.json, .skeleton.json, .motion-samples.json),
+    and named on stdout as `selftest-output: <path>`."""
     out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
     os.makedirs(out, exist_ok=True)
-    path = os.path.join(out, f"{script}__{case}.gate.json")
+    path = os.path.join(out, f"{script}__{case}{suffix}")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(doc, handle, indent=1)
     print(f"selftest-output: {path}")
@@ -339,6 +340,7 @@ def selftest() -> int:
         check(f"frame right-handed {d}", np.isclose(np.linalg.det(AL), 1) and np.isclose(np.linalg.det(AR), 1))
         check(f"frame mirrors {d}", np.allclose(AR[:, 0], -(np.diag([-1, 1, 1]) @ AL[:, 0])))
     check("right limits mirror Y and Z", limits_for("UpperLeg.R") == [[-125, 35], [-40, 40], [-25, 50]])
+    contract_sample("skeleton", "demo", demo_skeleton(), ".skeleton.json")
     info, gates = build_rig_info(read_skeleton(demo_skeleton()))
     check("demo contract passes", all(g["pass"] for g in gates))
     names = [k["name"] for k in info["keypoints"]]

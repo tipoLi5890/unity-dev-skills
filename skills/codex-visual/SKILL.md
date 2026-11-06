@@ -29,7 +29,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 | "The assets don't match / the style drifted" | PHASE 4 |
 | A source image for image-to-3D; the views a generated mesh's texture is repainted from | `reference/image-to-3d-input.md`; repaint: `mesh-texture-paint` |
 | A 2D character or scene to cut into layers (PSB, Live2D, parallax) | `reference/layered-2d-source.md` |
-| A review sheet (8-view QA, clips, before/after), gated on checks | `reference/review-sheets.md` |
+| A review sheet (8-view QA, clips, before/after), gated; its pre-review | `reference/review-sheets.md`; `reference/pre-review.md` |
 | Read a screenshot; compare two images | `reference/codex-runtime.md` §7 |
 | Any `codex exec` image work by hand (bare `codex` hangs; exit 0 proves nothing) | Step 0; `reference/codex-runtime.md` §1–4 |
 | Which model rendered it; size and quality limits | `reference/image-model.md` |
@@ -48,7 +48,7 @@ Read `/ART_DIRECTION.md`. **Missing / `Status: PENDING`** → **PHASE 1** first,
 | `/ArtDirection/candidates/` | Bootstrap explorations. |
 | `/ArtDirection/anchors/` · `anchors/sets/` | Locked reference image(s) fed via `-i`; `sets/` = per-set anchors (an approved first member). |
 | `/ArtDirection/manifest.md` | Registry of every generated asset. |
-| skill `scripts/` | **Key:** `pick_key.py` · `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `frames_to_anim.py` · `breathe.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py` · `overview_sheet.py` (`reference/overview-sheets.md`). **Call:** `codex_generate.py` |
+| skill `scripts/` | **Key:** `pick_key.py` · `key_unmix.py`. **Sets:** `slice_grid.py` · `normalize_set.py` · `audit_set.py`. **Animation:** `sheet_to_frames.py` · `audit_frames.py` · `audit_identity.py` · `frames_to_anim.py` · `breathe.py`. **Pixel:** `pixel_snap.py` · `audit_pixel.py`. **3D source:** `turnaround_to_views.py` · `audit_3d_source.py`. **Review:** `contact_sheet.py` · `prereview.py` · `overview_sheet.py` (`reference/overview-sheets.md`) · `embed.py`. **Call:** `codex_generate.py` |
 | project asset dir | Shippable art, at the path the spec defines (e.g. `Assets/…` for Unity). |
 
 `<repo>` = the project root, as an **absolute path**.
@@ -142,7 +142,7 @@ Three SCOPES of consistency, each owned by one mechanism; they **stack** in one 
 | **Across sets / over time** (shipped work) | **reference-chaining** | ALSO `-i` the prior approved sheet — a FIXED promoted anchor, never the previous output |
 | *guarantee* (size and centre) | **normalize + gate** | `slice_grid.py` / `normalize_set.py`, then `audit_set.py` |
 
-So the canonical call is **style anchor + family anchor (chain) + grid layout, in ONE generation**,
+The canonical call: **style anchor + family anchor (chain) + grid layout, in ONE generation**,
 then slice + normalize.
 
 - **New set of N≥2 siblings** → grid one-shot: `cols=ceil(√N)`, `rows=ceil(N/cols)`, leftover
@@ -170,9 +170,9 @@ loop from one still: `breathe.py`. Every step: `reference/animation-route.md`.
 ## PHASE 4 — Audit & evolve
 
 - **Consistency audit:** the audit call in `reference/codex-runtime.md` §7, strongest agent model.
-- **Changing the style:** bump `version` + changelog; flag pre-version assets in the manifest as
-  re-gen candidates. Version the palette; never silently edit it.
-- **New IP later** → re-run PHASE 1→2 (bump version); keep old anchors reproducible.
+- **Changing the style:** bump `version` + changelog; flag older assets in the manifest as
+  re-gen candidates. Version the palette; never edit it silently.
+- **New IP later** → PHASE 1→2 again (bump version); keep old anchors.
 
 ## Scope — what this skill does NOT do
 

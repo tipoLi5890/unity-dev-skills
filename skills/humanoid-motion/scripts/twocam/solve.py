@@ -917,12 +917,13 @@ def run(argv) -> int:
     return 0 if report["pass"] is True else 2
 
 
-def contract_sample(script: str, case: str, doc: dict) -> None:
-    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
-    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+def contract_sample(script: str, case: str, doc: dict, suffix: str = ".gate.json") -> None:
+    """Hand one selftest sample to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case><suffix> (.gate.json, .skeleton.json, .motion-samples.json),
+    and named on stdout as `selftest-output: <path>`."""
     out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
     os.makedirs(out, exist_ok=True)
-    path = os.path.join(out, f"{script}__{case}.gate.json")
+    path = os.path.join(out, f"{script}__{case}{suffix}")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(doc, handle, indent=1)
     print(f"selftest-output: {path}")
@@ -976,6 +977,7 @@ def selftest() -> int:
             check("joints within 2 cm (mean) of the truth", err.mean() < 0.02, mean_cm=round(float(err.mean() * 100), 3))
             check("local_quat written for limit frames", np.asarray(m["local_quat"]).shape == (48, 22, 4))
             s = json.loads((td / "s.json").read_text())
+            contract_sample("solve", "clean", s, ".motion-samples.json")
             check("samples file for motion_metrics", s["schema"] == "motion-samples/1" and "two_view" in s
                   and s["feet"]["l"] == ["Foot.L", "Toes.L"] and len(s["two_view"]["reprojection_px"]) == 48)
             ground = info["twocam"]["ground"]

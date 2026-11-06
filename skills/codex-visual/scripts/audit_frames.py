@@ -123,6 +123,7 @@ import glob
 import json
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -230,6 +231,11 @@ def onion_tile(files, label, failed):
     return card
 
 
+def natural_key(path):
+    """Sort walk_2 before walk_10: digit runs compare as numbers (zero-padded names sort the same)."""
+    return [(0, int(t), "") if t.isdigit() else (1, 0, t) for t in re.split(r"(\d+)", os.path.basename(path))]
+
+
 def find_sequence(arg):
     """(name, frame paths, sidecar dict or None) for one command-line argument."""
     side = None
@@ -247,7 +253,7 @@ def find_sequence(arg):
                  if not f.get("empty")]
         return os.path.basename(os.path.abspath(d)), [f for f in files if os.path.isfile(f)], doc
     stills = []
-    for f in sorted(glob.glob(os.path.join(d, "*.png"))):
+    for f in sorted(glob.glob(os.path.join(d, "*.png")), key=natural_key):
         with Image.open(f) as im:
             if getattr(im, "n_frames", 1) == 1:      # an APNG preview left beside the frames is not a frame
                 stills.append(f)
@@ -607,6 +613,10 @@ def selftest():
         code, out = audit(dirty, "--residual-max", "-1", "--sparse-min", "0", "--key-color", "#ff00ff")
         check("both opt-outs: the earlier gates alone decide", code == 0 and "verdict OK" in out)
 
+    names = ["idle_10.png", "idle_2.png", "idle_0.png", "idle_1.png"]
+    check("frames sort by their number, not as text (idle_2 before idle_10)",
+          sorted(names, key=natural_key) == ["idle_0.png", "idle_1.png", "idle_2.png", "idle_10.png"]
+          and sorted(["w_010.png", "w_002.png"], key=natural_key) == ["w_002.png", "w_010.png"])
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
     return 1 if failed else 0
 

@@ -340,9 +340,9 @@ flowchart LR
 | Skill | 什么时候用 |
 |---|---|
 | [`game-character-pipeline`](../skills/game-character-pipeline/SKILL.md) | 用一张图做绑骨角色，**从这里开始**：S0–S13 各阶段，每一阶段都有闸门 |
-| [`codex-visual`](../skills/codex-visual/SKILL.md) | 通过 `codex` 图像模型出 2D 美术，用一份美术圣经保持风格统一 |
+| [`codex-visual`](../skills/codex-visual/SKILL.md) | 通过 `codex` 图像模型出 2D 美术，用一份美术圣经保持风格统一；测量帧序列的角色一致性与动作，并在人审核前先预审每张审查图 |
 | [`comfyui-asset-generation`](../skills/comfyui-asset-generation/SKILL.md) | 用你自己的 ComfyUI 出音乐、音效、视频、3D 模型和分层 2D 美术，每种各一个任务 |
-| [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 依照概念图逐个视角重绘生成 3D 模型暗淡的贴图，网格和 UV 保持不变 |
+| [`mesh-texture-paint`](../skills/mesh-texture-paint/SKILL.md) | 依照概念图逐个视角重绘生成 3D 模型暗淡的贴图，网格和 UV 保持不变；测量网格与概念图有多接近 |
 | [`sprite-from-video`](../skills/sprite-from-video/SKILL.md) | 通过一段生成的视频，把一张角色静态图变成透明的 sprite 循环 |
 | [`blender-character-rig`](../skills/blender-character-rig/SKILL.md) | `character-autorig` 不适用时在 Blender 里手工绑骨，导出的 FBX 用重新导入来验证 |
 | [`blender-retarget`](../skills/blender-retarget/SKILL.md) | 把现成的动作 clip 套到你的 Blender 骨架上，按脚滑、抖动和跳变把关 |

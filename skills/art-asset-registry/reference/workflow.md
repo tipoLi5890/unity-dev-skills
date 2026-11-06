@@ -132,6 +132,7 @@ usual fixes:
 | `orphan` | record the file, or delete it if it is a leftover; orphans never fail a check |
 | `territory-excluded` | remake the asset (or the upstream one the message names) from a source licensed where the game is sold, record and approve it, and supersede the old one; or narrow the `Sales territory:` line (`reference/licences.md`) |
 | `territory-undeclared` | write the `Sales territory:` line in `ART_DIRECTION.md` before shipping; until then it only warns |
+| `review-flagged` | the person who approved reads the flagged items on the review's sheets (`codex-visual` → `reference/pre-review.md`); a later clear pre-review of the same bytes ends the warning; it never fails a check |
 
 ## 4. Status: a person's act
 

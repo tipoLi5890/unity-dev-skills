@@ -29,6 +29,7 @@ result, project the painted pixels into the UV texture, pick the next camera, re
 | Coverage stops early | `reference/projection.md` §6; `reference/troubleshooting.md` (The loop) |
 | Resume an interrupted run | `reference/pipeline.md` §5 (`--resume`) |
 | The server names the model files differently | `reference/painting.md` §7 (`--models`) |
+| How close is the mesh to its concept views (S3, S3b, S3c, S5; `scripts/concept_match.py`) | `reference/concept-match.md` |
 
 > **A painted view is evidence, not paint.** Every view is registered to the render and passes six
 > gates before a pixel reaches the texture; a view that fails is re-tried with another seed or

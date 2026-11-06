@@ -376,9 +376,9 @@ flowchart LR
 | Skill | Use it when |
 |---|---|
 | [`game-character-pipeline`](skills/game-character-pipeline/SKILL.md) | **Start here** for a rigged character from an image: stages S0–S13, each gated |
-| [`codex-visual`](skills/codex-visual/SKILL.md) | 2D art through the `codex` image model, kept on-style by one art bible |
+| [`codex-visual`](skills/codex-visual/SKILL.md) | 2D art through the `codex` image model, kept on-style by one art bible; a frame set's identity and motion numbers and a pre-review of each review sheet |
 | [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video, 3D models and layered 2D art from your own ComfyUI, one job each |
-| [`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md) | A generated 3D model's dull texture repainted from the concept art, view by view, mesh and UVs kept |
+| [`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md) | A generated 3D model's dull texture repainted from the concept art, view by view, mesh and UVs kept; how close a mesh is to its concept views |
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
 | [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |

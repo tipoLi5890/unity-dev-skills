@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/review-1.json",
+  "title": "review/1 — a pre-review of one review sheet against a fixed defect checklist",
+  "description": "Written by codex-visual prereview.py (`new` writes the draft, `answer` and a direct edit fill `answers`, `check` writes `flagged` and `verdict`); read by registry_ingest.py. Every checklist item is answered twice, on sheet a (the spec's cell order) and sheet b (the same cells permuted). A review is a pre-review: it never approves anything, a person does (registry.py status ID approved). Paths (the sheets, the subject) are relative to the review file's folder, absolute only where no relative path exists.",
+  "type": "object",
+  "required": [
+    "schema",
+    "tool",
+    "stage",
+    "subject",
+    "sheets",
+    "checklist",
+    "answers",
+    "flagged",
+    "verdict",
+    "reviewer",
+    "model",
+    "ts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "review/1"
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the script that wrote the draft, prereview.py"
+    },
+    "stage": {
+      "enum": [
+        "S1",
+        "S3",
+        "S3b",
+        "S3c",
+        "S5",
+        "S6",
+        "S8",
+        "S12",
+        "A2"
+      ],
+      "description": "the game-character-pipeline stage whose person-gate the sheet serves, or A2: a 2D clip's frames (codex-visual)"
+    },
+    "subject": {
+      "description": "the file the sheet shows (the GLB, the painted GLB, the view sheet, the rig), pinned by its bytes",
+      "type": "object",
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "sheets": {
+      "description": "the two sheets the checklist was answered on: a in the spec's order, b permuted",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/sheet"
+            },
+            {
+              "properties": {
+                "name": {
+                  "const": "a"
+                },
+                "order": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/sheet"
+            },
+            {
+              "properties": {
+                "name": {
+                  "const": "b"
+                },
+                "order": {
+                  "type": "array"
+                }
+              },
+              "required": [
+                "seed"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "the cell labels, in the spec's order"
+    },
+    "checklist": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "question"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "answers": {
+      "type": "object",
+      "required": [
+        "a",
+        "b"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/pass"
+        },
+        "b": {
+          "$ref": "#/$defs/pass"
+        }
+      }
+    },
+    "flagged": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "the item ids a person must look at: defect or unsure in either pass, or the two passes disagree"
+    },
+    "verdict": {
+      "enum": [
+        "draft",
+        "clear",
+        "flagged"
+      ]
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "who answered, e.g. claude"
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "the reviewer's model, when known"
+    },
+    "ts": {
+      "type": "string",
+      "minLength": 1,
+      "description": "UTC time of the last write, ISO 8601"
+    }
+  },
+  "not": {
+    "required": [
+      "ok"
+    ],
+    "description": "`ok` is not a review/1 key: a review carries `verdict`, and approves nothing"
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "draft"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "flagged": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "clear"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "flagged": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "flagged"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "flagged": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sheet": {
+      "type": "object",
+      "required": [
+        "name",
+        "path",
+        "sha256",
+        "order"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "order": {
+          "description": "cell k shows the spec's item order[k]; null for sheet a (the spec's own order)",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "the --order seed sheet b was composed with; null for a sequence stage (S8, A2), whose sheet b is the spec reversed"
+        }
+      }
+    },
+    "pass": {
+      "description": "{item id: answer}; an item missing here is unanswered",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "answer",
+          "view",
+          "note"
+        ],
+        "properties": {
+          "answer": {
+            "enum": [
+              "defect",
+              "clear",
+              "unsure"
+            ]
+          },
+          "view": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the cell label the answer rests on"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

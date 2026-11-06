@@ -751,12 +751,13 @@ def main(argv=None) -> int:
     return 1
 
 
-def contract_sample(script: str, case: str, doc: dict) -> None:
-    """Hand one selftest report to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
-    folder in the temp dir) as <script>__<case>.gate.json, and named on stdout as `selftest-output: <path>`."""
+def contract_sample(script: str, case: str, doc: dict, suffix: str = ".gate.json") -> None:
+    """Hand one selftest sample to tools/check-contracts.py: written to $UNITY_DEV_CONTRACT_OUT (else a fixed
+    folder in the temp dir) as <script>__<case><suffix> (.gate.json, .skeleton.json, .motion-samples.json),
+    and named on stdout as `selftest-output: <path>`."""
     out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
     os.makedirs(out, exist_ok=True)
-    path = os.path.join(out, f"{script}__{case}.gate.json")
+    path = os.path.join(out, f"{script}__{case}{suffix}")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(doc, handle, indent=1)
     print(f"selftest-output: {path}")
@@ -824,6 +825,7 @@ def selftest() -> int:
         return next((g for g in rep["gates"] if g["name"] == name), {"pass": None})
 
     contract = contract_skeleton(1.7)
+    contract_sample("contract_map", "contract", contract, ".skeleton.json")
     check("contract has 15 Unity-required bones", len(REQUIRED) == 15)
     check("contract has 30 finger bones", len(FINGER_BONES) == 30)
     check("Unity finger names say Little, not Pinky",
@@ -887,6 +889,15 @@ def selftest() -> int:
         check("CLI map on a good BVH exits 0", r.returncode == 0, r.stdout[-300:])
         hm = json.loads((tmp / "h.json").read_text())
         check("--unity-out writes unity-human-map/1", hm.get("schema") == "unity-human-map/1" and hm["human"])
+        for case, extra in (("bvh", []), ("bvh_keep_axes", ["--keep-axes"])):
+            r = subprocess.run([sys.executable, script, "bvh", str(bvh), "--scale", "0.01", *extra,
+                                "--out", str(tmp / f"{case}.json")], capture_output=True, text=True)
+            sk_out = json.loads((tmp / f"{case}.json").read_text()) if r.returncode == 0 else {}
+            check(f"CLI {case.replace('_', ' ')} writes skeleton/1", sk_out.get("schema") == "skeleton/1"
+                  and sk_out.get("up") == ("+Y" if extra else "+Z") and len(sk_out.get("bones", [])) == len(contract["bones"]) - 1,
+                  r.stdout[-200:])
+            if sk_out:
+                contract_sample("contract_map", case, sk_out, ".skeleton.json")
 
         no_hips = _renamed(mix_skel, {}, drop=("Hips",))
         (tmp / "nohips.json").write_text(json.dumps(no_hips))

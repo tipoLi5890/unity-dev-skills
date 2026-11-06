@@ -65,8 +65,8 @@ A person decides four answers before the first image is generated, and they are 
 
 ## The stages
 
-A stage is done when its exit gate passes; where the gate says **person**, someone has looked at
-the named image and said yes. Every artefact is recorded in the ledger as it is made (S13).
+A stage ends when its gate passes; at **person**, someone looked at the named image after the
+pre-review (`codex-visual` → `reference/pre-review.md`) and said yes; S13 records each artefact.
 
 | # | Stage | Owner | Enters with | Exits when — and leaves | Read |
 |---|---|---|---|---|---|

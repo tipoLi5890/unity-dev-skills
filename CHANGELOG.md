@@ -2,6 +2,69 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.44.0
+
+What a person looks at, measured and pre-read. A finished mesh is compared with its concept views,
+a frame set is read for identity, seams, flicker and swapped limbs, and before a person approves a
+sheet Claude answers a fixed defect checklist on it twice, so the person reads only what was
+flagged. Every new number is reported only: no gate rests on it until real distributions set a
+limit. A person still approves.
+
+- **`codex-visual`: `scripts/embed.py`**, the perceptual-metric engine. DINOv2
+  (`facebook/dinov2-base`) and SigLIP 2 (`google/siglip2-base-patch16-224`), both Apache-2.0,
+  pinned to the revisions in `VERSIONS.md`. Cosine per image pair, alpha laid over mid-grey.
+  `--pairs pairs.json --out sims.json`: paths are relative to the pairs file, so the folder can be
+  copied to a GPU machine and run with any Python that has torch and transformers. Without torch
+  it writes every value null with the reason and exits 3: not measured is never a pass.
+- **`mesh-texture-paint`: `scripts/concept_match.py MESH.glb --view NAME=PNG ...`** renders the
+  mesh from each concept view with `paint_loop.py`'s cameras (several primitives and a skinned
+  mesh's bind pose included), seats each concept view on the render, and reports per view the
+  silhouette IoU, the palette distance in CIELAB ΔE and the DINOv2 / SigLIP 2 similarity, plus
+  `compare.png`. A view on black without alpha is cut from its border colour. `--sims` reads
+  `embed.py`'s output from another machine; `--embed` measures here.
+- **`codex-visual`: `scripts/audit_identity.py FRAMES`** reads a frame set for what a viewer
+  calls "not the same character", "it pops", "it flickers" or "the legs swapped": frame-to-frame
+  and still-to-frame similarity, front against side, the loop seam (the wrap over the ordinary
+  step, as `sprite-from-video` reads it), the largest one-frame A → B → A change inside the stable
+  silhouette (with its frame), and leg colour signatures that swap while the legs do not cross.
+  Legs of one colour report the swap as not measured, never as 0.
+- **Report-only gates.** A gate with `limit: null`, `pass: true`, `"report_only": true` and no
+  margin; a value that could not be measured is null and named in `not_measured: [{name, why}]`.
+- **Claude pre-review: `codex-visual` `scripts/prereview.py`** and `schemas/review-1.json`.
+  - `list` prints a stage's binary defect checklist (S1, S3, S3b, S3c, S5, S6, S8, S12, and A2 for
+    a 2D clip's frames); the checklists live only in the script.
+  - `new` composes sheet a in the spec's order and sheet b shuffled (`contact_sheet.py --order
+    SEED`, seeded from the subject's sha256); a sequence (S8, A2) is reversed instead, so each
+    frame keeps its neighbours. `answer` records each pass; `check` flags any defect or unsure
+    answer and any item the passes disagree on, and exits 2 when anything is flagged.
+  - It approves nothing. `registry.py ingest` records a review against its subject, refuses a
+    draft, a review whose answers no longer give its flagged ids, or a sheet changed since, and
+    `check` warns when an approved asset's latest review flagged items.
+- **`schemas/skeleton-1.json` and `schemas/motion-samples-1.json`** for the two stamps that had
+  none; `check-contracts.py` validates their producers' samples, the NPZ form included.
+- **`audit_frames.py` sorts frames by number** (`walk_2` before `walk_10`). A folder of frames
+  named without zero padding was read out of order, which moves every number that depends on
+  order. `audit_identity.py` says so when a `frames.json` names files that are not beside it.
+- **Run on real assets.**
+  - **The four characters against their S1 views:** silhouette IoU 0.926–0.950 per view except
+    the guard's back (0.859) and right (0.887), where the shield sits elsewhere than drawn; palette
+    ΔE 2.5–4.6; DINOv2 0.856–0.957, SigLIP 2 0.943–0.971. The same pairs on the GPU host (CUDA) and
+    on a Mac (MPS) agree to four decimals.
+  - **2D, eight clips of two characters from a shipped project:** frame-to-frame similarity
+    0.917–0.988; still-to-frame 0.803–0.991; loop seam 0.29–1.25 steps. The idle's largest flicker
+    (0.173) names a frame whose head tilts for one frame.
+  - **Pre-review,** one 3D anchor (S3, with the concept row on the sheet) and one 2D idle (A2):
+    the anchor flagged 2 of 11 items (its orange soles came out tan in both passes; its bag's place
+    seen in one), the idle 1 of 9 (the passes disagreed on the same one-frame head tilt).
+- **Still open.**
+  - **BEN2 does not settle BiRefNet's question:** its card says it is trained on DIS5K as well
+    (and a proprietary set), and ComfyUI 0.39's background removal loads only BiRefNet.
+  - **SkinTokens** (0.45's second opinion on the markers) is MIT with GPL-3.0 Michelangelo code
+    in its inference path, names only Mixamo or VRoid joint templates, needs CUDA with flash-attn
+    and has no Windows path; its VRoid Hub and ModelsResource training data carry no licence.
+  - The seam ratio saturates on coarse cycles whose frames barely overlap; SigLIP 2 downloads its
+    text tower too (about 1.5 GB).
+
 ## 0.43.0
 
 A measurement round. Quality has been read one character at a time, and each 0.42.x fixed one

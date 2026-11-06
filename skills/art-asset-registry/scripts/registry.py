@@ -449,6 +449,32 @@ def check_approval(ctx, rep, rec, line=None):
         rep.error(at, "failing-gate", "failing gate(s): " + ", ".join(failing), ident, rev)
 
 
+def check_reviews(ctx, rep, rec, current, line=None):
+    """WARN review-flagged: an approved record whose latest pre-review (a review/1 record ingested
+    from codex-visual's prereview.py, linked depends-on to it, of these same bytes) flagged items.
+    A person's approval stands: this is a reminder, never an error."""
+    ident = _id(rec)
+    shas = {f.get("sha256") for f in files_of(rec) if isinstance(f.get("sha256"), str)}
+    latest = None
+    for other in current.values():
+        params = other.get("params")
+        if not (isinstance(params, dict) and params.get("review") == "review/1") or other.get("status") not in LIVE:
+            continue
+        if not any(isinstance(x, dict) and x.get("rel") == "depends-on" and x.get("to") == ident
+                   for x in other.get("links") or []):
+            continue
+        if not any(isinstance(i, dict) and i.get("sha256") in shas for i in other.get("inputs") or []):
+            continue                                 # a review of an earlier version of the files
+        if latest is None or str(other.get("ts", "")) >= str(latest.get("ts", "")):   # a tie: the later id
+            latest = other
+    if latest is not None and latest["params"].get("verdict") == "flagged":
+        flagged = latest["params"].get("flagged")
+        items = ", ".join(str(i) for i in flagged) if isinstance(flagged, list) else "?"
+        rep.warn(where(ctx, rec, line), "review-flagged", f"approved while its latest pre-review "
+                 f"{_id(latest)} flagged {items}; the person who approved reads those items",
+                 ident, _rev(rec))
+
+
 class Territory:
     """The sales territory ART_DIRECTION.md declares. `found` is False without the file or the
     line; `undecided` when the line says so; `worldwide`, or `codes` (ISO, EU expanded);
@@ -973,6 +999,7 @@ def cmd_check(ctx, args, rep):
         if rec.get("status") == "approved":
             check_approval(ctx, rep, rec, n)
             check_territory(ctx, rep, rec, current, terr, n)
+            check_reviews(ctx, rep, rec, current, n)
         check_vendor(ctx, rep, rec, facts, args.strict)
         check_refs(ctx, rep, rec, known, n)
     check_graph(ctx, rep, current, last_line)

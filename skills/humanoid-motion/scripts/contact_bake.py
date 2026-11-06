@@ -896,6 +896,17 @@ def contract_sample(script: str, case: str, doc: dict) -> None:
     print(f"selftest-output: {path}")
 
 
+def contract_copy(src, script: str, case: str) -> None:
+    """Copy a samples .npz a selftest wrote to $UNITY_DEV_CONTRACT_OUT (else the same temp folder) as
+    <script>__<case>.motion-samples.npz, for tools/check-contracts.py; named as `selftest-output: <path>`."""
+    import shutil
+    out = os.environ.get("UNITY_DEV_CONTRACT_OUT") or os.path.join(tempfile.gettempdir(), "unity-dev-contract-out")
+    os.makedirs(out, exist_ok=True)
+    path = os.path.join(out, f"{script}__{case}.motion-samples.npz")
+    shutil.copyfile(src, path)
+    print(f"selftest-output: {path}")
+
+
 def selftest() -> int:
     checks = []
 
@@ -931,6 +942,8 @@ def selftest() -> int:
               rep.get("schema") == "gate/1" and rep.get("pass") is True and "ok" not in rep
               and all(isinstance(g.get("pass"), bool) and "ok" not in g for g in rep.get("gates", [])), rep.get("gates"))
         contract_sample("contact_bake", "baked", rep)
+        if (td / "s.npz").is_file():
+            contract_copy(td / "s.npz", "contact_bake", "baked")
         check("plants come from the contacts, both feet", all(rep["plants"][s]["source"] == "contacts"
               and len(rep["plants"][s]["ranges"]) >= 2 for s in SIDES), rep.get("plants"))
         check("nothing changes outside the plants and blends", (rep.get("outside_change_deg") or 0) < 1e-6, rep.get("outside_change_deg"))
@@ -1111,6 +1124,7 @@ def selftest() -> int:
                         "--readings", td / "readings.json", "--samples-out", td / "a2.npz")
         with np.load(td / "a2.npz") as z:
             rnames = [str(x) for x in z["reading_names"]]
+        contract_copy(td / "a2.npz", "contact_bake", "readings")
         r2 = subprocess.run([sys.executable, str(mm), str(td / "a2.npz"), "--pops-min-move", "0.03"],
                             capture_output=True, text=True)
         m2 = json.loads(r2.stdout) if r2.stdout.strip() else {}
@@ -1195,6 +1209,8 @@ def selftest_blender() -> int:
         check("Blender: slide before fails, after passes, exit 0",
               code == 0 and sb.get("p95", 0) > 0.015 and sa.get("p95", 1) <= 0.003, (code, sb, sa, code_rep.get("gates")))
         check("Blender: the file is saved", (td / "baked.blend").is_file())
+        if (td / "s.npz").is_file():
+            contract_copy(td / "s.npz", "contact_bake", "blender")
         with np.load(td / "s.npz") as z:
             meta = json.loads(str(z["meta"]))
         check("Blender: the samples' root is Hips, not the static Root above it", meta.get("root") == "Hips", meta.get("root"))

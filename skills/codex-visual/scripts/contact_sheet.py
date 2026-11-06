@@ -7,7 +7,7 @@ for a person to judge; it proves nothing by itself, so `--require` puts the
 numeric checks first: every file named must pass, or no sheet is written.
 
 usage:
-    contact_sheet.py SPEC.json --out sheet.png [--require VALIDATION.json ...]
+    contact_sheet.py SPEC.json --out sheet.png [--require VALIDATION.json ...] [--order SEED]
     contact_sheet.py --selftest
 
 SPEC.json:
@@ -35,8 +35,17 @@ its boolean `pass` alone (and a `verdict`, when present, must be "green"): a
 missing `pass` fails, and the old `ok` beside it is not read.
 A missing, unreadable or failing file refuses the sheet.
 
+--order SEED (a whole number from 0) shuffles the cells of each sheet, the same
+way every time for one seed and one item count: a label moves with its image.
+With two or more cells the order is never the spec's own (an identity shuffle
+is turned by one cell). It is for asking the same question twice on two cell
+orders (prereview.py): a judge that favours a position shows up as a
+disagreement. Without the flag the sheet is the spec's order, unchanged.
+
 Prints one JSON object: `written` (the sheet paths), `sheets`, `items`, and
-`required` (each file with `pass` and, when it failed, `why`).
+`required` (each file with `pass` and, when it failed, `why`). With --order it
+adds `order`: one list per written sheet, where cell k shows the spec's item
+order[k].
 
 Exit codes: 0 written; 2 refused by --require (nothing written), or a usage
 error (an --out suffix that names no image format Pillow writes); 3 the spec
@@ -46,6 +55,7 @@ Pillow only.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -158,6 +168,16 @@ def load_item(item: Any, base: Path, index: int) -> tuple[Image.Image, str]:
     return picture, caption.strip()
 
 
+def permutation(count: int, seed: int) -> list[int]:
+    """The cell order --order SEED gives `count` items: item indices sorted by the sha256 of
+    "SEED:index", so it is the same on every Python. With two or more items it is never the
+    identity: an identity draw is turned by one cell."""
+    perm = sorted(range(count), key=lambda k: hashlib.sha256(f"{seed}:{k}".encode()).digest())
+    if count > 1 and perm == list(range(count)):
+        perm = perm[1:] + perm[:1]
+    return perm
+
+
 def compose(spec: dict[str, Any], items: list, base: Path) -> Image.Image:
     cols = spec.get("cols")
     if isinstance(cols, bool) or not isinstance(cols, int) or cols < 1:
@@ -206,8 +226,17 @@ def lay_out(cells: list, cols: int, cell: tuple[int, int], bg: tuple[int, int, i
     return sheet
 
 
-def build(spec_path: Path, out: Path) -> list[tuple[Path, Image.Image, int]]:
-    """Every sheet the spec asks for, composed in memory: (path, image, item count)."""
+def shuffled(items: Any, seed: int | None) -> tuple[Any, list[int] | None]:
+    """The items in --order SEED's order, and that order; unchanged (and None) without a seed."""
+    if seed is None or not isinstance(items, list) or not items:
+        return items, None
+    perm = permutation(len(items), seed)
+    return [items[k] for k in perm], perm
+
+
+def build(spec_path: Path, out: Path, seed: int | None = None) -> list[tuple[Path, Image.Image, int, list[int] | None]]:
+    """Every sheet the spec asks for, composed in memory: (path, image, item count, the cell
+    order when --order shuffled it)."""
     try:
         spec = json.loads(spec_path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -220,7 +249,8 @@ def build(spec_path: Path, out: Path) -> list[tuple[Path, Image.Image, int]]:
     if ("items" in spec) == ("sheets" in spec):
         raise SpecError("the spec takes items or sheets, one of the two")
     if "items" in spec:
-        return [(out, compose(spec, spec["items"], base), len(spec["items"]))]
+        items, perm = shuffled(spec["items"], seed)
+        return [(out, compose(spec, items, base), len(spec["items"]) if isinstance(spec["items"], list) else 0, perm)]
     sheets = spec["sheets"]
     if not isinstance(sheets, list) or not sheets:
         raise SpecError("sheets must be a non-empty list")
@@ -233,9 +263,9 @@ def build(spec_path: Path, out: Path) -> list[tuple[Path, Image.Image, int]]:
         names.add(sub["name"])
         merged = {key: spec[key] for key in ("cols", "cell", "bg") if key in spec}
         merged.update({key: sub[key] for key in ("cols", "cell", "bg", "title") if key in sub})
-        items = sub.get("items")
+        items, perm = shuffled(sub.get("items"), seed)
         path = out.with_name(f"{out.stem}-{sub['name']}{out.suffix}")
-        built.append((path, compose(merged, items, base), len(items) if isinstance(items, list) else 0))
+        built.append((path, compose(merged, items, base), len(items) if isinstance(items, list) else 0, perm))
     return built
 
 
@@ -280,7 +310,7 @@ def commit(staged: list[tuple[Path, Path]]) -> None:
                 pass
 
 
-def run(spec: Path, out: Path, required: list[Path]) -> tuple[int, dict[str, Any]]:
+def run(spec: Path, out: Path, required: list[Path], seed: int | None = None) -> tuple[int, dict[str, Any]]:
     fmt = image_format(out)
     if fmt is None:
         return 2, {"error": f"--out {out}: the suffix names no image format Pillow writes "
@@ -288,14 +318,16 @@ def run(spec: Path, out: Path, required: list[Path]) -> tuple[int, dict[str, Any
     checks = check_required(required)
     if not all(row["pass"] for row in checks):
         return 2, {"error": "a --require file does not pass; no sheet written", "required": checks}
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or seed < 0):
+        return 2, {"error": f"--order {seed}: the seed is a whole number from 0", "required": checks}
     try:
-        built = build(spec, out)
+        built = build(spec, out, seed)
     except SpecError as exc:
         return 3, {"error": str(exc), "required": checks}
     # every sheet to a temporary name first, renamed only once all are saved
     staged: list[tuple[Path, Path]] = []
     try:
-        for path, image, _ in built:
+        for path, image, _, _ in built:
             path.parent.mkdir(parents=True, exist_ok=True)
             temp = path.with_name(f".{path.name}.part")
             staged.append((temp, path))
@@ -309,7 +341,10 @@ def run(spec: Path, out: Path, required: list[Path]) -> tuple[int, dict[str, Any
                 pass
         return 3, {"error": f"cannot write {out}: {exc}", "required": checks}
     written = [str(path) for _, path in staged]
-    return 0, {"written": written, "sheets": len(built), "items": sum(n for _, _, n in built), "required": checks}
+    result = {"written": written, "sheets": len(built), "items": sum(n for _, _, n, _ in built), "required": checks}
+    if seed is not None:
+        result["order"] = [perm for _, _, _, perm in built]
+    return 0, result
 
 
 def selftest() -> int:
@@ -391,6 +426,29 @@ def selftest() -> int:
         checks.append(("nothing left on failure", code == 3 and left == ["anim-vault.png"]))
         code, res = run(t / "qa.json", t / "out" / "qa.jpg", [])
         checks.append(("jpeg", code == 0 and Image.open(res["written"][0]).format == "JPEG"))
+
+        # --order: the same seed gives the same order; the cells move with their labels
+        code, res = run(t / "qa.json", t / "out" / "qa_b.png", [], seed=7)
+        perm = res.get("order", [None])[0] if code == 0 else None
+        checks.append(("order printed", isinstance(perm, list) and sorted(perm) == list(range(8))
+                       and perm != list(range(8))))
+        checks.append(("order repeatable", perm == permutation(8, 7) and run(t / "qa.json", t / "out" / "qa_c.png",
+                                                                             [], seed=7)[1].get("order") == [perm]))
+        checks.append(("order seeds differ", permutation(8, 7) != permutation(8, 8)))
+        checks.append(("no identity", all(permutation(n, s) != list(range(n)) for n in (2, 3) for s in range(20))))
+        shuffled_sheet = Image.open(t / "out" / "qa_b.png")
+        label_px = max(14, min(32, 256 // 20))
+        title_h, strip = label_px + 18, label_px + 10
+        moved = all(shuffled_sheet.getpixel(((k % 4) * 256 + 128, title_h + (k // 4) * (256 + strip) + strip + 128))
+                    == (20 * perm[k] + 40, 200, 30) for k in range(8))
+        checks.append(("cells follow order", moved))
+        plain = run(t / "qa.json", t / "out" / "qa_plain.png", [])[1]
+        checks.append(("no order key without flag", "order" not in plain))
+        checks.append(("same bytes without flag", (t / "out" / "qa_plain.png").read_bytes()
+                       == (t / "out" / "qa.png").read_bytes()))
+        code, res = run(t / "anim.json", t / "out" / "animo.png", [], seed=3)
+        checks.append(("order per sheet", code == 0 and res["order"] == [permutation(2, 3), [0]]))
+        checks.append(("bad seed", run(t / "qa.json", t / "out" / "qa_bad.png", [], seed=-1)[0] == 2))
     failed = [name for name, ok in checks if not ok]
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
     return 0 if not failed else 1
@@ -402,13 +460,15 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="The sheet to write (.png, .jpg)")
     parser.add_argument("--require", nargs="+", action="extend", type=Path, default=[], metavar="VALIDATION.json",
                         help="A check file that must pass (ok / all_pass / pass true, or verdict / record.verdict green)")
+    parser.add_argument("--order", type=int, metavar="SEED",
+                        help="Shuffle each sheet's cells by this seed (labels move with their images)")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(["--selftest"] if sys.argv[1:] == ["selftest"] else None)
     if args.selftest:
         return selftest()
     if args.spec is None or args.out is None:
         parser.error("SPEC.json and --out are required (or --selftest)")
-    code, result = run(args.spec, args.out, args.require)
+    code, result = run(args.spec, args.out, args.require, args.order)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return code
 

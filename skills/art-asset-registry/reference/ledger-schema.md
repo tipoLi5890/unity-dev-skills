@@ -199,6 +199,7 @@ its rule, so a fixture can expect a particular one.
 | `licensed-tracked` | WARN | a current `purchased` or `third-party` file (not vendor) that git tracks; ERROR with `--strict` |
 | `territory-excluded` | ERROR | an approved record's `licence`, or one reached up its `parent` and `depends-on` links, excludes a code of the `Sales territory:` line in `ART_DIRECTION.md` (`worldwide`: any code); `reference/licences.md` |
 | `territory-undeclared` | WARN | the same record while `ART_DIRECTION.md` has no `Sales territory:` line, or says `undecided` |
+| `review-flagged` | WARN | an approved record whose latest pre-review (a `review/1` record that `depends-on` it, of the same bytes) flagged items; never an error: the approval is the person's |
 | `territory-unknown` | WARN | a word on the `Sales territory:` line that is neither `worldwide`, `EU` nor a two-letter code; it is ignored |
 | `unresolved-parent` | ERROR | a current record's `parent` names an id the ledger does not have, or itself |
 | `unresolved-superseded-by` | ERROR | the same for `superseded_by` |

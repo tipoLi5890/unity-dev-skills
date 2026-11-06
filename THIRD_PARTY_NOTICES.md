@@ -388,7 +388,8 @@ from that release's rife-v4.6 model, which sprite-gen does not ship.
 
 Nothing in this section is shipped or ported. The ComfyUI templates under
 `skills/comfyui-asset-generation/templates/` and `skills/mesh-texture-paint/templates/` name weight
-files that the user downloads, and the Blender skills drive an add-on that the user buys. Each one is
+files that the user downloads, the Blender skills drive an add-on that the user buys, and
+`codex-visual` `embed.py` loads two image encoders from the Hugging Face hub on first use. Each one is
 governed by its own licence, linked below. `VERSIONS.md` → Asset toolchain lists the file names, the
 versions and each licence's limits (commercial use, territory, attribution).
 
@@ -415,6 +416,11 @@ versions and each licence's limits (commercial use, territory, attribution).
 - **Stable Audio 3 Medium** — Stability AI Community License: <https://stability.ai/license>
 - **gpt-image** (through Codex) — OpenAI's terms: <https://openai.com/policies/row-terms-of-use/>,
   <https://openai.com/policies/services-agreement/>
+- **DINOv2** (`facebook/dinov2-base`, read by `codex-visual` `embed.py`) — Apache-2.0:
+  <https://huggingface.co/facebook/dinov2-base>, <https://github.com/facebookresearch/dinov2/blob/main/LICENSE>
+- **SigLIP 2** (`google/siglip2-base-patch16-224`, read by `codex-visual` `embed.py`) — Apache-2.0 on the
+  model card: <https://huggingface.co/google/siglip2-base-patch16-224>; big_vision's terms:
+  <https://github.com/google-research/big_vision/blob/main/LICENSE>
 - **Auto-Rig Pro** — a paid add-on by Artell, under the author's licences:
   <https://www.lucky3d.fr/auto-rig-pro/doc/license.html>
 - **ComfyUI** — GPL-3.0: <https://github.com/Comfy-Org/ComfyUI>; **Blender** — GPL:

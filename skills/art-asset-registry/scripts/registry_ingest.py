@@ -21,6 +21,14 @@ The shapes it reads, tried in this order:
                (role source, mutable; hashed like any file, so each version has its sha256)
   codex        codex_generate.py's output (`out` and `size`): the image, a `codex.size` gate when
                --expect-size was given; more than one image is refused (none was chosen)
+  review       a pre-review stamped "review/1" (schemas/review-1.json, codex-visual
+               prereview.py): kind qa-sheet, the review and its two sheets (read next to it), the
+               subject as input (with its sha256), and in params the review's stage, verdict
+               (clear or flagged), flagged ids, reviewer and model. It sets no gate, no verdict
+               and no status: a person approves the subject. A draft (verdict "draft", not yet
+               through `prereview.py check`) is refused (exit 2), and so are a review whose
+               answers no longer give its flagged ids, a sheet changed since the review, and
+               --status approved
 Anything else exits 3. Text output (an audit's lines) is never parsed: ask the producer for JSON.
 A gate passes only on `"pass": true`: a gate without a boolean `pass` has failed. A file stamped
 gate/1 or frames/1 that lacks a key its schema requires exits 3 (a producer bug). `ok`, the old
@@ -45,7 +53,8 @@ printed partial carries them too.
 
 registry.py imports this module and calls register(); running this file passes its arguments to
 `registry.py ingest` (`registry_ingest.py selftest` runs the ingest cases alone).
-Exit codes: 0 green, 2 refused (record's refusals, a path outside --root, several images),
+Exit codes: 0 green, 2 refused (record's refusals, a path outside --root, several images, a
+review/1 draft, edited after check or with a changed sheet, --status approved on a review),
 3 not JSON (NaN and Infinity are not), not an object, a shape ingest does not read, an error
 output, nothing that names a file.
 Standard library only.
@@ -226,11 +235,70 @@ def _codex(doc, src):
     return part
 
 
-SHAPES = {"frames": _frames, "gate": _gate, "codex": lambda doc, src, notes: _codex(doc, src)}
+REVIEW_REQUIRED = ("schema", "tool", "stage", "subject", "sheets", "checklist", "answers", "flagged", "verdict",
+                   "reviewer", "model", "ts")
+
+
+def _review(doc, src, notes):
+    """A review/1 pre-review: a record of the sheets a reviewer read, linked to its subject. It
+    carries the reviewer's verdict in params only: it is no gate, and it approves nothing."""
+    lacking = [k for k in REVIEW_REQUIRED if k not in doc]
+    if lacking:
+        raise Bad("stamped review/1 but lacks " + ", ".join(lacking) + " (a producer bug)")
+    if doc["verdict"] == "draft":
+        raise Refused("a review/1 draft: its answers were never checked; run prereview.py check on it, "
+                      "then ingest the checked review")
+    flagged = doc["flagged"]
+    if doc["verdict"] not in ("clear", "flagged") or not isinstance(flagged, list) \
+            or not all(isinstance(i, str) for i in flagged) or (doc["verdict"] == "flagged") != bool(flagged):
+        raise Bad("stamped review/1 but its verdict and flagged ids disagree (a producer bug)")
+    subject, sheets = doc["subject"], doc["sheets"]
+    if not (isinstance(subject, dict) and isinstance(subject.get("path"), str)
+            and isinstance(subject.get("sha256"), str) and L.SHA_RE.match(subject["sha256"])):
+        raise Bad("stamped review/1 but `subject` is not {path, sha256} (a producer bug)")
+    if not (isinstance(sheets, list) and all(isinstance(x, dict) and isinstance(x.get("path"), str)
+                                             for x in sheets)):
+        raise Bad("stamped review/1 but `sheets` is not a list of {name, path, sha256} (a producer bug)")
+    checklist, answers = doc["checklist"], doc["answers"]
+    if not (isinstance(checklist, list) and all(isinstance(i, dict) and isinstance(i.get("id"), str) for i in checklist)
+            and isinstance(answers, dict) and all(isinstance(answers.get(p), dict) for p in ("a", "b"))):
+        raise Bad("stamped review/1 but `checklist` or `answers` is malformed (a producer bug)")
+    # the verdict must follow from the answers as they stand: a hand edit after check (or a
+    # verdict typed in) would otherwise record a clear review over defect answers
+    ids = [i["id"] for i in checklist]
+    said = [[(answers[p].get(i) or {}).get("answer") if isinstance(answers[p].get(i), dict) else None
+             for p in ("a", "b")] for i in ids]
+    if any(None in pair for pair in said):
+        raise Refused("a review/1 with unanswered items: answer both passes, then run prereview.py check on it")
+    expected = [i for i, (a, b) in zip(ids, said) if a != "clear" or b != "clear"]
+    if expected != list(flagged):
+        raise Refused("a review/1 whose answers changed after prereview.py check (it flags "
+                      + (", ".join(expected) or "nothing") + "): run prereview.py check on it again")
+    base = os.path.dirname(src) if src else os.getcwd()
+    for x in sheets:                     # the sheets must still be the bytes the answers were given on
+        full = os.path.join(base, x["path"])
+        if isinstance(x.get("sha256"), str) and os.path.isfile(full) and L.sha256_file(full) != x["sha256"]:
+            raise Refused(f"sheet {x['path']} changed since the review; make a new draft (prereview.py new --force)")
+    files = [{"path": src, "role": "derived"}] if src else []
+    files += [{"path": os.path.join(base, x["path"]), "role": "preview"} for x in sheets]
+    part = {"kind": "qa-sheet", "source": "authored", "files": files,
+            "inputs": [{"path": os.path.join(base, subject["path"]), "sha256": subject["sha256"]}],
+            "tool": {"skill": "codex-visual", "script": "prereview.py"},
+            "params": {"review": "review/1", "stage": doc["stage"], "verdict": doc["verdict"],
+                       "flagged": list(flagged), "reviewer": doc["reviewer"], "model": doc["model"]}}
+    if flagged:
+        part["note"] = "pre-review flagged: " + ", ".join(flagged)
+    return part
+
+
+SHAPES = {"frames": _frames, "gate": _gate, "codex": lambda doc, src, notes: _codex(doc, src),
+          "review": _review}
 
 
 def legacy_shape(doc):
     """Which shape a producer's output has, setting its `record` key aside; None for none."""
+    if doc.get("schema") == "review/1":
+        return "review"
     if doc.get("schema") == "frames/1":
         return "frames"
     if doc.get("schema") == "gate/1":
@@ -286,12 +354,15 @@ def convert(doc, src, ctx, args, notes=None, dropped=None):
             part["gates"] = _gate_list(part, doc.get("schema") == "gate/1")
     elif shape:
         part = SHAPES[shape](doc, src, notes)
+        if shape == "review" and getattr(args, "status", None) == "approved":
+            raise Refused("a review is never approved: a person approves its subject "
+                          "(registry.py status ID approved)")
     elif "error" in doc:
         raise Bad("the producer reported an error and wrote nothing to record")
     else:
         raise Bad("not a shape ingest reads: a JSON with a `record` object, a frames/1 frames.json (or "
                   "one from sheet_to_frames.py or with a `producer`), a gate/1 report (or a Blender report: "
-                  "gates, blender), or codex_generate output (out, size)")
+                  "gates, blender), codex_generate output (out, size), or a review/1 pre-review")
     for k in ("schema", "rev", "ts"):
         part.pop(k, None)
 
@@ -717,6 +788,7 @@ def selftest(d):
     assert rec["links"] == [{"rel": "made-under", "to": "art:direction", "rev": 2}], rec
 
     upstream_selftest(os.path.join(work, "upstream"), R)
+    review_selftest(os.path.join(work, "review"), R)
 
 
 H3_LOCAL = {"source": "minimax-h3-local", "id": "runner-run-take-2",
@@ -823,6 +895,102 @@ def upstream_selftest(root, R):
     assert mesh["links"] == [{"rel": "depends-on", "to": "artdirection/models/runner/runner", "rev": 1}], mesh
     assert mesh["verdict"] == "green" and mesh["gates"][0]["margin"] == 0.0353 and \
         mesh["tool"]["script"] == "paint_loop.py", mesh
+
+
+def review_selftest(root, R):
+    """A review/1 pre-review becomes a qa-sheet record that depends on its subject, carrying its
+    verdict and flagged ids in params; a draft is refused; nothing changes a status; `check` warns
+    when an approved asset's latest pre-review flagged items, and still passes."""
+    ledger = os.path.join(root, "ArtDirection", "assets.jsonl")
+
+    def put(rel, data):
+        full = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as fh:
+            fh.write(data)
+        return full
+
+    def run(*argv):
+        return R._run(*argv[:1], "--root", root, "--ledger", ledger, *argv[1:])
+
+    glb = put("ArtDirection/models/runner/runner.glb", b"glTF generated courier")
+    code, out = run("record", "--json", put("raw/glb.record.json", json.dumps(
+        {"files": [glb], "kind": "mesh", "source": "generated"}).encode()))
+    assert code == 0, out
+    mid = "artdirection/models/runner/runner"
+    sha_a = L.sha256_file(put("ArtDirection/review/runner_s3.a.png", b"sheet a"))
+    sha_b = L.sha256_file(put("ArtDirection/review/runner_s3.b.png", b"sheet b"))
+    review = {"schema": "review/1", "tool": "prereview.py", "stage": "S3",
+              "subject": {"path": "../models/runner/runner.glb", "sha256": L.sha256_file(glb)},
+              "sheets": [{"name": "a", "path": "runner_s3.a.png", "sha256": sha_a, "order": None},
+                         {"name": "b", "path": "runner_s3.b.png", "sha256": sha_b, "order": [1, 0], "seed": 9}],
+              "labels": ["front", "left"], "checklist": [{"id": "s3.hole", "question": "Is there a hole?"}],
+              "answers": {"a": {"s3.hole": {"answer": "clear", "view": None, "note": ""}},
+                          "b": {"s3.hole": {"answer": "defect", "view": "left", "note": "under the arm"}}},
+              "flagged": ["s3.hole"], "verdict": "flagged", "reviewer": "claude", "model": None,
+              "ts": "2026-01-02T03:04:05Z"}
+    side = os.path.join(root, "ArtDirection", "review", "runner_s3.review.json")
+
+    def write(doc):
+        with open(side, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+
+    write(dict(review, verdict="draft", flagged=[]))
+    code, out = run("ingest", "--json", side)
+    assert code == 2 and "draft" in out and "prereview.py check" in out, (code, out)
+    write({k: v for k, v in review.items() if k != "subject"})
+    code, out = run("ingest", "--json", side)
+    assert code == 3 and "producer bug" in out, (code, out)
+    write(dict(review, flagged=[]))
+    code, out = run("ingest", "--json", side)
+    assert code == 3 and "disagree" in out, (code, out)
+    write(dict(review, flagged=[], verdict="clear"))          # a clear verdict over a defect answer
+    code, out = run("ingest", "--json", side)
+    assert code == 2 and "check on it again" in out and "s3.hole" in out, (code, out)
+    write(dict(review, answers={"a": review["answers"]["a"], "b": {}}))
+    code, out = run("ingest", "--json", side)
+    assert code == 2 and "unanswered" in out, (code, out)
+    write(dict(review, sheets=[review["sheets"][0], dict(review["sheets"][1], sha256="2" * 64)]))
+    code, out = run("ingest", "--json", side)
+    assert code == 2 and "changed since the review" in out, (code, out)
+    write(review)
+    code, out = run("ingest", "--json", side, "--status", "approved")
+    assert code == 2 and "never approved" in out, (code, out)
+    code, out = run("ingest", "--json", side)
+    part = json.loads(out)
+    assert code == 0 and part["kind"] == "qa-sheet" and "verdict" not in part and "gates" not in part, out
+    assert [f["path"] for f in part["files"]] == ["ArtDirection/review/runner_s3.review.json",
+                                                   "ArtDirection/review/runner_s3.a.png",
+                                                   "ArtDirection/review/runner_s3.b.png"], part
+    assert part["inputs"] == [{"path": "ArtDirection/models/runner/runner.glb", "sha256": L.sha256_file(glb)}]
+    assert part["links"] == [{"rel": "depends-on", "to": mid}], part
+    assert part["params"] == {"review": "review/1", "stage": "S3", "verdict": "flagged", "flagged": ["s3.hole"],
+                              "reviewer": "claude", "model": None}, part["params"]
+    code, out = run("ingest", "--json", side, "--write")
+    assert code == 0 and "recorded" in out, out
+    current = L.last_by_id(L.load(ledger))
+    assert current[mid]["status"] == "candidate" and current[mid]["rev"] == 1, current[mid]
+    rid = "artdirection/review/runner-s3-review"
+    assert current[rid]["status"] == "candidate" and current[rid]["links"] == [
+        {"rel": "depends-on", "to": mid, "rev": 1}], current[rid]
+    code, out = run("check")
+    assert code == 0 and "review-flagged" not in out, out        # nothing approved yet
+    code, out = run("status", mid, "approved", "--approver", "lead")
+    assert code == 0, out
+    code, out = run("check")
+    assert code == 0 and "review-flagged" in out and "s3.hole" in out, out
+    # a clear pre-review of the same bytes, later: the warning goes
+    sha_a = L.sha256_file(put("ArtDirection/review/runner_s3_r2.a.png", b"sheet a, again"))
+    sha_b = L.sha256_file(put("ArtDirection/review/runner_s3_r2.b.png", b"sheet b, again"))
+    side = os.path.join(root, "ArtDirection", "review", "runner_s3_r2.review.json")
+    write(dict(review, flagged=[], verdict="clear", ts="2026-01-03T00:00:00Z",
+               sheets=[dict(review["sheets"][0], path="runner_s3_r2.a.png", sha256=sha_a),
+                       dict(review["sheets"][1], path="runner_s3_r2.b.png", sha256=sha_b)],
+               answers={"a": review["answers"]["a"], "b": review["answers"]["a"]}))
+    code, out = run("ingest", "--json", side, "--write")
+    assert code == 0 and "recorded" in out, out
+    code, out = run("check")
+    assert code == 0 and "review-flagged" not in out, out
 
 
 def _main(argv):

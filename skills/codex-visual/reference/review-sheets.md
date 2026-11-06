@@ -10,6 +10,7 @@ numeric checks disagree — so a sheet in front of a person always belongs to fi
 ```bash
 python3 <skill>/scripts/contact_sheet.py sheet.json --out review/runner_r03_qa.png \
     --require out/runner_r03/inspect.json            # repeatable; several after one flag
+python3 <skill>/scripts/contact_sheet.py sheet.json --out review/runner_r03_qa_b.png --order 7
 python3 <skill>/scripts/contact_sheet.py --selftest
 ```
 
@@ -30,6 +31,10 @@ python3 <skill>/scripts/contact_sheet.py --selftest
   whose `verdict` or `record.verdict` is `"green"` — every one of those it carries, and at least
   one. That covers `inspect_glb.py --json-out`, `audit_3d_source.py --json-out`, the Blender
   reports with `ok`, and any project check that writes `all_pass`.
+- `--order SEED` (a whole number from 0) shuffles each sheet's cells; a label moves with its
+  image, one seed always gives the same order, and two or more cells never keep the spec's order.
+  The printed JSON gains `order`: per sheet, cell k shows the spec's item `order[k]`. Without the
+  flag the sheet is byte for byte the spec's order. It serves the pre-review's second pass.
 - Exit **0** written; **2** refused by `--require` (nothing written) or a usage error, such as an
   `--out` suffix Pillow cannot write; **3** the spec or an image cannot be read, or a sheet cannot
   be written (nothing written, no sheet of the run left behind). It prints `written`, `sheets`, `items` and
@@ -54,3 +59,7 @@ A sheet shows; it does not measure. The numbers live in the files `--require` re
 nobody looked at is not a pass. One still per clip says nothing about motion: judge an animation
 on its onion skin and its preview (`reference/animation-scripts.md` §1, §2). A sheet composed
 without `--require` is a draft for discussion, not evidence for a decision.
+
+Before a person decides from a sheet, the agent can pre-review it: `scripts/prereview.py` answers
+a fixed defect checklist on the sheet and on a shuffled copy, and names the items the person must
+look at (`reference/pre-review.md`). It narrows the look; it does not replace it.

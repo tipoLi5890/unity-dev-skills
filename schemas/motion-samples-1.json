@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tipoLi5890/unity-dev-skills/main/schemas/motion-samples-1.json",
+  "title": "motion-samples/1 — one clip's world joint positions per frame",
+  "description": "Written as JSON by humanoid-motion twocam/solve.py (--samples-out) and as NPZ by humanoid-motion contact_bake.py (--samples-out: `positions` (frames, joints, 3), `names`, `fps`, optional `contacts` (frames, 2: l, r), `reading_joints` with `reading_names`, and `meta`, a JSON string holding the optional keys below; a reader stamps it motion-samples/1 and rebuilds `joints` from `positions` and `names`); read by blender-retarget motion_metrics.py (and clip_metrics.py's plant helpers) and by contact_bake.py (--rig-info for `sole_offsets`, --readings for `reading_joints`). Metres, Z up unless `up` says y. Every joint has the same number of frames (motion_metrics refuses fewer than 4, and refuses a named joint that is missing; not expressible here). Producers add their own keys freely.",
+  "type": "object",
+  "required": ["schema", "fps", "joints"],
+  "properties": {
+    "schema": {"const": "motion-samples/1"},
+    "clip": {"type": ["string", "null"], "description": "the clip's name"},
+    "fps": {"type": "number", "exclusiveMinimum": 0},
+    "up": {"enum": ["z", "y", "Z", "Y"], "description": "default z; y turns a Y-up file with (x, y, z) -> (x, -z, y)"},
+    "joints": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "joint name -> one [x, y, z] per frame",
+      "additionalProperties": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/vec3"}}
+    },
+    "root": {"type": "string", "minLength": 1, "description": "default: the first of Root, Hips, hips, pelvis, Pelvis present"},
+    "feet": {
+      "type": "object",
+      "required": ["l", "r"],
+      "additionalProperties": false,
+      "description": "each foot's joints (foot, then toe); required by motion_metrics unless --feet names them",
+      "properties": {
+        "l": {"$ref": "#/$defs/names"},
+        "r": {"$ref": "#/$defs/names"}
+      }
+    },
+    "contacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "per-frame contact probability per foot",
+      "properties": {
+        "l": {"type": "array", "items": {"type": "number"}},
+        "r": {"type": "array", "items": {"type": "number"}}
+      }
+    },
+    "segments": {
+      "type": "array",
+      "description": "parent -> child joint pairs, for pops",
+      "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}
+    },
+    "parents": {
+      "type": "object",
+      "description": "child -> parent joint, read as more segments",
+      "additionalProperties": {"type": ["string", "null"]}
+    },
+    "limits": {
+      "type": "array",
+      "description": "the bend at a chain's middle joint (0 = straight) must stay in [min_deg, max_deg]",
+      "items": {
+        "type": "object",
+        "required": ["chain"],
+        "properties": {
+          "name": {"type": "string"},
+          "chain": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 3},
+          "min_deg": {"type": "number"},
+          "max_deg": {"type": "number"}
+        }
+      }
+    },
+    "travel_mps": {
+      "type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+      "description": "an in-place loop's travel speed [vx, vy]"
+    },
+    "source": {
+      "type": "object",
+      "required": ["root"],
+      "description": "the retarget's source root and the scale it was given (translation check)",
+      "properties": {
+        "root": {"type": "array", "items": {"$ref": "#/$defs/vec3"}},
+        "k": {"type": "number"}
+      }
+    },
+    "two_view": {
+      "type": "object",
+      "description": "the two-camera route's block (solve.py); extra keys such as reprojection_basis and limb_reprojection_px are reports",
+      "properties": {
+        "agreement": {"oneOf": [{"type": "number"}, {"type": "array", "items": {"type": ["number", "null"]}}]},
+        "reprojection_px": {"oneOf": [
+          {"type": "number"},
+          {"type": "array", "items": {"type": ["number", "null"]}},
+          {"type": "object", "required": ["p95"], "properties": {"p95": {"type": "number"}}}
+        ]},
+        "frame_height_px": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "sole_offsets": {
+      "type": "object",
+      "description": "a foot joint's rest height over its sole, metres",
+      "additionalProperties": {"type": "number"}
+    },
+    "reading_joints": {
+      "type": "array",
+      "description": "frames x reading_names x 3: the joints read straight from the source, for pops_in_source",
+      "items": {"type": "array", "items": {"$ref": "#/$defs/vec3"}}
+    },
+    "reading_names": {"$ref": "#/$defs/names"}
+  },
+  "dependentRequired": {"reading_joints": ["reading_names"]},
+  "$defs": {
+    "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+    "names": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+  }
+}

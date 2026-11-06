@@ -12,13 +12,16 @@ misread the file. Adding an optional key does not need a new version.
 | Contract | Schema | Producers | Consumers |
 |---|---|---|---|
 | A frame set's `frames.json` | [`frames-1.json`](frames-1.json) | `codex-visual` `sheet_to_frames.py`, `breathe.py`; `sprite-from-video` `video_loop.py` | `audit_frames.py`, `audit_pixel.py`, `frames_to_anim.py`, `registry_ingest.py`, `unity-2d-sprites` `FramesJsonImporter`, `SheetToAnimationClip`, `SpriteFramesAudit` |
-| A gate script's report | [`gate-1.json`](gate-1.json) | `rig_gate`, `deform_gate`, `mesh_check`, `motion_metrics`, `clip_metrics`, `contact_bake`, `twocam/solve`, the Blender ops (`blender_common` / `bcommon` `report()`), `contract_map map`, `inspect_glb`, `audit_3d_source`, `camera_gate`, `autorig.py all --repeat` (`autorig.stability.json`) | `autorig.py`, `rig_exam.py bench`, `twocam.py`, `registry_ingest.py`, `contact_sheet.py --require`, `bakeoff_report.py` |
+| A gate script's report | [`gate-1.json`](gate-1.json) | `rig_gate`, `deform_gate`, `mesh_check`, `motion_metrics`, `clip_metrics`, `contact_bake`, `twocam/solve`, the Blender ops (`blender_common` / `bcommon` `report()`), `contract_map map`, `inspect_glb`, `audit_3d_source`, `camera_gate`, `autorig.py all --repeat` (`autorig.stability.json`), `concept_match`, `audit_identity` (report-only) | `autorig.py`, `rig_exam.py bench`, `twocam.py`, `registry_ingest.py`, `contact_sheet.py --require`, `bakeoff_report.py` |
 | A character's parts plan `<c>.parts.json` | [`parts-1.json`](parts-1.json) | `blender-character-rig` `part_math.py plan`; `comfyui-asset-generation` `part_views.py` (its own keys) | `part_views.py`, `assemble_parts.py` |
 | One line of a journey's `timeline.jsonl` | [`timeline-1.json`](timeline-1.json) | `unity-play-harness` `JourneyRecorder.cs` (samples from `GameProbe.ToJson`) | `journey_report.py`, `jump_report.py`, `camera_jitter.py` |
 | A rigged character's `<name>.secondary.json` | [`secondary-1.json`](secondary-1.json) | `character-autorig` `secondary_chains.py` | `unity-rigged-character` `SecondarySpec`, `SecondaryMotionSetup` |
 | A layered 2D character's `rig2d.json` | [`rig2d-1.json`](rig2d-1.json) | `comfyui-asset-generation` `layer_split.py split` | `unity-2d-animation` `AutoRig2D` |
 | The rig exam's files (`NAME.truth.json`, `fault.json`, `exam.json`) | [`exam-1.json`](exam-1.json) | `character-autorig` `rig_exam.py` (`reference`, `faults`, `score`), `rig_exam_blender.py` (`cast`) | `rig_exam.py score`, `bench` |
 | One version's rig readings, `<label>.bench.json` | [`bench-1.json`](bench-1.json) | `character-autorig` `rig_exam.py bench` | `rig_exam.py compare` |
+| A pre-review of one review sheet `NAME.review.json` | [`review-1.json`](review-1.json) | `codex-visual` `prereview.py` (`new`, `answer`, `check`) | `prereview.py check`, `registry_ingest.py` |
+| A rest skeleton (`<fbx>.skeleton.json`, `contract_map.py contract/bvh --out`) | [`skeleton-1.json`](skeleton-1.json) | `unity-rigged-character` `contract_map.py contract`, `bvh`; `blender-retarget` `brt_arp.py` `pipeline`/`export`; `humanoid-motion` `twocam/skeleton.py` (`demo_skeleton`) | `contract_map.py map`, `suggest`; `twocam/skeleton.py rig-info` |
+| One clip's joint positions (`samples.json`, or `.npz` with a JSON `meta`) | [`motion-samples-1.json`](motion-samples-1.json) | `humanoid-motion` `twocam/solve.py --samples-out` (JSON), `contact_bake.py --samples-out` (NPZ) | `blender-retarget` `motion_metrics.py`, `clip_metrics.py`; `contact_bake.py --rig-info`, `--readings` |
 
 ## frames/1
 
@@ -82,6 +85,10 @@ misread the file. Adding an optional key does not need a new version.
   edges to read). Every
   producer computes it with the same pasted `gate_margin(value, limit, op)`, from
   `tools/shared-blocks/gate_margin.py`.
+- **A report-only gate** has `limit: null`, `pass: true`, `"report_only": true` and no `margin`: it
+  is read by a person and gates nothing. When it could not be measured its `value` is null and it
+  is listed in a top-level `not_measured: [{name, why}]` (`concept_match`, `audit_identity`). Not
+  measured is not a pass.
 - **`ok` is gone.** It was the old name of `pass`. No producer writes it, and the schema refuses a
   stamped report or a gate that carries `ok`.
 
@@ -179,3 +186,34 @@ old dialect.
 - Bench files are kept beside the exam folder, outside the repository; the repository holds the
   tools, not the scores.
 
+## review/1
+
+- **Two sheets, one checklist.** `sheets` is `[a, b]`: a in the spec's cell order (`order: null`),
+  b the same cells shuffled by `contact_sheet.py --order` (`order[k]` = the spec item in cell k,
+  `seed` from the subject's sha256). Every checklist item is answered on each:
+  `answers.a` / `answers.b` = `{id: {answer: defect | clear | unsure, view: label | null, note}}`.
+- **Flagged** = defect or unsure in either pass, or the passes disagree. `verdict` is `draft`
+  until `prereview.py check` writes `clear` (nothing flagged) or `flagged`.
+- **Paths** (the sheets, the subject) are relative to the review file's folder; `subject.sha256`
+  and each sheet's `sha256` pin the bytes, and `check` refuses a review whose files changed.
+- **It approves nothing.** `registry.py ingest` refuses a draft, a review whose answers no longer
+  give its `flagged` ids, a sheet changed since the review, and `--status approved`; it records a
+  review as `qa-sheet` with its verdict and flagged ids in `params`, and changes no status;
+  `check` warns `review-flagged` when an approved asset's latest pre-review flagged items.
+
+## skeleton/1
+
+- Metres, +Z up, facing −Y. A file stamped `up: "+Y"` (a BVH header kept in its own axes) is turned on
+  read with (x, y, z) → (x, −z, y). `units` is `m`, or `file units x S` for a BVH read at `--scale S`.
+- Each bone needs `name` and `parent` (null for a root). `head` and `tail` are optional for
+  `contract_map.py` (it then skips its position gates); `twocam/skeleton.py` refuses a bone without them.
+- `deform` is true for a bone that deforms skin. `brt_arp` sets it from the weights, since the FBX importer
+  marks every bone deform.
+
+## motion-samples/1
+
+- `fps`, and `joints` with one [x, y, z] per frame per joint, are required. Every other key is optional.
+  Without `feet`, `motion_metrics` needs `--feet`.
+- The NPZ form carries `positions` (frames, joints, 3), `names`, `fps`, optional `contacts` (frames, 2) and
+  `reading_joints` with `reading_names`, and a JSON string `meta` holding the optional keys. A reader stamps
+  it and rebuilds `joints`. `check-contracts.py` validates it the same way.

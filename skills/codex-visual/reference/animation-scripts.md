@@ -265,6 +265,10 @@ the PNGs — it does not read the numbers `frames.json` carries — and a sideca
 for; `--mode keep` is the caller saying the travel is authored. `head_x` (the head's sideways
 spread) and `iou` are printed and never gated: both move when the pose does.
 
+After it passes, `audit_identity.py` reports, and never gates, what it cannot see: identity against
+the approved still and between frames (embeddings), the loop seam, one-frame flicker and swapped
+leg colours. What each number means: `reference/identity-audit.md`.
+
 ### breathe.py — an idle from one still pose
 
 A pose that has to read as alive — the sentry waiting at the gate, the runner before the launch —
