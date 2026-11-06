@@ -51,7 +51,12 @@ cuts of its own, and the arm's search follows it (the axis comes out vertical: r
 and the arm searched again (up to twice); the run's cut boxes are the report's `prop` (side, slices) and that
 arm is the other one mirrored (its own cuts run into the prop), the fingers read on the free hand. `autorig.py`'s
 hand_reach then gives the prop's skin (inside those boxes, less the arm's own skin) to the hand bone alone: it
-rides the hand rigid. The midline comes from the feet when the extent under 0.4 H is pulled more than 0.02 H
+rides the hand rigid. A shield modelled into the forearm (one mesh, its face joined to the body only through the
+inner shell) keeps a strip of its face outside that skin, where it lies within the arm's clearance or a cut took
+the gripping hand instead; that strip is a piece of the outward skin every path from which to the body runs over
+the prop, and it goes with the prop, the inner shell behind it too (`prop_pieces`; `hand_reach.prop.cut_off` in
+`rig/NAME.arp.json`). Left on the forearm and the upper arm, the strip does not
+follow the hand with the rest of the shield, and the deform gate counts its crossings as the arm's own. The midline comes from the feet when the extent under 0.4 H is pulled more than 0.02 H
 off them, and prep centres X on the feet when the box is more than 0.01 H off them: the markers mirror about
 x = 0, so an offset d reads as 2 d of asymmetry (arms a few degrees apart move the box less than 0.01 H). Both
 arms setting a vertical run aside leaves nothing to mirror from: refused (arms held against the body). A prop

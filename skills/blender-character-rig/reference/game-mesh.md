@@ -36,26 +36,42 @@ already sit on its surface.
 ## Route B — retopology, UVs, rebake
 
 The showcase stays untouched as the source of detail; the game mesh is a new object beside it,
-both normalised (scale, facing, origin between the feet) before anything else.
+in the same frame. Headless, `scripts/game_mesh.py` runs steps 1–5 and their gates in one call
+([the gated run](#the-gated-run)); the steps below are what it does, and the calls for a session
+in the user's Blender.
 
 1. **One surface.** A generated mesh is a thin double shell split along every UV seam, and
    QuadriFlow on it can return the wrong face count or a fused shell. Voxel-remesh a copy first,
-   with a voxel smaller than the thinnest part that must survive (a finger, an ear), then
-   check: one loose part, extents within e.g. 1% of the showcase's.
+   with a voxel smaller than the thinnest part that must survive (a finger, an ear), delete the
+   specks it leaves (pieces of a few vertices), then check: one loose part, extents within e.g. 1%
+   of the showcase's. Never keep only the largest piece: legs the grid leaves apart from a hem
+   above them are a piece too. **A voxel remesh does not remove a back-to-back inward-facing inner
+   shell** when it is joined to the skin at the hems and cuffs: it comes out as the inside of a
+   thin hollow wall, one piece, closed, and QuadriFlow then spends about half the budget on the
+   inside. Check the enclosed volume against a coarse (2% of the height) voxel copy, which fills
+   any thin wall, and fill the cavity (`game_mesh.py` floods the outside on a voxel grid and adds the
+   rest as blocks before remeshing again). Stripping the shell first (`scripts/shell_strip.py`)
+   and closing the holes it leaves is not enough on its own: the voxel copy stays partly hollow.
 2. **Retopology.** QuadriFlow returns quads, so ask for half the triangle target:
    `target_faces = target_tris / 2`, symmetry on for a symmetric character. It reports failure
    only as a `{'CANCELLED'}` return and a warning that the mesh "needs to be manifold" — which it
-   can say of a closed voxel mesh many times denser than the target. Check the return and the
-   face count; collapse-decimating the voxel mesh to a few times the target first gets it through.
+   says of a closed manifold voxel mesh more than about 6 times the target's triangles. Check the
+   return and the face count; collapse-decimate the voxel mesh to 4 times the target first. It
+   returns somewhat fewer faces than asked: rescale `target_faces` by target / result and rerun.
    A retopology service or another tool is checked the same way. QuadriFlow does not place loops
    at joints; the deformation test is what says whether its flow is good enough.
-3. **UVs.** Smart UV Project, or seams and Unwrap where islands should follow the body. The
-   island margin is in UV units: e.g. 4 px at `target_tex_px` is `4 / target_tex_px`. Check for
-   overlaps (`uv.select_overlap`).
+3. **UVs.** Smart UV Project, or seams and Unwrap where islands should follow the body. A
+   projected island can fold onto itself (a hem, a sleeve cuff): at a 66° angle limit that is a few
+   percent of the texels on a coat. Project at 45°, mark seams from the islands, unwrap them
+   angle-based, project again the faces that still overlap (a band-shaped island flattens onto
+   itself), average the island scales and pack. The island margin is in UV units: e.g. 4 px at `target_tex_px` is
+   `4 / target_tex_px`. Check for overlaps (`uv.select_overlap`).
 4. **Rebake from the showcase**, Selected-to-Active in Cycles: one image per map at
    `target_tex_px` — base colour (Diffuse, colour pass only, sRGB), normal (tangent, Non-Color),
    occlusion. `cage_extrusion` and `max_ray_distance` scale with the character: start around 2–3%
-   of its height, e.g. 0.03 and 0.1 for a 1.7 m runner. Save each image to a file.
+   of its height, e.g. 0.03 and 0.1 for a 1.7 m runner. The Diffuse colour pass is base colour ×
+   (1 − metallic): hold the showcase's Metallic at 0 for that bake, or a metal button bakes black.
+   Save each image to a file.
 5. **Look at it.** The game mesh textured, beside the showcase, from the same camera — front, side,
    back, and the game camera.
 
@@ -73,13 +89,15 @@ def only(*objs, active):
 only(game, active=game)
 game.data.remesh_voxel_size = 0.005                      # under the thinnest part to keep
 bpy.ops.object.voxel_remesh()
-pre = game.modifiers.new("pre", "DECIMATE")             # a few times the target, or QuadriFlow cancels
-pre.ratio = min(1.0, 8 * 4000 / len(game.data.polygons))
+pre = game.modifiers.new("pre", "DECIMATE")             # 4 x the target, or QuadriFlow cancels
+pre.ratio = min(1.0, 4 * 8000 / sum(len(p.vertices) - 2 for p in game.data.polygons))
 bpy.ops.object.modifier_apply(modifier="pre")
 done = bpy.ops.object.quadriflow_remesh(target_faces=4000, use_mesh_symmetry=True, mode="FACES", seed=0)
 assert done == {"FINISHED"}, "QuadriFlow cancelled: read the warning, step 2"     # target_tris 8000
 bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.uv.smart_project(angle_limit=1.15192, island_margin=4 / 2048)
+bpy.ops.uv.smart_project(angle_limit=0.7854, island_margin=4 / 2048)   # 45 degrees
+bpy.ops.uv.seams_from_islands()
+bpy.ops.uv.unwrap(method="ANGLE_BASED", margin=4 / 2048); bpy.ops.uv.pack_islands(margin=4 / 2048)
 bpy.ops.object.mode_set(mode="OBJECT")
 
 game.data.materials.clear()
@@ -102,6 +120,63 @@ for name, kind, space, extra in (("BaseColor", "DIFFUSE", "sRGB", {"pass_filter"
 ```
 
 Then wire the baked images into the game mesh's material, and look before the gates.
+
+### The gated run
+
+```bash
+python3 scripts/game_mesh.py Runner_showcase.glb --out ArtDirection/sources \
+        --target-tris 8000 --tex-px 2048 --name Runner --body human --symmetry
+```
+
+It starts Blender itself (`scripts/game_mesh.py --blender PATH`, else `$BLENDER`, `blender` on
+`PATH`, the usual install), or runs inside it: `blender -b --factory-startup -P
+scripts/game_mesh.py -- ...`. A `.blend` showcase names its object with `scripts/game_mesh.py
+--object Runner_showcase`; it is appended into an empty scene, never opened for writing. It
+writes `<name>_game.glb`, `<name>_game.blend` (the game mesh alone, the maps linked),
+`textures/<name>_{BaseColor,Normal,Occlusion}.png`, `<name>_game_vs_showcase.png` (rows: showcase
+textured, game textured, showcase clay, game clay; columns front, three-quarter, side, back),
+`<name>_bake_miss.png` (the UV layout, red where no ray hit), `mesh_check.json` and
+`game_mesh.json` (gate/1). Roughness and metallic are not baked: the material reads 0.7 and 0. Exit 0 every gate passed, 2 a gate failed, 1 refused.
+
+| Gate | Value, and its limit |
+|---|---|
+| `game.tris` | triangles, in [0.5 × target, target] |
+| `game.one_surface` | loose pieces of the game mesh, ≤ 1 |
+| `game.solid` | enclosed volume over that of a 2%-of-height voxel remesh of the game mesh (which fills a thin hollow wall), ≥ 0.9; a hollow shell reads its wall's share |
+| `game.extent` | the largest of the three axis differences between game and showcase extents, over the height, ≤ 0.01 |
+| `game.silhouette_iou_min` | the smallest silhouette IoU of 8 orthographic views (every 45°, one frame, 512 px), ≥ 0.95 |
+| `game.uv_bounds` | UV corners outside 0–1, 0 |
+| `game.uv_overlap` | texels covered by two or more UV triangles over texels covered, at `--tex-px`, a texel counted when its centre lies strictly inside, so a shared edge never counts twice; ≤ 0.001 (projection folds of Smart UV Project) |
+| `game.uv_stretch` | per triangle, the singular values s1 ≥ s2 of the 3D → UV map over the whole mesh's mean scale k: max(s1/k, k/s2), how far a texel is stretched or squashed in its worst direction; 95th percentile by surface area, ≤ 2 |
+| `game.bake_miss` | texels inside the islands (1 px in) no ray reached, from a no-margin base colour bake, ≤ 0.005 |
+| `game.bake_delta` | mean CIE76 ΔE between unlit texture renders of showcase and game, same 8 cameras, over the pixels both cover (2 px in), ≤ 6 |
+| `game.mesh_check` | `character-autorig` `mesh_check.py --body` on the written GLB passes |
+
+The knobs, each a fraction of the height H where it is a length:
+
+```bash
+python3 scripts/game_mesh.py SHOWCASE.glb --out DIR --target-tris N --voxel 0.005 --cage 0.02 --ray 0.06 \
+        --margin-px 4 --ao-samples 32 --seed 0
+```
+
+`--voxel` under the thinnest part to keep; `--cage` and `--ray` the bake's `cage_extrusion` and
+`max_ray_distance`; `--margin-px` the island and bake margin in texels. A failed
+`game.bake_miss` is a cage or ray too short, or webbing the retopology stretched across a gap
+(an armpit, a crotch under a coat) with no showcase surface behind it: the miss map says which.
+A failed `game.silhouette_iou_min` or `game.extent`
+at a sound bake is detail the budget cannot carry (spiky hair tips, fingers merged into a
+mitten): look at the sheet, then a larger budget, hair cards, or the regenerate route.
+
+**AutoRemesher** (MIT, a desktop app with a command line; OBJ only) is the alternative retopology:
+
+```bash
+python3 scripts/game_mesh.py SHOWCASE.glb --out DIR --target-tris N \
+        --autoremesher /path/to/autoremesher.app --timeout 600
+```
+
+It runs on the voxel surface with `--target-quads` target / 2 and `QT_QPA_PLATFORM=offscreen`,
+under `--timeout` seconds. A timeout, a crash, no output or a result over the budget falls back
+to QuadriFlow, and `retopo.fallback` says which; the gates are the same either way.
 
 **Blender's Decimate modifier** (Collapse, Triangulate on, Symmetry for a symmetric character) is
 the quick alternative where topology does not deform — a prop on a bone, a hard-surface part.
@@ -142,11 +217,11 @@ step with loops placed at those joints.
 
 | Gate | Passes when |
 |---|---|
-| Budget | `inspect_glb.py --budgets` on the exported GLB, or the triangle count read in Blender: at or under `target_tris × 1.25`, never over a ceiling; maps at `target_tex_px` |
-| One surface | Route B: one loose part, no inner shell |
-| Silhouette | Same camera, showcase and game mesh: extents within e.g. 1%, no thin part lost |
-| UVs | No overlaps; every island inside 0–1 |
-| Bake | No black or smeared patches where rays missed or the cage crossed a gap |
+| Budget | `inspect_glb.py --budgets` on the exported GLB, or the triangle count read in Blender: at or under `target_tris × 1.25`, never over a ceiling; maps at `target_tex_px`. Route B's `game.tris` holds it at or under `target_tris` |
+| One surface | Route B: one loose part, no inner shell (`game.one_surface`, `game.solid`) |
+| Silhouette | Same camera, showcase and game mesh: extents within e.g. 1%, no thin part lost (`game.extent`, `game.silhouette_iou_min`) |
+| UVs | No overlaps; every island inside 0–1 (`game.uv_overlap`, `game.uv_bounds`; `game.uv_stretch`) |
+| Bake | No black or smeared patches where rays missed or the cage crossed a gap (`game.bake_miss`, `game.bake_delta`, then the sheet) |
 | Joints | **Picture**: the extreme poses with transferred weights |
 | Approval | **A person**, from one side-by-side image: showcase and game mesh, clay and textured, same cameras |
 

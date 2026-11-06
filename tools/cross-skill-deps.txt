@@ -9,6 +9,8 @@ blender-retarget/scripts/tests/test_blender_common.py -> blender-character-rig/s
 blender-character-rig/scripts/assemble_parts.py -> blender-retarget/scripts | bind imports brt_arp (op export) to re-export the rig's FBX with the hair bound to the Head bone
 blender-character-rig/scripts/eye_fit.py -> blender-retarget/scripts | bind imports brt_arp (op export) to re-export the rig's FBX with the eyeballs bound to the eye bones
 blender-character-rig/scripts/ship_merge.py -> comfyui-asset-generation/scripts/inspect_glb.py | gates the merged GLB with inspect_glb.py and reads the class's 3D budgets row through its load_budget
+blender-character-rig/scripts/game_mesh.py -> character-autorig/scripts/mesh_check.py | runs mesh_check.py --body on the written game GLB (gate game.mesh_check)
+blender-character-rig/scripts/shell_strip.py -> mesh-texture-paint/scripts/mvtex.py | imports mvtex (_glb_chunks, _accessor, load_glb, glb_image, fibonacci_dirs) to read and re-read the GLB and place the strip views; exits 1 naming the missing skill when it is not installed beside this one
 character-autorig/scripts/autorig.py -> blender-character-rig/scripts | imports bcr_import_prep inside Blender for the prep stage; runs assemble_parts.py bind for a character in parts (parts_bind) and eye_fit.py bind for its eyeballs (eyes_bind)
 character-autorig/scripts/autorig.py -> blender-retarget/scripts | imports brt_arp (the Auto-Rig Pro pipeline) and brt_weights (the weight repair) inside Blender
 character-autorig/scripts/autorig.py -> unity-rigged-character/scripts/contract_map.py | maps the rig onto the humanoid contract (contract_map.py map)

@@ -421,6 +421,8 @@ versions and each licence's limits (commercial use, territory, attribution).
 - **SigLIP 2** (`google/siglip2-base-patch16-224`, read by `codex-visual` `embed.py`) — Apache-2.0 on the
   model card: <https://huggingface.co/google/siglip2-base-patch16-224>; big_vision's terms:
   <https://github.com/google-research/big_vision/blob/main/LICENSE>
+- **AutoRemesher** (optional retopology for `blender-character-rig` `game_mesh.py`) — MIT:
+  <https://github.com/huxingyi/autoremesher/blob/master/LICENSE>
 - **Auto-Rig Pro** — a paid add-on by Artell, under the author's licences:
   <https://www.lucky3d.fr/auto-rig-pro/doc/license.html>
 - **ComfyUI** — GPL-3.0: <https://github.com/Comfy-Org/ComfyUI>; **Blender** — GPL:

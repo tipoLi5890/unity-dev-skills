@@ -70,6 +70,7 @@ run `check`, and put the line back.
 | `hy-motion` | HY-Motion text-to-motion | `{"excludes": ["EU", "UK", "KR"]}` |
 | `qwen-image-edit-2511` | a texture repainted by `mesh-texture-paint` with Qwen-Image-Edit-2511 and its Lightning LoRA on local weights, both Apache-2.0 | `"worldwide"` |
 | `qwen-image-layered` | a scene split into depth layers by `comfyui-asset-generation` `scene_layers.py` with Qwen-Image-Layered on local weights; the model card states Apache 2.0 and names no territory | `"worldwide"` |
+| `birefnet` | a view cut out by BiRefNet (`comfyui-asset-generation`'s four-view background removal and the single-image 3D templates; ComfyUI's core node loads only BiRefNet). The weights are MIT, but their card says they were trained on DIS5K, whose terms allow only non-commercial research or educational use of the dataset, "even after ... processing". Whether that reaches the weights or what they cut out is a legal call for the project, not a territory: record the cut-out with this source so the call can be found and revisited. BEN2 is no way out: its card names DIS5K too | `"worldwide"` |
 | `openai-gpt-image` | an image rendered by gpt-image through `codex-visual` (`codex_generate.py`; the model is read from the file's C2PA manifest). OpenAI's Terms of Use: as between the user and OpenAI, the user owns the Output, and OpenAI assigns its rights in it, if any; the terms name no country where Output may not be used | `"worldwide"` |
 
 Not shippable, so never a `licence.source` on an approved asset: Qwen Image 2.1 is released for

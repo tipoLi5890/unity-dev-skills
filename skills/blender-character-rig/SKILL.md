@@ -26,9 +26,10 @@ weights want a surface every bone can see. A short-limbed mascot with long ears 
 | Registering the server, the cheapest probes, running a module through it (the stub, the reload order, the loader when Blender cannot read the skill directory), where a render really lands | `reference/mcp-session.md` |
 | Someone else's scene: collections, hiding, a second scene, translated UI names (`KeyError 'Principled BSDF'`), what to report | `reference/scene-discipline.md` |
 | Importing the GLB, origin, height, facing, the weld, reading landmarks from slices and boxes | `reference/import-and-survey.md` |
+| An image-to-3D GLB's inward-facing inner shell cut off before import, by visibility (host, no Blender) | `reference/import-and-survey.md`, `scripts/shell_strip.py` |
 | A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting | `reference/prop-on-bone.md` |
 | Poses in armature axes, keying an action, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
-| The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake | `reference/game-mesh.md` |
+| The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake from the showcase, gated in one headless run | `reference/game-mesh.md`, `scripts/game_mesh.py` |
 | A character in parts (`three`): register the generated head onto the anchor, split its hair, cut, seam, gates; the hair bound by `character-autorig` `autorig.py all --hair`; `fine`: the hands attached under the sleeve | `reference/part-assembly.md`, `scripts/assemble_parts.py`, `scripts/part_math.py`, `scripts/hand_parts.py` |
 | The ship track's mesh from parts: one mesh, one material, one atlas per map, before the rig | `reference/part-assembly.md` §8, `scripts/ship_merge.py` |
 | Exporter options, clip naming, export FBX and prove it by re-import, the Unity check | `reference/fbx-export.md` |
@@ -95,7 +96,8 @@ lands on a target that stands between the camera and the character.
 - **Probe before rendering.** The probe says by how much a swing misses; a render says that it does.
 - **Do not trust a sign you have not seen.** Rotations are steps in armature axes, applied in the
   order written. Before keying, apply one step and probe which way the point moved.
-- **Keep the inner shell and every island**; cull back faces instead. The baked maps address them.
+- **Keep the inner shell and every island in the scene**; cull back faces instead. To drop the twin,
+  `scripts/shell_strip.py` cuts it from the GLB before import (`reference/import-and-survey.md`).
 - **"FINISHED" proves a file, not a rig.** Only the re-import and `rig_gate.py` do.
 - **Decide the clip name before Unity.** One action exports as a take named after the scene;
   all-actions writes every action in the .blend as `<rig>|<action>`.

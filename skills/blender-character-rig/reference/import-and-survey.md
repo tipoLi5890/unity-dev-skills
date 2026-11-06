@@ -20,6 +20,59 @@ import it stands upright facing −Y. Two properties decide everything downstrea
 For a 20,000-triangle character: 14,991 vertices before the weld, 9,994 after, 13 islands, the
 largest holding about two thirds of the vertices.
 
+## `shell_strip.py` — the inner shell off, before import
+
+The inner twin is about half the triangles and half the used UV space. It is never seen and it takes
+weights of its own. `scripts/shell_strip.py` removes it on the host (numpy, Pillow, scipy; it reads
+the GLB with `mesh-texture-paint`'s `mvtex.py`, so that skill sits beside this one). It does not make
+the mesh manifold (below):
+
+```bash
+python3 scripts/shell_strip.py runner.glb --out runner_stripped.glb --report runner.strip.json
+python3 scripts/shell_strip.py runner.glb --out runner_stripped.glb --views 1024 --size 256
+python3 scripts/shell_strip.py --selftest
+```
+
+Per triangle: **seen** — frontmost in some pixel of `--views` orthographic renders from a Fibonacci
+sphere (default 512 directions at `--size` 256 px, both faces drawn); a seen triangle is always kept.
+**Inner** — not seen, and a ray from it straight behind (along −normal, within 0.006 × the largest
+extent) first meets a seen sheet facing the other way: it sits back to back behind the visible skin.
+The rest (skin deep in a crevice, sub-pixel slivers, the shell behind them) take the label of the
+nearest labelled triangle across edges that do not fold over, the skin winning a tie; anything
+still unlabelled is kept. Only `inner` is removed. Selecting the twin as a linked piece does not work:
+the two shells are welded where they fold over at a hem, a cuff or a sole.
+
+The output is the same file with only the geometry cut: every vertex attribute (positions, UVs,
+normals, tangents) is cut to the vertices still used, the indices renumbered, and the material,
+textures and images written byte for byte — the baked maps keep their texels; the twin's simply go
+unused. The checks re-read the written file:
+
+| Gate | Holds |
+|---|---|
+| `shell.seen_kept` | every seen triangle is in the output (1.0); a seen triangle is never removed, so this checks the write |
+| `shell.silhouette_iou_min` | 10 check views that are not strip views (eight around at ±15°, one steep from below, one from above): outline unchanged, ≥ 0.995 |
+| `shell.view_match_min` | in the same views, the share of the outline whose frontmost triangle is still the same one, ≥ 0.995 — a removed triangle that was visible from a new direction shows here |
+| `shell.texture_coverage` | the texels the seen triangles used are still used, ≥ 0.99 (a write check, like `seen_kept`; the two view gates check what was removed) |
+| `shell.images_identical` | every image's bytes unchanged |
+
+`shell.removed_share`, `shell.uv_freed_share` and `shell.unresolved_share` are report only. A
+failing gate still writes the output and exits 2: read the report before using it.
+
+- **What stays.** A cape, a flap or an ear is seen from both sides and kept whole, so
+  `mesh_check.py`'s `inner_shell` does not reach 0 on a caped body. The lining of a coat or a skirt
+  is removed where it is hidden and kept near the hem, where it is seen.
+- **Where it can be wrong.** The inside of a sleeve, a shorts leg or a hem is seen only along the
+  opening's axis; when no strip direction falls inside that cone, its lining goes, and a camera
+  looking straight up the opening sees the far wall's back face. `view_match_min` reads one steep
+  view from below; when it sits near its limit, run again with more `--views`.
+- **Not manifold yet.** Where a seen fold or a kept fragment of the twin meets the skin, a few
+  edges still carry three or four faces once the vertices are welded, and the cut leaves open
+  borders where the shells were joined. A remesher that wants a manifold mesh still refuses the
+  stripped file until those edges are fixed (Select All by Trait > Non Manifold shows them).
+- **Before rigging it is optional.** The rig binds the skin either way (the deformation gate
+  measures the outward-facing side only); strip when the triangle or UV budget matters. Rig the
+  stripped file as you would the original: `bcr_import_prep` takes it unchanged.
+
 ## `bcr_import_prep` — the complete call
 
 ```python
@@ -66,9 +119,10 @@ largest, by vertex count), `island_count`, `extents`, `height`, `custom_normals_
   `collection` and leave `height` out when its size is set later.
 - **Facing.** `.L` is the character's left: +X when the character faces −Y. Confirm the facing
   before measuring anything — a still from a camera on −Y shows the face.
-- **Never delete the inner shell or the small islands.** The baked normal and occlusion maps
-  address them, and deleting is destructive. Culling hides the twin; positional weights give it the
-  same weights as the face in front of it.
+- **Never delete the inner shell or the small islands by hand.** The shells are welded where they
+  fold over, so a linked selection takes the skin with it, and deleting in the scene is destructive.
+  Culling hides the twin; positional weights give it the same weights as the face in front of it. To
+  remove it, run `shell_strip.py` on the GLB before import (above).
 
 ## The weld check
 

@@ -380,7 +380,7 @@ flowchart LR
 | [`comfyui-asset-generation`](skills/comfyui-asset-generation/SKILL.md) | Music, SFX, video, 3D models and layered 2D art from your own ComfyUI, one job each |
 | [`mesh-texture-paint`](skills/mesh-texture-paint/SKILL.md) | A generated 3D model's dull texture repainted from the concept art, view by view, mesh and UVs kept; how close a mesh is to its concept views |
 | [`sprite-from-video`](skills/sprite-from-video/SKILL.md) | One character still turned into transparent sprite loops through a generated video |
-| [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import |
+| [`blender-character-rig`](skills/blender-character-rig/SKILL.md) | A rig built by hand in Blender when `character-autorig` does not fit, its FBX proven by re-import; a generated mesh's hidden inner shell cut off, and a gated low-poly game mesh rebaked from the showcase |
 | [`blender-retarget`](skills/blender-retarget/SKILL.md) | Stock clips onto your Blender rig, gated on slide, jitter and pops |
 | [`character-autorig`](skills/character-autorig/SKILL.md) | A humanoid, long coat or chibi included, rigged locally with your own Auto-Rig Pro in one command, repeatable to show how steady the rig is; its optional AI step opens a Blender window |
 | [`humanoid-motion`](skills/humanoid-motion/SKILL.md) | A move as a clip, solved from a two-camera video straight onto the skeleton |

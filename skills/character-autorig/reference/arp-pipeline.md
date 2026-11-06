@@ -131,7 +131,8 @@ where the AI put the thumb. After the pipeline passes, `autorig.py arp` keeps ea
 the mesh's edges from the skin within `HAND_CORE` (0.2) × wrist → hand_tip of those bones, and
 a vertex farther than `HAND_REACH` (1.0) × wrist → hand_tip loses the hand's weight, the rest of
 its row rescaled; a piece of the mesh the walk never reaches (a separate cuff) is measured
-straight to the bones. Changed vertices mean one more `export` (gate `arp.hand_reach_export`);
+straight to the bones. Changed vertices mean one more `export` (gate `arp.hand_reach_export`, `reexport: true`; with none
+changed the gate is still written, `reexport: false`, the pipeline's FBX standing);
 the arp report's `hand_reach` lists them per side.
 
 ## An elbow or knee that loses volume: gate, repair, re-export, re-gate

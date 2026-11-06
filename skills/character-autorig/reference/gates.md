@@ -30,7 +30,7 @@ sparse accessors are refused: decompress them, or export an OBJ from Blender.
   to back with it, is a thin wall: the inward-facing inner shell some image-to-3D generators write
   on every mesh, a cloth flap, an ear. It is reported as `double_shell.inner_shell` (a share, often
   0.5–0.7 for such a generator: both walls count, so the shell itself is about half) and not gated: Auto-Rig Pro binds it with the skin, and
-  `deform_gate.py` measures the outward-facing side only. Do not delete it before rigging.
+  `deform_gate.py` measures the outward-facing side only. Do not delete it in the scene: to remove it, `shell_strip.py` cuts it from the GLB before prep, by visibility (`blender-character-rig` → `reference/import-and-survey.md`).
 - **The double-shell gap** stays below a finger's thickness (about 1 cm on a 1.7 m body), so limbs
   and fingers do not count; ears and cloth flaps do, and stay a small share. A hollow mesh with a
   thick wall (gap above 0.006 H) passes; Auto-Rig Pro's voxel bind fills it either way.
@@ -151,7 +151,9 @@ sharing no vertex with it (vertices welded by position: a glTF or FBX splits the
 two triangles meeting at a seam touch, they do not cross) in the pose and did not at rest (Blender's BVH overlap), divided by the
 outward triangles that moved (a vertex more than 0.1 % of the height). A double shell or an accessory that already
 crosses the body at rest is not counted again, nor is a held prop's skin (`--prop`, passed when the markers
-found one: inside its slices and rigid on the hand, as a separate object; reported as `prop`). Gated,
+found one: inside its slices and rigid on the hand, as a separate object, and the outward pieces it cuts off
+from the body when they ride the hand rigid too; reported as `prop`, `cut_off` the vertices those pieces
+added). Gated,
 `deform.self_intersection_p95` ≤ 0.08 over every sample. The denominator is the whole moved region, so a seam at one joint is diluted: a hard
 skin (each vertex following only its heaviest bone) can pass this gate on a normally proportioned
 body. The elbow volume loss and the `elbow_120` and `deep_squat` renders are what catch it; look at

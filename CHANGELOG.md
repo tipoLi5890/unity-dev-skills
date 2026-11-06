@@ -2,6 +2,88 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.45.0
+
+The 3D chain's generated mesh, made lighter and gated. Pixal3D's hidden inner shell can be cut
+from the GLB before import, the ship track's game mesh is one gated headless run instead of a
+recipe, and the armoured guard no longer stops at deform. No limit was widened. Two models in the
+0.43 plan are not in this release: SkinTokens is deferred, and BEN2 is not taken in.
+
+- **`blender-character-rig`: `scripts/shell_strip.py IN.glb --out OUT.glb`** removes an
+  image-to-3D mesh's inward-facing inner shell from the GLB, on the host (numpy, Pillow, SciPy,
+  `mesh-texture-paint`'s `mvtex.py`).
+  - A triangle seen from outside (512 orthographic views at 256 px, both faces drawn) is always
+    kept. An unseen triangle whose straight-behind ray first meets a seen sheet facing the other
+    way is removed. The rest take their nearest label across edges that do not fold over.
+  - Only geometry changes: every vertex attribute is cut together and the images are written
+    byte for byte.
+  - Gates, read back from the written file: `seen_kept` and `texture_coverage` (write checks),
+    silhouette IoU and view match over 10 check views that are not strip views (≥ 0.995), images
+    identical. Removed and freed-UV shares are reported. A quantized GLB is refused.
+  - The result is still not manifold enough for QuadriFlow.
+- **`blender-character-rig`: `scripts/game_mesh.py SHOWCASE --out DIR --target-tris N`** runs
+  S5 route B as one gated headless call.
+  - Steps: voxel remesh with the generator's hollow inner shell filled into a solid; QuadriFlow,
+    or AutoRemesher (`--autoremesher PATH`, under `--timeout`, falling back to QuadriFlow on a
+    hang, a crash, no output or a result over budget); Smart UV with fold re-projection; a Cycles
+    rebake of base colour, normal and occlusion from the showcase, metallic held at 0 for the
+    colour bake.
+  - Gates: triangle budget, one surface, solid, extent, silhouette IoU, UV bounds, overlap and
+    stretch, bake misses, bake colour difference, and `mesh_check.py --body`. Each limit has a
+    planted case that fails it.
+  - It refuses a missing showcase before Blender starts, and a mesh_check that crashed never reads
+    as a pass from an old report.
+- **A held prop modelled into the arm rides the hand whole.** A strip of a shield's face that the
+  cut boxes or the arm's clearance missed (a piece of the outward skin every path from which to
+  the body runs over the prop) now goes with the prop, with the inner shell right behind it
+  (`autorig.py` `prop_pieces`). `deform_gate.py` leaves it out of the self-intersection count only
+  when the bind made it rigid on the hand (`cut_off`, reported in `prop`): a strip left on the
+  forearm still counts. The new gate on the previous bind still fails (0.0815), so the gate is
+  not loosened.
+- **`arp.hand_reach_export` is written on every run** (`reexport` true or false). It was written
+  only when hand_reach moved weight, so a compare could miss it on one run and not the next.
+- **Asset toolchain:** AutoRemesher 1.2.0 (MIT since 1.0.0) in `VERSIONS.md` and
+  `THIRD_PARTY_NOTICES.md`. `licences.md` gains a BiRefNet row: MIT weights trained on DIS5K,
+  whose terms bar commercial use; record cut-outs with `licence.source` `birefnet`.
+- **Run on real assets.**
+  - **Rig exam:** the same as 0.43.0 (joints p95 0.0294, every planted fault caught, controls pass).
+  - **`autorig.py all --repeat 3` on the four characters:**
+    - The guard passes for the first time: `deform.self_intersection_p95` 0.0706 (margin
+      +0.1175) in 3 of 3 runs, 0.0809 (−0.0112) in 0.43.0. Its `mitten_tear` margin moves from
+      0.705 to 0.655; the bind, not the measurement, moves it.
+    - The runner passes (stable margin 0.173).
+    - The gatekeeper passes. Its elbow, which sat 0.004–0.03 from the volume limit, crossed it
+      before repair in 6 of 9 runs. The elbow repair then fixed it: volume margin 0.78, but
+      self-intersection margin 0.09 instead of 0.16. The stable margin went from 0.004 to 0.09.
+      What decides it is the AI's wrist. Its hand length (wrist to hand tip) varied from 0.2486 to
+      0.2539 m over 18 runs. A longer hand leaves a shorter forearm, and above about 0.2516 m the
+      elbow at 120° loses more than 0.35. The bind is fixed by the markers: the same markers bound
+      three times, or bound by the 0.44.0 and the 0.45.0 code, give the same reading. Where a run
+      lands depends only on the AI's read. The 0.44.0 code crossed in 1 of 9 runs on the same
+      machine; the 0.45.0 runs drew longer hands.
+    - The mascot fails `markers.limb_ratio` at −0.0052, as in 0.43.0.
+  - **`rig_exam.py compare` against 0.43.0 exits 2.** The lines are the gatekeeper's repaired
+    elbow, the guard's `mitten_tear`, and `markers.finger_lengths` on the runner and gatekeeper.
+    The finger readings sit at about 0.09 against a 0.01 limit; their margins are near 8, so a
+    0.02 absolute drop means nothing there.
+  - **`shell_strip.py`:** 41–58 % of the triangles removed (the runner 68,757 → 34,784), every
+    gate passing. Worst view match 0.99907; the worst of 26 independent directions 0.99715.
+    `mesh_check`'s `inner_shell` falls from 0.63–0.84 to 0.05–0.37 (a cape is seen from both
+    sides and kept).
+  - **`game_mesh.py` at 8,000 triangles, QuadriFlow:** the guard passes every gate (IoU 0.959,
+    ΔE 2.66). The runner fails extent (0.0111, its hair tips). The gatekeeper fails extent
+    (0.0183, a fingertip) and bake misses (0.0063, webbing under the arms). The mascot fails solid
+    (0.821) and one surface (3: its legs under the shorts).
+- **Still open.**
+  - **SkinTokens is deferred.** Its inference path carries GPL-3.0 code, and its training data
+    carries no licence.
+  - **BiRefNet stays.** BEN2 is trained on DIS5K as well, so it would not settle the question.
+    The DIS5K risk is noted in `licences.md`, and the call is the project's.
+  - **AutoRemesher was never run here.** The fallback path is tested with fake executables.
+  - **game_mesh questions:** whether one surface should allow legs under a hem; whether the 1 %
+    extent fits hair tips at a low budget; roughness and metallic are not baked.
+  - **ARP AI runs cannot share a machine.** They write to one inference folder.
+
 ## 0.44.0
 
 What a person looks at, measured and pre-read. A finished mesh is compared with its concept views,

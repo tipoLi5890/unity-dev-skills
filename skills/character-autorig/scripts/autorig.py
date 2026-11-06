@@ -27,7 +27,8 @@ markers read its gates one by one and take only what passed; never with --no-sma
 to `all`, except smart.fingers alone on a hand the markers read as fingers.mode fixed (both say mitten).
 arp: blender-retarget brt_arp op pipeline (--resolution N: the bind's resolution), then hand_reach (each hand's
 weight kept within HAND_REACH x wrist -> hand_tip of its bones over the skin; a held prop the markers found is
-that hand's alone, rigid, its fingers folded onto it; exported again when it changed anything), the rig saved as
+that hand's alone, rigid, its fingers folded onto it, with the pieces of its face it cuts off from the body's
+outward skin and the inner shell behind them (prop_pieces); exported again when it changed anything), the rig saved as
 rig/NAME_arp.blend, the Unity FBX in export/. deform then gets --prop rig/NAME.markers.json.
 contract: unity-rigged-character contract_map.py map --map arp --require contract, --min-fingers 30 unless the
 markers say fingers.mode fixed (a mitten; `ai` counts as found).
@@ -154,6 +155,8 @@ SKIRT_FEATHER = 0.03      # skirt_bind: x H under the band's top over which the 
 HAND_REACH = 1.0          # arp: x wrist -> hand_tip, how far over the skin a hand's bones may hold weight
 HAND_CORE = 0.2           # arp: x wrist -> hand_tip, skin this close to a hand bone is the hand's own
 PROP_ARM_CLEAR = 0.45     # arp: x wrist -> hand_tip, a held prop's slices keep the arm's skin this close to its bones
+PROP_WALL = 0.01          # arp: x H, the inner shell this close behind a piece the prop cuts off rides with it
+                          # (deform_gate.outward's wall)
 MANUAL_RUNGS = ("by hand, one at a time, each gated again (autorig.py deform): a finer bind (autorig.py arp OUT "
                 "--resolution, brt_arp pipeline 'resolution' one step up), then the joint marker moved to the "
                 "crease (autorig.py markers OUT --adjust FILE, arp_markers.py --adjust); never a looser limit "
@@ -1306,8 +1309,11 @@ def _in_arp(a):
         if r["hand_reach"].get("vertices"):        # the bind changed: the FBX again, with the pipeline's settings
             x = brt_arp.run({"op": "export", "armature": r["hand_reach"]["armature"], "fbx": a.fbx})
             r["gates"].append({"name": "arp.hand_reach_export", "value": bool(report_passed(x)), "limit": True,
-                               "pass": bool(report_passed(x))})
+                               "pass": bool(report_passed(x)), "reexport": True})
             r["pass"] = all(g.get("pass") is True for g in r["gates"])
+        else:                                       # nothing moved: the pipeline's FBX is the bind; written every run
+            r["gates"].append({"name": "arp.hand_reach_export", "value": True, "limit": True, "pass": True,
+                               "reexport": False})
         Path(a.save).parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=a.save)
     refused = any(g.get("name") == "arp.precondition" and gate_failed(g) for g in r.get("gates", []))
@@ -1405,6 +1411,34 @@ def prop_region(V, prop: dict, arm_segments, arm_radius: float):
         t = np.clip((V - a) @ ab / max(float(ab @ ab), 1e-12), 0.0, 1.0)
         inside &= np.linalg.norm(V - (a + t[:, None] * ab), axis=1) > arm_radius
     return inside
+
+
+def prop_pieces(V, T, keep, outer, ids, wall: float):
+    """The held prop's skin grown by the pieces it cuts off (numpy, no Blender): deform_gate.cut_off's outward pieces
+    (every path from them to the body over the outward skin runs over the prop: the strip of a shield's face the
+    arm's clearance or a cut box missed, joined to the body only through the inner shell), and the inner shell
+    behind them (a vertex on no outward triangle whose nearest outward vertex is in a piece, within `wall`), so the
+    prop rides its hand as one rigid piece, as deform_gate reads it. Returns (keep, vertices added)."""
+    import numpy as np
+    import deform_gate
+    V, T, keep = np.asarray(V, dtype=float), np.asarray(T, dtype=np.int64).reshape(-1, 3), np.asarray(keep, bool)
+    outer = np.asarray(outer, bool)
+    cut = deform_gate.cut_off(np.asarray(ids)[T], outer, keep[T].all(axis=1))
+    piece = np.zeros(len(V), bool)
+    piece[T[cut].ravel()] = True
+    piece &= ~keep
+    if piece.any():
+        skin = np.zeros(len(V), bool)
+        skin[T[outer].ravel()] = True
+        lo, hi = V[piece].min(axis=0) - 2 * wall, V[piece].max(axis=0) + 2 * wall
+        box = ((V >= lo) & (V <= hi)).all(axis=1)
+        shell, near = np.nonzero(box & ~skin & ~keep)[0], np.nonzero(box & skin)[0]
+        for k in range(0, len(shell), 256):
+            rows = shell[k:k + 256]
+            d = np.linalg.norm(V[rows][:, None] - V[near][None], axis=2)
+            j = d.argmin(axis=1)
+            piece[rows[piece[near[j]] & (d[np.arange(len(rows)), j] <= wall)]] = True
+    return keep | piece, int(piece.sum())
 
 
 def hand_reach(V, edges, W, cols, segments, reach: float, core: float, tol: float = 1e-6, keep=None):
@@ -1530,8 +1564,24 @@ def _in_hand_reach(bpy, mesh, markers_path) -> dict:
             folded = int((W[:, fc].sum(1) > 0).sum())   # into the rigid prop
             W[:, hc] += W[:, fc].sum(1)
             W[:, fc] = 0.0
-            out["prop"] = {"side": s, "bone": hand.name, "vertices": int(keep.sum()), "fingers_folded": folded,
-                           "arm_bones": [b.name for b in arm]}
+            pieces = 0
+            if keep.any():     # and the pieces of its face it cuts off from the body: one rigid piece
+                sys.path.insert(0, str(HERE))
+                import deform_gate
+                mesh.data.calc_loop_triangles()
+                T = np.empty(len(mesh.data.loop_triangles) * 3, dtype=np.int64)
+                mesh.data.loop_triangles.foreach_get("vertices", T)
+                T = T.reshape(-1, 3)
+                ids = deform_gate.welded(V)
+                outer = deform_gate.outward(V, T, ids=ids)
+                # the prop as deform_gate reads it: inside the slices and rigid on the hand (its gripping hand too)
+                base = keep | (prop_region(V, prop, [], 0.0) & (W[:, hc] >= 0.999))
+                grown, pieces = prop_pieces(V, T, base, outer, ids, PROP_WALL * float(np.ptp(V[:, 2])))
+                keep = keep | (grown & ~base)
+                W[keep] = 0.0
+                W[keep, hc] = 1.0
+            out["prop"] = {"side": s, "bone": hand.name, "vertices": int(keep.sum()), "cut_off": pieces,
+                           "fingers_folded": folded, "arm_bones": [b.name for b in arm]}
         W, info = hand_reach(V, E, W, cols, segs, HAND_REACH * size, HAND_CORE * size, keep=keep)
         out["sides"][s] = {"reach_m": round(HAND_REACH * size, 4), "bones": len(cols), **info}
         out["vertices"] += info["vertices"] + (int(keep.sum()) + folded if keep is not None else 0)
@@ -2209,6 +2259,21 @@ def selftest() -> int:
               "keeps it there; the arm's skin and the coat beside it are not the prop; without the prop it is stripped",
               keep[scrap] and not keep[coat] and not keep[:11].any() and Wk2[scrap, 0] == 1.0 and Wh2[scrap, 0] == 0
               and Wk2[coat, 0] == 0, info={"prop": int(keep.sum())})
+        # a shield's face fused to the arm: a strip the slices missed is cut off by the prop, the forearm beside it is not
+        gv = np.array([(0.01 * i, 0.0, 0.01 * j) for i in range(13) for j in range(7)])
+        at = lambda i, j: 7 * i + j
+        gt = np.array([t for i in range(12) for j in range(6) for t in
+                       ((at(i, j), at(i + 1, j), at(i + 1, j + 1)), (at(i, j), at(i + 1, j + 1), at(i, j + 1)))])
+        sv = np.array([(0.09, 0.003, 0.03), (0.02, 0.003, 0.03), (0.11, 0.003, 0.03)])  # inner shell
+        Vg, Tg = np.vstack([gv, sv]), np.vstack([gt, [[91, 92, 93]]])
+        og = np.r_[np.ones(len(gt), bool), False]
+        kg = np.r_[gv[:, 0] >= 0.06 - 1e-9, np.zeros(3, bool)]
+        kg[[at(9, 3), at(6, 0), at(7, 0)]] = False      # the strip's vertex; the forearm reaching in at the bottom
+        kp, added = prop_pieces(Vg, Tg, kg, og, np.arange(len(Vg)), 0.005)
+        check("prop pieces: the face strip the prop alone joins to the body, and the inner shell right behind it, ride "
+              "the prop; the forearm reaching the body beside the prop, the body and the shell behind them do not",
+              kp[at(9, 3)] and kp[91] and not kp[[at(6, 0), at(7, 0), 92, 93]].any() and not kp[:91][gv[:, 0] < 0.06].any()
+              and added == 2, info={"added": added})
         # hinge_transfer on an arm sloping at 45 degrees: the hand-over follows the limb, not world Z
         n45 = np.array([1.0, 0.0, -1.0]) / np.sqrt(2)
         Va = np.array([0.05 * n45 + (0.03, 0, 0.03), -0.05 * n45 + (0.03, 0, 0.03), 0.05 * n45 + (0.0, 0.3, 0.0)])

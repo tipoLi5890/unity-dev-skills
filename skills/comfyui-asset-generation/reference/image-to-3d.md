@@ -83,7 +83,9 @@ the server first and keep three outputs per view: the **RGBA cut-out**, the **ma
 the **black composite** — the file the generation job uploads.
 
 `templates/four_view_background_removal_api.json` is that graph: core nodes and the BiRefNet
-component of the single-image templates, one block per view.
+component of the single-image templates, one block per view. BiRefNet's training data carries a non-commercial
+clause: record each cut-out with `licence.source` `birefnet` (`art-asset-registry` →
+`reference/licences.md`).
 
 | Node (front; left 20–28, back 30–38, right 40–48) | Class | Inputs |
 |---|---|---|
