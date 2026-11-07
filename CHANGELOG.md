@@ -2,6 +2,39 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.47.0
+
+The 2D frame-set audit reads more of what a viewer sees. Swapped legs are read on legs of one
+colour, and a loop seam says when it cannot tell a skipped stretch from an ordinary wrap. Every
+new number stays report-only.
+
+- **`codex-visual`: `audit_identity.py` reads swapped legs on legs of one colour.**
+  - The two legs are the two blobs below the crotch, told apart by their shading.
+  - Two frames are compared only while the legs stay apart and neither has passed the other. A
+    swap is a frame that trades looks with both neighbours.
+  - The gate reports `method` (colour or shape) and `checked`. It stays null with the reason when
+    the legs touch, look alike or move too far to compare.
+  - The colour read is set aside when the legs themselves, where apart, never differ by CIE76 12:
+    its halves were reading an arm, a belly patch or the light.
+- **The loop seam says when it is saturated.** It reports `span_ratio` (how far apart the frames
+  ever get, in ordinary steps), `saturated` (below 1.25) and `overlap_median`, with a warning.
+  - A skipped stretch then reads like an ordinary wrap. A stall still reads under 1 and a pop still
+    reads high, so the value stays measured.
+- **Run on eight 2D clips of two characters.**
+  - The leg swap is measured on 5 of 8 (was 1), all 0, with 2–8 frames checked.
+  - A shading swap planted at one frame is found at that frame on three clips.
+  - One earlier 0 (a front-view idle) is now null: its halves differed by 13.5, while its legs
+    differ by at most 3.6.
+  - The seam is saturated on the four 6-frame clips (span 1.03–1.09) and not on the four longer
+    ones (1.50–2.08). Silhouette overlap does not separate the two groups.
+- **Still open.**
+  - The shape read sees shading, not which leg is drawn on top.
+  - Nothing reports a run whose same leg leads in every frame.
+  - The `paint_loop` work (per-try records, a composed sheet when none is given, an outline-aware
+    retry order) was interrupted twice and is not in this release; its data so far did not show a
+    gain over 0.46 with a sheet given.
+  - Painting moved the back view away from the concept on two characters (palette ΔE 3.3 → 5.6).
+
 ## 0.46.0
 
 Steadier and fairer measurements: the AI's body guess barely moves from run to run, a chibi knee no

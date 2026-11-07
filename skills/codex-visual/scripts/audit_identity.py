@@ -12,17 +12,24 @@ later, from the distribution of real sets.
   identity.front_side           mean cosine over every (frame, side image) pair (--side). Lower is worse.
   motion.loop_seam_ratio        the wrap (last -> first) over the mean ordinary step: one ordinary
                                 step reads 1, a pop reads well over 1, a stall well under.
+                                `saturated` when frames any distance apart read about one step
+                                (`span_ratio` < SEAM_SATURATED): a skipped stretch then reads like
+                                an ordinary wrap; a stall still reads.
   motion.flicker_share          inside the silhouette all three frames share, the share of pixels
                                 where frame i differs from i-1 and i+1 by more than FLICKER_DE
                                 (CIE76) while i-1 and i+1 agree: A -> B -> A. Max over i. Higher is worse.
-  motion.limb_swap_frames       frames whose left/right leg colours are the opposite of BOTH
-                                neighbours' (A -> B -> A on the leg sides). More is worse.
+  motion.limb_swap_frames       frames whose legs trade looks with BOTH neighbours while neither leg
+                                moved past the other (A -> B -> A on the leg sides). Legs of two
+                                colours are read by colour; legs of one colour by shape: the two leg
+                                blobs below the crotch, their shading, their positions. More is worse.
 
 The seam distance is the one sprite-from-video's loop-detection reference defines: every frame
 shrunk to fit 96 px, RGB multiplied by alpha, mean absolute RGBA difference in 0..1. Here the
 frames are first seated on the reference frame's core (as audit_frames.py measures slip; not
 for a `keep` or `centroid` set) and cropped to the union of what they draw, so the thumbnail
-holds the character, not the empty canvas. The ratio has no unit.
+holds the character, not the empty canvas. The ratio has no unit. The distance saturates once
+two frames barely overlap: in a coarse cycle every pair reads about one step, so a skipped
+stretch at the seam reads like an ordinary wrap. The gate keeps its value and says so.
 
 Embeddings need torch, so they are measured by embed.py (beside this script). Every run writes
 OUT_DIR/pairs.json with the pairs it needs. Then either:
@@ -67,6 +74,12 @@ TORSO_BAND = (0.20, 0.55)        # the torso axis: mean x of the core rows in th
 LIMB_MIN_PX = 20                 # a side with fewer leg pixels is not read
 LIMB_SEP_DE = 12.0               # the two sides must differ by this much (CIE76) to be told apart
 LIMB_CONFIDENT = 0.25            # |assignment margin| below this: the legs overlap, side not read
+LEG_TOP = 0.40                   # by shape: the crotch is looked for no higher than this share of the core
+LEG_BALANCE = 0.25               # the smaller leg blob holds at least this share of the larger one's pixels
+LEG_COVER = 0.85                 # the two leg blobs hold this share of the core below the cut (a hand is the rest)
+LEG_MOVE = 0.5                   # a leg moving this share of the legs' spacing in one step may have passed the other
+SHADE_SEP_DE = 3.0               # two leg blobs this alike (CIE76) cannot be told apart by their look
+SEAM_SATURATED = 1.25            # span_ratio below this: frames any distance apart read about one step
 GATES = ("identity.frame_to_frame_min", "identity.still_min", "identity.still_mean", "identity.front_side",
          "motion.loop_seam_ratio", "motion.flicker_share", "motion.limb_swap_frames")
 
@@ -153,8 +166,14 @@ def neighbours(i, n, loop):
 
 
 # ------------------------------------------------------------------ motion ----
-def seam_ratio(frames, loop):
-    """(gate value or None, extras, why)."""
+def seam_ratio(frames, loop, cores=None):
+    """(gate value or None, extras, why). Beside the ratio: `span_ratio`, the farthest the frames get
+    from each other (the median distance at the gap of 2..n/2 frames where it is largest, pairs that
+    do not cross the seam; a median, so one odd frame does not lift it), in ordinary steps;
+    `saturated` when that is below SEAM_SATURATED, so a skipped stretch at the seam cannot read above
+    about one step (the frames barely overlap, or the cycle repeats within itself, as legs of one
+    colour do every half cycle); `overlap_median`, the median IoU of consecutive frames' cores, for
+    context: a small part that moves far saturates the distance while the body keeps it high."""
     n = len(frames)
     if not loop:
         return None, {}, "not a loop (--no-loop, or the sidecar's loop is false)"
@@ -168,8 +187,15 @@ def seam_ratio(frames, loop):
     wrap = float(np.abs(F[-1] - F[0]).mean())
     if mean <= 0:
         return None, {}, "every ordinary step is zero (the frames are identical)"
-    return round(wrap / mean, 4), {"wrap": round(wrap, 6), "mean_step": round(mean, 6),
-                                   "step_max_ratio": round(float(steps.max()) / mean, 4)}, ""
+    gaps = [float(np.median(np.abs(F[k:] - F[:-k]).mean(axis=1))) for k in range(2, n // 2 + 1)]
+    span = round(max(gaps) / mean, 4) if gaps else None
+    extra = {"wrap": round(wrap, 6), "mean_step": round(mean, 6),
+             "step_max_ratio": round(float(steps.max()) / mean, 4),
+             "span_ratio": span, "saturated": None if span is None else bool(span < SEAM_SATURATED)}
+    if cores is not None:
+        ious = [float((a & b).sum()) / max(1, int((a | b).sum())) for a, b in zip(cores[:-1], cores[1:])]
+        extra["overlap_median"] = round(float(np.median(ious)), 4)
+    return round(wrap / mean, 4), extra, ""
 
 
 def flicker(frames, labs, cores, loop):
@@ -251,6 +277,155 @@ def limb_swaps(labs, cores, loop):
         if nb and states[i] and states[nb[0]] == states[nb[1]] == -states[i]:
             swaps.append(i)
     return swaps, states, ref, round(sep, 2), ""
+
+
+def checked_frames(n, loop, read):
+    """How many frames could be checked: `read(i, j)` says whether frames i and j were compared."""
+    return sum(1 for i in range(n) if (nb := neighbours(i, n, loop)) and read(nb[0], i) and read(i, nb[1]))
+
+
+def leg_blobs(core):
+    """(cut row, left mask, right mask): the two legs as the two blobs of the core below the crotch,
+    or None when the legs touch. Rows are added from the feet up (components merge as they grow); the
+    cut is the highest row at which the two largest blobs are balanced (LEG_BALANCE) and hold most of
+    what lies below (LEG_COVER), taken before those two blobs meet."""
+    ys = np.nonzero(core.any(axis=1))[0]
+    if not len(ys):
+        return None
+    top, bot = int(ys.min()), int(ys.max())
+    stop = top + int(LEG_TOP * (bot - top + 1))
+    parent, area, roots = [], [], set()
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    below, best = [], None
+    for y in range(bot, stop - 1, -1):
+        d = np.diff(np.concatenate(([0], core[y].astype(np.int8), [0])))
+        row = []
+        for s, e in zip(np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]):
+            k = len(parent)
+            parent.append(k)
+            area.append(int(e - s))
+            roots.add(k)
+            for ps, pe, pk in below:
+                if s <= pe and ps <= e:                    # the runs touch, diagonals included
+                    a, b = find(k), find(pk)
+                    if a != b:
+                        parent[b] = a
+                        area[a] += area[b]
+                        roots.discard(b)
+            row.append((s, e, k))
+        below = row
+        if best and find(best[1]) == find(best[2]):
+            break                                          # the two legs met: the crotch
+        if len(roots) < 2:
+            continue
+        r1, r2 = sorted(roots, key=lambda r: -area[r])[:2]
+        if (area[r2] >= max(LIMB_MIN_PX, LEG_BALANCE * area[r1])
+                and area[r1] + area[r2] >= LEG_COVER * sum(area[r] for r in roots)):
+            best = (y, r1, r2)
+    if best is None:
+        return None
+    y = best[0]
+    lab_, _ = so.label(core[y:])
+    sizes = np.bincount(lab_.ravel())
+    sizes[0] = 0
+    k1, k2 = np.argsort(-sizes)[:2]
+    blobs = []
+    for k in (k1, k2):
+        m = np.zeros_like(core)
+        m[y:] = lab_ == k
+        blobs.append((float(np.nonzero(m)[1].mean()), m))
+    blobs.sort(key=lambda t: t[0])
+    return y, blobs[0][1], blobs[1][1]
+
+
+def limb_swaps_shape(labs, cores, loop):
+    """The read for legs of one colour. (swap frame indices or None, detail, why).
+
+    Each frame's legs are its two leg blobs (leg_blobs), left and right by their centre x, each with
+    the median L*a*b* of its pixels: on legs of one colour that is the shading (the far leg in shadow).
+    Two consecutive frames are compared only when both have their legs apart, each leg moved less than
+    LEG_MOVE of the legs' spacing (so neither can have passed the other), and the two legs differ by
+    SHADE_SEP_DE in both. The link is 1 when each side keeps its look, -1 when the sides trade looks
+    (by the same margin as the colour read), 0 when not compared. A swap is a frame whose links to
+    both neighbours are -1: A -> B -> A while the legs stayed where they were."""
+    n = len(labs)
+    legs = []
+    for c, lb in zip(cores, labs):
+        b = leg_blobs(c)
+        if b is None:
+            legs.append(None)
+            continue
+        _, ml, mr = b
+        xs = [float(np.nonzero(m)[1].mean()) for m in (ml, mr)]
+        sig = [np.median(lb[m], axis=0) for m in (ml, mr)]
+        legs.append((xs, sig, float(de(sig[0], sig[1]))))
+    pairs = [(i, i + 1) for i in range(n - 1)] + ([(n - 1, 0)] if loop and n > 2 else [])
+    links = {}
+    for p, q in pairs:
+        a, b = legs[p], legs[q]
+        state = 0
+        if a and b and min(a[2], b[2]) >= SHADE_SEP_DE:
+            spacing = min(a[0][1] - a[0][0], b[0][1] - b[0][0])
+            moved = max(abs(a[0][0] - b[0][0]), abs(a[0][1] - b[0][1]))
+            if moved < LEG_MOVE * spacing:
+                (sl, sr), (tl, tr) = a[1], b[1]
+                straight = float(de(sl, tl) + de(sr, tr))
+                crossed = float(de(sl, tr) + de(sr, tl))
+                m = (straight - crossed) / (a[2] + b[2])
+                state = -1 if m >= LIMB_CONFIDENT else (1 if m <= -LIMB_CONFIDENT else 0)
+        links[(p, q)] = state
+    detail = {"apart": [x is not None for x in legs],
+              "contrast_de": [None if x is None else round(x[2], 2) for x in legs],
+              "links": [links[pq] for pq in pairs]}
+    checked = checked_frames(n, loop, lambda i, j: links.get((i, j), 0) != 0)
+    detail["checked"] = checked
+    apart = [x for x in legs if x is not None]
+    if not apart:
+        return None, detail, "the legs touch or overlap in every frame: no two leg blobs below the crotch"
+    if max(x[2] for x in apart) < SHADE_SEP_DE:
+        return None, detail, (f"the two legs look alike in every frame where they are apart (CIE76 < "
+                              f"{SHADE_SEP_DE:g}): neither colour nor shading tells them apart")
+    if not checked:
+        return None, detail, ("no frame has both neighbours compared (the legs touch, look alike, or "
+                              f"move more than {LEG_MOVE:g} of their spacing in a step)")
+    swaps = [i for i in range(n) if (nb := neighbours(i, n, loop))
+             and links.get((nb[0], i)) == -1 and links.get((i, nb[1])) == -1]
+    return swaps, detail, ""
+
+
+def read_limbs(labs, cores, loop):
+    """(swap frames or None, detail, why): by colour when the legs are two colours, else by shape.
+    The colour read splits the whole lower body at the torso's axis, so an arm, a belly patch or the
+    light can make its halves differ: where the leg blobs are apart and differ by less than
+    LIMB_SEP_DE in every frame, the halves were not reading the legs and the shape read is used."""
+    n = len(labs)
+    swaps, states, ref, sep, why = limb_swaps(labs, cores, loop)
+    detail = {"reference": ref, "separation_de": sep, "states": states}
+    if n < 3:
+        return None, detail, why
+    s2, shape, why2 = limb_swaps_shape(labs, cores, loop)
+    blob_sep = max((x for x in shape["contrast_de"] if x is not None), default=None)
+    if swaps is not None:
+        checked = checked_frames(n, loop, lambda i, j: bool(states[i]) and bool(states[j]))
+        if not checked:
+            why = "no frame and both its neighbours read by colour (the legs overlap)"
+        elif blob_sep is not None and blob_sep < LIMB_SEP_DE:
+            why = (f"the lower body's halves differ (CIE76 {sep:g}) but the legs, where apart, by at most "
+                   f"{blob_sep:g}: the halves read an arm, a patch or the light, not the legs")
+        else:
+            detail.update(method="colour", checked=checked)
+            return swaps, detail, ""
+    detail.update(shape)
+    detail["method"] = "shape"
+    if s2 is None:
+        return None, detail, f"by colour: {why}; by shape: {why2}"
+    return s2, detail, ""
 
 
 # ---------------------------------------------------------------- identity ----
@@ -442,7 +617,7 @@ def run(argv):
 
     # ---- motion
     frames = [load_rgba(f) for f in files]
-    gates, missing, detail = [], [], {}
+    gates, missing, detail, seam_warning = [], [], {}, None
     if len({f.shape for f in frames}) > 1:
         why = "the frames are not one canvas size"
         for name in GATES[4:]:
@@ -454,23 +629,29 @@ def run(argv):
         detail["seated"] = {"on_frame": ref if seat else None, "moves_px": moves}
         cores = [so.core(f[..., 3]) for f in frames]
         labs = [lab(f[..., :3]) for f in frames]
-        v, extra, why = seam_ratio(frames, loop)
+        v, extra, why = seam_ratio(frames, loop, cores)
         gates.append(report_gate("motion.loop_seam_ratio", v, **extra))
         if why:
             missing.append({"name": "motion.loop_seam_ratio", "why": why})
+        elif extra.get("saturated"):
+            seam_warning = (f"motion.loop_seam_ratio is saturated: frames any distance apart read at most "
+                            f"{extra['span_ratio']:g} ordinary steps (< {SEAM_SATURATED:g}), so a skipped "
+                            f"stretch at the seam reads like an ordinary wrap and a value near 1 does not say "
+                            f"the loop closes; a stall still reads well under 1. Check the seam on the onion skin")
         s, at, shares, why = flicker(frames, labs, cores, loop)
         gates.append(report_gate("motion.flicker_share", s, **({"frame": at} if at is not None else {})))
         detail["flicker_share"] = shares
         if why:
             missing.append({"name": "motion.flicker_share", "why": why})
         if all(f[..., 3].min() == 255 for f in frames):   # no background cut: the "core" is the canvas
-            swaps, states, lref, sep, why = None, [], None, None, ("the frames are opaque: no silhouette to split "
-                                                                   "into legs (cut the background first)")
+            swaps, ldetail, why = None, {"reference": None, "separation_de": None, "states": []}, (
+                "the frames are opaque: no silhouette to split into legs (cut the background first)")
         else:
-            swaps, states, lref, sep, why = limb_swaps(labs, cores, loop)
+            swaps, ldetail, why = read_limbs(labs, cores, loop)
         gates.append(report_gate("motion.limb_swap_frames", None if swaps is None else len(swaps),
-                                 **({"frames": swaps} if swaps is not None else {})))
-        detail["limbs"] = {"reference": lref, "separation_de": sep, "states": states}
+                                 **({"frames": swaps, "method": ldetail["method"], "checked": ldetail["checked"]}
+                                    if swaps is not None else {})))
+        detail["limbs"] = ldetail
         if why:
             missing.append({"name": "motion.limb_swap_frames", "why": why})
 
@@ -498,6 +679,8 @@ def run(argv):
                      f"torch machine, then --sims sims.json")
     if route_why and pairs and (a.embed or a.sims):
         warnings.append(f"embeddings not measured: {route_why}")
+    if seam_warning:
+        warnings.append(seam_warning)
     ig, im = identity_gates(pairs, sims, route_why)
     gates = ig + gates
     missing = im + missing
@@ -551,26 +734,37 @@ def selftest():
         return next(g for g in rep["gates"] if g["name"] == name)
 
     RED, GREEN, TORSO, HEAD, PATCH = (200, 60, 50), (50, 160, 70), (40, 90, 210), (235, 190, 150), (250, 220, 40)
+    NEAR, FAR = (185, 125, 78), (160, 106, 64)    # one leg colour, lit and in shadow: CIE76 8.4
 
-    def runner(phase, swap=False, patch=False, cross=False, dx=0):
+    def runner(phase, swap=False, patch=False, cross=False, dx=0, shade=False, joined=False, twirl=None):
         """A 96x128 courier runner: head, torso, a red leg and a green leg. `phase` swings the legs;
-        `cross` walks them across each other (a side view, the near leg drawn last)."""
+        `cross` walks them across each other (a side view, the near leg drawn last). `shade`: legs of
+        one colour, the near one lit and the far one in shadow, the near one drawn last; `joined`: the
+        legs side by side with no gap; `twirl`: a baton circling the torso at that angle (turns)."""
         a = np.zeros((128, 96, 4), np.uint8)
         a[8:22, 41 + dx:55 + dx] = HEAD + (255,)
         a[22:76, 33 + dx:63 + dx] = TORSO + (255,)
         s = math.sin(2 * math.pi * phase)
-        if cross:
+        if joined:
+            xr, xg = 36, 48
+        elif cross:
             xr, xg = int(round(42 + 10 * s)), int(round(42 - 10 * s))
         else:                    # a triangle swing, 2 px a step: every ordinary step is the same size
             k = int(round(phase * n)) % n
             off = 2 * min(k, n - k)
             xr, xg = 26 + off, 58 - off
-        cr, cg = (GREEN, RED) if swap else (RED, GREEN)
-        order = [(xg, cg), (xr, cr)] if (cross and math.cos(2 * math.pi * phase) >= 0) else [(xr, cr), (xg, cg)]
+        two = (NEAR, FAR) if shade else (RED, GREEN)
+        cr, cg = two[::-1] if swap else two
+        near_last = shade or (cross and math.cos(2 * math.pi * phase) >= 0)
+        order = [(xg, cg), (xr, cr)] if near_last else [(xr, cr), (xg, cg)]
         for x, col in order:
             a[76:120, x + dx:x + 12 + dx] = col + (255,)
         if patch:
             a[40:52, 42 + dx:54 + dx] = PATCH + (255,)
+        if twirl is not None:    # 30 px from the torso's middle: 10 steps a turn are 18.5 px apart, the baton 12
+            bx = int(round(48 + 30 * math.cos(2 * math.pi * twirl))) + dx
+            by = int(round(50 + 30 * math.sin(2 * math.pi * twirl)))
+            a[by - 6:by + 6, bx - 6:bx + 6] = PATCH + (255,)
         return a
 
     def write(d, frames, loop=True):
@@ -599,6 +793,9 @@ def selftest():
         check("clean run writes a report (0)", code == 0 and rep is not None)
         seam_clean = gate(rep, "motion.loop_seam_ratio")["value"]
         check("clean loop: seam reads about one step", seam_clean is not None and 0.5 <= seam_clean <= 1.5)
+        g = gate(rep, "motion.loop_seam_ratio")
+        check("a fine cycle is not saturated (span over 1.25 steps), no warning",
+              g["saturated"] is False and g["span_ratio"] >= 1.25 and not rep.get("warnings"))
         check("clean loop: flicker 0", gate(rep, "motion.flicker_share")["value"] == 0.0)
         check("clean loop: no limb swap", gate(rep, "motion.limb_swap_frames")["value"] == 0)
         check("every gate is report-only", all(g["limit"] is None and g["pass"] is True and "margin" not in g
@@ -615,6 +812,23 @@ def selftest():
         _, rep, _ = go(popped, "--out", os.path.join(tmp, "r_seam", "report.json"))
         v = gate(rep, "motion.loop_seam_ratio")["value"]
         check("a popped wrap reads clearly worse (> 2x the clean)", v is not None and v > 2 * seam_clean and v > 2.0)
+        # a coarse cycle: a baton 18.5 px a step, 12 px wide: consecutive frames do not overlap there,
+        # so every pair reads about one step. Three frames skipped at the wrap still read about 1.
+        coarse = write(os.path.join(tmp, "coarse"), [runner(0.0, twirl=k / 10) for k in range(7)])
+        _, rep, _ = go(coarse, "--out", os.path.join(tmp, "r_coarse", "report.json"))
+        g = gate(rep, "motion.loop_seam_ratio")
+        check("coarse cycle with 3 of 10 frames skipped at the wrap: the ratio still reads about 1",
+              g["value"] is not None and 0.75 <= g["value"] <= 1.3)
+        check("...and the gate says it is saturated, keeps its value and warns",
+              g["saturated"] is True and g["span_ratio"] < 1.25 and g["value"] is not None
+              and not any(m["name"] == "motion.loop_seam_ratio" for m in rep["not_measured"])
+              and any("saturated" in w for w in rep.get("warnings", [])))
+        popc = write(os.path.join(tmp, "coarse_pop"), [runner(0.0, twirl=k / 10) for k in range(9)]
+                     + [runner(0.5, twirl=0.9)])
+        _, rep, _ = go(popc, "--out", os.path.join(tmp, "r_coarse_pop", "report.json"))
+        g = gate(rep, "motion.loop_seam_ratio")
+        check("saturated, a pop larger than any step still reads well over 1",
+              g["saturated"] is True and g["value"] is not None and g["value"] > 2.0)
         _, rep, _ = go(popped, "--no-loop", "--out", os.path.join(tmp, "r_seam1", "report.json"))
         check("--no-loop: no seam, listed as not measured",
               gate(rep, "motion.loop_seam_ratio")["value"] is None
@@ -643,15 +857,37 @@ def selftest():
             return f
         same = write(os.path.join(tmp, "same"), [mono(k) for k in range(n)])
         _, rep, _ = go(same, "--out", os.path.join(tmp, "r_same", "report.json"))
+        check("legs of one colour and one shade: swap not measured, not 0, said why",
+              gate(rep, "motion.limb_swap_frames")["value"] is None
+              and "look alike" in {m["name"]: m["why"] for m in rep["not_measured"]}["motion.limb_swap_frames"])
         opaque = write(os.path.join(tmp, "opaque"), [np.dstack([runner(k / n)[..., :3], np.full((128, 96), 255, np.uint8)])
                                                      for k in range(n)])
         _, rep, _ = go(opaque, "--out", os.path.join(tmp, "r_opaque", "report.json"))
         check("opaque frames: swap not measured, said why",
               gate(rep, "motion.limb_swap_frames")["value"] is None
               and "opaque" in {m["name"]: m["why"] for m in rep["not_measured"]}["motion.limb_swap_frames"])
-        check("legs of one colour: swap not measured, not 0",
-              gate(rep, "motion.limb_swap_frames")["value"] is None
-              and any(m["name"] == "motion.limb_swap_frames" for m in rep["not_measured"]))
+
+        # limb swap by shape: legs of one colour, told apart by their shading and their place
+        def limbs(name, frames):
+            _, r, _ = go(write(os.path.join(tmp, name), frames), "--out", os.path.join(tmp, "r_" + name, "report.json"))
+            return gate(r, "motion.limb_swap_frames"), r["detail"]["limbs"], \
+                {m["name"]: m["why"] for m in r["not_measured"]}.get("motion.limb_swap_frames", "")
+        g, d, _ = limbs("shade", [runner(k / n, shade=True) for k in range(n)])
+        check("one colour, legs apart: read by shape, every frame checked, no swap",
+              g["value"] == 0 and g["method"] == "shape" and g["checked"] == n and set(d["links"]) == {1})
+        g, d, _ = limbs("shade_swap", [runner(k / n, shade=True, swap=(k == 4)) for k in range(n)])
+        check("one colour: a one-frame shading swap is found at that frame",
+              g["value"] == 1 and g["frames"] == [4] and d["links"][3] == d["links"][4] == -1)
+        g, d, _ = limbs("shade_cross", [runner(k / n, shade=True, cross=True) for k in range(n)])
+        check("one colour, legs that cross through a merged frame: not a swap",
+              g["value"] == 0 and g["checked"] >= 2 and d["apart"][0] is False and d["apart"][n // 2] is False
+              and d["apart"][1] and d["apart"][n // 2 + 1])
+        g, d, _ = limbs("shade_cross_swap", [runner(k / n, shade=True, cross=True, swap=(k == 2)) for k in range(n)])
+        check("one colour, crossing walk: a swap between two read neighbours is found",
+              g["value"] == 1 and g["frames"] == [2])
+        g, d, why = limbs("joined", [runner(k / n, shade=True, joined=True) for k in range(n)])
+        check("legs that always touch: not measured, not 0, said why",
+              g["value"] is None and "touch" in why and not any(d["apart"]))
 
         # the seat: a frame drawn 5 px to the side is moved back by audit_frames' slip
         base = runner(0.0)

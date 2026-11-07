@@ -16,9 +16,9 @@ numbers, compare sets, and look at the frames the report names.
 | `identity.still_min` | lowest cosine of a frame against the approved still. `at` names the pair (`still/6`: frame 6) | lower | `--still`, embeddings |
 | `identity.still_mean` | mean cosine of every frame against the approved still | lower | `--still`, embeddings |
 | `identity.front_side` | mean cosine over every (frame, side image) pair | lower | `--side`, embeddings |
-| `motion.loop_seam_ratio` | the wrap's distance over the mean ordinary step | far above 1 (a pop) or far below 1 (a stall) | a loop of 3+ frames |
+| `motion.loop_seam_ratio` | the wrap's distance over the mean ordinary step; `saturated` says when a skipped stretch cannot read | far above 1 (a pop) or far below 1 (a stall) | a loop of 3+ frames |
 | `motion.flicker_share` | the largest share of a frame's stable silhouette that flashes A → B → A. `frame` names it | higher | 3+ frames |
-| `motion.limb_swap_frames` | how many frames have their leg colours on the wrong sides. `frames` lists them | more | 3+ frames, legs of two colours |
+| `motion.limb_swap_frames` | how many frames have their legs' looks on the wrong sides. `frames` lists them, `method` says how they were read, `checked` how many frames could be | more | 3+ frames, legs that differ in colour or shading |
 
 The identity gates carry the DINOv2 cosine as `value` and the SigLIP 2 cosine beside it
 (`siglip2`; for a min, `siglip2_at` names its own lowest pair). DINOv2 follows shape, parts and
@@ -81,10 +81,20 @@ fit 96 px, RGB multiplied by alpha, the mean absolute RGBA difference in 0..1. A
 crop, the union of what they draw. The ratio is the wrap's distance over the mean of the
 consecutive steps, so it has no unit. A wrap that is one ordinary step reads about 1.
 `step_max_ratio` beside it is the largest ordinary step in the same unit: a set whose steps are
-uneven makes 1.5 at the seam ordinary. The distance saturates once two frames barely overlap: in a
-cycle of few frames with big moves (a 10-frame side walk), every pair of frames is about as far
-apart as one step, so a skipped stretch reads like an ordinary wrap. Check such a seam on the
-onion skin.
+uneven makes 1.5 at the seam ordinary.
+
+**Seam saturation.** The distance saturates once two frames barely overlap: in a cycle of few
+frames with big moves (a 6-frame run, a 10-frame side walk), every pair of frames is about as far
+apart as one step, so a skipped stretch reads like an ordinary wrap. `span_ratio` measures it: for
+each gap of 2 to n/2 frames, the mean distance between frames that far apart (pairs that do not
+cross the seam), the largest of those, in ordinary steps. Below 1.25 the gate carries
+`saturated: true` and the report a warning. A cycle that repeats within itself (legs of one colour
+half a cycle apart) reads the same way, and is as blind to a skip. The value stays measured: a
+stall (a held or doubled frame at the wrap) still reads well under 1, and a pop larger than any
+step still reads above it. Only "about 1, so the loop closes" is lost: check such a seam on the
+onion skin. `overlap_median` beside it, the median IoU of consecutive frames' cores, is context and
+does not decide: a small part that moves far saturates the distance while the body keeps the
+overlap high.
 
 **Flicker.** For each frame `i`, the stable silhouette is where the cores of `i-1`, `i` and `i+1`
 all overlap. A pixel flickers when frame `i` differs from both neighbours by more than CIE76 10,
@@ -93,20 +103,41 @@ largest share and its frame. A loop wraps its neighbours. A one-frame pose pop a
 (a head that tilts for one frame of an idle and is back on the next), and so does a limb that
 truly swings back and forth on alternate frames: look at the named frame beside its neighbours.
 
-**Limb swap.** The leg band is the lower 45% of each frame's core, split at the torso's axis (the
-mean x of the core between 20% and 55% of its height). Each half gets a signature, the median
-L\*a\*b\* colour of its pixels. The frame whose halves differ most is the reference. Every frame is
-then read as straight, crossed, or unread (the legs overlap) by which pairing of its halves is
-closer to the reference's. A swap is a read frame that is the opposite of both neighbours. Legs
-that cross in a side-view walk change sides for several frames, through an unread frame, so they
-are not a swap.
+**Limb swap by colour** (`method: colour`). The leg band is the lower 45% of each frame's core,
+split at the torso's axis (the mean x of the core between 20% and 55% of its height). Each half gets
+a signature, the median L\*a\*b\* colour of its pixels. The frame whose halves differ most is the
+reference; they must differ by CIE76 12. Every frame is then read as straight, crossed, or unread
+(the legs overlap) by which pairing of its halves is closer to the reference's. A swap is a read
+frame that is the opposite of both neighbours. Legs that cross in a side-view walk change sides for
+several frames, through an unread frame, so they are not a swap. The halves hold the whole lower
+body, so an arm, a belly patch or the light can make them differ: when the legs, where they stand
+apart, differ by less than 12 in every frame, the colour read is set aside for the shape read.
+
+**Limb swap by shape** (`method: shape`), for legs of one colour. In each frame the two legs are
+the two blobs of the core below the crotch: rows are added from the feet up, and the cut is the
+highest row (no higher than 40% of the core from its top) where the two largest blobs are balanced
+(the smaller holds a quarter of the larger) and hold 85% of what lies below, taken before they meet. A frame whose legs touch has no blobs.
+Each blob is left or right by its centre and gets the median L\*a\*b\* of its pixels: on legs of
+one colour that is the shading, the far leg in shadow. Two consecutive frames are compared only
+when both have their legs apart, the two legs differ by CIE76 3 in both, and each leg moved less
+than half the legs' spacing, so neither can have passed the other. The link is 1 when each side
+keeps its look and -1 when the sides trade looks. A swap is a frame whose links to both neighbours
+are -1: the far leg drawn lit and the near leg in shadow for one frame, while the legs stayed
+where they were. Legs that cross meet in a frame, which breaks the links, so a crossing is not a
+swap.
 
 Limits of the limb read:
 
-- Legs of one colour cannot be told apart: the gate is null and listed as not measured.
+- Legs of one colour and one shade (an even light from the front) cannot be told apart: the gate
+  is null and listed as not measured, never 0.
+- Legs that touch in every frame, or move more than half their spacing in each step: the same.
 - Opaque frames (the background not cut) have no silhouette to split: the same.
+- `checked` is how many frames had both neighbours read; a 0 swaps on a few checked frames says
+  little about the rest.
 - A cycle that changes sides on every frame reads every frame as a swap. Check it with the onion
   skin (`audit_frames.py --onion`).
+- A run whose same leg leads in every frame never trades sides: it reads 0 swaps and says nothing
+  about legs that never alternate. Look at the frames.
 - Only the legs are read. Arms cross the torso too often for a side split.
 
 ## 5. The report
@@ -120,8 +151,8 @@ Limits of the limb read:
 | `embedding` | where the cosines came from (`route`: `sims` or `inline`, the engine), or null |
 | `detail.seated` | the reference frame and each frame's move, px |
 | `detail.flicker_share` | the share per frame |
-| `detail.limbs` | the reference frame, the two sides' CIE76 separation, each frame's state (1 straight, -1 crossed, 0 unread) |
-| `warnings` | embeddings asked for (`--sims` / `--embed`) and not measured |
+| `detail.limbs` | `method` (the read used, or the last tried when the gate is null), `checked`; by colour: the reference frame, the two sides' CIE76 separation, each frame's state (1 straight, -1 crossed, 0 unread); by shape also: `apart` and `contrast_de` per frame, and `links` per consecutive pair (the wrap last; 1 kept, -1 traded, 0 not compared) |
+| `warnings` | embeddings asked for (`--sims` / `--embed`) and not measured; a saturated seam |
 
 Exit codes: 0 the report was written · 1 usage · 2 no frame to read (the report has
 `pass: false` and `refused`).
