@@ -130,13 +130,16 @@ line (`gates.md` §6). A runner takes about 16 painted views plus three head pas
 on a local server; a prop reaches about 0.8 of its seeable surface (`projection.md` §6).
 
 Order of what happens per view: the camera (`projection.md` §1, §5) → the guide render (clay for
-the first view, context after — `painting.md` §5) → up to three paint tries (`painting.md` §1–3) →
+the first view, context after — `painting.md` §5) → up to three paint tries, six for a head detail
+pass (`painting.md` §1–3) →
 registration and gates (`gates.md`) → despill, colour match, projection (`projection.md` §3–4) →
 `state.npz` and `report.json` saved.
 
 Look at `turntable.png` (eight yaws; `--compare out/runner_r01/runner.glb` adds the original as a
 first row) and `coverage.png`. Repaint the whole run — never a view by hand — when the turntable
-shows a wrong design; tune one gate (`gates.md` §5) when good views were rejected.
+shows a wrong design; read a rejected view's `fails` and `tries` (`gates.md` §6) before tuning one
+gate (`gates.md` §5). Keep `--sheet`: without it the loop composes one from the four views, which
+is far better than single views alone but loses the drawing's own spacing (`painting.md` §3).
 
 ## 5. Resume
 
@@ -148,8 +151,8 @@ python3 "$MTP/paint_loop.py" out/runner_r01/runner.glb --concept views/runner --
 ```
 
 Same mesh, same `--out`, same `--res`. Raising `--max-views` on resume paints more cameras; detail
-passes already in `report.json` are not repeated, and a trailing run of rejections still counts
-toward the three that stop the loop.
+passes already in `report.json` are not repeated, and a trailing run of rejected next-best views
+still counts toward the three that stop the loop (rejected anchors do not).
 
 Exit codes: 0 done; 1 usage error, including a GLB whose base colour cannot be written (checked
 before the first paint job); 3 no view painted, or the paint server unreachable or not configured

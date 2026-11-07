@@ -47,7 +47,8 @@ result, project the painted pixels into the UV texture, pick the next camera, re
   brightness-matched with one gain/offset for all channels. Grey reads as grey material (silver
   hair), magenta bleeds into purple, per-channel matching tints greys olive.
 - **The sheet first, the nearest single view as fallback.** A sheet can produce a collage, a
-  single view can copy its own facing; each try alternates.
+  single view can copy its own facing; a failed outline switches reference. A back camera starts
+  with the back view: given the sheet, the model paints the front onto a back render.
 - **Steep cameras are not used.** Pitch stays in −40…50°; steeper views come back drawn at eye
   level. Undersides keep the prior.
 - **Licences:** the edit model and its Lightning LoRA are Apache-2.0; no non-commercial rasteriser

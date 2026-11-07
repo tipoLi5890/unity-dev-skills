@@ -1,11 +1,14 @@
 # Gates — accepting or rejecting a painted view
 
 A painted view is evidence, not paint. Each try is registered to the render, measured, and either
-projected or thrown away. A camera gets `--tries 3` tries; seeds are `--seed (42) + 1000 × try + view
-index`, and the reference alternates (`painting.md` §3). The first try that passes every gate is
-used; when none passes, the best by `(passed, iou_after × filled)` is saved as `_aligned.png` for
-inspection, the view is logged `rejected`, and it counts against `--max-views`. Three rejections
-in a row end the main loop.
+projected or thrown away. A camera gets `--tries 3` tries (a head detail pass `--detail-tries 6`);
+seeds are `--seed (42) + 1000 × try + view index`, and the reference follows what the last try
+failed (`painting.md` §3). The first try that passes every gate is used; when none passes, the best
+by `(passed, iou_after × filled)` is saved as `_aligned.png` for inspection, the view is logged
+`rejected` with the gates it failed, and it counts against `--max-views`. Three failures in a row
+(a rejected **next-best view**, or any view with no output) end the main loop; a rejected anchor
+does not count toward them — the remaining anchors and the next-best
+views still get their turn.
 
 ## 1. Registration first
 
@@ -37,6 +40,11 @@ Notes on reading them:
   longer show the marker.
 - The **first view** skips drift and dark-to-light (nothing is painted yet); **detail passes**
   skip drift and painted share (they repaint painted surface on purpose).
+- **Drift reads disagreement, not registration.** A sheet try lands within a pixel of the render;
+  a single-view try that the model redrew moves features inside the figure, which neither a wider
+  scale and shift search nor per-block shifts of a few pixels undo. High drift on views that look
+  right means they disagree with what is already painted: look at the first view's
+  `_aligned.png` against the concept before loosening `--max-drift`.
 
 ## 3. The outline-disagreement band
 
@@ -79,6 +87,7 @@ reads. At the end it gains the totals:
 | `seam_delta` | mean colour step across neighbouring texels owned by different views |
 | `views_used`, `rejected` | views projected; views rejected or failed |
 | `stop` | why the main loop ended (`projection.md` §6) |
+| `sheet` | picture 2's sheet: `given` (`--sheet`), `composed` (from the concept views, `painting.md` §3) or null |
 | `minutes` | wall time of this run |
 | `settings` | every flag as run |
 | `views[]` | one record per camera, in order |
@@ -91,13 +100,15 @@ Per view:
 | `yaw`, `pitch`, `source`, `zoom` | the camera; `source` is `anchor`, `nbv` or `detail` |
 | `unpainted_share` | share of the render that was unpainted |
 | `prompt_mode` | `first`, `context` or `detail` |
-| `seed`, `ref`, `paint_s` | the try kept: its seed, `sheet` / `nearest` / `front`, seconds |
+| `seed`, `ref`, `paint_s` | the try kept: its seed, `sheet` / `nearest` / `front` / `front_head`, seconds |
 | `iou_before`, `iou_after`, `scale`, `shift`, `edge_p90` | registration (§1) and the outline gate |
 | `filled`, `drift`, `lighten`, `bg_dev`, `off_palette` | the other gates' values; a try flagging over 1.5 % leaves `views/<name>_s<seed>_offpal.png` with the flagged colours in magenta, gated or not |
 | `match_gain`, `match_offset` or `match` | the colour match, or why it was skipped |
 | `texels`, `new_texels` | texels written; of those, newly painted |
 | `coverage`, `gain` | coverage after this view and what it added |
 | `status` | `used`, `rejected`, `skipped: …` or `failed: no output` (counts as a rejection) |
+| `fails` | a rejected view: the gates its kept try failed (`iou`, `edge`, `filled`, `drift`, `lighten`, `bg_dev`, `off_palette`) |
+| `tries` | every try in order: `seed`, `ref`, `iou_after`, `edge_p90`, `scale`, `shift`, `filled`, `drift`, `lighten`, `bg_dev`, `off_palette` and its `fails` (empty when it passed) |
 | `errors` | the tail of a failed paint call |
 
 `turntable.png` is the eye check that goes with it: eight yaws at pitch 10 (`--compare GLB` adds

@@ -2,6 +2,49 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.48.0
+
+`paint_loop.py` (mesh-texture-paint) picks picture 2 by what the last try failed, paints a level
+back camera from the back drawing, and composes a sheet when none is given. Every gate keeps its
+limit.
+
+- **A level back camera starts with the back drawing.** Given the turnaround sheet behind a render
+  seen from behind, the edit model often paints the front: a face on the back of the head, the
+  front's buttons, a short crop where the back has a long braid. The colours match the concept, so
+  no gate and no palette ΔE catches it.
+  - An unzoomed camera within 45° of the back and 15° of level now starts with the back concept
+    view, fitted to the guide's silhouette box. The sheet is its fallback.
+  - A steeper back camera keeps the sheet first. The level drawing does not fit its outline (IoU
+    about 0.6), and an earlier build that sent it the back drawing stopped one character's run at
+    coverage 0.80.
+- **The reference follows the failure.** A sheet try that failed only other gates (a washed-out
+  key, drift) gets the sheet and the next seed. One that failed IoU or the outline gets the nearest
+  view, which goes in fitted to the guide's silhouette box (`views/<name>_ref_nearest.png`).
+- **Without `--sheet` the loop composes one** from the four concept views
+  (`views/sheet_composed.png`, `sheet: composed` in `report.json`). Painted from single views alone,
+  a chibi character stopped on rejections at coverage 0.32; with the composed sheet it reached 0.89.
+- **Head detail passes** get `--detail-tries 6`, alternating between the front drawing and that
+  drawing cut to the head as the detail camera frames it (`views/detail_ref_head.png`).
+- **Rejected anchors no longer end the run.** Three next-best views rejected in a row still do.
+- **`report.json`** records `sheet` (given, composed or null). Each view lists every try in `tries`
+  with its gate values, and a rejected view lists the gates it failed in `fails`.
+- **Measured on the four 3D characters against 0.46.0**, same seeds, with `--sheet`:
+  - Coverage: 0.901 → 0.899, 0.905 → 0.892, 0.886 → 0.890 and 0.858 → 0.873.
+  - Views refused: 0 → 0, 1 → 2, 7 → 5 and 4 → 1.
+  - A second seed on the gatekeeper gives 0.911 → 0.903 coverage and 1 → 1 refused. Its 0.01 loss
+    is a different next-best camera being picked, not a refused back view.
+  - Concept match, mean palette ΔE: 1.91 → 2.15, 0.68 → 1.11, 3.70 → 1.83 and 2.71 → 2.33.
+  - Back views: the mascot's ΔE goes 5.6 → 0.9; the gatekeeper's DINOv2 similarity goes
+    0.957 → 0.970, with the braid painted where 0.46 painted short hair.
+- **Still open.**
+  - The runner's back ΔE (0.7 → 1.7) and the gatekeeper's right side (0.3 → 1.6) read worse: a
+    fitted single view still lands a few pixels off.
+  - One top-down sheet try painted a pink streak into the gatekeeper's braid and passed every gate.
+  - The guard's back drawing cannot be used: its shield is drawn edge-on while the mesh holds it
+    angled, so the sheet paints that view. The shield is generated into the character mesh, and a
+    held prop belongs in its own asset (S1 already asks for empty hands). The next release removes
+    the fused-prop rescue rules and rebuilds the guard with a separate shield.
+
 ## 0.47.0
 
 The 2D frame-set audit reads more of what a viewer sees. Swapped legs are read on legs of one

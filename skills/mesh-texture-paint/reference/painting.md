@@ -105,20 +105,59 @@ details, in the right places for this view. ...
 
 | `{refdesc}` | Picture 2 |
 |---|---|
-| "a turnaround sheet of that {subject} (front, left, back and right views)" | `--sheet`, the whole 4:1 sheet |
-| "the concept art of that {subject} seen from the front / back / side" | the concept view nearest the camera's yaw (front 0, left 90, back 180, right 270) |
-| "concept art of that {subject}" | detail passes: `--detail-ref`, default `front.png` |
+| "a turnaround sheet of that {subject} (front, left, back and right views)" | `--sheet`, the whole 4:1 sheet; without `--sheet`, one composed from the concept views |
+| "the concept art of that {subject} seen from the front / back / side" | the concept view nearest the camera's yaw (front 0, left 90, back 180, right 270), scaled and placed onto the guide's silhouette box |
+| "concept art of that {subject}" | detail passes: `front.png`, every other try cut to the head; or `--detail-ref` as given |
 
-`--ref sheet` (the default) tries the sheet first and alternates with the nearest view on each
-failed try: with `--tries 3` the order is sheet, nearest, sheet. `--ref nearest` reverses it.
-Without `--sheet` only the nearest view is used. The two fail in opposite ways, which is why each
-is the other's fallback:
+`--ref sheet` (the default) tries the sheet first, except on a back camera (below). A sheet try that failed only other gates (a
+washed-out key, drift, silver) is retried with the sheet and the next seed; one that failed IoU or
+the outline distance (a collage, a moved figure) is retried with the nearest view; after a nearest
+try the sheet comes back. Each try's reference and failed gates are in `report.json`'s `tries`
+(`gates.md` §6). `--ref nearest` starts with the nearest view and switches to the sheet after a try that failed IoU
+or the outline, as a back camera does. The two fail in
+opposite ways, which is why each is the other's fallback, and why the sheet is the default:
 
-- **The sheet** carries every side's colours, so a back view finds the back's design — but now
-  and then the model paints a **collage**, several small figures side by side. The outline gate
-  catches it (`gates.md` §2).
-- **A single view** cannot produce a collage, but the model can copy **that view's facing** — a
-  three-quarter render repainted as a straight side.
+- **The sheet** carries every side's colours, but behind a render seen from the back the model
+  often paints the **front** onto it: a face on the back of the head, the front's buttons, the
+  breastplate and the shield's emblem. The colours match the concept, so neither the gates nor
+  palette ΔE catch it. An unzoomed camera within 45° of the back and 15° of level therefore starts
+  with the back concept view, fitted (below), and the sheet is its fallback. A steeper back camera
+  keeps the sheet first: the level drawing does not fit its outline (IoU about 0.6) and every try
+  of it is refused. Now and then the sheet also makes the model paint a **collage**, several
+  small figures side by side. The outline gate catches it (`gates.md` §2). Its layout looks nothing like the guide's, so the model keeps the
+  guide's pixel layout: sheet tries register at IoU about 0.99 with no shift or scale.
+- **A single view** cannot produce a collage, but the model **redraws that drawing**: its facing
+  (a three-quarter render repainted as a straight side) and its framing. A side concept as drawn
+  comes back about 3 % larger and a few pixels off (IoU 0.84–0.87 before registration, the scale
+  search at its limit), and every already-painted pixel it misses reads as drift. So the nearest
+  view goes in **fitted**: cut to its figure and scaled so the figure's box matches the guide
+  silhouette's box (one scale, the longer side), on black at the guide's size —
+  `views/<name>_ref_nearest.png`. Fitted, the same seeds register at 0.91–0.93 before the search,
+  still several pixels off inside the figure: a nearest try that passes projects slightly smeared
+  paint, and one that fails mostly fails on drift. That is why a sheet try that failed for another
+  reason gets the sheet again. A zoomed camera has no figure box to match; it gets the view as drawn.
+
+**Without `--sheet`** the loop composes one from the concept views (front, left, back, right, one
+scale, side by side on black) and writes it to `views/sheet_composed.png`; `report.json` records
+`sheet: composed`. Painting from single views alone is the failure this prevents: the first,
+clay view can come back off the concept (a darker skin, a greyer hair than drawn), every later
+view that paints the concept right then disagrees with it, and the drift gate rejects one correct
+view after another while the redrawn framing adds misregistration on top. Pass the real
+sheet when there is one; it keeps the drawing's own spacing and scale.
+
+**Detail passes** (`projection.md` §7) alternate too, over `--detail-tries 6` seeds: the front
+view, then the same drawing cut to the head as the detail camera frames it (the top 16 % of the
+figure, centred 2 % of its height lower, 1.3 × its extent) — `views/detail_ref_head.png`. A
+`--detail-ref` (a face close-up, say) is used as given on every try. A whole-body drawing behind a
+head close-up makes the model redraw the head larger and higher than the render (outline distance
+50–200 px) on some subjects; the head cut lands on it there and fails on others (pointed hair redrawn
+past the outline gate), so the two alternate. A sheet or a sheet of four heads behind a close-up
+gives a collage every time.
+
+```bash
+python3 scripts/paint_loop.py runner.glb --concept views/runner --out paint/runner \
+  --kind character --detail head --detail-tries 6
+```
 
 Every prompt ends "Draw only this one {subject}, no other views or copies." — it lowers the
 collage rate without hurting the single-view case.

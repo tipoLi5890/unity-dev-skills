@@ -95,9 +95,12 @@ The main loop stops at the first of:
 
 - coverage ≥ `--target 0.97`;
 - `--max-views` views tried (a rejected view counts): **20** for a character, **16** for an object;
-- 3 rejected views in a row (after a rejected next-best view the next one keeps 35° away from it: the
-  model redraws a steep view of a thin part the same wrong way from a nearby angle; a rejected anchor
-  does not push the next-best views away);
+- 3 failures in a row, counting a rejected next-best view and any view with no output from the server;
+  a used view resets the count (after a rejected next-best view the next one keeps 35° away from
+  it: the model redraws a steep view of a thin part the same wrong way from a nearby angle). A
+  rejected anchor neither counts nor pushes the next-best views away: the anchors are a fixed list,
+  and three of them failing in a row (often one bad first view that later views disagree with)
+  would otherwise end the run before a single next-best camera was tried;
 - 3 next-best views in a row skipped with nothing unpainted;
 - the next-best view adds less than `--min-gain 0.003` of the seeable surface, or none is left.
 
@@ -117,10 +120,13 @@ faces of the straps staying on the prior.
 
 `--detail head` (characters) adds three close-ups after the main loop: yaw **0, 40, 320**, pitch
 5, aimed at the head — the top 16 % of the mesh height, centred 2 % of the height lower so the
-face sits mid-frame — at 1.3 × the head's extent. Each uses the detail prompt and the front
-concept view (`--detail-ref` to change it). Their zoom weight (often the cap of 3) beats the
-earlier weight × 1.5, so they replace the face painted at full-body scale and give it sharp eyes
-and mouth.
+face sits mid-frame — at 1.3 × the head's extent. Each uses the detail prompt and gets
+`--detail-tries 6` seeds, picture 2 alternating between the front concept view and that drawing
+cut to the same head frame (`painting.md` §3); a `--detail-ref` replaces both. Their zoom weight
+(often the cap of 3) beats the earlier weight × 1.5, so they replace the face painted at
+full-body scale and give it sharp eyes and mouth. A detail pass that fails every try leaves the
+face as the full-body views painted it, often with a seam down the middle where the three-quarter
+views meet: check the face in `turntable.png` and the `tries` of the three passes.
 
 ## 8. Fill, gutter and the finished texture
 

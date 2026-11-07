@@ -11,11 +11,16 @@ dark-to-light share, background deviation; colours off the concept's palette whe
 is set, else only reported) and its painted
 pixels are projected into the UV texture. Anchor cameras go first, then the camera that sees the most unpainted surface
 (zoomed onto it unless the mesh is thin or, for objects, the view is steep; never within 35
-degrees of a next-best camera whose paint was rejected), until coverage,
-the view budget, three rejections in a row or three next-best views in a row with nothing
-unpainted stop the loop; optional detail passes follow.
-Up to --tries seeds per camera, the reference alternating between the sheet and the nearest
-concept view.
+degrees of a next-best camera whose paint was rejected), until coverage, the view budget, three
+next-best views rejected in a row (a rejected anchor does not count) or three next-best views in a
+row with nothing unpainted stop the loop; optional detail passes follow.
+Up to --tries seeds per camera: the sheet (composed from the concept views when --sheet is not
+given) first and again after a try that failed other gates, the nearest concept view, fitted onto
+the guide's silhouette box, after a try that failed IoU or the outline; an unzoomed camera within
+45 degrees of the back and 15 of level starts with the back view and falls back to the sheet. --detail-tries seeds per
+head detail pass, alternating between the front concept view and that view cut to the head (a
+--detail-ref is used as given). report.json lists every try with its gate values and the gates it
+failed.
 
 Writes <out>/basecolor.png, <out>/<glb-stem>_painted.glb (the input GLB with only the base
 colour image replaced), <out>/coverage.png, <out>/turntable.png, <out>/report.json,
@@ -153,6 +158,131 @@ def nearest_concept(yaw):
     return min(CONCEPT_YAW, key=lambda k: min(abs(yaw - CONCEPT_YAW[k]) % 360, 360 - abs(yaw - CONCEPT_YAW[k]) % 360))
 
 
+def figure_on_black(path, tol=12):
+    """(RGB on black, figure mask) of a concept view: an RGBA cut-out over black, else everything but
+    the background, the pixels within tol of the border's median colour that connect to the border
+    (a white shirt on a white page stays figure)."""
+    im = Image.open(path)
+    if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+        rgba = np.asarray(im.convert("RGBA")).astype(np.float64)
+        rgb = rgba[..., :3] * rgba[..., 3:] / 255.0
+        return rgb.astype(np.uint8), rgba[..., 3] > 127
+    a = np.asarray(im.convert("RGB")).astype(np.float64)
+    bg = np.median(np.concatenate([a[0], a[-1], a[:, 0], a[:, -1]]), 0)
+    near = np.abs(a - bg).max(2) <= tol
+    lab, _ = ndimage.label(near)
+    edge = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    m = ndimage.binary_opening(~np.isin(lab, edge[edge > 0]), iterations=1)
+    return np.where(m[..., None], a, 0).astype(np.uint8), m
+
+
+def compose_sheet(paths, dst, height=512, pad=24):
+    """A turnaround sheet from the concept views (front, left, back, right in that order): each
+    figure cut to its own width and to the views' common top and bottom, all at one scale, side by
+    side on black with a gap. For a run without --sheet: a single concept view as picture 2 makes
+    the edit model redraw that drawing (its framing and scale) instead of painting the guide in
+    place, so the sheet stays the first reference. Returns dst, or None with fewer than two views."""
+    paths = [p for p in paths if Path(p).is_file()]
+    size = Image.open(paths[0]).size if paths else None
+    figs = []
+    for p in paths:   # one pixel grid for all views, so the common top and bottom mean the same rows
+        rgb, m = figure_on_black(p)
+        if rgb.shape[1::-1] != size:
+            rgb = np.asarray(Image.fromarray(rgb).resize(size, Image.LANCZOS))
+            m = np.asarray(Image.fromarray(m.astype(np.uint8) * 255).resize(size, Image.NEAREST)) > 127
+        figs.append((rgb, m))
+    figs = [(rgb, m) for rgb, m in figs if m.any()]
+    if len(figs) < 2:
+        return None
+    top = min(int(np.nonzero(m.any(1))[0][0]) for _, m in figs)
+    bot = max(int(np.nonzero(m.any(1))[0][-1]) + 1 for _, m in figs)
+    s = (height - 2 * pad) / max(1, bot - top)
+    cells = []
+    for rgb, m in figs:
+        xs = np.nonzero(m.any(0))[0]
+        crop = Image.fromarray(rgb[top:bot, xs[0]:xs[-1] + 1])
+        cells.append(crop.resize((max(1, round(crop.width * s)), max(1, round(crop.height * s))), Image.LANCZOS))
+    sheet = Image.new("RGB", (sum(c.width for c in cells) + pad * (len(cells) + 1), height))
+    x = pad
+    for c in cells:
+        sheet.paste(c, (x, pad))
+        x += c.width + pad
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(dst)
+    return Path(dst)
+
+
+def fit_reference(concept, guide_mask, dst):
+    """The concept view scaled and placed so its figure's box matches the guide silhouette's box (one
+    scale, from the box's longer side), on black at the guide's size. A single view as picture 2 makes
+    the model redraw that drawing at the drawing's own framing; framed like the guide, the redraw
+    lands on the render instead of beside it. For unzoomed views. Returns dst, or None when either
+    image holds no figure."""
+    rgb, m = figure_on_black(concept)
+    if not m.any() or not guide_mask.any():
+        return None
+    ys, xs = np.nonzero(m)
+    gy, gx = np.nonzero(guide_mask)
+    ch, cw = ys.max() - ys.min() + 1, xs.max() - xs.min() + 1
+    gh, gw = gy.max() - gy.min() + 1, gx.max() - gx.min() + 1
+    s = gh / ch if ch >= cw else gw / cw
+    crop = Image.fromarray(rgb[ys.min():ys.max() + 1, xs.min():xs.max() + 1])
+    crop = crop.resize((max(1, round(cw * s)), max(1, round(ch * s))), Image.LANCZOS)
+    canvas = Image.new("RGB", (guide_mask.shape[1], guide_mask.shape[0]))
+    cx, cy = (gx.min() + gx.max() + 1) / 2, (gy.min() + gy.max() + 1) / 2
+    canvas.paste(crop, (round(cx - crop.width / 2), round(cy - crop.height / 2)))
+    canvas.save(dst)
+    return Path(dst)
+
+
+HEAD_TOP, HEAD_DROP, HEAD_MARGIN = 0.16, 0.02, 1.3   # the head detail camera, on the mesh and on the drawing
+
+
+def head_reference(concept, dst, size=1024, fill=0.92):
+    """The concept view cut to the frame the head detail camera sees: the top HEAD_TOP of the figure's
+    height, its centre HEAD_DROP of the height lower, HEAD_MARGIN x its half-extent over fill. Picture 2
+    for every other head detail try: a whole-body view makes the model redraw the head larger and
+    higher, a head framed like the guide often lands on it. Returns dst, or None without a figure."""
+    rgb, m = figure_on_black(concept)
+    if not m.any():
+        return None
+    rows = np.nonzero(m.any(1))[0]
+    y0, h = int(rows[0]), int(rows[-1] + 1 - rows[0])
+    sy, sx = np.nonzero(m[y0:y0 + max(1, int(round(HEAD_TOP * h)))])
+    cy = y0 + (sy.min() + sy.max() + 1) / 2 + HEAD_DROP * h
+    cx = (sx.min() + sx.max() + 1) / 2
+    half = max(sy.max() - sy.min() + 1, sx.max() - sx.min() + 1) / 2 * HEAD_MARGIN / fill
+    box = tuple(int(round(v)) for v in (cx - half, cy - half, cx + half, cy + half))
+    Image.fromarray(rgb).crop(box).resize((size, size), Image.LANCZOS).save(dst)
+    return Path(dst)
+
+
+OUTLINE_GATES = {"iou", "edge"}   # failed by a collage or a figure the model moved
+BACK_SECTOR = 45.0                # degrees from the back within which an unzoomed camera starts with the back view
+BACK_PITCH = 15.0                 # ... when it looks within this many degrees of level
+
+
+def back_camera(yaw, zoomed, pitch=0.0):
+    """An unzoomed, near-level camera within BACK_SECTOR of the back: its first reference is the back
+    concept view framed like the guide, not the sheet. Given the sheet, the edit model often paints the
+    front (face, buttons, emblem) onto a render seen from behind; the colours match, so no gate catches
+    it. A steep camera keeps the sheet first: the level back drawing does not fit its silhouette (IoU
+    about 0.6), so every try of it is refused."""
+    d = abs(yaw % 360 - 180)
+    return not zoomed and d < BACK_SECTOR and abs(pitch) <= BACK_PITCH
+
+
+def next_reference(order, t, tries):
+    """Picture 2 for try t of a main view: the first reference again after a try of it that failed only
+    other gates (a washed-out key, drift, silver: another seed fixes those); the other reference after
+    a try of the first that failed IoU or the outline (a collage, a moved figure), and the first again
+    after that. tries: this camera's earlier tries (report.json tries)."""
+    if t == 0 or len(order) < 2:
+        return order[0]
+    last = tries[-1] if tries else None
+    return order[1] if last and last["ref"] == order[0] and OUTLINE_GATES & set(last["fails"]) else order[0]
+
+
 def make_cam(mesh, plan, size, fill):
     return M.Camera.orbit(mesh.center, plan["radius"], plan["yaw"], plan["pitch"], size=size, fill=fill,
                           target=plan.get("target"))
@@ -180,6 +310,9 @@ class UsageParser(argparse.ArgumentParser):
 
 
 OFFPAL_PICTURE = 0.015   # a try flagging more than this leaves views/<name>_s<seed>_offpal.png
+# report.json views[].tries[]: every paint try of a camera with its gate values and the gates it failed
+TRY_KEYS = ("seed", "ref", "iou_after", "edge_p90", "scale", "shift", "filled", "drift", "lighten", "bg_dev",
+            "off_palette", "fails")
 COVERAGE_FLOOR = {"character": 0.85, "prop": 0.75, "part": None}   # gates.json paint.coverage; None: reported
 
 
@@ -193,6 +326,17 @@ def coverage_floor(text):
     if not (math.isfinite(v) and 0.0 < v <= 1.0):
         raise argparse.ArgumentTypeError(f"{text} is not a share in (0, 1]")
     return v
+
+
+def count_arg(text):
+    """argparse type: a whole number of tries, at least 1."""
+    try:
+        n = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"{n} is under 1")
+    return n
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -225,10 +369,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--max-edge", type=float, default=24.0, help="outline distance p90 (px at 1024) to accept a view")
     ap.add_argument("--min-share", type=float, default=0.3, help="share of the unpainted pixels the painted view covers (fill) or repaints "
                                                                    "(grey/magenta markers) to accept a view")
-    ap.add_argument("--tries", type=int, default=3, help="seeds per camera before giving up on it")
+    ap.add_argument("--tries", type=count_arg, default=3, help="seeds per camera before giving up on it")
     ap.add_argument("--refine", type=float, default=1.5, help="0 blends every view")
     ap.add_argument("--detail", default="", help="character: 'head' adds zoomed repaint passes on the head")
     ap.add_argument("--detail-ref", type=Path, help="picture 2 for detail passes (default: front concept)")
+    ap.add_argument("--detail-tries", type=count_arg, default=6,
+                    help="seeds per detail pass; picture 2 alternates between the front concept view and that "
+                         "view cut to the head as the detail camera frames it (a --detail-ref is used as given)")
     ap.add_argument("--no-match", action="store_true")
     ap.add_argument("--prior", default="self",
                     help="texture shown on unpainted surface (fill context): 'self' = the GLB's own base colour "
@@ -366,6 +513,10 @@ def main(argv=None) -> int:
         used = [(v["yaw"], v["pitch"]) for v in log]
     anchors = [tuple(float(x) for x in s.split(":")) for s in a.anchors.split(",") if s]
     refs = {k: a.concept / f"{k}.png" for k in CONCEPT_YAW}
+    sheet, sheet_src = a.sheet, "given" if a.sheet else None
+    if sheet is None:   # no --sheet: one composed from the concept views, so picture 2 is never only one view
+        sheet = compose_sheet([refs[k] for k in CONCEPT_YAW], out / "views" / "sheet_composed.png")
+        sheet_src = "composed" if sheet else None
     stale = 0
     prior = None
     if a.prior:
@@ -381,16 +532,23 @@ def main(argv=None) -> int:
     details = []
     if a.detail == "head":
         h = mesh.v[:, 1].max() - mesh.v[:, 1].min()
-        top = mesh.v[mesh.v[:, 1] > mesh.v[:, 1].max() - 0.16 * h]
+        top = mesh.v[mesh.v[:, 1] > mesh.v[:, 1].max() - HEAD_TOP * h]
         tgt = (top.max(0) + top.min(0)) / 2
-        tgt[1] -= 0.02 * h  # face sits below the middle of hair + head
+        tgt[1] -= HEAD_DROP * h  # face sits below the middle of hair + head
         tgt = tgt.tolist()
-        r = float((top.max(0) - top.min(0)).max() / 2) * 1.3
+        r = float((top.max(0) - top.min(0)).max() / 2) * HEAD_MARGIN
         details = [{"yaw": yw, "pitch": 5.0, "radius": r, "target": tgt, "source": "detail"} for yw in (0.0, 40.0, 320.0)]
+    detail_full = a.detail_ref or refs["front"]
+    # every other detail try: the front view cut to the head as the detail camera frames it (a
+    # --detail-ref is used as given: it may be a close-up already)
+    detail_head = (head_reference(detail_full, out / "views" / "detail_ref_head.png", size=a.size, fill=a.fill)
+                   if details and not a.detail_ref and Path(detail_full).is_file() else None)
     if log:  # --resume: detail passes already run are not repeated; a trailing run of rejections still counts
         done = {(v["yaw"], v["pitch"]) for v in log if v.get("source") == "detail"}
         details = [d for d in details if (d["yaw"], d["pitch"]) not in done]
         for v in reversed(log):
+            if v.get("status") == "rejected" and v.get("source") != "nbv":
+                continue    # a rejected anchor or detail pass neither counts nor ends the run
             if v.get("status") not in ("rejected", "failed: no output"):
                 break
             stale += 1
@@ -445,25 +603,33 @@ def main(argv=None) -> int:
         Image.fromarray(img).save(guide)
         zoomed = bool(plan.get("target"))
         k = nearest_concept(plan["yaw"])
-        options = {"sheet": (a.sheet, f"a turnaround sheet of that {subject} (front, left, back and right views)"),
+        options = {"sheet": (sheet, f"a turnaround sheet of that {subject} (front, left, back and right views)"),
                    "nearest": (refs[k], f"the concept art of that {subject} seen from the "
                                         f"{k if k in ('front', 'back') else 'side'}")}
-        if not a.sheet:
+        if not sheet:
             options.pop("sheet")
         # the other reference is the fallback: a whole sheet can make the model paint a collage of
         # several figures, a single view can make it copy that view's facing
         order = [a.ref, "nearest" if a.ref == "sheet" else "sheet"] if a.ref in options else ["nearest"]
+        if back_camera(plan["yaw"], zoomed, plan["pitch"]):   # with the sheet the model paints the front onto a back render
+            order = ["nearest", "sheet"]
         order = [o for o in order if o in options]
         fmt = {"subject": subject, "label": view_label(plan["yaw"], plan["pitch"], zoomed),
                "details": DETAILS[a.kind], "grey": {"clay": "plain grey clay", "flat": "flat grey", "magenta": "magenta", "fill": ""}[a.context]}
         rec["prompt_mode"] = "detail" if detail else "first" if first else "context"
         best = None
-        for t in range(a.tries):
+        fitted = None
+        for t in range(a.detail_tries if detail else a.tries):
             if detail:
-                ref, refdesc, rname = a.detail_ref or refs["front"], f"concept art of that {subject}", "front"
+                head = t % 2 == 1 and detail_head is not None
+                ref, refdesc, rname = (detail_head if head else detail_full), f"concept art of that {subject}", \
+                    ("front_head" if head else "front")
             else:
-                rname = order[t % len(order)]
+                rname = next_reference(order, t, rec.get("tries"))
                 ref, refdesc = options[rname]
+                if rname == "nearest" and not zoomed:   # framed like the guide (a zoomed crop has no figure box)
+                    fitted = fitted or fit_reference(ref, rmask, out / "views" / f"{name}_ref_nearest.png")
+                    ref = fitted or ref
             ctx_prompt = P_FILL if a.context == "fill" else P_CONTEXT
             prompt = (P_DETAIL if detail else P_FIRST if first else ctx_prompt).format(refdesc=refdesc, **fmt)
             seed = a.seed + 1000 * t + len(log)
@@ -495,9 +661,13 @@ def main(argv=None) -> int:
             offpal, offm = M.off_palette(warped, rmask & wm & ~near_miss, palette)
             cand.update({"drift": round(drift, 3), "lighten": round(light, 3), "bg_dev": round(bg_dev, 1),
                          "off_palette": round(offpal, 4)})
-            cand["ok"] = (al["iou_after"] >= a.min_iou and al["edge_p90"] <= a.max_edge and filled >= a.min_share
-                          and drift <= a.max_drift and light <= a.max_lighten and bg_dev <= a.max_bg_dev
-                          and offpal <= a.max_off_palette)
+            fails = [g for g, bad in (("iou", al["iou_after"] < a.min_iou), ("edge", al["edge_p90"] > a.max_edge),
+                                      ("filled", filled < a.min_share), ("drift", drift > a.max_drift),
+                                      ("lighten", light > a.max_lighten), ("bg_dev", bg_dev > a.max_bg_dev),
+                                      ("off_palette", offpal > a.max_off_palette)) if bad]
+            cand["fails"] = fails
+            cand["ok"] = not fails
+            rec.setdefault("tries", []).append({k: cand[k] for k in TRY_KEYS if k in cand})
             if offpal > OFFPAL_PICTURE:   # the colours it flagged, magenta on the view (gated or not)
                 Image.fromarray(np.where(offm[..., None], M.MARK, warped)).save(raw.with_name(raw.stem + "_offpal.png"))
             key = (cand["ok"], al["iou_after"] * filled * (1.0 - offpal))
@@ -511,6 +681,8 @@ def main(argv=None) -> int:
         else:
             _, cand, warped, pm = best
             ok = cand.pop("ok")
+            if not cand["fails"]:
+                cand.pop("fails")
             rec.update(cand)
             Image.fromarray(warped).save(out / "views" / f"{name}_aligned.png")
         if fatal:
@@ -520,7 +692,7 @@ def main(argv=None) -> int:
             break
         if best is None:
             acc.views += 1  # a view that produced nothing counts as a rejection
-            stale += 1
+            stale += 1      # whatever the camera: a server that returns nothing fails every camera
         elif ok:
             cov0 = acc.coverage()
             # closer cameras put more pixels on each texel: weight them up so they win the refine test
@@ -534,7 +706,9 @@ def main(argv=None) -> int:
         else:
             rec["status"] = "rejected"
             acc.views += 1  # counts against the budget
-            stale += 1
+            # only next-best views end the loop by rejections: the anchors are a fixed list, and a
+            # rejected anchor leaves the next anchor and the next-best views their turn
+            stale += plan["source"] == "nbv"
         log.append(rec)
         print(json.dumps(rec), flush=True)
         acc.save(out / "state.npz")
@@ -563,7 +737,7 @@ def main(argv=None) -> int:
            "seam_delta": round(acc.seam_delta(), 2),
            "views_used": sum(v.get("status") == "used" for v in log),
            "rejected": sum(v.get("status") in ("rejected", "failed: no output") for v in log),
-           "stop": stop, "minutes": round((time.time() - t_start) / 60, 1),
+           "stop": stop, "minutes": round((time.time() - t_start) / 60, 1), "sheet": sheet_src,
            "settings": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()}, "views": log}
     (out / "report.json").write_text(json.dumps(rep, indent=1))
     gdoc = gates_doc(rep, a, out, log, models)
@@ -596,13 +770,17 @@ def selftest() -> int:
     calls = []
 
     tint = [np.array([180.0, 90.0, 40.0])]   # the parcel's orange; a navy painter is off the palette
+    schedule = []                             # per-call tints that override tint[0] while they last
 
     def fake_paint(guide, ref, prompt, out_png, server=None, seed=42, models=None, **_kw):
         # a model that paints the view in one colour shaded by the guide, background stays key
         g = np.asarray(Image.open(guide).convert("RGB")).astype(np.float64)
         fg = M.key_mask(g.astype(np.uint8))
         o = g.copy()
-        o[fg] = np.clip(tint[0] * np.clip(g[fg].mean(1, keepdims=True) / 150.0, 0.7, 1.2), 0, 255)
+        col = schedule.pop(0) if schedule else tint[0]
+        col, cut = col if isinstance(col, tuple) else (col, 0)   # (tint, px): the figure drawn px narrower
+        o[fg] = np.clip(col * np.clip(g[fg].mean(1, keepdims=True) / 150.0, 0.7, 1.2), 0, 255)
+        o[:, :cut] = M.KEY
         Path(out_png).parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(o.astype(np.uint8)).save(out_png)
         calls.append({"ref": Path(ref).name, "prompt": prompt, "models": models})
@@ -733,6 +911,70 @@ def selftest() -> int:
                                                           and nd[0]["off_palette"] > 0.5
                                                           and any((td / "navy_d" / "views").glob("*_offpal.png")))
             tint[0] = np.array([180.0, 90.0, 40.0])
+            # three anchors in a row rejected (navy, gated) no longer end the run: the next-best views
+            # still paint; each rejected anchor names its failed gate in its tries
+            orange, navy = np.array([180.0, 90.0, 40.0]), np.array([30.0, 34.0, 90.0])
+            schedule[:] = [orange, navy, navy, navy]
+            with contextlib.redirect_stderr(io.StringIO()):
+                code_a = main(base + ["--out", str(td / "anch"), "--anchors", "0:0,90:0,180:0,270:0", "--tries", "1",
+                                      "--max-views", "6", "--no-zoom", "--max-off-palette", "0.03"])
+            schedule.clear()
+            ra = json.loads((td / "anch" / "report.json").read_text())
+            rej = [v for v in ra["views"] if v.get("status") == "rejected" and v["source"] == "anchor"]
+            checks["anchor_rejections_do_not_stop"] = (
+                code_a == 0 and ra["stop"] != "rejections" and len(rej) == 3
+                and all(v["source"] == "anchor" and v["fails"] == ["off_palette"] and len(v["tries"]) == 1
+                        and v["tries"][0]["fails"] == ["off_palette"] for v in rej)
+                and any(v["source"] == "nbv" and v.get("status") == "used" for v in ra["views"])
+                and all("fails" not in v and v["tries"][-1]["fails"] == [] for v in ra["views"] if v.get("status") == "used"))
+            # a sheet try that failed another gate retries with the sheet; one that failed the outline (the
+            # figure drawn 60 px narrower) retries with the nearest view framed like the guide; a failed head
+            # detail try retries with the front drawing cut to the head
+            n0 = len(calls)
+            schedule[:] = [orange, navy, (orange, 60), orange, navy, orange]
+            with contextlib.redirect_stderr(io.StringIO()):
+                code_f = main(base + ["--out", str(td / "fit"), "--anchors", "0:0,90:0", "--no-nbv", "--tries", "3",
+                                      "--detail", "head", "--detail-tries", "2", "--max-off-palette", "0.03"])
+            schedule.clear()
+            rf = {v["name"]: v for v in json.loads((td / "fit" / "report.json").read_text())["views"]}
+            seq = [(c["ref"], "close-up" in c["prompt"]) for c in calls[n0:n0 + 6]]
+            v1 = rf["v01_y090_p+00"]
+            checks["fallback_references"] = (
+                code_f == 0 and seq == [("sheet.png", False), ("sheet.png", False), ("sheet.png", False),
+                                        ("v01_y090_p+00_ref_nearest.png", False), ("front.png", True),
+                                        ("detail_ref_head.png", True)]
+                and [t["ref"] for t in v1["tries"]] == ["sheet", "sheet", "nearest"]
+                and v1["tries"][0]["fails"] == ["off_palette"] and "iou" in v1["tries"][1]["fails"]
+                and v1["ref"] == "nearest" and v1["status"] == "used"
+                and [t["ref"] for t in rf["v02_y000_p+05z"]["tries"]] == ["front", "front_head"]
+                and rf["v02_y000_p+05z"]["status"] == "used" and rf["v02_y000_p+05z"]["ref"] == "front_head"
+                and next_reference(["nearest", "sheet"], 1, [{"ref": "nearest", "fails": ["drift"]}]) == "nearest"
+                and next_reference(["nearest", "sheet"], 1, [{"ref": "nearest", "fails": ["iou"]}]) == "sheet"
+                and back_camera(180, False) and back_camera(144, False) and back_camera(-160, False)
+                and not back_camera(135, False) and not back_camera(225, False) and not back_camera(180, True)
+                and back_camera(170, False, -10) and not back_camera(144, False, -37)
+                and not back_camera(198, False, 48)
+                and next_reference(["nearest"], 2, None) == "nearest")
+            # no --sheet: a sheet composed from the concept views is picture 2 first, never one view alone
+            n0 = len(calls)
+            with contextlib.redirect_stderr(io.StringIO()):
+                code_c = main([b for i, b in enumerate(base) if b != "--sheet" and base[i - 1] != "--sheet"]
+                              + ["--out", str(td / "comp"), "--anchors", "0:0", "--no-nbv", "--tries", "1"])
+            rc = json.loads((td / "comp" / "report.json").read_text())
+            comp = td / "comp" / "views" / "sheet_composed.png"
+            cw, ch = Image.open(comp).size if comp.exists() else (0, 0)
+            checks["composed_sheet"] = (code_c == 0 and rc["sheet"] == "composed" and rep["sheet"] == "given"
+                                        and rc["views"][0]["ref"] == "sheet" and cw > 3 * ch
+                                        and calls[n0]["ref"] == "sheet_composed.png"
+                                        and "turnaround sheet" in calls[n0]["prompt"])
+            # a camera seen from behind starts with the back view framed like the guide, not the sheet
+            n0 = len(calls)
+            with contextlib.redirect_stderr(io.StringIO()):
+                code_b = main(base + ["--out", str(td / "back"), "--anchors", "180:0", "--no-nbv", "--tries", "1"])
+            rb = json.loads((td / "back" / "report.json").read_text())
+            checks["back_view_first"] = (code_b == 0 and rb["views"][0]["ref"] == "nearest"
+                                         and calls[n0]["ref"] == "v00_y180_p+00_ref_nearest.png"
+                                         and "seen from the back" in calls[n0]["prompt"])
             # a GLB without a base-colour texture paints and gets one; a GLB that cannot be written is exit 1
             bare = td / "bare.glb"
             M.edit_glb_json(glb, lambda js: js["materials"][0]["pbrMetallicRoughness"].pop("baseColorTexture"), bare)
@@ -774,9 +1016,46 @@ def selftest() -> int:
                                and not (td / tag / "parcel_painted.glb").exists()
                                and not (td / tag / "gates.json").exists())
             Q.paint = fake_paint
+            # fit_reference: a small figure off in a corner of its drawing lands on the guide's silhouette box
+            fig = np.zeros((256, 256, 3), np.uint8)
+            fig[30:90, 20:40] = (200, 120, 60)
+            Image.fromarray(fig).save(td / "small.png")
+            gm = np.zeros((256, 256), bool)
+            gm[53:203, 103:153] = True
+            fr = fit_reference(td / "small.png", gm, td / "small_fit.png")
+            fy, fx = np.nonzero(np.asarray(Image.open(fr).convert("L")) > 40)
+            checks["fit_reference"] = (fr is not None and abs(int(fy.min()) - 53) <= 2 and abs(int(fy.max()) - 202) <= 2
+                                       and abs(int(fx.min()) - 103) <= 2 and abs(int(fx.max()) - 152) <= 2)
+            # head_reference: the crop is the head (red) over little of the body (blue)
+            fig = np.zeros((400, 200, 3), np.uint8)
+            yy2, xx2 = np.mgrid[0:400, 0:200]
+            fig[(yy2 - 60) ** 2 + (xx2 - 100) ** 2 < 32 ** 2] = (220, 40, 40)
+            fig[92:380, 60:140] = (40, 40, 220)
+            Image.fromarray(fig).save(td / "body.png")
+            hc = np.asarray(Image.open(head_reference(td / "body.png", td / "body_head.png", size=128)).convert("RGB")).astype(int)
+            red = ((hc[..., 0] > 150) & (hc[..., 2] < 90)).mean()
+            blue = ((hc[..., 2] > 150) & (hc[..., 0] < 90)).mean()
+            checks["head_reference"] = bool(red > 0.3 and blue < red / 2)
+            # a concept without alpha on a white page: a white shirt inside the figure stays figure
+            page = np.full((300, 200, 3), 255, np.uint8)
+            page[40:260, 60:140] = (30, 60, 160)
+            page[80:160, 70:130] = 255
+            Image.fromarray(page).save(td / "white_page.png")
+            _, wm = figure_on_black(td / "white_page.png")
+            # concept views of two sizes compose onto one baseline at one scale
+            big = np.zeros((600, 400, 3), np.uint8)
+            big[80:520, 120:280] = 200
+            Image.fromarray(big).save(td / "big.png")
+            Image.fromarray(big[::2, ::2].copy()).save(td / "half.png")
+            sh = np.asarray(Image.open(compose_sheet([td / "half.png", td / "big.png"], td / "mixed.png")).convert("L"))
+            rows = [np.nonzero(sh[:, x] > 40)[0] for x in (60, sh.shape[1] - 60)]
+            checks["figure_mask_and_mixed_sizes"] = bool(
+                wm[120, 100] and not wm[5, 5] and all(len(r) for r in rows)
+                and abs(int(rows[0][0]) - int(rows[1][0])) <= 1 and abs(int(rows[0][-1]) - int(rows[1][-1])) <= 1)
             # usage errors exit 1
             checks["usage_exit_1"] = True
-            for bad in (["x.glb"], ["x.glb", "--concept", "c", "--out", "o", "--coverage-for", "hand"],
+            for bad in (["x.glb"], ["x.glb", "--concept", "c", "--out", "o", "--tries", "0"],
+                        ["x.glb", "--concept", "c", "--out", "o", "--detail-tries", "0"], ["x.glb", "--concept", "c", "--out", "o", "--coverage-for", "hand"],
                         ["x.glb", "--concept", "c", "--out", "o", "--min-coverage", "most"],
                         ["x.glb", "--concept", "c", "--out", "o", "--min-coverage", "0"],
                         ["x.glb", "--concept", "c", "--out", "o", "--min-coverage", "1.5"],
