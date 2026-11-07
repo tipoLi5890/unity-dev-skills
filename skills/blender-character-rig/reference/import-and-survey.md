@@ -98,7 +98,7 @@ In order, it:
 | Import | glTF import; raises unless the file holds exactly one mesh | a second mesh is a decision, not something to merge silently |
 | Flatten | bakes the importer's transform into the mesh, unparents, removes the helper objects | the axis conversion lives on a parent empty; left there it becomes a rotated bind pose |
 | Name | object and mesh `Runner`, material `RunnerMat`, linked only into `Character` | later calls find everything by name |
-| Origin | moves the mesh so the origin is the centre of the base (X from the feet when a held prop pulls the box more than 1 % of the height off them; arms a few degrees apart stay under it) | a character stands on its origin; the rig's `Root` goes there, and the markers mirror about x = 0 |
+| Origin | moves the mesh so the origin is the centre of the base (X from the feet when a wide asymmetric part pulls the box more than 1 % of the height off them; arms a few degrees apart stay under it) | a character stands on its origin; the rig's `Root` goes there, and the markers mirror about x = 0 |
 | Height | uniform scale of the mesh data to `height` | bone radii and contact distances are in metres |
 | Weld | `remove_doubles` by position at `weld_distance`, then smooth shading | seam vertices would otherwise take different weights and open under a pose |
 | Material | backface culling on; normal-map `Strength` to `normal_strength` | culling hides the inner twin; plush fur baked as normals reads as wrinkles at full strength |

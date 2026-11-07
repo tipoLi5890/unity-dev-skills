@@ -57,6 +57,9 @@ The skirt zone's own share is reported as `skirt.layer`, not gated: a coat over 
 sheets there by design (a knee-length greatcoat reads about 0.38 inside the zone, 0.16 outside).
 The markers then follow the legs inside the skirt (`reference/markers.md`), `autorig.py` binds
 the skirt off the thighs' seam, and the deform gate reads its tear (`deform.skirt_tear`, below).
+The bind moves the skirt's weight from the limbs to the thighs and keeps the rest of the bind's
+mix: a cape hung from the shoulders stays on them. Pinning its top to Hips would tear it where
+the chest turns in `torso_twist`; an arm's weight leaked onto it would tear it in `arms_up`.
 
 **The chibi route (`--body chibi`)** — a big head on short limbs, chosen by a person at G0. The
 bands follow the body type, the limits do not: the crotch is searched from 0.10 H, `legs_separated`
@@ -150,10 +153,7 @@ A gain (a negative loss, common at a knee bent 120°) is reported and not gated.
 sharing no vertex with it (vertices welded by position: a glTF or FBX splits them at UV seams, and
 two triangles meeting at a seam touch, they do not cross) in the pose and did not at rest (Blender's BVH overlap), divided by the
 outward triangles that moved (a vertex more than 0.1 % of the height). A double shell or an accessory that already
-crosses the body at rest is not counted again, nor is a held prop's skin (`--prop`, passed when the markers
-found one: inside its slices and rigid on the hand, as a separate object, and the outward pieces it cuts off
-from the body when they ride the hand rigid too; reported as `prop`, `cut_off` the vertices those pieces
-added). Gated,
+crosses the body at rest is not counted again. Gated,
 `deform.self_intersection_p95` ≤ 0.08 over every sample. The denominator is the whole moved region, so a seam at one joint is diluted: a hard
 skin (each vertex following only its heaviest bone) can pass this gate on a normally proportioned
 body. The elbow volume loss and the `elbow_120` and `deep_squat` renders are what catch it; look at

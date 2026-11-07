@@ -96,7 +96,10 @@ CHECKLISTS: dict[str, list[dict[str, Any]]] = {
          "view?", "views": ["front", "back"]},
         {"id": "s1.pose", "question": "Is the pose anything but a symmetric A-pose (arms not about 45 degrees "
          "down, an elbow bent, one side different)?", "views": ["front", "back"]},
-        {"id": "s1.hands", "question": "Is anything held in a hand, or a prop drawn in any view?"},
+        {"id": "s1.hands", "question": "In any view, is anything held in a hand, worn on a forearm or touching "
+         "a hand (a shield, a weapon, a board, a bag)?"},
+        {"id": "s1.prop_sheet", "question": "Is a prop the design has (a shield, a weapon, a board) drawn in "
+         "these views, on the character or beside it, instead of on a sheet of its own?"},
         {"id": "s1.shadow", "question": "Is there a cast or contact shadow, a ground, a glow or a rim light?"},
         {"id": "s1.scale", "question": "Do the views differ in scale or baseline (one taller, one standing "
          "higher)?"},
@@ -106,6 +109,8 @@ CHECKLISTS: dict[str, list[dict[str, Any]]] = {
     "S3": [
         {"id": "s3.fused_limb", "question": "Is any limb fused to the body or to another limb?",
          "views": ["front", "back", "clay"]},
+        {"id": "s3.held_prop", "question": "Does the mesh carry anything held in a hand, worn on a forearm or "
+         "touching a hand (a shield, a weapon, a board, a bag)?", "views": ["front", "left", "right", "clay"]},
         {"id": "s3.hole", "question": "Is there a hole, a missing part or a torn edge in the silhouette?"},
         {"id": "s3.inner_shell", "question": "Does any view show a second inner shell, a sheet or slab standing "
          "off the surface, or z-fighting?", "views": ["clay", "occlusion"]},
@@ -189,7 +194,7 @@ CHECKLISTS: dict[str, list[dict[str, Any]]] = {
         {"id": "s6.intersection", "question": "Does a part pass through another (an arm through the torso, a "
          "leg through a leg) in a pose picture?"},
         {"id": "s6.wrong_bone", "question": "Does skin follow the wrong bone (a sleeve with the torso, hair with "
-         "a hand, a prop left behind)?"},
+         "a hand)?"},
         {"id": "s6.hand", "question": "Does a hand fold into itself, or do fingers cross or splay, in the fist "
          "or mitten pose?", "views": ["fist", "mitten"]},
         {"id": "s6.spike", "question": "Does any vertex shoot out as a spike or a stretched sheet?"},
@@ -586,6 +591,9 @@ def selftest() -> int:
     checks.append(("ids unique, prefixed", len(all_ids) == len(set(all_ids)) and all(
         i["id"].startswith(s.lower() + ".") for s, c in CHECKLISTS.items() for i in c)))
     checks.append(("questions ask", all(i["question"].endswith("?") for c in CHECKLISTS.values() for i in c)))
+    held = {s: {i["id"] for i in CHECKLISTS[s]} for s in ("S1", "S3")}
+    checks.append(("held props stop at S1 and S3", {"s1.hands", "s1.prop_sheet"} <= held["S1"]
+                   and "s3.held_prop" in held["S3"]))
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         code = cmd_list("S3", True)
@@ -653,7 +661,8 @@ def selftest() -> int:
         clear = {i["id"]: {"answer": "clear", "view": None, "note": ""} for i in CHECKLISTS["S3"]}
         (t / "clear.json").write_text(json.dumps(clear))
         code, res = cmd_answer(review, "a", None, None, None, None, str(t / "clear.json"))
-        checks.append(("answer --from", code == 0 and res["unanswered"]["a"] == [] and len(res["unanswered"]["b"]) == 11))
+        checks.append(("answer --from", code == 0 and res["unanswered"]["a"] == []
+                       and len(res["unanswered"]["b"]) == len(CHECKLISTS["S3"])))
         partial = dict(clear)
         partial.pop("s3.uv_atlas")
         (t / "partial.json").write_text(json.dumps(partial))

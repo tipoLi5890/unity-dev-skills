@@ -2,6 +2,68 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.49.0
+
+A held prop is its own asset. A character generated holding a shield or a weapon is now stopped at
+S1, S3 or the markers instead of rigged through special cases, and the prop is attached after the
+rig. No gate limit changed.
+
+- **The fused-prop rescue is removed** from `character-autorig`.
+  - Gone from `arp_markers.py`: the held-prop arm search and its mirrored arm.
+  - Gone from `autorig.py`: `prop_pieces` and the prop branch of `hand_reach`.
+  - Gone from `deform_gate.py`: `--prop`, `prop_skin` and `cut_off`.
+  - These rules existed for one generated character whose shield was fused into its body. They
+    patched the rig and the deform gate, and they could not fix the paint (`0.48.0`, still open).
+- **`arp_markers.py` refuses a held prop.** A part standing beside one arm from above the armpit
+  refuses the markers stage with reason `held_prop`, naming the side. It says to separate the prop
+  and attach it after the rig, or to regenerate the character empty-handed. `autorig.py all` stops
+  there with exit 1 and the reason in its step.
+  - The same part beside both arms (a cape's panels, a prop in each hand) gets the generic
+    refusal.
+  - The refusal catches that one shape only. The pre-review is the main stop.
+- **The pre-review asks about held props** (`codex-visual`).
+  - S1 now asks whether anything is held, worn on a forearm or touching a hand (`s1.hands`), and
+    whether a prop is drawn in the character's views instead of on a sheet of its own
+    (`s1.prop_sheet`).
+  - S3 asks the same of the mesh (`s3.held_prop`).
+  - `image-to-3d-input.md` and the pipeline's S6 row say why: a fused prop binds to the arm and
+    breaks the rig, the deform and the paint.
+- **A shield mounts on the forearm.** `bcr_attach.py` (`blender-character-rig`) takes
+  `"mount": "forearm"` for a flat prop with no handle.
+  - The normal is the prop's thinnest axis and the front is the side it bulges toward. The back
+    sits outside the forearm's skin under the whole footprint, plus `clearance`.
+  - Seven gates, including `skin_clearance_min` and `skin_overlap_pairs` measured on the
+    character mesh at rest.
+  - A refused call leaves the prop as it was. The hand grip is unchanged.
+  - New Blender test: `tests/test_bcr_attach.py`, 29 cases.
+- **The skirt bind keeps the bind's own body mix.** `skirt_bind` used to move all of a skirt's
+  weight to Hips and the thighs. It now moves only the limbs' weight: the legs, and the arms that a
+  bind leaks onto a skirt hanging beside them. The rest of the bind's mix stays.
+  - Limb bones are found from the contract plus every other deform bone whose middle lies nearest
+    a limb, so a rig's twist bones count.
+  - A cape the bind hung from the shoulders stays on them. Before, its top was pinned to Hips
+    within 3 cm, so the cape tore where the chest turns in `torso_twist`. The guard rebuilt
+    without its shield read `skirt_tear` 0.0184 (limit 0.002). It now reads 0–0.0003.
+  - The old guard passed at 0.00198, on the limit. The shield had hidden part of the cape.
+- **Regression.**
+  - The bench's armoured guard was regenerated empty-handed, with its shield as its own sheet and
+    mesh. S1 to S4 ran on the local GPU host, and the S1 pre-review is clear.
+  - **Rig exam:** 9 of 9 bodies right, 31 planted faults caught, 4 controls passing.
+  - **Old guard:** refused `held_prop` at the markers.
+  - **New guard:** passes every stage including the secondary chains, `stable` margin 0.129. The
+    shield mounts on its left forearm with every gate green: 13 mm off the skin, no overlap.
+  - **Compare against 0.46.0** on the exam and the three other characters flags one item: the
+    runner's worst self-intersection margin over three runs, 0.42 → 0.35. Its median p95 is
+    unchanged at 0.0443. Its three AI marker reads all differ. The runner does not take the skirt
+    route, and its worst reading stays inside the run-to-run spread seen since 0.43 (0.0575).
+  - The gatekeeper (skirt route) reads `skirt_tear` 0, as in 0.46.0. Its `stable` margin, set by
+    its repaired elbow, goes 0.078 → 0.086.
+- **Still open.**
+  - The shield's generated back came out with blue-grey planks instead of the drawing's brown wood.
+    It needs a repaint (S3b).
+  - The new guard passes `mesh_check` on the skirt route only: its knee-length cape bridges the
+    legs from behind (`legs_separated` 0.615 on the human route).
+
 ## 0.48.0
 
 `paint_loop.py` (mesh-texture-paint) picks picture 2 by what the last try failed, paints a level

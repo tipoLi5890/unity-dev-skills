@@ -8,14 +8,14 @@ description: >-
 # game-character-pipeline — one character, image to Unity, in order
 
 A rigged character crosses ten skills. Each owns its stages and their method; this skill owns
-only the order, the gate between two stages, and what each stage leaves on disk for the next.
+only the order, the gate between stages and what each stage leaves on disk for the next.
 It ships no scripts and copies no method: every row points at the file that does the work.
 
 ## Start here — the request, and where it is answered
 
 | The request | Go to |
 |---|---|
-| Starting a character from an image, a turnaround sheet or a generated model; unsure what comes next | [G0](#g0--the-start-gate-once-per-character), then [the stages](#the-stages) in order |
+| Starting a character from an image, a turnaround sheet or a generated model; what comes next | [G0](#g0--the-start-gate-once-per-character), then [the stages](#the-stages) in order |
 | The quality target (camera distance, the shots, the parts that must hold up), the parts tier | G0 steps 1 and 4; `reference/start-gate.md` |
 | Which route: rig locally onto the humanoid contract, or fit the mesh to one clip pack's skeleton | G0 step 2; `reference/routes.md` |
 | Preview, ship or upgrade track (a cloud mesh after the demo, chosen by a person) | G0 step 3 |
@@ -27,8 +27,8 @@ It ships no scripts and copies no method: every row points at the file that does
 > **The preview-track rig is not the shipping rig.** The preview track rigs the dense generated
 > mesh as it is and never ships. The ship track picks the budget, builds the game mesh at it, and
 > **rigs that mesh once**. Every decimation, retopology and rebake of a mesh that will be skinned
-> happens before the rig: done after, it breaks the weights and the UVs and invalidates everything
-> taken on the old vertices (weight snapshots, the wrist correction, the grip point).
+> happens before the rig: done after, it breaks the weights and UVs and everything taken on the
+> old vertices (weight snapshots, the wrist correction, the grip point).
 >
 > **Rigging is local; the cloud only remakes a mesh**, on the upgrade track a person picks after
 > the demo, never the quality target.
@@ -37,8 +37,8 @@ It ships no scripts and copies no method: every row points at the file that does
 
 ## G0 — the start gate, once per character
 
-A person decides four answers before the first image is generated, and they are written down
-(the brief or the ledger's `note`). In full: `reference/start-gate.md`.
+A person decides four answers before the first image is generated, written down in the
+brief or the ledger's `note`. In full: `reference/start-gate.md`.
 
 1. **The quality target, first.** Camera distance, the shots that matter, the body parts that
    must hold up under them; every stop decision is taken against it (`blender-retarget` →
@@ -55,7 +55,7 @@ A person decides four answers before the first image is generated, and they are 
 
    | Track | Stages | For |
    |---|---|---|
-   | **Preview** | S1–S4, S6–S13 (no S0, S5) | a prototype, pitch or reel; the dense mesh rigged as it is |
+   | **Preview** | S1–S4, S6–S13 | a prototype, pitch or reel; the dense mesh rigged as it is |
    | **Ship** | S0–S13 | the shipping character: budget, game mesh, one rig |
    | **Upgrade** | S3 in the cloud (mesh only) → S4 → S5 (ship) → S6 → S9 → S11–S13 | a demo-approved character a **person** picks for a paid mesh; rig local, same contract and gates |
 
@@ -78,10 +78,10 @@ pre-review (`codex-visual` → `reference/pre-review.md`) and said yes; S13 reco
 | S3c | Assemble — `three` and up | `blender-character-rig` | the anchor (S3/S3b) and the part GLBs | `assemble_parts.py` gates green, `compare.png` accepted by a **person**; `<c>_rig.glb`, the mesh S4 and S6 take, and `<c>_hair.glb` | `blender-character-rig` → `reference/part-assembly.md` |
 | S4 | Normalise | `blender-character-rig` | a green GLB | one object at its height, Z up, facing −Y, soles on Z 0, scale applied; the weld check read; an Auto-Rig Pro rig imports with `weld_distance: None`. Leaves `ArtDirection/sources/Runner.blend` | `blender-character-rig` → `reference/import-and-survey.md` |
 | S5 | Game mesh — ship track | `blender-character-rig` | a `calibrated` budget row; the S4 file | regenerated at the row's preset (through S2–S4's gates), or retopology, UVs and a showcase rebake; parts: `assemble_parts.py ship`; budget, silhouette, UV, bake and joint gates; a **person** approves the side-by-side. Leaves `Runner_game.blend` and its maps | `blender-character-rig` → `reference/game-mesh.md` |
-| S6 | Rig, locally | `character-autorig`; fallback `blender-character-rig` | the mesh to rig (ship: `Runner_game.blend`); **`mesh_check.py` exit 0** — fused limbs or a same-facing double layer go back to S1 or S3, never into a rig; a back-to-back inner shell is reported; kept, or cut (`shell_strip.py`) | the markers accepted on Auto-Rig Pro AI agreement or by a **person** reading the two pictures; `brt_arp` `pipeline` gates; `contract_map.py --require contract` exit 0; `deform_gate.py` exit 0 and its renders looked at by a **person**; weight sum 1. Parts: `all --hair`, `fine` `--eyes` (`reference/start-gate.md` §5) | `character-autorig` → `reference/arp-pipeline.md`, `reference/gates.md`, `reference/hand-built-route.md` |
+| S6 | Rig, locally | `character-autorig`; fallback `blender-character-rig` | the mesh to rig (ship: `Runner_game.blend`); **`mesh_check.py` exit 0** — fused limbs, a same-facing double layer or a held prop (pre-review at S1/S3; `arp_markers` `held_prop` a backstop) go back to S1 or S3, never into a rig; a back-to-back inner shell is reported; kept, or cut (`shell_strip.py`) | the markers accepted on Auto-Rig Pro AI agreement or by a **person** reading the two pictures; `brt_arp` `pipeline` gates; `contract_map.py --require contract` exit 0; `deform_gate.py` exit 0 and its renders looked at by a **person**; weight sum 1. Parts: `all --hair`, `fine` `--eyes` (`reference/start-gate.md` §5) | `character-autorig` → `reference/arp-pipeline.md`, `reference/gates.md`, `reference/hand-built-route.md` |
 | S7 | Clip sources | `humanoid-motion`; `blender-retarget` | a rig | per move a source: two-camera video solved onto the rig, or a pack (a manifest before any download, names unique, fps the scene's); each source recorded with its `licence`; loop speeds and contact points measured before gameplay numbers freeze (`unity-gameplay` → `reference/genre-timing-sports.md` §0) | `humanoid-motion` → `reference/pipeline.md`, `reference/two-camera.md`; `blender-retarget` → `reference/clip-sources.md` |
-| S8 | Retarget and clean — in Blender | `humanoid-motion`; `blender-retarget` | the sources; one clip's skeleton probed | packs: rotations by conjugation and translation scaled by the hip-height ratio (`retarget.translation_kept`); a two-camera solve is on the rig already. Then contact bake, loop cut, `motion_metrics.py` exit 0; one clip first (a dry run, then the real run), its rest and wrist stills seen by a **person**, then the batch, whose report counts bake and metadata separately | `humanoid-motion` → `reference/pipeline.md`; `blender-retarget` → `reference/rest-pose-and-conjugation.md` |
-| S9 | Library, prop, weights | `blender-retarget`, `blender-character-rig` | every clip baked | actions found by custom properties; the grip read from the prop's shape; drift in position **and** rotation; a weight move capped at about 25% of its feature; the worst frame looked at | `blender-retarget` → `reference/action-library.md`, `reference/weight-repair.md`; `blender-character-rig` → `reference/prop-on-bone.md` |
+| S8 | Retarget and clean — in Blender | `humanoid-motion`; `blender-retarget` | the sources; one clip's skeleton probed | packs: rotations by conjugation and translation scaled by the hip-height ratio (`retarget.translation_kept`); a two-camera solve is on the rig already. Then contact bake, loop cut, `motion_metrics.py` exit 0; one clip first (dry run, then real), its rest and wrist stills seen by a **person**, then the batch, whose report counts bake and metadata separately | `humanoid-motion` → `reference/pipeline.md`; `blender-retarget` → `reference/rest-pose-and-conjugation.md` |
+| S9 | Library, prop, weights | `blender-retarget`, `blender-character-rig` | every clip baked | actions found by custom properties; the grip or a shield's forearm mount read from the prop's shape; drift in position **and** rotation; a weight move capped near 25% of its feature; the worst frame looked at | `blender-retarget` → `reference/action-library.md`, `reference/weight-repair.md`; `blender-character-rig` → `reference/prop-on-bone.md` |
 | S10 | Stop at the target | `blender-retarget` | a defect someone saw | the layer named (geometry, skinning, animation, material), fixed there only, same camera and frame; stopped at the G0 target. Geometry wrong at the source goes back to S3, or S5 | `blender-retarget` → `reference/defect-triage-and-stop.md` |
 | S11 | Export and round trip | `blender-retarget`, `blender-character-rig` | the `.blend` passes `brt_audit` | the deform skeleton only, scale applied; the character, prop, idle and one action exported and read back (names, parents, scale 1, ≤ 4 influences, ranges) before the rest | `blender-retarget` → `reference/unity-handoff.md`; `blender-character-rig` → `reference/fbx-export.md` |
 | S12 | Unity import | `unity-rigged-character` | the round trip green | in a throwaway project: Generic (Humanoid only for a mask or IK); `avatar.isValid`, File Scale 1, bones matching Blender, PBR maps rebuilt, spring chains set up; a screenshot under the game camera and a frame window; a **person** approves | `unity-rigged-character` → `reference/unity-import.md`, `reference/humanoid-contract.md`, `reference/textures.md`; `unity-profiling` → `reference/frame-windows.md` |
@@ -91,7 +91,7 @@ pre-review (`codex-visual` → `reference/pre-review.md`) and said yes; S13 reco
 
 | Not here | Go to |
 |---|---|
-| How to perform any stage | the skill and file in that stage's row (S0–S13 name the owner of each) |
+| How to perform any stage | the skill and file in that stage's row |
 | Props and anything with no skeleton | `unity-3d-models` |
 | A 2D character: sprite sheets, frames, Unity sprite animation | `codex-visual` · `sprite-from-video` · `unity-2d-sprites` |
 | Moving the character in the game: controller, Animator bridge | `unity-3d-controller` |

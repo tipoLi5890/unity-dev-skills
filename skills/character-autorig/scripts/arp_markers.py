@@ -126,6 +126,10 @@ add-on counts its root), contract_bones (a blender-character-rig bcr_armature sp
 names, .L only, mirror true, radius per bone; with --mitten the finger bones are there but do
 not deform), previews {front, side}, gates [{name, value, limit, pass}] and pass, as in a gate/1
 report (schemas/gate-1.json).
+A refused run prints {tool, mesh?, error, reason?}: reason `held_prop` when the arm search's first run on one side is
+vertical and, searched again without it, a slanted arm is there (a prop held beside that arm: separate it and attach
+it after the rig, or regenerate the character empty-handed). The same on both sides (a cape's panels, a prop in each
+hand) is refused as both arms vertical, with no reason.
 Bend hints: Auto-Rig Pro reads the knee and elbow direction from the reference chain, so a leg
 that is straight in the mesh gets its knee 1 % of the leg length forward (-Y) and an arm its elbow
 2 % back (+Y) in arp_refs and contract_bones; landmarks stay as measured.
@@ -199,7 +203,6 @@ SHOULDER_OUT = 0.25        # x the arm's radius: the shoulder outside the torso'
                            # there reaches past the joint, so not half a radius out)
 PHALANX_MIN = 0.01         # x wrist -> hand_tip: the shortest finger phalanx
 SIDED = ("shoulder", "elbow", "wrist", "hand_tip", "hip", "knee", "ankle", "ball", "toe_tip", "heel")
-ARM_MARKERS = ("shoulder", "elbow", "wrist", "hand_tip")
 # --body chibi: a body 2-4.5 heads tall (the head 0.22-0.50 of H), chosen at G0, never to rescue a failed window
 CHIBI_WINDOWS = {"ankle": (0.02, 0.16), "knee": (0.10, 0.30), "hip": (0.22, 0.42),
                  "shoulder": (0.45, 0.72), "neck": (0.50, 0.78)}
@@ -208,11 +211,12 @@ CHIBI_WRIST_BAND = (0.52, 0.80)   # of shoulder -> hand_tip: a narrowing here is
 CHIBI_NECK_REACH = 0.15           # x H above the shoulder: the neck's narrowest cut lies under the head
 CHIBI_FOOT_DEPTH = 1.3            # the ankle: where the leg's depth reaches this x the shin's (a big shoe)
 CHIBI_ARM_FROM = 0.2              # x H: short arms are followed down to here
-PROP_RETRIES = 2       # arm search: vertical tracks set aside (a held prop beside the arm) before refusing
 
 
 class Refused(Exception):
-    pass
+    def __init__(self, message: str, reason: str | None = None):
+        super().__init__(message)
+        self.reason = reason     # a reason code for the refusal (held_prop), or None
 
 
 def _unit(v):
@@ -751,7 +755,6 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         how[name] = "measured"
     # arm: centroids of the part outside the torso, from the armpit down (the longest run wins:
     # a cap or a shoulder pad above the armpit makes a short run of its own)
-    seen = {}
 
     def arm_track(skip):
         runs, track, armpit = [], [], None
@@ -779,7 +782,6 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
                 track, armpit = [], None
                 continue
             track.append((pick["cx"], pick["cy"], c["z"], pick["area"], id(pick)))
-            seen[id(pick)] = pick
         if track:
             runs.append((track, armpit))
         return max(runs, key=lambda r: len(r[0])) if runs else ([], None)
@@ -792,21 +794,17 @@ def measure_side(V, F, prof, s, crotch_h, ankle_h, arm_ratios, notes, skirt=None
         d = _unit(vt[0])
         return (-d if d[2] > 0 else d), centre
 
-    skip = set()
-    for _ in range(PROP_RETRIES + 1):
-        track, armpit = arm_track(skip)
-        if armpit is None or len(track) < 4:
-            break
+    track, armpit = arm_track(set())
+    if armpit is not None and len(track) >= 4:
         d, centre = axis_of(track)
-        if abs(d[0]) >= 0.2:
-            break
-        # a part hanging straight down beside the arm (a held shield, a board) ran its own vertical track from
-        # above the armpit: set its slices aside and follow the arm again
-        notes.append(f"{'L' if s > 0 else 'R'} arm: a vertical track of {len(track)} slices from "
-                     f"{track[0][2] - z0:.3f} m set aside (a held prop beside the arm?); the arm searched again")
-        out.setdefault("_prop", []).extend({"z": float(t[2]), "x": list(seen[t[4]]["x"]), "y": list(seen[t[4]]["y"])}
-                                           for t in track)
-        skip |= {t[4] for t in track}
+        if abs(d[0]) < 0.2:
+            # a vertical run: arms held against the body, or a part standing beside the arm from above the armpit
+            # (a held shield, a board, a cape's panel), told apart by searching once more without the run; measure()
+            # decides on both sides' flags (one side, a held prop; both, a part of the character or a prop in each hand)
+            arm, pit = arm_track({t[4] for t in track})
+            if pit is not None and len(arm) >= 4 and abs(axis_of(arm)[0][0]) >= 0.2:
+                out["_beside"] = True
+                return out, how
     if armpit is None or len(track) < 4:
         raise Refused("no arm part hangs clear of the torso (fused arms or a T-pose: run mesh_check)")
     if abs(d[0]) < 0.2:
@@ -1017,16 +1015,14 @@ def measure(V, F, opts) -> dict:
     ratios = opts.get("arm_ratios") or (CHIBI_ARM_RATIOS if chibi else (0.42, 0.75))
     for s in (1, -1):
         sides[s] = measure_side(V, F, prof, s, crotch_h, ankle_h, ratios, notes, skirt=skirt, chibi=chibi)
-    prop = [s for s in (1, -1) if sides[s][0].get("_prop")]
-    if len(prop) == 2:     # nothing to mirror from: arms down the sides (or a prop in each hand) are no arm to read
-        raise Refused("both arms read vertical first (arms held against the body, or a prop in each hand): "
+    beside = [s for s in (1, -1) if sides[s][0].get("_beside")]
+    if len(beside) == 2:    # the same beside both arms: a part of the character (a cape's panels), or a prop in each hand
+        raise Refused("both arms read vertical first (a part hanging beside each arm, or a prop in each hand): "
                       "run mesh_check; attach props after the rig")
-    if len(prop) == 1:    # a held prop on one side: that arm's slices run into it; the other arm, mirrored, is the arm
-        ps = prop[0]
-        for name in ARM_MARKERS:
-            sides[ps][0][name], sides[ps][1][name] = mirror(sides[-ps][0][name]), sides[-ps][1][name]
-        notes.append(f"{'L' if ps > 0 else 'R'} arm: shoulder, elbow, wrist and hand tip mirrored from the "
-                     f"{'R' if ps > 0 else 'L'} arm (a held prop on this side)")
+    if beside:
+        raise Refused(f"a prop held beside the {'L' if beside[0] > 0 else 'R'} arm: separate it and attach it after "
+                      "the rig (blender-character-rig reference/prop-on-bone.md), or regenerate the character "
+                      "empty-handed (game-character-pipeline S1)", reason="held_prop")
     lm, how, asym = {}, {}, {}
     for name in SIDED:
         pl, pr = sides[1][0][name], sides[-1][0][name]
@@ -1090,16 +1086,14 @@ def measure(V, F, opts) -> dict:
     for s, side in ((1, ".L"), (-1, ".R")):
         frames[side] = hand_frame(V, lm["wrist" + side], lm["hand_tip" + side], s)
     detected = None
-    free = ".R" if prop == [1] else ".L"      # fingers are read on a hand that holds nothing
     if opts["fingers"] == "auto":
-        detected, fingers = read_fingers(V, F, lm["wrist" + free], frames[free],
-                                         opts.get("finger_votes") or FINGER_VOTES)
+        detected, fingers = read_fingers(V, F, lm["wrist.L"], frames[".L"], opts.get("finger_votes") or FINGER_VOTES)
     hand = {}
     for s, side in ((1, ".L"), (-1, ".R")):
         shape = fixed_hand(lm["wrist" + side], frames[side])
         if detected:
             for f, pts in detected.items():
-                shape[f] = pts if side == free else [mirror(p) for p in pts]
+                shape[f] = pts if side == ".L" else [mirror(p) for p in pts]
         hand[side] = shape
         for f, pts in shape.items():
             for j, p in enumerate(pts):
@@ -1111,8 +1105,6 @@ def measure(V, F, opts) -> dict:
     if skirt is not None:
         out["crotch_h"] = skirt["crotch_h"]
         out["skirt"] = skirt
-    if len(prop) == 1:
-        out["prop"] = {"side": "L" if prop[0] > 0 else "R", "slices": sides[prop[0]][0]["_prop"]}
     return out
 
 
@@ -1600,9 +1592,6 @@ def build_report(V, F, opts) -> dict:
     }
     if "skirt" in m:
         report["skirt"] = skirt_block(m, lm)
-    if "prop" in m:     # the held prop's slices (world metres): autorig's hand_reach keeps them on the hand, rigid
-        report["prop"] = {"side": m["prop"]["side"], "step": round(0.01 * H, 5), "slices": [
-            {"z": round(p["z"], 5), "x": r(p["x"]), "y": r(p["y"])} for p in m["prop"]["slices"]]}
     if record is not None:
         report["smart_agreement"] = {"tolerance_h": opts.get("smart_tol", 0.03), "landmarks": record.pop("agreement")}
         report["smart"] = record
@@ -1709,7 +1698,7 @@ def run_blender(args) -> tuple[int, dict]:
     try:
         report = build_report(V, F, _opts(args))
     except Refused as exc:
-        return 1, {"tool": "arp_markers", "mesh": obj.name, "error": str(exc)}
+        return 1, refusal(exc, mesh=obj.name)
     report["mesh"] = obj.name
     if args.preview_dir:
         os.makedirs(args.preview_dir, exist_ok=True)
@@ -1725,6 +1714,12 @@ def run_blender(args) -> tuple[int, dict]:
     return (0 if report["pass"] is True else 2), report
 
 
+def refusal(exc: Exception, **extra) -> dict:
+    """The refused run's report: the message as `error`, and `reason` when the refusal carries a code (held_prop)."""
+    reason = getattr(exc, "reason", None)
+    return {"tool": "arp_markers", **extra, "error": str(exc), **({"reason": reason} if reason else {})}
+
+
 def run_host(args) -> tuple[int, dict]:
     if args.file is None:
         return 1, {"tool": "arp_markers", "error": "a mesh file is required outside Blender"}
@@ -1732,7 +1727,7 @@ def run_host(args) -> tuple[int, dict]:
         V, F = M.load_mesh(args.file, args.up)
         report = build_report(V, F, _opts(args))
     except (OSError, ValueError, KeyError, M.Refused, Refused) as exc:
-        return 1, {"tool": "arp_markers", "error": str(exc)}
+        return 1, refusal(exc)
     report["mesh"] = str(args.file)
     return (0 if report["pass"] is True else 2), report
 
@@ -2079,33 +2074,52 @@ def selftest_chibi(ok, opts) -> None:
        min(fl[-10:]) == 4 and max(ml) == 1)
 
 
-def selftest_prop(ok, opts) -> None:
-    """A shield held beside the left hand, standing from above the armpit to under the hand: its slices make a
-    vertical track of their own. Without the retry the left arm is that track (refused, vertical axis); with it the
-    arm is found, the left arm is the right one mirrored, the slices are reported as the prop, and the midline
-    and the fingers come from the body, not the shield."""
-    global PROP_RETRIES
-    v, f = M.assemble([M.body(), M.tube((0.67, 0, 1.42), (0.67, 0, 0.64), 0.15, rx=0.015, ry=0.15)])
-    plain_v, plain_f = M.body()
-    base = build_report(plain_v, plain_f, opts)
-    saved = PROP_RETRIES
+def selftest_held_prop(ok, opts) -> None:
+    """A slab standing beside one arm from above the armpit to under the hand (a held shield) makes a vertical run of
+    cuts the arm search follows first: refused as held_prop on that side, on the CLI too (exit 1, the reason in the
+    report). The same slab beside both arms (a cape's panels, a prop in each hand) is refused as both arms vertical,
+    not as a held prop; arms held against the body make no slanted arm under the run: refused, not as a held prop
+    either. The midline comes from the feet when a wide part on one side pulls the extent under 0.4 H off them."""
+    slab = lambda x: M.tube((x, 0, 1.42), (x, 0, 0.64), 0.15, rx=0.015, ry=0.15)
+    for x, side in ((0.67, "L"), (-0.67, "R")):
+        v, f = M.assemble([M.body(), slab(x)])
+        try:
+            build_report(v, f, opts)
+            got = None
+        except Refused as e:
+            got = e
+        ok(f"a slab beside the {side} arm: refused as held_prop, the side named",
+           got is not None and got.reason == "held_prop" and f"beside the {side} arm" in str(got)
+           and "prop-on-bone.md" in str(got))
+    v, f = M.assemble([M.body(), slab(0.67)])
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "held.obj"
+        M.write_obj(path, v, f)
+        code, rep = run_host(parser().parse_args([str(path)]))
+    ok("held_prop through the CLI: exit 1, reason held_prop and the message in the report",
+       code == 1 and rep.get("reason") == "held_prop" and "held beside the L arm" in rep.get("error", ""))
+    vb, fb = M.assemble([M.body(), slab(0.67), slab(-0.67)])
     try:
-        PROP_RETRIES = 0
-        build_report(v, f, opts)
-        before = "passed"
+        build_report(vb, fb, opts)
+        both = None
     except Refused as e:
-        before = str(e)
-    finally:
-        PROP_RETRIES = saved
-    rep = build_report(v, f, opts)
-    lm = rep["landmarks"]
-    ok("a held shield beside the left arm: without the retry the arm is the shield's vertical track (refused); "
-       "with it every gate passes, the prop is the left side's, the arm markers match the body without the shield",
-       "vertical" in before and rep["pass"] and rep.get("prop", {}).get("side") == "L"
-       and len(rep["prop"]["slices"]) >= 10 and abs(rep["midline_x"]) < 0.01
-       and all(np.linalg.norm(np.subtract(lm[k], base["landmarks"][k])) < 0.01 * rep["height"]
-               for k in ("shoulder.L", "wrist.L", "hand_tip.L", "shoulder.R"))
-       and any("mirrored from the R arm" in n for n in rep["notes"]))
+        both = e
+    ok("a slab beside both arms: refused as both arms vertical, without reason held_prop or a side named",
+       both is not None and both.reason is None and "both arms read vertical" in str(both)
+       and "held beside" not in str(both))
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "both.obj"
+        M.write_obj(path, vb, fb)
+        code, rep = run_host(parser().parse_args([str(path)]))
+    ok("both sides through the CLI: exit 1, no reason in the report",
+       code == 1 and "reason" not in rep and "both arms read vertical" in rep.get("error", ""))
+    va, fa = M.body(fused_arms=True)
+    try:
+        build_report(va, fa, opts)
+        why = None
+    except Refused as e:
+        why = e
+    ok("arms held against the body: refused, not as a held prop", why is not None and why.reason is None)
     prof = M.profile(v, f)
     saved = M.MIDLINE_SHIFT
     try:
@@ -2113,17 +2127,8 @@ def selftest_prop(ok, opts) -> None:
         off = M.profile(v, f)["midline_x"]
     finally:
         M.MIDLINE_SHIFT = saved
-    ok("the midline from the feet when a held prop pulls the extent under 0.4 H off them (with the rule off it "
-       "is off by more than 0.05 H)", abs(prof["midline_x"]) < 0.01 and abs(off) > 0.05 * prof["height"])
-    v2, f2 = M.assemble([M.body(), M.tube((0.67, 0, 1.42), (0.67, 0, 0.64), 0.15, rx=0.015, ry=0.15),
-                         M.tube((-0.67, 0, 1.42), (-0.67, 0, 0.64), 0.15, rx=0.015, ry=0.15)])
-    try:
-        build_report(v2, f2, opts)
-        both = "passed"
-    except Refused as e:
-        both = str(e)
-    ok("a vertical track beside both arms: nothing to mirror from, refused as arms held against the body",
-       "both arms read vertical" in both)
+    ok("the midline from the feet when a wide part on one side pulls the extent under 0.4 H off them (with the rule "
+       "off it is off by more than 0.05 H)", abs(prof["midline_x"]) < 0.01 and abs(off) > 0.05 * prof["height"])
 
 
 def selftest_vote(ok, frame) -> None:
@@ -2298,7 +2303,7 @@ def selftest_host() -> tuple[int, list, int]:
     selftest_hip(ok, opts)
     selftest_skirt(ok, opts)
     selftest_chibi(ok, opts)
-    selftest_prop(ok, opts)
+    selftest_held_prop(ok, opts)
     # files through the CLI
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "body.obj"

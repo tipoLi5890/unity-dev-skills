@@ -32,7 +32,8 @@ r = brt_arp.run({"op": "pipeline", "mesh": "Runner", "markers": "rig/runner.mark
   bind the mesh keeps its vertex groups and Armature modifier.
 - **One body mesh.** Join the body's parts, and separate a held prop before the call: the voxel
   bind weights every island to the nearest bones, so a prop left in the mesh bends with the hand
-  instead of riding a bone (`blender-character-rig` → `reference/prop-on-bone.md`).
+  instead of riding a bone (`blender-character-rig` → `reference/prop-on-bone.md`). The markers
+  refuse a prop held beside an arm (`held_prop`).
 
 ## Steps
 

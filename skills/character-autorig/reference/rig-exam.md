@@ -252,18 +252,19 @@ gates; bench the next baseline on 0.43 or later.
 **Keep bench files outside the repository**, beside the exam folder: they hold paths to real
 characters and change with every run. The repository holds the tools, not the scores.
 
-**A worked example.** The courier-run cast: the runner, the gatekeeper (a long coat), the mascot (a
-chibi with mittens) and the guard (armour plates). Before a change to the markers:
+**A real-character bench.** The exam's cases are built; the characters the project ships are what a
+change must not break. Bench a few that between them cover the bodies the markers read (the
+default, `--body skirt`, `--body chibi`) and the shapes that test them (a long coat, mittens, armour
+plates), each run with `--repeat` so a drop can be read against its own run-to-run spread, from the
+same meshes before and after the change. Before a change to the markers:
 
 ```bash
 python3 scripts/rig_exam.py build exam/ && python3 scripts/rig_exam.py run exam/
 python3 scripts/rig_exam.py faults exam/ --base standard && python3 scripts/rig_exam.py score exam/
-python3 scripts/autorig.py all couriers/runner Runner.glb --repeat 3
-python3 scripts/autorig.py all couriers/gatekeeper Gatekeeper.glb --body skirt --repeat 3
-python3 scripts/autorig.py all couriers/mascot Mascot.glb --body chibi --repeat 3
-python3 scripts/autorig.py all couriers/guard Guard.glb --body skirt --repeat 3
-python3 scripts/rig_exam.py bench exam/ --real couriers/runner couriers/gatekeeper couriers/mascot \
-  couriers/guard --out bench/before.bench.json --label before
+# once per character, with the --body its markers take
+python3 scripts/autorig.py all couriers/<name> <Name>.glb [--body skirt|chibi] --repeat 3
+python3 scripts/rig_exam.py bench exam/ --real couriers/<name> [couriers/<name> ...] \
+  --out bench/before.bench.json --label before
 ```
 
 After the change, the same commands into `bench/after.bench.json`, then:
@@ -272,13 +273,16 @@ After the change, the same commands into `bench/after.bench.json`, then:
 python3 scripts/rig_exam.py compare bench/before.bench.json bench/after.bench.json
 ```
 
-A guard that stopped at deform in both files is no regression, as long as its deform margins held.
-If the mascot's elbow self-intersection went from a margin of 0.31 to 0.25, `compare` lists a
-`margin_drop` for `Mascot`, `deform`, `deform.self_intersection_p95` and exits 2, though the gate
-still passes: look at that pose's render before the change ships. If the gatekeeper's elbow now
-needs the ladder (an elbow rung at amount 1.0) and its self-intersection margin went from 0.15 to
-0.10 while the volume margin rose from 0.02 to 0.75, `compare` lists `repair_now` and puts the
-self-intersection drop under `repair_tradeoffs`; the runner's finger lengths moving from a margin of
-8 to 7.5 go under `informational`. If `spiky_hair`'s fingers read `detected` again, the higher
-`fingers_right` shows under `improvements`.
+Read it list by list:
+
+- **`regressions`** (exit 2). A margin that still passes but dropped by more than `--margin-drop`
+  toward its limit is a `margin_drop` naming the character, the step and the gate: look at that
+  pose's render before the change ships, though the gate passes.
+- **`repair`, `repair_tradeoffs`.** A character whose elbow or knee now takes the repair ladder is
+  listed `repair_now`; a self-intersection margin its rung lowered while the volume margin rose by
+  more than `--margin-drop` goes under `repair_tradeoffs`, not `regressions`, on the terms above
+  (the repair is the bind used, the new margin at `--tradeoff-floor` or more). Read the rung's renders.
+- **`informational`.** A `>=` gate far past its limit (a finger's length) moving by run-to-run noise.
+- **`improvements`.** The same changes the other way: an exam case whose fingers read `detected`
+  again shows a higher `fingers_right`.
 

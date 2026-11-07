@@ -5,7 +5,7 @@
 
 `bcr_attach` finds where a handled prop is held from the prop's own vertices, moves the mesh
 origin there, scales the prop, places it at a hand bone and parents it to that bone. One call,
-two gates.
+two gates. A flat prop with no handle (a shield) takes the forearm mount instead (below).
 
 ## Before the call
 
@@ -107,13 +107,67 @@ from mathutils import Matrix
 prop = bpy.data.objects["Mallet"]
 prop.parent = None
 del prop["bcr_attach"]
-prop.matrix_world = Matrix.Identity(4)     # the origin is already the grip
+prop.matrix_world = Matrix.Identity(4)     # the origin is already the grip (the back centre on the forearm)
 ```
 
   The mesh is upright again with its origin at the old grip; the fractions measure the same
   handle, and `length` rescales from the current size.
 - The call edits the prop's mesh data (origin, scale). A mesh shared with another object moves
   there too: make it single-user first.
+
+## A flat prop on the forearm
+
+A shield has no handle to measure, so the grip above does not apply: `"mount": "forearm"` straps a
+flat prop to the outer side of a forearm bone instead. The prop is generated on its own, like any
+prop, and prepped the same way (identity transform, upright with its top along `up`).
+
+```python
+result = bcr_attach.run({
+    "prop": "Buckler", "armature": "CourierRig", "bone": "Forearm.L",
+    "mount": "forearm", "mesh": "Courier",
+    "at": 0.5, "clearance": 0.005, "up": "Z", "roll": 0,
+})
+```
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `mesh` | required | the character mesh, read at the rest pose for the skin and the gates |
+| `at` | 0.5 | where along the bone the back centre goes, head 0 to tail 1 |
+| `clearance` | 0.005 | metres between the back and the outermost skin under the prop |
+| `up` | `"Z"` | the prop's own axis laid along the bone, toward the tail (the wrist) |
+| `roll` | 0 | degrees about the prop's normal, after `up` |
+| `front` | `"auto"` | the prop's own axis that is its front (`"-Y"`), when the bulge cannot tell |
+| `size` | none | metres across the largest extent after scaling; omit to keep the size |
+| `outward` | away from x = 0 | an armature-space direction; needed for a bone on the midline or one running along X (a T-pose) |
+| `max_flat_ratio`, `max_normal_deg` | 0.5, 1.0 | limits for the gates below |
+
+The prop is read from points spread evenly over its surface, so a dense boss weighs no more than
+a sparse back. Its **normal** is the thinnest principal axis; its **front** is the side its centre
+bulges toward against the rim (a dome, a boss), which also finds the front of a prop given turned
+round; its **back centre** is the middle of the backmost slice, so a hollow back rests on its rim.
+The back centre goes on the bone point's outward ray (across the bone, away from the midline),
+past the outermost skin under the prop's footprint by `clearance`: a prop longer than the forearm
+clears the elbow and upper arm under it too. The front faces outward, `up` runs along the bone,
+and the prop is parented to the forearm bone as under Parenting above.
+
+| Gate | Limit | A failure means |
+|---|---|---|
+| `flat_ratio` (thinnest ÷ middle spread) | ≤ 0.5 | not a flat prop: a handled prop takes the hand grip |
+| `world_drift_after_parenting` | < 1e-4 | as for the hand grip |
+| `normal_off_outward_deg` | ≤ 1.0 | measured again from the placed mesh; a change of `front` or `up` broke the frame |
+| `front_away_from_midline` | > 0 | an `outward` that points at the body (not reported for a bone on the midline) |
+| `back_centre_offset` | < 1e-4 m | the back centre, measured again, is not on the requested point |
+| `skin_clearance_min` | ≥ 0 | a prop point inside the skin (signed distance to the character mesh) |
+| `skin_overlap_pairs` | 0 | prop and skin triangles that cross |
+
+Returns `skin_radius` (the skin's outward reach from the bone under the prop), `front_side` (the
+front in the prop's own axes), `outward`, `requested_point`, `size`, `thickness`, `bulge` and
+`measured`. A warning says when the bulge is too small to tell the front: pass `front`. Calling
+again and putting the prop back work as for the hand grip; a prop attached with one mount refuses
+the other until it is put back. Every refusal (an `up` along the normal, an `outward` along the
+bone, no skin outward of it) comes before the prop is changed, so a refused call leaves it as it
+was. Check with a still from the front and the side, and again at the extreme frames of the guard
+and swing clips: the gates read the rest pose only.
 
 ## Keeping the grip stable across clips
 

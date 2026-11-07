@@ -27,10 +27,8 @@ rig/markers/ unless --no-render; --smart rig/NAME.smart.json whenever smart wrot
 markers read its gates one by one and take only what passed; never with --no-smart). A failed smart adds exit 2
 to `all`, except smart.fingers alone on a hand the markers read as fingers.mode fixed (both say mitten).
 arp: blender-retarget brt_arp op pipeline (--resolution N: the bind's resolution), then hand_reach (each hand's
-weight kept within HAND_REACH x wrist -> hand_tip of its bones over the skin; a held prop the markers found is
-that hand's alone, rigid, its fingers folded onto it, with the pieces of its face it cuts off from the body's
-outward skin and the inner shell behind them (prop_pieces); exported again when it changed anything), the rig saved as
-rig/NAME_arp.blend, the Unity FBX in export/. deform then gets --prop rig/NAME.markers.json.
+weight kept within HAND_REACH x wrist -> hand_tip of its bones over the skin; exported again when it changed
+anything), the rig saved as rig/NAME_arp.blend, the Unity FBX in export/.
 contract: unity-rigged-character contract_map.py map --map arp --require contract, --min-fingers 30 unless the
 markers say fingers.mode fixed (a mitten; `ai` counts as found).
 
@@ -38,8 +36,9 @@ markers say fingers.mode fixed (a mitten; `ai` counts as found).
 legs under the hem and inside the skirt (reference/markers.md), and the markers carry `skirt`. Whenever they do,
 the contract stage ends with skirt_bind (after parts_bind and eyes_bind; this file inside Blender, no
 --factory-startup): in rig/NAME_arp.blend the skirt's own skin (arp_markers.skirt_region: the hem band up to the
-hip + 0.06 H, off the legs) is reweighted to Hips and both thighs, the thighs' share rising smoothly from 0 at the
-band's top to SKIRT_LEG_MAX at the hem and split left/right by a smoothstep across twice the hip width (no
+hip + 0.06 H, off the legs) is reweighted to both thighs and the bind's own share off the limbs (a cape the bind
+hung from the shoulders keeps them; Hips where the bind gave only limbs), the thighs' share rising smoothly from 0 at
+the band's top to SKIRT_LEG_MAX at the hem and split left/right by a smoothstep across twice the hip width (no
 seam between the thighs), feathered into the bind over the band's top SKIRT_FEATHER x H; then the FBX is exported
 again. A bind that fails a gate stops the run. deform and secondary get --skirt rig/NAME.markers.json: the
 deform gate reads the skirt's tear, the chains find its hem. deform: deform_gate.py on the FBX with the
@@ -163,9 +162,6 @@ SKIRT_LEG_MAX = 0.85      # skirt_bind: the thighs' share at the hem (the rest s
 SKIRT_FEATHER = 0.03      # skirt_bind: x H under the band's top over which the new weights blend into the bind
 HAND_REACH = 1.0          # arp: x wrist -> hand_tip, how far over the skin a hand's bones may hold weight
 HAND_CORE = 0.2           # arp: x wrist -> hand_tip, skin this close to a hand bone is the hand's own
-PROP_ARM_CLEAR = 0.45     # arp: x wrist -> hand_tip, a held prop's slices keep the arm's skin this close to its bones
-PROP_WALL = 0.01          # arp: x H, the inner shell this close behind a piece the prop cuts off rides with it
-                          # (deform_gate.outward's wall)
 MANUAL_RUNGS = ("by hand, one at a time, each gated again (autorig.py deform): a finer bind (autorig.py arp OUT "
                 "--resolution, brt_arp pipeline 'resolution' one step up), then the joint marker moved to the "
                 "crease (autorig.py markers OUT --adjust FILE, arp_markers.py --adjust); never a looser limit "
@@ -441,12 +437,6 @@ def skirt_arg(c: Ctx, a=None) -> list:
     return ["--skirt", c.f["markers"]] if is_skirt(c, a) else []
 
 
-def prop_arg(c: Ctx) -> list:
-    """--prop rig/NAME.markers.json when the markers found a held prop (deform_gate leaves its rigid skin out of the
-    self-intersection count, as it would a separate object)."""
-    return ["--prop", c.f["markers"]] if (read_json(c.f["markers"]) or {}).get("prop") else []
-
-
 def has_jaw(c: Ctx) -> bool:
     """The markers carry the face (facial true) and the contract maps a Jaw bone."""
     m, k = read_json(c.f["markers"]) or {}, read_json(c.f["contract"]) or {}
@@ -575,7 +565,7 @@ def deform_step(c: Ctx, name, fbx, out, render, logs, contract=None) -> dict:
     poses = ["--poses", chosen] if chosen else []
     rend = ["--render", render] if render else []
     return step(name, blender_cmd(c, HERE / "deform_gate.py", "--fbx", fbx, "--map", contract or c.f["contract"],
-                                  *poses, *rend, *skirt_arg(c, c.args), *chibi_arg(c, c.args), *prop_arg(c),
+                                  *poses, *rend, *skirt_arg(c, c.args), *chibi_arg(c, c.args),
                                   "--out", out), out,
                 logs / f"{name}.log")
 
@@ -843,9 +833,12 @@ def run_step(st: dict, env: dict) -> tuple[int, dict | None, float]:
 
 
 def done_entry(st, code, rep, sec) -> dict:
+    """One step's entry; `reason` too when its refusal carries a code (arp_markers' held_prop)."""
+    reason = (rep or {}).get("reason") if code == 1 else None
     return {"name": st["name"], "exit_code": code, "seconds": sec, "log": st["log"], "report": st["report"],
             "failed_gates": [g.get("name") for g in (rep or {}).get("gates", []) if gate_failed(g)],
-            "error": (rep or {}).get("error") or (rep or {}).get("message")}
+            "error": (rep or {}).get("error") or (rep or {}).get("message"),
+            **({"reason": reason} if isinstance(reason, str) else {})}
 
 
 def ladder(c: Ctx, a, base: dict, done: list, near: float = 0.0) -> dict:
@@ -1495,66 +1488,18 @@ def _in_repair(a):
     return {"ok": passed, **log}, 0 if passed else 1
 
 
-def prop_region(V, prop: dict, arm_segments, arm_radius: float):
-    """The held prop's skin (numpy): vertices inside one of the markers' prop slices (arp_markers sets a vertical
-    track beside the arm aside: each slice's box, its height +- half the slice step), less the arm's own skin
-    (within arm_radius of the upper arm and forearm bones, head to tail)."""
-    import numpy as np
-    V = np.asarray(V, dtype=float)
-    inside = np.zeros(len(V), bool)
-    half = 0.5 * float(prop.get("step", 0.018)) + 1e-9
-    for sl in prop.get("slices", []):
-        (x0, x1), (y0, y1) = sl["x"], sl["y"]
-        inside |= (np.abs(V[:, 2] - sl["z"]) <= half) & (V[:, 0] >= x0) & (V[:, 0] <= x1) & \
-            (V[:, 1] >= y0) & (V[:, 1] <= y1)
-    for a, b in np.asarray(arm_segments, dtype=float).reshape(-1, 2, 3):
-        ab = b - a
-        t = np.clip((V - a) @ ab / max(float(ab @ ab), 1e-12), 0.0, 1.0)
-        inside &= np.linalg.norm(V - (a + t[:, None] * ab), axis=1) > arm_radius
-    return inside
-
-
-def prop_pieces(V, T, keep, outer, ids, wall: float):
-    """The held prop's skin grown by the pieces it cuts off (numpy, no Blender): deform_gate.cut_off's outward pieces
-    (every path from them to the body over the outward skin runs over the prop: the strip of a shield's face the
-    arm's clearance or a cut box missed, joined to the body only through the inner shell), and the inner shell
-    behind them (a vertex on no outward triangle whose nearest outward vertex is in a piece, within `wall`), so the
-    prop rides its hand as one rigid piece, as deform_gate reads it. Returns (keep, vertices added)."""
-    import numpy as np
-    import deform_gate
-    V, T, keep = np.asarray(V, dtype=float), np.asarray(T, dtype=np.int64).reshape(-1, 3), np.asarray(keep, bool)
-    outer = np.asarray(outer, bool)
-    cut = deform_gate.cut_off(np.asarray(ids)[T], outer, keep[T].all(axis=1))
-    piece = np.zeros(len(V), bool)
-    piece[T[cut].ravel()] = True
-    piece &= ~keep
-    if piece.any():
-        skin = np.zeros(len(V), bool)
-        skin[T[outer].ravel()] = True
-        lo, hi = V[piece].min(axis=0) - 2 * wall, V[piece].max(axis=0) + 2 * wall
-        box = ((V >= lo) & (V <= hi)).all(axis=1)
-        shell, near = np.nonzero(box & ~skin & ~keep)[0], np.nonzero(box & skin)[0]
-        for k in range(0, len(shell), 256):
-            rows = shell[k:k + 256]
-            d = np.linalg.norm(V[rows][:, None] - V[near][None], axis=2)
-            j = d.argmin(axis=1)
-            piece[rows[piece[near[j]] & (d[np.arange(len(rows)), j] <= wall)]] = True
-    return keep | piece, int(piece.sum())
-
-
-def hand_reach(V, edges, W, cols, segments, reach: float, core: float, tol: float = 1e-6, keep=None):
+def hand_reach(V, edges, W, cols, segments, reach: float, core: float, tol: float = 1e-6):
     """A hand's weight kept on its own skin (numpy, no Blender). Rows of W (vertices x deform groups) holding weight
     of the bones in `cols` (one hand and its fingers) farther than `reach` from those bones lose it, the rest of the
     row rescaled to 1 (a row with nothing else keeps it). The distance runs over the mesh edges (V welded at seams)
     from the hand's own skin: every vertex within `core` of one of `segments` (the bones, head to tail), and the
     vertex nearest each bone's middle. A piece of the mesh that walk never reaches is measured straight to the
     nearest bone. A bind's bleed from a hand hanging beside a coat or a thigh is near in space and far over the
-    skin. Rows in `keep` (a held prop's skin, rigid on the hand) are left alone. Returns (W, {vertices, kept_whole,
-    removed_max, removed_sum})."""
+    skin. Returns (W, {vertices, kept_whole, removed_max, removed_sum})."""
     import heapq
     import numpy as np
     W = np.array(W, dtype=float)
-    held = (W[:, cols].sum(1) > 0) & (True if keep is None else ~np.asarray(keep, bool))
+    held = W[:, cols].sum(1) > 0
     info = {"vertices": 0, "kept_whole": 0, "removed_max": 0.0, "removed_sum": 0.0}
     if not held.any() or not len(segments):
         return W, info
@@ -1650,42 +1595,9 @@ def _in_hand_reach(bpy, mesh, markers_path) -> dict:
         mw = rig.matrix_world
         segs = [(np.array(mw @ b.head_local), np.array(mw @ b.tail_local)) for b in bones]
         size = float(np.linalg.norm(np.subtract(tip, wrist)))
-        keep = None
-        prop = json.loads(Path(markers_path).read_text(encoding="utf-8")).get("prop") or {}
-        if prop.get("side", "").lower() == s and hand.use_deform:
-            # a held prop: its skin rigid on the hand bone (the 2D rig's prop rides its hand), never stripped
-            arm = [b for b in rig.data.bones if b.use_deform and b.name.split(".")[-1] == s
-                   and b.name.split("_")[0] in ("arm", "forearm")]
-            asegs = [(np.array(mw @ b.head_local), np.array(mw @ b.tail_local)) for b in arm]
-            keep = prop_region(V, prop, asegs, PROP_ARM_CLEAR * size)
-            hc = next(k for k, g in enumerate(groups) if g.name == hand.name)
-            W[keep] = 0.0
-            W[keep, hc] = 1.0
-            fc = [k for k in cols if k != hc]     # the gripping fingers ride the hand too: a fist would close them
-            folded = int((W[:, fc].sum(1) > 0).sum())   # into the rigid prop
-            W[:, hc] += W[:, fc].sum(1)
-            W[:, fc] = 0.0
-            pieces = 0
-            if keep.any():     # and the pieces of its face it cuts off from the body: one rigid piece
-                sys.path.insert(0, str(HERE))
-                import deform_gate
-                mesh.data.calc_loop_triangles()
-                T = np.empty(len(mesh.data.loop_triangles) * 3, dtype=np.int64)
-                mesh.data.loop_triangles.foreach_get("vertices", T)
-                T = T.reshape(-1, 3)
-                ids = deform_gate.welded(V)
-                outer = deform_gate.outward(V, T, ids=ids)
-                # the prop as deform_gate reads it: inside the slices and rigid on the hand (its gripping hand too)
-                base = keep | (prop_region(V, prop, [], 0.0) & (W[:, hc] >= 0.999))
-                grown, pieces = prop_pieces(V, T, base, outer, ids, PROP_WALL * float(np.ptp(V[:, 2])))
-                keep = keep | (grown & ~base)
-                W[keep] = 0.0
-                W[keep, hc] = 1.0
-            out["prop"] = {"side": s, "bone": hand.name, "vertices": int(keep.sum()), "cut_off": pieces,
-                           "fingers_folded": folded, "arm_bones": [b.name for b in arm]}
-        W, info = hand_reach(V, E, W, cols, segs, HAND_REACH * size, HAND_CORE * size, keep=keep)
+        W, info = hand_reach(V, E, W, cols, segs, HAND_REACH * size, HAND_CORE * size)
         out["sides"][s] = {"reach_m": round(HAND_REACH * size, 4), "bones": len(cols), **info}
-        out["vertices"] += info["vertices"] + (int(keep.sum()) + folded if keep is not None else 0)
+        out["vertices"] += info["vertices"]
     rows = np.nonzero(np.abs(W - W0).max(axis=1) > 1e-9)[0]
     for k, g in enumerate(groups):
         idx = rows[(W0[rows, k] > 0) | (W[rows, k] > 0)]
@@ -1697,12 +1609,15 @@ def _in_hand_reach(bpy, mesh, markers_path) -> dict:
     return out
 
 
-def skirt_weights(V, W, cols: dict, sk: dict, region) -> np.ndarray:
-    """skirt_bind's weights (numpy, no Blender): rows of W (vertices x groups) inside `region` become Hips and
-    both thighs (cols {"Hips", "UpperLeg.L", "UpperLeg.R"}: column indices), the thighs' share alpha rising by a
-    smoothstep from 0 at the band's top to SKIRT_LEG_MAX at the hem, split left/right by a smoothstep over twice
-    the hip half-width around the midline; blended into the old row over SKIRT_FEATHER x H under the top. At
-    most 4 weights per row (the smallest dropped), each row summing to 1."""
+def skirt_weights(V, W, cols: dict, sk: dict, region, limbs=()) -> np.ndarray:
+    """skirt_bind's weights (numpy, no Blender): rows of W (vertices x groups) inside `region` become both thighs
+    (cols {"Hips", "UpperLeg.L", "UpperLeg.R"}: column indices) and the row's own body share, the thighs' share
+    alpha rising by a smoothstep from 0 at the band's top to SKIRT_LEG_MAX at the hem, split left/right by a
+    smoothstep over twice the hip half-width around the midline. The body share keeps the bind's mix of the
+    bones off the limbs (`limbs`: every leg and arm column, the thighs included), Hips where the bind gave the
+    row only limb bones: a drape the bind hung from the shoulders keeps them, so turning the chest does not shear it
+    against skin re-pinned to Hips. Blended into the old row over SKIRT_FEATHER x H under the top. At most 4
+    weights per row (the smallest dropped), each row summing to 1."""
     import numpy as np
     W = np.array(W, dtype=float)
     sm = lambda x: (lambda y: y * y * (3 - 2 * y))(np.clip(x, 0.0, 1.0))
@@ -1712,13 +1627,18 @@ def skirt_weights(V, W, cols: dict, sk: dict, region) -> np.ndarray:
     alpha = SKIRT_LEG_MAX * sm((top - z) / max(top - hem, 1e-6))
     lam = sm((x - float(sk["midline_x"])) / (4 * max(float(sk["half_width"]), 1e-4)) + 0.5)
     beta = sm((top - z) / (SKIRT_FEATHER * H))
-    new = np.zeros((len(idx), W.shape[1]))
-    new[:, cols["Hips"]] = 1 - alpha
-    new[:, cols["UpperLeg.L"]] += alpha * lam
-    new[:, cols["UpperLeg.R"]] += alpha * (1 - lam)
     old = W[idx]
     s = old.sum(axis=1, keepdims=True)
     old = np.divide(old, s, out=np.zeros_like(old), where=s > 1e-9)
+    leg = sorted(set(limbs) | {cols["UpperLeg.L"], cols["UpperLeg.R"]})
+    body = old.copy()
+    body[:, leg] = 0.0
+    b = body.sum(axis=1, keepdims=True)
+    body = np.divide(body, b, out=np.zeros_like(body), where=b > 1e-6)
+    body[b[:, 0] <= 1e-6, cols["Hips"]] = 1.0      # a row the bind gave only to limbs: Hips
+    new = (1 - alpha)[:, None] * body
+    new[:, cols["UpperLeg.L"]] += alpha * lam
+    new[:, cols["UpperLeg.R"]] += alpha * (1 - lam)
     rows = (1 - beta)[:, None] * old + beta[:, None] * new
     if rows.shape[1] > 4:
         cut = np.argsort(-rows, axis=1)[:, 4:]
@@ -1726,6 +1646,45 @@ def skirt_weights(V, W, cols: dict, sk: dict, region) -> np.ndarray:
     rows /= np.maximum(rows.sum(axis=1, keepdims=True), 1e-12)
     W[idx] = rows
     return W
+
+
+LIMB_ROLES = ("UpperLeg", "LowerLeg", "Foot", "Toes", "UpperArm", "LowerArm", "Hand",
+              "Thumb", "Index", "Middle", "Ring", "Little")   # skirt_bind: bones that own no skirt skin
+
+
+def nearest_role(p, segs: dict) -> str | None:
+    """The role whose bone segment (head, tail) lies nearest point p (numpy, no Blender)."""
+    import numpy as np
+    best, who = None, None
+    for role, (h, t) in segs.items():
+        d = t - h
+        u = float(np.clip(np.dot(p - h, d) / max(float(np.dot(d, d)), 1e-12), 0.0, 1.0))
+        dist = float(np.linalg.norm(p - (h + u * d)))
+        if best is None or dist < best:
+            best, who = dist, role
+    return who
+
+
+def limb_columns(rig, rmap: dict, names: list) -> list:
+    """skirt_bind: the columns of the limb bones (LIMB_ROLES: the legs, the arms from UpperArm down, the fingers)
+    and of every other deform bone whose middle lies nearer one of those than any other mapped bone (a rig's
+    thigh or forearm twist bone is not in the contract; its head sits on the joint, as near the hips as the
+    thigh). A bind leaks a hanging arm's weight onto the skirt beside it; raising the arm then tears the skirt."""
+    import numpy as np
+    first = lambda n: n[0] if isinstance(n, list) else n
+    bones = rig.data.bones
+    segs = {r: (np.array(bones[first(b)].head_local), np.array(bones[first(b)].tail_local))
+            for r, b in rmap.items() if first(b) in bones}
+    leg = {r for r in segs if r.split(".")[0].rstrip("0123456789") in LIMB_ROLES}
+    named = {first(rmap[r]) for r in leg}
+    out = []
+    for k, n in enumerate(names):
+        b = bones.get(n)
+        if b is None:
+            continue
+        if n in named or nearest_role((np.array(b.head_local) + np.array(b.tail_local)) / 2, segs) in leg:
+            out.append(k)
+    return out
 
 
 def _in_skirt(a):
@@ -1769,7 +1728,7 @@ def _in_skirt(a):
                 W[v.index, gi[ge.group]] = ge.weight
     region = arp_markers.skirt_region(V, sk)
     cols = {r: next(k for k, g in enumerate(groups) if g.name == b) for r, b in roles.items()}
-    W2 = skirt_weights(V, W, cols, sk, region)
+    W2 = skirt_weights(V, W, cols, sk, region, limb_columns(rig, rmap, [g.name for g in groups]))
     idx = np.nonzero(region)[0]
     for k, g in enumerate(groups):
         g.remove([int(i) for i in idx])
@@ -1946,6 +1905,9 @@ elif script == "arp_markers.py":
                           "wrist.L": [0.538, 0.04, 0.868], "wrist.R": [-0.538, 0.04, 0.868],
                           "hip.L": [0.1, 0.07, 0.86], "hip.R": [-0.1, 0.07, 0.86],
                           "ankle.L": [0.2, 0.1, 0.09], "ankle.R": [-0.2, 0.1, 0.09]})
+    if os.environ.get("FAKE_HELD_PROP"):
+        rep, code = {"tool": "arp_markers", "error": "a prop held beside the L arm: separate it",
+                     "reason": "held_prop"}, 1
 elif script == "inside_arp":
     fbx = opt("--fbx"); touch(fbx); touch(fbx[:-4] + ".skeleton.json", "{}"); touch(opt("--save"))
 elif script == "inside_repair":
@@ -2396,12 +2358,40 @@ def selftest() -> int:
         front = hem & np.isclose(V[:, 0], 0.0, atol=1e-9) & (V[:, 1] < 0)
         lam = W1[hem, 1] / np.maximum(W1[hem, 1] + W1[hem, 2], 1e-9)
         top = np.isclose(V[:, 2], zs[-1])
-        check("skirt_bind weights: rows sum to 1 with at most 4 weights; at the hem Hips holds 1 - SKIRT_LEG_MAX and the "
-              "front centre is half each thigh; the left share changes by under 0.1 between neighbours round the hem; "
-              "the band's top keeps the bind", np.allclose(W1.sum(1), 1) and ((W1 > 0).sum(1) <= 4).all()
-              and np.allclose(W1[hem, 0], 1 - SKIRT_LEG_MAX, atol=0.02) and abs(W1[front, 1][0] - W1[front, 2][0]) < 1e-6
+        body0 = W0[hem][:, [0, 3]] / W0[hem][:, [0, 3]].sum(1, keepdims=True)
+        body1 = W1[hem][:, [0, 3]] / W1[hem][:, [0, 3]].sum(1, keepdims=True)
+        check("skirt_bind weights: rows sum to 1 with at most 4 weights; at the hem the thighs hold SKIRT_LEG_MAX, the "
+              "rest keeps the bind's own mix off the thighs, and the front centre is half each thigh; the left share "
+              "changes by under 0.1 between neighbours round the hem; the band's top keeps the bind",
+              np.allclose(W1.sum(1), 1) and ((W1 > 0).sum(1) <= 4).all()
+              and np.allclose(W1[hem, 1] + W1[hem, 2], SKIRT_LEG_MAX, atol=0.02) and np.allclose(body1, body0, atol=0.02)
+              and abs(W1[front, 1][0] - W1[front, 2][0]) < 1e-6
               and np.abs(np.diff(lam)).max() < 0.1
               and np.allclose(W1[top], W0[top] / W0[top].sum(1, keepdims=True)))
+        # a drape the bind hung from the chest (col 3) with an arm's leak (col 4): the chest stays its body share, the
+        # arm goes, and a row the bind gave only to limbs falls back on Hips
+        Wc = np.zeros((len(V), 6))
+        Wc[:, 3], Wc[:, 4] = 0.88, 0.12
+        Wc[:3, 3], Wc[:3, 4] = 0.0, 1.0
+        Wd = skirt_weights(V, Wc, {"Hips": 0, "UpperLeg.L": 1, "UpperLeg.R": 2}, sk, np.ones(len(V), bool), [4])
+        mid = np.isclose(V[:, 2], zs[10])
+        check("skirt_bind weights keep a chest-hung drape on the chest: no Hips and no arm weight where the bind gave "
+              "the chest, the chest and the thighs summing to 1; a row on limbs alone goes to Hips",
+              np.allclose(Wd[mid, 0], 0) and np.allclose(Wd[mid, 4], 0)
+              and np.allclose(Wd[mid, 3] + Wd[mid, 1] + Wd[mid, 2], 1) and (Wd[mid, 3] > 0.15).all()
+              and (Wd[:3, 0] > 0).all() and np.allclose(Wd[:3, 3], 0))
+        # limb_columns' rule: a twist bone off the contract, its head on the hip joint as near the root as the thigh,
+        # belongs to the thigh by its middle; an extra clavicle bone goes with Shoulder, a body role
+        segs = {"Hips": (np.array([0.0, 0.0, 0.95]), np.array([0.0, 0.0, 1.05])),
+                "UpperLeg.L": (np.array([0.09, 0.0, 0.93]), np.array([0.1, 0.0, 0.5])),
+                "Chest": (np.array([0.0, 0.0, 1.2]), np.array([0.0, 0.0, 1.38])),
+                "Shoulder.L": (np.array([0.03, 0.0, 1.4]), np.array([0.18, 0.0, 1.4])),
+                "UpperArm.L": (np.array([0.18, 0.0, 1.4]), np.array([0.35, 0.0, 1.15]))}
+        twist = (np.array([0.09, 0.0, 0.93]) + np.array([0.095, 0.0, 0.72])) / 2
+        clav = (np.array([0.04, 0.0, 1.41]) + np.array([0.16, 0.0, 1.42])) / 2   # an extra clavicle bone
+        check("limb_columns: a thigh twist bone goes with the thigh by its middle, an extra clavicle with Shoulder",
+              nearest_role(twist, segs) == "UpperLeg.L" and nearest_role(np.array([0.09, 0.0, 0.93]), segs) in
+              ("UpperLeg.L", "Hips") and nearest_role(clav, segs) == "Shoulder.L")
         # hand_reach: a hand bone's weight on a coat beside the hand (near in space, far over the skin) goes
         path = [(x, 0.0, 1.0) for x in np.linspace(0.0, 0.2, 11)] + [(0.2, 0.0, z) for z in np.linspace(1.05, 2.0, 20)] \
             + [(x, 0.0, 2.0) for x in np.linspace(0.15, -0.2, 8)] + [(-0.2, 0.0, z) for z in np.linspace(1.95, 1.0, 20)] \
@@ -2418,33 +2408,6 @@ def selftest() -> int:
               "hand's weight; the hand and a loose cuff 3 cm from its bone keep it; rows sum to 1",
               Wh2[coat, 0] == 0 and Wh2[scrap, 0] == 0 and np.isclose(Wh2[coat, 1], 1.0) and Wh2[cuff, 0] == 0.1
               and (Wh2[:11, 0] == 1).all() and hi["vertices"] == 2, info=hi)
-        # a held prop (arp_markers' prop slices): its skin stays on the hand, rigid, where hand_reach strips it
-        prop = {"side": "L", "step": 0.02, "slices": [{"z": float(z), "x": [0.05, 0.15], "y": [-0.01, 0.06]}
-                                                      for z in np.arange(0.4, 0.9, 0.02)]}
-        keep = prop_region(Vh, prop, [((-0.5, 0.0, 1.6), (0.0, 0.0, 1.0))], 0.06)
-        Wk = Wh.copy()
-        Wk[keep] = 0.0
-        Wk[keep, 0] = 1.0
-        Wk2, _ = hand_reach(Vh, Eh, Wk, [0], [((0.0, 0.0, 1.0), (0.2, 0.0, 1.0))], 0.2, 0.04, keep=keep)
-        check("held prop: the skin inside its slices (the far scrap under the hand) is the hand's alone and hand_reach "
-              "keeps it there; the arm's skin and the coat beside it are not the prop; without the prop it is stripped",
-              keep[scrap] and not keep[coat] and not keep[:11].any() and Wk2[scrap, 0] == 1.0 and Wh2[scrap, 0] == 0
-              and Wk2[coat, 0] == 0, info={"prop": int(keep.sum())})
-        # a shield's face fused to the arm: a strip the slices missed is cut off by the prop, the forearm beside it is not
-        gv = np.array([(0.01 * i, 0.0, 0.01 * j) for i in range(13) for j in range(7)])
-        at = lambda i, j: 7 * i + j
-        gt = np.array([t for i in range(12) for j in range(6) for t in
-                       ((at(i, j), at(i + 1, j), at(i + 1, j + 1)), (at(i, j), at(i + 1, j + 1), at(i, j + 1)))])
-        sv = np.array([(0.09, 0.003, 0.03), (0.02, 0.003, 0.03), (0.11, 0.003, 0.03)])  # inner shell
-        Vg, Tg = np.vstack([gv, sv]), np.vstack([gt, [[91, 92, 93]]])
-        og = np.r_[np.ones(len(gt), bool), False]
-        kg = np.r_[gv[:, 0] >= 0.06 - 1e-9, np.zeros(3, bool)]
-        kg[[at(9, 3), at(6, 0), at(7, 0)]] = False      # the strip's vertex; the forearm reaching in at the bottom
-        kp, added = prop_pieces(Vg, Tg, kg, og, np.arange(len(Vg)), 0.005)
-        check("prop pieces: the face strip the prop alone joins to the body, and the inner shell right behind it, ride "
-              "the prop; the forearm reaching the body beside the prop, the body and the shell behind them do not",
-              kp[at(9, 3)] and kp[91] and not kp[[at(6, 0), at(7, 0), 92, 93]].any() and not kp[:91][gv[:, 0] < 0.06].any()
-              and added == 2, info={"added": added})
         # hinge_transfer on an arm sloping at 45 degrees: the hand-over follows the limb, not world Z
         n45 = np.array([1.0, 0.0, -1.0]) / np.sqrt(2)
         Va = np.array([0.05 * n45 + (0.03, 0, 0.03), -0.05 * n45 + (0.03, 0, 0.03), 0.05 * n45 + (0.0, 0.3, 0.0)])
@@ -2596,6 +2559,12 @@ def selftest() -> int:
             return code, r, err, ran
 
         clean0 = {"a0": ["LowerArm.R", 0.2, 0.04]}
+        code, r, err, ran = real(["all", str(td / "held"), str(glb), "--name", "Runner"], FAKE_HELD_PROP="1")
+        hs = {s_["name"]: s_ for s_ in r.get("steps", [])}.get("markers") or {}
+        check("all: the markers refuse a held prop: the step's error and reason held_prop in the summary, nothing "
+              "after the markers runs, exit 1", code == 1 and ran[-1] == "arp_markers.py" and hs.get("exit_code") == 1
+              and hs.get("reason") == "held_prop" and "held beside the L arm" in (hs.get("error") or "")
+              and r.get("ok") is False, code=code, ran=ran, step=hs)
         chain = ["inside_prep", "mesh_check.py", "arp_smart_probe", "arp_smart.py", "arp_markers.py", "inside_arp",
                  "contract_map.py", "deform_gate.py"]
         SEC = ["secondary_chains.py", "contract_map.py", "deform_gate.py"]

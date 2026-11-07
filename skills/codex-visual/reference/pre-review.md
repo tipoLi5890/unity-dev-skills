@@ -127,6 +127,14 @@ checklists live only in the script.
 Label the cells with those names where they apply: a `view` must be one of the sheet's labels.
 A stage with two kinds of picture (S6) is one sheet of both, or two reviews.
 
+**Held props stop at S1 and S3.** `s1.hands`, `s1.prop_sheet` and `s3.held_prop` flag anything
+held in a hand, worn on a forearm or touching a hand (a shield, a weapon, a board, a bag), and a
+prop drawn on the character instead of on its own sheet. Such a source goes back to S1: the prop
+is its own image, sheet and mesh, attached at S9 (`reference/image-to-3d-input.md` §9). These
+items are the stop. `character-autorig`'s `arp_markers` refusal `held_prop` at S6 is a backstop
+for one shape only, a prop standing beside an arm from above the armpit; nothing rescues a fused
+prop.
+
 ## 6. What pre-review cannot do
 
 - **Approve.** Only a person does, in the registry.

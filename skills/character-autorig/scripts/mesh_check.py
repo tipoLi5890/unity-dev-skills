@@ -379,7 +379,7 @@ def profile(v: np.ndarray, f: np.ndarray, step: float = 0.01, cell: float = 0.00
     mid = float((low[:, 0].min() + low[:, 0].max()) / 2) if len(low) else float(np.median(v[:, 0]))
     feet = v[v[:, 2] < v[:, 2].min() + FEET * height]
     if len(feet) and abs((feet[:, 0].min() + feet[:, 0].max()) / 2 - mid) > MIDLINE_SHIFT * height:
-        mid = float((feet[:, 0].min() + feet[:, 0].max()) / 2)   # a held prop hangs below 0.4 H on one side
+        mid = float((feet[:, 0].min() + feet[:, 0].max()) / 2)   # a wide asymmetric part below 0.4 H on one side
     cuts = []
     h = lo + step / 2
     while h < hi:

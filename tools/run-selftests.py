@@ -46,6 +46,7 @@ SELFTESTS = [
     ('blender-character-rig/scripts/shell_strip.py', ['--selftest'], ['numpy', 'pillow', 'scipy']),
     ('blender-character-rig/scripts/game_mesh.py', ['--selftest'], ['numpy']),
     ('blender-character-rig/scripts/game_mesh.py', ['--selftest-blender'], ['bpy', 'numpy']),
+    ('blender-character-rig/scripts/tests/test_bcr_attach.py', ['--selftest'], ['bpy', 'numpy']),
     ('blender-retarget/scripts/bakeoff_report.py', ['selftest'], ['stdlib']),
     ('blender-retarget/scripts/clip_metrics.py', ['selftest'], ['numpy']),
     ('blender-retarget/scripts/motion_metrics.py', ['--selftest'], ['numpy']),

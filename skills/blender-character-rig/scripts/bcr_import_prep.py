@@ -5,8 +5,8 @@ Runs inside Blender; not a command-line script (the stub is in bcr_common.py).
 An image-to-3D GLB arrives as one mesh under import helpers, centred on its
 bounding box, about one unit tall, with every UV seam splitting a vertex. This
 puts it in a named collection as one object whose transform is identity, origin
-at the base of the feet (X centred on the feet when a held prop pulls the box
-more than 1 % of the height off them), at a real height, welded by position.
+at the base of the feet (X centred on the feet when a wide asymmetric part pulls
+the box more than 1 % of the height off them), at a real height, welded by position.
 
     result = bcr_import_prep.run({
         "glb": "/abs/path/runner.glb", "name": "Runner", "collection": "Character",
@@ -33,7 +33,7 @@ from mathutils import Matrix, Vector
 import bcr_common as C
 
 FEET, CENTRE_SHIFT = 0.15, 0.01    # x height: the feet's band, and how far the box centre may sit off it (a
-                                   # shield in hand pulls it past 1 %; arms a few degrees apart stay well under)
+                                   # wide part on one side pulls it past 1 %; arms a few degrees apart stay well under)
 
 
 def _bounds(mesh):
@@ -74,7 +74,7 @@ def run(params: dict, tracker: C.Tracker) -> dict:
         cx = (low.x + high.x) / 2
         feet = [v.co.x for v in mesh.vertices if v.co.z < low.z + FEET * (high.z - low.z)]
         if feet and abs((min(feet) + max(feet)) / 2 - cx) > CENTRE_SHIFT * (high.z - low.z):
-            cx = (min(feet) + max(feet)) / 2      # a held prop widens one side: centre on the feet, not the box
+            cx = (min(feet) + max(feet)) / 2      # a part widens one side: centre on the feet, not the box
             stats["centred_on_feet"] = round(cx, 5)
         mesh.transform(Matrix.Translation(-Vector((cx, (low.y + high.y) / 2, low.z))))
         if params.get("height"):

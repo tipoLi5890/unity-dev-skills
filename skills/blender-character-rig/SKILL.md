@@ -27,7 +27,7 @@ weights want a surface every bone can see. A short-limbed mascot with long ears 
 | Someone else's scene: collections, hiding, a second scene, translated UI names (`KeyError 'Principled BSDF'`), what to report | `reference/scene-discipline.md` |
 | Importing the GLB, origin, height, facing, the weld, reading landmarks from slices and boxes | `reference/import-and-survey.md` |
 | An image-to-3D GLB's inward-facing inner shell cut off before import, by visibility (host, no Blender) | `reference/import-and-survey.md`, `scripts/shell_strip.py` |
-| A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting | `reference/prop-on-bone.md` |
+| A prop in a hand: grip measured from the prop, the sanity ratio, bone parenting; a shield on the forearm (`mount: forearm`) | `reference/prop-on-bone.md` |
 | Poses in armature axes, keying an action, the contact probe, chunked renders, GIF and contact sheet | `reference/action-and-preview.md` |
 | The ship track's game mesh before rigging: regenerate at the preset, or retopology, UVs and a rebake from the showcase, gated in one headless run | `reference/game-mesh.md`, `scripts/game_mesh.py` |
 | A character in parts (`three`): register the generated head onto the anchor, split its hair, cut, seam, gates; the hair bound by `character-autorig` `autorig.py all --hair`; `fine`: the hands attached under the sleeve | `reference/part-assembly.md`, `scripts/assemble_parts.py`, `scripts/part_math.py`, `scripts/hand_parts.py` |

@@ -46,22 +46,17 @@ midline when its X range contains it: that is the torso (or the head) at that he
 | neck_base | the higher of the shoulders and neck − 0.03 H | measured |
 | pelvis, spine1…3 | on the midline at hip height, then the pelvis → neck_base line split evenly; Y at 55 % of the torso cut's depth (a little toward the back) | measured / proportion |
 
-**A held prop** (a shield, a board) standing beside one arm from above the armpit makes a vertical run of
-cuts of its own, and the arm's search follows it (the axis comes out vertical: refused). That run is set aside
-and the arm searched again (up to twice); the run's cut boxes are the report's `prop` (side, slices) and that
-arm is the other one mirrored (its own cuts run into the prop), the fingers read on the free hand. `autorig.py`'s
-hand_reach then gives the prop's skin (inside those boxes, less the arm's own skin) to the hand bone alone: it
-rides the hand rigid. A shield modelled into the forearm (one mesh, its face joined to the body only through the
-inner shell) keeps a strip of its face outside that skin, where it lies within the arm's clearance or a cut took
-the gripping hand instead; that strip is a piece of the outward skin every path from which to the body runs over
-the prop, and it goes with the prop, the inner shell behind it too (`prop_pieces`; `hand_reach.prop.cut_off` in
-`rig/NAME.arp.json`). Left on the forearm and the upper arm, the strip does not
-follow the hand with the rest of the shield, and the deform gate counts its crossings as the arm's own. The midline comes from the feet when the extent under 0.4 H is pulled more than 0.02 H
-off them, and prep centres X on the feet when the box is more than 0.01 H off them: the markers mirror about
-x = 0, so an offset d reads as 2 d of asymmetry (arms a few degrees apart move the box less than 0.01 H). Both
-arms setting a vertical run aside leaves nothing to mirror from: refused (arms held against the body). A prop
-that only starts under the hand is followed on from the hand: the hand tip lands on it and `markers.symmetry`
-fails; generate the character empty-handed and attach the prop (`blender-character-rig` prop-on-bone.md).
+**A held prop is refused** (`held_prop`, exit 1). A part standing beside one arm from above the armpit (a
+shield, a board) makes a vertical run the arm search follows first; when, searched again without that run, a
+slanted arm is there, the markers refuse: separate the prop and attach it after the rig (`blender-character-rig`
+prop-on-bone.md), or regenerate the character empty-handed. The same beside both arms (a cape's panels, a prop in
+each hand) is refused as both arms reading vertical, with no reason. A prop that starts under the hand fails
+`markers.symmetry`. The refusal is a backstop for that one shape: the stop for a held prop is the pre-review at S1
+and S3 (`codex-visual` reference/pre-review.md, `s1.hands`, `s3.held_prop`).
+
+**The midline comes from the feet** when the extent under 0.4 H is pulled more than 0.02 H off them (a wide part on
+one side), and prep centres X on the feet when the box is more than 0.01 H off them: the markers mirror about x = 0,
+so an offset d reads as 2 d of asymmetry (arms a few degrees apart move the box less than 0.01 H).
 
 **The knee on the leg's own sections.** Horizontal cuts at fractions of H put the knee wherever
 the narrowest slice happens to fall: a change of H (hair, a hat) moves it, and on a slanted leg a

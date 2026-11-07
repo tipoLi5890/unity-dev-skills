@@ -11,7 +11,7 @@ usage (Blender, headless):
     blender -b --factory-startup -P deform_gate.py -- --selftest
 options: [--map REPORT_OR_ROLE_MAP.json] [--poses all|arms_up,deep_squat,...|all,jaw_open] [--steps 2]
          [--volume-max 0.35] [--intersect-p95 0.08] [--cross-side-max 0.05] [--hinge-blend-min 0.03]
-         [--skirt MARKERS.json] [--tear-stretch 3.0] [--tear-max 0.002] [--body human|chibi] [--prop MARKERS.json]
+         [--skirt MARKERS.json] [--tear-stretch 3.0] [--tear-max 0.002] [--body human|chibi]
          [--out REPORT.json] [--render DIR]
 
 Bones are named by the humanoid contract (`unity-rigged-character` -> humanoid-contract.md).
@@ -72,11 +72,7 @@ triangle. The report gives outward_triangles and inward_triangles.
   new self-intersections   the outward triangles that intersect another outward triangle (sharing
                no vertex) in the pose and did not at rest, divided by the outward triangles that moved (any vertex more than
                0.1 % of the height). Counted with Blender's BVH overlap; a double shell or an
-               accessory that already crosses the body at rest is not counted again. With --prop
-               a held prop's skin is left out, as a separate object's would be: inside its slices
-               and rigid on its hand, and the outward pieces it cuts off from the body (cut_off:
-               every path from them to the body over the outward skin runs over the prop) that ride
-               the hand rigid too; a piece the bind left on the arm still counts.
+               accessory that already crosses the body at rest is not counted again.
 
 Gates (each failing one makes exit 2):
   deform.volume_loss_max          the largest loss over every sample at the elbows, knees, wrists,
@@ -126,7 +122,7 @@ ratio, volume_loss: {joint: loss}}], joints_not_measured, bent (the bones the po
 joint}, ball_joint_loss_max,
 self_intersection {p95, max, pose}, skin {cross_side {band_m, L/R {share, vertices, held, bones (the other side's
 bones holding weight there: their summed weight)}}, hinge_blend {joint:
-{blended, vertices}}}, prop? {side, vertices, triangles, cut_off (the vertices the pieces added)}, renders?,
+{blended, vertices}}}, renders?,
 gates [{name, value, limit, pass, margin?}], schema, pass}: a gate/1
 report (schemas/gate-1.json). `margin` is the signed distance to the limit (gate_margin: + safe, - failing),
 written on the numeric gates: volume_loss_max and self_intersection_p95 (<=), hinge_blended (>=), and the
@@ -744,87 +740,8 @@ def tear_reading(v, edges, rest, stretch) -> dict:
             "p99": round(float(np.percentile(r, 99)), 3), "max": round(float(r.max()), 3)}
 
 
-def prop_vertices(rig: Rig, mesh, v_rest, prop: dict) -> tuple[np.ndarray, np.ndarray]:
-    """(a held prop's skin, rigid on its hand) (bool per vertex): the skin inside one of the markers' prop slices
-    (arp_markers: each slice's box, its height +- half the step) and rigid on that side's Hand (autorig's hand_reach
-    bound it there, weight 1); every vertex rigid on that Hand. When the weights' rows do not match v_rest (a
-    modifier changed the vertex count) the slices alone are the prop, as before, and no vertex reads as rigid, so
-    no cut-off piece is left out unread."""
-    W, names = skin_matrix(mesh, rig)
-    own = owners(rig)
-    side = str(prop.get("side", "")).upper()
-    cols = [j for j, n in enumerate(names) if own.get(n) == f"Hand.{side}"]
-    rigid = W[:, cols].sum(axis=1) >= 0.999 if cols else np.zeros(len(W), dtype=bool)
-    matched = len(rigid) == len(v_rest)
-    if not matched:
-        rigid = np.zeros(len(v_rest), dtype=bool)
-    inside = np.zeros(len(v_rest), dtype=bool)
-    half = 0.5 * float(prop.get("step", 0.018)) + 1e-9
-    for sl in prop.get("slices", []):
-        (x0, x1), (y0, y1) = sl["x"], sl["y"]
-        inside |= (np.abs(v_rest[:, 2] - sl["z"]) <= half) & (v_rest[:, 0] >= x0) & (v_rest[:, 0] <= x1) & \
-            (v_rest[:, 1] >= y0) & (v_rest[:, 1] <= y1)
-    return (inside & rigid if matched else inside), rigid
-
-
-def cut_off(tri_ids, outer, prop_tri) -> np.ndarray:
-    """Per triangle (numpy, no Blender): the outward skin a held prop cuts off from the body. The outward triangles
-    off the prop (prop_tri: its own) fall into pieces over shared vertices (tri_ids: welded ids, welded()); a piece
-    other than the largest that meets the prop's outward skin (shares a vertex with it) and holds no more triangles
-    than that skin is the prop's own: every path from it to the body over the outward skin runs over the prop. A
-    shield modelled into the forearm and the hand (one Pixal3D mesh, its face joined to the body only through the
-    inner shell) leaves the strip of its face that lies within the arm's clearance, or between two of the markers'
-    cut boxes, as such a piece. The body's skin is the largest piece and is never cut off; skin that reaches the
-    body around the prop (the forearm beside it) stays the body's."""
-    tri_ids = np.asarray(tri_ids, dtype=np.int64).reshape(-1, 3)
-    outer = np.asarray(outer, dtype=bool)
-    prop_tri = np.asarray(prop_tri, dtype=bool) & outer
-    out = np.zeros(len(tri_ids), dtype=bool)
-    rest = np.nonzero(outer & ~prop_tri)[0]
-    if not prop_tri.any() or not len(rest):
-        return out
-    t = tri_ids[rest]
-    parent = {}
-
-    def find(a):
-        root = a
-        while parent.get(root, root) != root:
-            root = parent[root]
-        while parent.get(a, a) != root:
-            parent[a], a = root, parent[a]
-        return root
-    for a, b in np.unique(np.sort(np.concatenate([t[:, [0, 1]], t[:, [1, 2]]]), axis=1), axis=0).tolist():
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
-    label = np.array([find(int(k)) for k in t[:, 0]])
-    names, size = np.unique(label, return_counts=True)
-    body = names[size.argmax()]
-    meets = set(tri_ids[prop_tri].ravel().tolist())
-    limit = int(prop_tri.sum())
-    for name, n in zip(names.tolist(), size.tolist()):
-        if name == body or n > limit:
-            continue
-        sel = label == name
-        if meets & set(t[sel].ravel().tolist()):
-            out[rest[sel]] = True
-    return out
-
-
-def prop_skin(base, rigid, tri_all, outer, ids) -> tuple[np.ndarray, int]:
-    """(the held prop's skin, vertices added) (numpy): `base` (prop_vertices: inside the slices, rigid on the hand)
-    and the outward pieces it cuts off (cut_off) where they ride the hand rigid too: the bind put them there
-    (autorig's prop_pieces), so they move as the prop does; a piece the bind left on the arm is still skin."""
-    base = np.asarray(base, dtype=bool)
-    piece = np.zeros(len(base), dtype=bool)
-    cut = cut_off(np.asarray(ids)[tri_all], outer, base[tri_all].all(axis=1))
-    piece[np.asarray(tri_all)[cut].ravel()] = True
-    add = piece & np.asarray(rigid, dtype=bool) & ~base
-    return base | add, int(add.sum())
-
-
 def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = True, skirt=None,
-             tear_stretch: float = 3.0, prop=None) -> dict:
+             tear_stretch: float = 3.0) -> dict:
     import bpy
     import autorig_blender as A
     apply_pose(rig, [], 0.0)
@@ -834,14 +751,6 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
     ids = welded(v_rest)
     outer = outward(v_rest, tri_all, ids=ids) if outer_only else np.ones(len(tri_all), dtype=bool)
     tri = tri_all[outer]
-    prop_info = None
-    if prop:     # a held prop rides the hand rigid, as a separate object would: not the skin's intersections
-        pv, rigid = prop_vertices(rig, mesh, v_rest, prop)
-        pv, pieces = prop_skin(pv, rigid, tri_all, outer, ids)
-        ptri = pv[tri].all(axis=1)
-        prop_info = {"side": prop.get("side"), "vertices": int(pv.sum()), "triangles": int(ptri.sum()),
-                     "cut_off": pieces}
-        tri = tri[~ptri]
     v_rows = A.mesh_arrays(mesh, evaluated=False)[0]   # one row per vertex group row
     skin_read = skin_readings(rig, mesh, v_rows, np.unique(tri) if len(v_rows) == len(v_rest) else None)
     rest_hits = intersecting(v_rest, tri, ids)
@@ -891,7 +800,6 @@ def evaluate(rig: Rig, mesh, poses, steps, render_dir=None, outer_only: bool = T
                           "rest_z": [round(float(v_rest[:, 2].min()), 4), round(float(v_rest[:, 2].max()), 4)]}}
                if skirt else {}),
             **({"mitten": {"edges": int(len(m_edges)), "stretch": tear_stretch}} if m_edges is not None else {}),
-            **({"prop": prop_info} if prop_info else {}),
             **({"body": rig.body} if getattr(rig, "body", "human") != "human" else {})}
 
 
@@ -1005,8 +913,6 @@ def parser():
     p.add_argument("--cross-side-max", type=float, default=0.05)
     p.add_argument("--hinge-blend-min", type=float, default=0.03)
     p.add_argument("--skirt", help="an arp_markers.py --body skirt report: gate the skirt's tear")
-    p.add_argument("--prop", help="an arp_markers.py report with a held prop: its rigid skin is left out of the "
-                                  "self-intersection count (reported as prop)")
     p.add_argument("--tear-stretch", type=float, default=3.0)
     p.add_argument("--tear-max", type=float, default=0.002)
     p.add_argument("--body", choices=("human", "chibi"), default="human",
@@ -1036,12 +942,6 @@ def _run(args) -> tuple[int, dict]:
                 skirt = json.load(fh).get("skirt")
             if not skirt:
                 raise Refused(f"{args.skirt} carries no skirt (arp_markers.py --body skirt)")
-        prop = None
-        if getattr(args, "prop", None):
-            with open(args.prop, encoding="utf-8") as fh:
-                prop = json.load(fh).get("prop")
-            if not prop:
-                raise Refused(f"{args.prop} carries no held prop (arp_markers.py's prop block)")
     except (OSError, ValueError, Refused) as exc:
         return 1, {"tool": "deform_gate", "error": str(exc)}
     if args.fbx:
@@ -1095,7 +995,7 @@ def _run(args) -> tuple[int, dict]:
             os.makedirs(args.render, exist_ok=True)
         result = evaluate(rig, mesh, poses, max(1, args.steps), args.render,
                           outer_only=not getattr(args, "all_triangles", False), skirt=skirt,
-                          tear_stretch=getattr(args, "tear_stretch", 3.0), prop=prop)
+                          tear_stretch=getattr(args, "tear_stretch", 3.0))
     finally:
         for pb in rig_obj.pose.bones:
             mode, q, e, loc, sc = saved[pb.name]
@@ -1338,43 +1238,6 @@ def selftest() -> tuple[int, dict]:
     ok("hard skin: exit 2, self-intersection fails", code == 2 and not gate["deform.self_intersection_p95"]["pass"])
     ok("hard skin: no hinge blended, deform.hinge_blended fails", not gate["deform.hinge_blended"]["pass"]
        and gate["deform.hinge_blended"]["value"] == 0.0)
-    # a held prop's face fused to the arm: the strip its slices missed is cut off by the prop and, rigid on the hand,
-    # left out with it; the forearm reaching the body beside it, a piece bigger than the prop and the body stay skin
-    gv = np.array([(0.01 * i, 0.0, 0.01 * j) for i in range(13) for j in range(7)])
-    at = lambda i, j: 7 * i + j
-    gt = np.array([t for i in range(12) for j in range(6) for t in
-                   ((at(i, j), at(i + 1, j), at(i + 1, j + 1)), (at(i, j), at(i + 1, j + 1), at(i, j + 1)))])
-    og, ig = np.ones(len(gt), bool), np.arange(len(gv))
-    kg = gv[:, 0] >= 0.06 - 1e-9
-    kg[[at(9, 3), at(6, 0), at(7, 0)]] = False
-    cut = cut_off(ig[gt], og, kg[gt].all(axis=1))
-    strip = (gt == at(9, 3)).any(axis=1)
-    rigid = np.ones(len(gv), bool)
-    pv_r, n_r = prop_skin(kg, rigid, gt, og, ig)
-    rigid[at(9, 3)] = False
-    pv_n, n_n = prop_skin(kg, rigid, gt, og, ig)
-    k2 = (gv[:, 0] >= 0.06 - 1e-9) & (gv[:, 0] <= 0.07 + 1e-9)
-    cut2 = cut_off(ig[gt], og, k2[gt].all(axis=1))
-    notes["prop_pieces"] = {"cut": int(cut.sum()), "added_rigid": n_r, "added_not_rigid": n_n, "cut_wide": int(cut2.sum())}
-    ok("prop pieces: the strip only the prop joins to the body is cut off (6 triangles), the forearm and the body are "
-       "not; it is the prop's when it rides the hand rigid, skin when the bind left it on the arm; a piece bigger "
-       "than the prop is not cut off", cut.sum() == 6 and (cut == strip).all() and pv_r[at(9, 3)] and n_r == 1
-       and not pv_n[at(9, 3)] and n_n == 0 and not cut2.any())
-    prop_file = os.path.join(tempfile.mkdtemp(), "markers.json")
-    hr = Rig(rig_obj, {})
-    hx, hy, hz = (float(c) for c in hr.head["Hand.L"])
-    with open(prop_file, "w", encoding="utf-8") as fh:
-        json.dump({"prop": {"side": "L", "step": 0.02, "slices": [
-            {"z": round(float(z), 3), "x": [hx - 0.02, hx + 0.15], "y": [hy - 0.08, hy + 0.08]}
-            for z in np.arange(hz - 0.2, hz + 0.04, 0.02)]}}, fh)
-    skin(body, rig_obj, spec, "hard")
-    pcode, prep = run(parser().parse_args(["--armature", rig_obj.name, "--mesh", body.name, "--prop", prop_file]))
-    pgate = {g["name"]: g for g in prep.get("gates", [])}
-    notes["hard_prop"] = {"prop": prep.get("prop"), "p95": (prep.get("self_intersection") or {}).get("p95")}
-    ok("hard skin with a held prop at the left hand: the hand's rigid skin is the prop and left out, the elbows' "
-       "crossings still count: self-intersection still fails", pcode == 2 and (prep.get("prop") or {}).get("triangles", 0) > 0
-       and "cut_off" in (prep.get("prop") or {}) and not pgate["deform.self_intersection_p95"]["pass"])
-    skin(body, rig_obj, spec, "leak")     # the skin the loop above left, for the checks below
     code, rep = results["leak"]
     gate = {g["name"]: g for g in rep.get("gates", [])}
     ok("half the left leg on the right leg's bones: exit 2, deform.cross_side_weight fails", code == 2 and

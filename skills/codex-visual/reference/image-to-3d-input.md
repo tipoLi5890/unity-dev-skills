@@ -171,8 +171,13 @@ from the mesh and every limb can be weighted apart from its neighbour.
 - **Chunky, evenly thick limbs; mitten hands.** No separate fingers, no thin wrists or ankles.
 - **Thin parts thick, and the same in every view** — ears, a tail: one length, one thickness, one
   angle, never crossing the body or a limb.
-- **No held prop.** Generate the prop as its own image and its own mesh; it is attached to a hand
-  bone after rigging.
+- **Empty hands: no held prop.** Nothing held in a hand, worn on a forearm or touching a hand (a
+  shield, a weapon, a board, a bag). The prop is its own image, sheet and mesh, attached to a hand
+  or forearm bone at S9 (`blender-character-rig` → `reference/prop-on-bone.md`). A prop generated
+  into the character fuses to the arm: it binds to the arm's bones, and rig, deform and paint all
+  break. The stop is the pre-review at S1 and S3 (`s1.hands`, `s3.held_prop`;
+  `reference/pre-review.md` §5); `arp_markers`' `held_prop` refusal at S6 is a backstop for one
+  shape only, a prop standing beside an arm from above the armpit.
 - **No shadow, ground or glow** (§3), and the black sheet background of §5.
 
 The order is the same: the three-quarter image first, approved, then the sheet from it via `-i`,
@@ -240,8 +245,8 @@ changes:
   the camera sees up close needs fingers drawn apart, at the knuckle proportions of a real hand,
   touching neither each other nor the thigh: a rig cannot invent anatomy the mesh lacks. Otherwise
   a relaxed hand with the fingers together is enough, still clear of the body.
-- **Empty hands.** The prop is its own image, sheet and mesh, drawn to the same brief (§3, §5),
-  and attached to a hand bone after rigging.
+- **Empty hands**, as above: the prop is its own image, sheet and mesh, drawn to the same brief
+  (§3, §5), and attached to a hand or forearm bone at S9 (`prop-on-bone.md`).
 - **One scale across the four views**: one head-top line, one sole line, one height.
 - **True sides.** Each side view is a 90° profile — one eye, the shoulders narrowed to the body's
   depth — never a three-quarter turn; an image model drifts toward three-quarter, so look.
