@@ -85,9 +85,11 @@ in the user's Blender.
    would otherwise miss — a floor closing a coat's or a skirt's hem, whose rays travel up inside
    before they meet anything. The Diffuse colour pass is base colour ×
    (1 − metallic): hold the showcase's Metallic at 0 for that bake, or a metal button bakes black.
-   Save each image to a file.
-5. **Look at it.** The game mesh textured, beside the showcase, from the same camera — front, side,
-   back, and the game camera.
+   Save each image to a file. A hem floor that still misses gets a second pass (the gated run does
+   it, below): a cage whose faces lying off the showcase aim their rays at the nearest showcase
+   point, kept only for the texels the first pass missed and the margin round them.
+5. **Look at it.** The game mesh textured, beside the showcase, from the same camera — front, three
+   quarter, side, back.
 
 The calls, as one script for the server's code tool or `Blender -b --python` (names are the
 courier run's; adapt the numbers):
@@ -149,8 +151,12 @@ scripts/game_mesh.py -- ...`. A `.blend` showcase names its object with `scripts
 writes `<name>_game.glb`, `<name>_game.blend` (the game mesh alone, the maps linked),
 `textures/<name>_{BaseColor,Normal,Occlusion}.png`, `<name>_game_vs_showcase.png` (rows: showcase
 textured, game textured, showcase clay, game clay; columns front, three-quarter, side, back),
-`<name>_bake_miss.png` (the UV layout, red where no ray hit), `mesh_check.json` and
-`game_mesh.json` (gate/1). Roughness and metallic are not baked: the material reads 0.7 and 0. Exit 0 every gate passed, 2 a gate failed, 1 refused.
+`<name>_bake_miss.png` (the UV layout: grey where the first bake pass hit, blue where only the
+second did, red where neither), `views/front.png`,
+`views/three_quarter.png`, `views/side.png`, `views/back.png` (one view each: showcase | game,
+textured over clay), `prereview.spec.json` (the S5 pre-review sheet: those four views and
+`bake_miss`, paths relative to the folder, with `stage`, `subject` and `require`, which
+`codex-visual` `prereview.py new` reads), `mesh_check.json` and `game_mesh.json` (gate/1). Roughness and metallic are not baked: the material reads 0.7 and 0. Exit 0 every gate passed, 2 a gate failed, 1 refused.
 
 | Gate | Value, and its limit |
 |---|---|
@@ -162,7 +168,7 @@ textured, game textured, showcase clay, game clay; columns front, three-quarter,
 | `game.uv_bounds` | UV corners outside 0–1, 0 |
 | `game.uv_overlap` | texels covered by two or more UV triangles over texels covered, at `--tex-px`, a texel counted when its centre lies strictly inside, so a shared edge never counts twice; ≤ 0.001 (projection folds of Smart UV Project) |
 | `game.uv_stretch` | per triangle, the singular values s1 ≥ s2 of the 3D → UV map over the whole mesh's mean scale k: max(s1/k, k/s2), how far a texel is stretched or squashed in its worst direction; 95th percentile by surface area, ≤ 2 |
-| `game.bake_miss` | texels inside the islands (1 px in) no ray reached, from a no-margin base colour bake, ≤ 0.005 |
+| `game.bake_miss` | texels inside the islands (1 px in) neither bake pass reached, from no-margin base colour bakes, ≤ 0.005; the first pass alone is `bake.first_pass_miss` |
 | `game.bake_delta` | mean CIE76 ΔE between unlit texture renders of showcase and game, same 8 cameras, over the pixels both cover (2 px in), ≤ 6 |
 | `game.mesh_check` | `character-autorig` `mesh_check.py --body` on the written GLB passes |
 
@@ -178,10 +184,23 @@ retopology rounded off is pulled back (step 2; half the `game.extent` limit, so 
 each side cannot fail that gate alone; 0 off); `--cage` and `--ray` the bake's `cage_extrusion`
 and `max_ray_distance`; `--margin-px` the island and bake margin in texels. The report records the
 pulls under `tips` (pulled, refused, the voxel-surface points still outside before and after) and
-a wider hem close under `voxel.close`. A failed `game.bake_miss` is a cage or ray too short,
-webbing the retopology stretched across a gap (an armpit, between fingers), or a closed hem floor
-whose rays first meet the back of a face inside the hem — no ray length reaches past that: the miss
-map says which. A failed `game.silhouette_iou_min` or `game.extent` at a sound bake is detail the
+a wider hem close under `voxel.close`.
+
+The bake runs in two passes. The first is step 4's. Where it misses, the second bakes again through
+a cage: a face whose centre lies more than `CAGE_AIM` (0.002) × H off the showcase — a floor the
+fill closed across a hem, whose own rays run up the leg opening — aims all its rays at the nearest
+showcase point, backed off at most half that distance so the first hit is not the back of a wall
+behind it; the other faces keep the first pass's rays. The second pass fills only the texels the
+first missed: base colour and occlusion from its bake, the normal flat (its ray meets a wall at an
+angle, and that wall's normal would shade the floor as a wall); the margin nearer a filled texel than
+a first-pass hit grows from the filled texels (the first pass grew it from black: a dark seam). Every
+texel the first pass hit keeps its bytes; `bake.first_pass_hit_changed` counts, per map, any that
+did not, and `bake.aimed_faces`, `bake.recovered_texels` and `bake.recovered_margin_texels` say what
+the second pass did. A recovered floor takes the colour of the nearer wall (the leg or the garment),
+so it can change colour at a face edge. A failed
+`game.bake_miss` (neither pass) is a cage or ray too short, webbing the retopology stretched across
+a gap (an armpit, between fingers), or a face near the showcase whose rays still run past
+`max_ray_distance`: the miss map says where. A failed `game.silhouette_iou_min` or `game.extent` at a sound bake is detail the
 budget cannot carry (a spike the pull refused, fingers merged into a mitten): look at the sheet,
 then a larger budget, hair cards, or the regenerate route.
 

@@ -12,7 +12,9 @@ turned into one mesh, decimated to about --faces triangles, written as OUT_DIR/N
 (exam/1, kind truth: the joints it was built from, in the GLB's frame, Z up). Joints are the capsule ends the
 body was built from; the ends (hand_tip, toe_tip, heel, head_top, finger tips) are the mesh's own extreme
 points along the true axis; head_top is the skull's, measured before any hair is added. Each body's
-proportions are jittered by at most 2 % from --seed, so a seed is one reproducible cast.
+proportions are jittered by at most 2 % from --seed, so a seed is one reproducible cast. A body with `prop`
+(held_prop "L", held_both "both") gets a closed flat board beside the arm, from over the shoulder to under the
+hand, added as its own piece after the truth is read (prop_boards).
 
 weights: the FBX of a bound rig (the pipeline's export) gets one known weight fault and is saved as a .blend
 for `deform_gate.py --armature RIG --mesh MESH --map CONTRACT.json`. FAULT is one of
@@ -55,7 +57,7 @@ FINGER_NAMES = ("index", "middle", "ring", "little")
 # Body parameters, metres for a 1.7 m adult; `scale` sets the final size. Every body starts from STANDARD.
 STANDARD = dict(scale=1.75 / 1.7, leg=1.0, torso=1.0, girth=1.0, limb=1.0, arm=1.0, head=1.0, neck=1.0,
                 arm_deg=(45.0, 45.0), hands="fingers", hair=False, skirt=None, knee_dz=0.0, shoulder_dz=0.0,
-                foot=1.0)
+                foot=1.0, prop=None)
 CAST = {
     "standard":   dict(),
     "chibi":      dict(scale=1.0 / 1.7, leg=0.45, torso=0.75, head=2.1, arm=0.62, limb=1.25, girth=1.15,
@@ -67,7 +69,15 @@ CAST = {
     "spiky_hair": dict(hair=True),
     "skirt":      dict(skirt=0.40),              # rigged with --body skirt (rig_exam.py run)
     "asym":       dict(arm_deg=(43.5, 46.5), knee_dz=0.008, shoulder_dz=0.006),
+    "held_prop":  dict(prop="L", expect_fail=["refused.held_prop"]),   # a board beside the left arm: refused
+    "held_both":  dict(prop="both", expect_fail=["refused"]),          # one beside each arm: refused, no reason
 }
+# a held prop (prop "L" or "both"): a flat board standing beside the arm, x the scale
+PROP_HALF = 0.025       # its half-thickness across X
+PROP_WIDTH = 0.15       # its half-width along Y
+PROP_GAP = 0.03         # from the hand's tip to its inner face
+PROP_ABOVE = 0.06       # its top over the shoulder joint
+PROP_BELOW = 0.30       # its foot under the hand's tip
 
 
 # --- the skeleton -------------------------------------------------------------------------------------------
@@ -302,6 +312,22 @@ def extreme(V, origin, direction, near=None, radius=None):
     return V[k].copy()
 
 
+def prop_boards(s: dict, lm: dict) -> tuple:
+    """(vertices, faces) of the held prop in the truth's grounded frame: per side of s["prop"] ("L", or "both"), a
+    closed flat board standing beside the arm, PROP_GAP outside the hand's tip, from PROP_ABOVE over the shoulder
+    to PROP_BELOW under the tip. A separate piece added after the truth is read, so no landmark lands on it."""
+    import mesh_check as M
+    k = s["scale"]
+    pieces = []
+    for tag in {"L": (".L",), "both": (".L", ".R")}[s["prop"]]:
+        sg = 1.0 if tag == ".L" else -1.0
+        tip, sh = np.asarray(lm["hand_tip" + tag]), np.asarray(lm["shoulder" + tag])
+        x = float(tip[0]) + sg * (PROP_GAP + PROP_HALF) * k
+        top, foot = float(sh[2]) + PROP_ABOVE * k, float(tip[2]) - PROP_BELOW * k
+        pieces.append(M.tube((x, 0.0, top), (x, 0.0, foot), PROP_HALF * k, rx=PROP_HALF * k, ry=PROP_WIDTH * k))
+    return M.assemble(pieces)
+
+
 def make_truth(name: str, seed: int, faces: int) -> tuple:
     s = body_spec(name, seed)
     body, t, fingers, skull_top = build_body(s)
@@ -336,12 +362,18 @@ def make_truth(name: str, seed: int, faces: int) -> tuple:
     # fingers count as apart only where the built surface parts into four across them (metaballs can fuse them)
     parts = 0 if s["hands"] == "mitten" else finger_parts(V - shift, F, lm)
     separate = 4 if parts == 4 else 0
+    Vg = V - shift
+    if s["prop"]:                       # the prop joins the mesh only now: the truth is the body's alone
+        PV, PF = prop_boards(s, lm)
+        F = np.vstack([F, PF + len(Vg)])
+        Vg = np.vstack([Vg, PV])
     doc = {"schema": SCHEMA, "kind": "truth", "name": name, "seed": seed, "height": round(H, 5), "frame": "glb",
-           "up": "+Z", "forward": "-Y", "spec": {k2: v for k2, v in s.items() if k2 != "expect_fail"},
+           "up": "+Z", "forward": "-Y", "spec": {k2: v for k2, v in s.items()
+                                                 if k2 != "expect_fail" and not (k2 == "prop" and v is None)},
            "landmarks": {k2: [round(float(x), 5) for x in v] for k2, v in sorted(lm.items())},
            "fingers": {"separate": separate, "thumb": separate > 0, "parts_across": parts},
            "expect_fail": list(CAST[name].get("expect_fail", [])), "triangles": int(len(F))}
-    return body, V - shift, F, doc
+    return body, Vg, F, doc
 
 
 def cast(out: str, only, seed: int, faces: int) -> dict:
@@ -572,11 +604,14 @@ def selftest() -> tuple[int, list]:
         if not cond:
             failed.append(name)
     A.clear_scene()
+    opts = {"spine_bones": 3, "fingers": "fixed", "adjust": None, "arm_angle": (30.0, 60.0),
+            "arm_ratios": (0.42, 0.75), "symmetry_max": 0.02, "no_window_gate": False}
     with tempfile.TemporaryDirectory() as d:
-        rep = cast(d, ["standard", "mitten"], 0, 20000)
+        rep = cast(d, ["standard", "mitten", "held_prop"], 0, 20000)
         doc = json.load(open(os.path.join(d, "standard.truth.json"), encoding="utf-8"))
-        ok("cast: two bodies written", set(rep["bodies"]) == {"standard", "mitten"} and all(
+        ok("cast: three bodies written", set(rep["bodies"]) == {"standard", "mitten", "held_prop"} and all(
             os.path.getsize(b["glb"]) > 10000 for b in rep["bodies"].values()))
+        ok("truth: no prop key on a body without one", "prop" not in doc["spec"] and doc["expect_fail"] == [])
         ok("truth: exam/1 with joints and finger joints", doc["schema"] == SCHEMA and "elbow.L" in doc["landmarks"]
            and "index3.L" in doc["landmarks"] and doc["fingers"]["separate"] == 4)
         lm = {k: np.array(v) for k, v in doc["landmarks"].items()}
@@ -597,8 +632,23 @@ def selftest() -> tuple[int, list]:
         ok("mitten: no finger joints in the truth, one part across the hand",
            "index1.L" not in mit and finger_parts(V2, F2, {**mit, **{k: lm[k] for k in ("middle0.L", "middle1.L",
                                                                                      "middle2.L")}}) <= 1)
-        opts = {"spine_bones": 3, "fingers": "fixed", "adjust": None, "arm_angle": (30.0, 60.0),
-                "arm_ratios": (0.42, 0.75), "symmetry_max": 0.02, "no_window_gate": False}
+        hp = json.load(open(os.path.join(d, "held_prop.truth.json"), encoding="utf-8"))
+        hl = {k: np.array(v) for k, v in hp["landmarks"].items()}
+        V3, F3 = M.load_mesh(Path(os.path.join(d, "held_prop.glb")))
+        board = V3[V3[:, 0] > hl["hand_tip.L"][0] + 0.01]
+        ok("held_prop: expects refused.held_prop; the board stands apart outside the hand's tip, from over the "
+           "shoulder to under the tip; the truth is the body's (fingers apart, the tip on the hand)",
+           hp["expect_fail"] == ["refused.held_prop"] and hp["spec"]["prop"] == "L" and len(board) > 8
+           and board[:, 2].max() > hl["shoulder.L"][2] and board[:, 2].min() < hl["hand_tip.L"][2] - 0.1
+           and not (V3[:, 0] < hl["hand_tip.R"][0] - 0.01).any() and hp["fingers"]["separate"] == 4
+           and np.linalg.norm(hl["hand_tip.L"] - hl["wrist.L"]) < 0.25 and hp["triangles"] == len(F3))
+        try:
+            AM.build_report(V3, F3, opts)
+            why = None
+        except AM.Refused as e:
+            why = e
+        ok("held_prop: arp_markers refuses it as held_prop beside the L arm",
+           why is not None and why.reason == "held_prop" and "beside the L arm" in str(why))
         # a weight fault on a hand-made skin
         A.clear_scene()
         body, _ = A.build_runner()

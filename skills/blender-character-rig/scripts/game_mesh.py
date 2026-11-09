@@ -51,8 +51,17 @@ route      1 voxel remesh of a copy at --voxel x H (H the height; default 0.005)
              --ray x H (Blender takes the first front-facing hit along the ray and drops it past the
              distance, so a longer ray changes only texels that would otherwise miss: those under a
              closed hem). The base colour is baked with the showcase's metallic held at 0 (Cycles' Diffuse
-             colour is base colour x (1 - metallic)); it is baked once more with no margin to count
-             the missed texels. Roughness and metallic are not carried: the game material reads 0.7, 0.
+             colour is base colour x (1 - metallic)); it is baked once more with no margin to find the
+             missed texels. That is pass 1. When it misses texels, pass 2 bakes again through a cage
+             (aimed_cage): a face whose centre lies more than CAGE_AIM x H off the showcase (a floor the
+             fill closed across a hem, whose normal rays run up the leg opening) aims all its rays at the
+             nearest showcase point; the other faces keep pass 1's rays. Pass 2 fills only the texels
+             pass 1 missed, base colour and occlusion from its bake, the normal flat (its ray meets a wall
+             at an angle, whose normal would shade the floor as that wall), and the margin nearer a texel
+             it filled than a pass-1 hit grows from the filled texels (fill_margin; pass 1's grew from
+             black there, a dark seam); every texel pass 1 hit keeps its bytes
+             (bake.first_pass_hit_changed counts any that did not, per map). Roughness and
+             metallic are not carried: the game material reads 0.7, 0.
 gates      game.tris            the triangle count in [TRIS_FLOOR x target, target]
            game.one_surface     loose pieces of the game mesh, <= 1
            game.solid           enclosed volume / the volume of a SOLID_VOXEL x H voxel remesh of the
@@ -70,8 +79,9 @@ gates      game.tris            the triangle count in [TRIS_FLOOR x target, targ
                                 k = sqrt(UV area / 3D area) of the whole mesh: max(s1/k, k/s2) is how far
                                 a texel is stretched or squashed in its worst direction against the mean
                                 density; the 95th percentile weighted by 3D area, <= UV_STRETCH_MAX
-           game.bake_miss       texels inside the UV islands (1 px in) that no ray reached, as a share,
-                                from the no-margin base colour bake (alpha 0), <= BAKE_MISS_MAX
+           game.bake_miss       texels inside the UV islands (1 px in) that neither bake pass reached,
+                                as a share, from the no-margin base colour bakes (alpha 0), <= BAKE_MISS_MAX;
+                                pass 1 alone is reported under bake.first_pass_miss
            game.bake_delta      mean CIE76 delta E between flat-lit, unshaded texture renders of the
                                 showcase and the game mesh, same 8 cameras, over the pixels both cover
                                 (2 px in from either edge), <= BAKE_DELTA_MAX
@@ -80,7 +90,11 @@ gates      game.tris            the triangle count in [TRIS_FLOOR x target, targ
 outputs    DIR/<name>_game.glb (uncompressed), DIR/<name>_game.blend (the game mesh alone, maps linked),
            DIR/textures/<name>_{BaseColor,Normal,Occlusion}.png, DIR/<name>_game_vs_showcase.png
            (rows: showcase textured, game textured, showcase clay, game clay; columns front, three
-           quarter, left, back), DIR/<name>_bake_miss.png (UV space: grey islands, red where no ray hit),
+           quarter, side, back), DIR/<name>_bake_miss.png (UV space: grey where pass 1 hit, blue where only
+           pass 2 did, red where neither),
+           DIR/views/{front,three_quarter,side,back}.png (one view each: showcase | game, textured over
+           clay), DIR/prereview.spec.json (codex-visual prereview.py's S5 sheet: those four views and the
+           bake_miss picture, paths relative to DIR, with stage, subject and require),
            DIR/mesh_check.json, DIR/game_mesh.json.
 
 Report: gate/1 (schemas/gate-1.json), every numeric gate with its margin. Exit codes: 0 every gate
@@ -114,7 +128,8 @@ BAKE_MISS_MAX = 0.005
 BAKE_DELTA_MAX = 6.0      # delta E; assemble_parts' seam.colour limit
 VIEW_PX = 512
 AZIMUTHS = (0, 45, 90, 135, 180, 225, 270, 315)
-SHEET_AZ = (0, 45, 90, 180)
+VIEW_LABELS = ((0, "front"), (45, "three_quarter"), (90, "side"), (180, "back"))   # azimuth, picture name
+SHEET_AZ = tuple(az for az, _ in VIEW_LABELS)
 FILL_CLOSE = 1            # cavity fill: openings up to about 2 x this many voxels are closed
 FILL_CLOSE_MAX = 4        # when the first fill leaves pieces apart (legs up a hem), close wider, up to this
 SOLID_MIN = 0.9           # game.solid: enclosed volume / the volume of a coarse remesh of the same mesh
@@ -130,6 +145,9 @@ TIP_REACH = 2.0           # vertices within this many pull lengths follow the pu
 TIP_TURN = 0.2            # a pull that turns a face's normal past acos(this), or lifts a face off the surface,
                           # is halved, twice, then refused
 TIP_MAX_EDGE = 3.0        # a pull longer than this many local edge lengths is refused: a spike, not a tip
+CAGE_AIM = 0.002          # bake pass 2: a face whose centre lies farther than this (x H) from the showcase aims
+                          # its rays at the nearest showcase point (a hem floor the fill closes sits several
+                          # times this off; a texel the normal rays hit typically well under it)
 BODIES = ("human", "skirt", "chibi")
 
 
@@ -401,6 +419,38 @@ def bake_miss(UV, F, alpha, px):
     n = int(inside.sum())
     missed = inside & (np.asarray(alpha) < 0.5)
     return (float(missed.sum()) / n if n else None), n, missed
+
+
+def fill_missed(first, second, hit1, hit2):
+    """Bake pass 2 into pass 1: texels pass 1 missed and pass 2 hit take pass 2's value, every other texel keeps
+    pass 1's bytes. (merged pixels, the texels taken)."""
+    take = ~hit1 & hit2
+    merged = first.copy()
+    merged[take] = second[take]
+    return merged, take
+
+
+def fill_margin(pix, real, take, keep, steps):
+    """The margin round the texels pass 2 filled. Pass 1's margin next to them grew from its misses (black), and
+    a filtered texture bleeds it into the island's edge as a dark seam. Grow the texels holding a baked value
+    (real) outward steps 4-neighbour steps, each texel taking the value it grew from, and write only the texels
+    grown from take, never a real or a keep texel: the margin pass 1 grew from its hits keeps its bytes.
+    (pixels, texels written)."""
+    np = _np()
+    val, src, own = pix.copy(), real.copy(), take & real
+    for _ in range(steps):
+        ps, po, pv = np.pad(src, 1), np.pad(own, 1), np.pad(val, ((1, 1), (1, 1), (0, 0)))
+        new = np.zeros_like(src)
+        for sl in ((slice(0, -2), slice(1, -1)), (slice(2, None), slice(1, -1)),
+                   (slice(1, -1), slice(0, -2)), (slice(1, -1), slice(2, None))):
+            m = ~src & ~new & ps[sl]
+            val[m], own[m] = pv[sl][m], po[sl][m]
+            new |= m
+        src |= new
+    write = own & ~real & ~keep
+    out = pix.copy()
+    out[write] = val[write]
+    return out, write
 
 
 def lost_tips(d, E, floor, least):
@@ -1003,6 +1053,46 @@ def bake(show, game, kind, img, margin, samples, **extra):
     return time.time() - t0
 
 
+def drop_object(obj):
+    """Remove a mesh object and its mesh."""
+    import bpy
+    me = obj.data
+    bpy.data.objects.remove(obj, do_unlink=True)
+    bpy.data.meshes.remove(me)
+
+
+def aimed_cage(show, game, extrude, aim):
+    """Bake pass 2's cage: the game mesh's faces, each on its own corners, moved extrude out along the vertex
+    normals (pass 1's rays), or, for a face whose centre lies farther than aim from the showcase, moved as one
+    back from the nearest showcase point, so all its rays run parallel at that point (a hem floor the fill
+    closed, whose normal rays run up the leg opening; per vertex, two corners aiming at opposite walls would
+    leave the rays between them running up it again). It moves back half the centre's distance at most: no
+    surface lies that near, so the first hit is not the back of a wall behind the face. (cage, faces aimed)."""
+    import bpy
+    from mathutils.bvhtree import BVHTree
+    np = _np()
+    bvh = BVHTree.FromObject(show, bpy.context.evaluated_depsgraph_get())
+    me = game.data
+    V = np.array([v.co[:] for v in me.vertices], float)
+    N = np.array([v.normal[:] for v in me.vertices], float)
+    verts, faces, aimed = [], [], 0
+    for p in me.polygons:
+        idx = list(p.vertices)
+        q, _, _, d = bvh.find_nearest(p.center)
+        if q is not None and d > aim:
+            pts = V[idx] + np.array((p.center - q)[:]) / d * min(extrude, d / 2)
+            aimed += 1
+        else:
+            pts = V[idx] + N[idx] * extrude
+        faces.append(list(range(len(verts), len(verts) + len(idx))))
+        verts.extend(pts.tolist())
+    cm = bpy.data.meshes.new(f"{game.name}_cage")
+    cm.from_pydata(verts, [], faces)
+    cage = bpy.data.objects.new(f"{game.name}_cage", cm)
+    bpy.context.scene.collection.objects.link(cage)
+    return cage, aimed
+
+
 class NoMetal:
     """Cycles' Diffuse colour pass is base colour x (1 - metallic): a metal button bakes black. Inside this
     block every Principled BSDF of obj reads metallic 0 (links cut, values kept and put back)."""
@@ -1160,6 +1250,15 @@ def save_sheet(rows, path):
     img.file_format = 'PNG'
     img.save()
     bpy.data.images.remove(img)
+
+
+def prereview_spec(name):
+    """The S5 pre-review spec written beside the outputs: contact_sheet's items spec (paths relative to
+    the output folder, no schema stamp) with the stage, subject and report prereview.py reads."""
+    items = [{"image": f"views/{label}.png", "label": label} for _, label in VIEW_LABELS]
+    items.append({"image": f"{name}_bake_miss.png", "label": "bake_miss"})
+    return {"title": f"{name} S5: showcase | game, textured over clay; bake_miss in UV space", "cols": 3,
+            "cell": 640, "items": items, "stage": "S5", "subject": f"{name}_game.glb", "require": ["game_mesh.json"]}
 
 
 def run_mesh_check(glb, body, out_json):
@@ -1347,42 +1446,88 @@ def run(a, stop_after_retopo=False):
     tmp_mat = bpy.data.materials.new(f"{name}_bake")
     tmp_mat.use_nodes = True
     game.data.materials.append(tmp_mat)
-    probe = bpy.data.images.new(f"{name}_miss", px, px, alpha=True)
-    with NoMetal(show):
-        bake_secs = {"miss": bake(show, game, 'DIFFUSE', probe, 0, 1, pass_filter={'COLOR'})}
-    alpha = image_pixels(probe)[..., 3]
-    miss, inside, missed = bake_miss(UVflat, Fc, alpha, px)
-    pic = np.ones((px, px, 4), np.float32)                 # white outside, grey islands, red: no ray hit
-    pic[alpha >= 0.5, :3] = 0.7
-    pic[missed, :3] = (1.0, 0.0, 0.0)
-    probe.pixels.foreach_set(pic.reshape(-1))
-    probe.filepath_raw = miss_png = os.path.join(out, f"{name}_bake_miss.png")
-    probe.file_format = 'PNG'
-    probe.save()
-    bpy.data.images.remove(probe)
-    gates.append(gate("game.bake_miss", r4(miss), BAKE_MISS_MAX, "<=", texels=inside))
-    maps = {}
-    for key, kind, space, samples, extra in (
-            ("BaseColor", 'DIFFUSE', 'sRGB', 4, {"pass_filter": {'COLOR'}}),
-            ("Normal", 'NORMAL', 'Non-Color', 4, {"normal_space": 'TANGENT'}),
-            ("Occlusion", 'AO', 'Non-Color', a.ao_samples, {})):
-        img = bpy.data.images.new(f"{name}_{key}", px, px, alpha=False)
-        img.colorspace_settings.name = space
-        if kind == 'DIFFUSE':
-            with NoMetal(show):
-                bake_secs[key] = bake(show, game, kind, img, a.margin_px, samples, **extra)
-        else:
-            bake_secs[key] = bake(show, game, kind, img, a.margin_px, samples, **extra)
-        path = os.path.join(out, "textures", f"{name}_{key}.png")
+
+    def bake_into(kind, img, margin, samples, **extra):
+        if kind != 'DIFFUSE':
+            return bake(show, game, kind, img, margin, samples, **extra)
+        with NoMetal(show):
+            return bake(show, game, kind, img, margin, samples, **extra)
+
+    def probe_alpha(key):
+        img = bpy.data.images.new(f"{name}_{key}", px, px, alpha=True)
+        bake_secs[key] = bake_into('DIFFUSE', img, 0, 1, pass_filter={'COLOR'})
+        alpha = image_pixels(img)[..., 3].copy()
+        bpy.data.images.remove(img)
+        return alpha
+
+    def cage_on(cage):
+        scene.render.bake.use_cage = cage is not None
+        scene.render.bake.cage_object = cage
+
+    # pass 1 along the normals, every map, as if there were no pass 2 (the cage does not exist yet: an AO ray
+    # would meet it); pass 2 (the aimed cage, hidden from the render) only where pass 1 missed and some face is
+    # off the showcase
+    kinds = (("BaseColor", 'DIFFUSE', 'sRGB', 4, {"pass_filter": {'COLOR'}}),
+             ("Normal", 'NORMAL', 'Non-Color', 4, {"normal_space": 'TANGENT'}),
+             ("Occlusion", 'AO', 'Non-Color', a.ao_samples, {}))
+    bake_secs, maps, changed = {}, {}, {}
+
+    def save(img, path):
         img.filepath_raw = path
         img.file_format = 'PNG'
         img.save()
-        maps[key] = img
+
+    alpha1 = probe_alpha("miss")
+    first_miss, inside, missed1 = bake_miss(UVflat, Fc, alpha1, px)
+    for key, kind, space, samples, extra in kinds:
+        maps[key] = bpy.data.images.new(f"{name}_{key}", px, px, alpha=False)
+        maps[key].colorspace_settings.name = space
+        bake_secs[key] = bake_into(kind, maps[key], a.margin_px, samples, **extra)
+        save(maps[key], os.path.join(out, "textures", f"{name}_{key}.png"))
+    aimed, alpha2, ring = 0, np.zeros_like(alpha1), np.zeros(alpha1.shape, bool)
+    if missed1.any():
+        cage, aimed = aimed_cage(show, game, a.cage * H, CAGE_AIM * H)
+        cage.hide_render = True
+        if aimed:
+            cage_on(cage)
+            alpha2 = probe_alpha("miss_2")
+            hit1, hit2 = alpha1 >= 0.5, alpha2 >= 0.5
+            for key, kind, space, samples, extra in kinds:
+                first = image_pixels(maps[key])
+                if kind == 'NORMAL':        # an aimed ray meets its wall at an angle: that wall's normal would
+                    second = np.broadcast_to(np.float32([0.5, 0.5, 1, 1]), first.shape)   # shade the floor
+                else:                       # as the wall; the floor reads flat, the game surface's own normal
+                    two = bpy.data.images.new(f"{name}_{key}_2", px, px, alpha=False)
+                    two.colorspace_settings.name = space
+                    bake_secs[f"{key}_2"] = bake_into(kind, two, 0, samples, **extra)
+                    second = image_pixels(two)
+                    bpy.data.images.remove(two)
+                merged, take = fill_missed(first, second, hit1, hit2)
+                merged, ring = fill_margin(merged, hit1 | take, take, missed1 & ~hit2, a.margin_px)
+                maps[key].pixels.foreach_set(merged.reshape(-1))
+                changed[key] = int((image_pixels(maps[key]) != first).any(-1)[hit1].sum())
+                maps[key].save()
+            cage_on(None)
+        drop_object(cage)
+    miss, _, missed = bake_miss(UVflat, Fc, np.maximum(alpha1, alpha2), px)
+    pic = np.ones((px, px, 4), np.float32)     # white outside, grey hit, blue hit by pass 2 only, red: neither
+    pic[alpha1 >= 0.5, :3] = 0.7
+    pic[(alpha1 < 0.5) & (alpha2 >= 0.5), :3] = (0.2, 0.5, 1.0)
+    pic[missed, :3] = (1.0, 0.0, 0.0)
+    probe = bpy.data.images.new(f"{name}_miss", px, px, alpha=True)
+    probe.pixels.foreach_set(pic.reshape(-1))
+    miss_png = os.path.join(out, f"{name}_bake_miss.png")
+    save(probe, miss_png)
+    bpy.data.images.remove(probe)
+    gates.append(gate("game.bake_miss", r4(miss), BAKE_MISS_MAX, "<=", texels=inside))
     game.data.materials.clear()
     bpy.data.materials.remove(tmp_mat)
     game.data.materials.append(game_material(f"{name}_game", maps["BaseColor"], maps["Normal"], maps["Occlusion"]))
     info["bake"] = {"cage_extrusion": r4(a.cage * H), "max_ray_distance": r4(a.ray * H), "margin_px": a.margin_px,
-                    "ao_samples": a.ao_samples, "seconds": {k: round(v, 1) for k, v in bake_secs.items()}}
+                    "ao_samples": a.ao_samples, "first_pass_miss": r4(first_miss), "cage_aim": CAGE_AIM,
+                    "aimed_faces": aimed, "recovered_texels": int((missed1 & ~missed).sum()),
+                    "recovered_margin_texels": int(ring.sum()), "first_pass_hit_changed": changed,
+                    "seconds": {k: round(v, 1) for k, v in bake_secs.items()}}
     secs["bake"] = round(time.time() - t0, 1)
 
     # 5 the same cameras: silhouettes, colour, the approval sheet
@@ -1391,7 +1536,8 @@ def run(a, stop_after_retopo=False):
     if node_s is not None:
         mat_s.node_tree.nodes.active = node_s
     views = Views(show, VIEW_PX)
-    per_view, de_sum, de_n, tex = {}, 0.0, 0, {}
+    per_view, de_sum, de_n, tex, clay = {}, 0.0, 0, {}, {}
+    view_pngs = {}
     try:
         for az in AZIMUTHS:
             fs = views.shoot(show, [game], az, "texture")
@@ -1401,11 +1547,15 @@ def run(a, stop_after_retopo=False):
             de_sum, de_n = de_sum + s, de_n + n
             if az in SHEET_AZ:
                 tex[az] = (fs, fg)
+                clay[az] = (views.shoot(show, [game], az, "clay"), views.shoot(game, [show], az, "clay"))
         rows = [[tex[az][0] for az in SHEET_AZ], [tex[az][1] for az in SHEET_AZ],
-                [views.shoot(show, [game], az, "clay") for az in SHEET_AZ],
-                [views.shoot(game, [show], az, "clay") for az in SHEET_AZ]]
+                [clay[az][0] for az in SHEET_AZ], [clay[az][1] for az in SHEET_AZ]]
         sheet = os.path.join(out, f"{name}_game_vs_showcase.png")
         save_sheet(rows, sheet)
+        os.makedirs(os.path.join(out, "views"), exist_ok=True)
+        for az, label in VIEW_LABELS:               # one view each for the pre-review: showcase | game
+            view_pngs[label] = os.path.join(out, "views", f"{label}.png")
+            save_sheet([list(tex[az]), list(clay[az])], view_pngs[label])
     finally:
         views.close()
     worst = min(per_view, key=lambda k: per_view[k]["iou"])
@@ -1442,8 +1592,11 @@ def run(a, stop_after_retopo=False):
                       "inner_shell": (mc.get("double_shell") or {}).get("inner_shell")})
     secs["write_check"] = round(time.time() - t0, 1)
     secs["total"] = round(time.time() - t_all, 1)
+    spec_path = os.path.join(out, "prereview.spec.json")
+    with open(spec_path, "w", encoding="utf-8") as handle:
+        json.dump(prereview_spec(name), handle, indent=1)
     info["outputs"] = {"glb": glb, "blend": blend, "sheet": sheet, "mesh_check": mc_path, "bake_miss": miss_png,
-                       "maps": map_paths}
+                       "maps": map_paths, "views": view_pngs, "prereview_spec": spec_path}
     doc = report_doc(gates, **info, seconds=secs)
     return (0 if doc["pass"] else 2), doc
 
@@ -1539,6 +1692,30 @@ def selftest():
     alpha[100:120, 100:120] = 0
     m, inside, missed = bake_miss(uv, F, alpha, 256)
     ok("bake_miss: a 20 x 20 hole reads its share", abs(m - 400 / inside) < 1e-9 and missed.sum() == 400, r4(m))
+    alpha2 = np.zeros_like(alpha)
+    alpha2[100:120, 100:110] = 1                        # pass 2 reaches half the hole, and texels pass 1 hit
+    alpha2[50:60, 50:60] = 1
+    m2, _, missed2 = bake_miss(uv, F, np.maximum(alpha, alpha2), 256)
+    ok("bake_miss over both passes: only the half neither pass reached counts",
+       abs(m2 - 200 / inside) < 1e-9 and missed2.sum() == 200 and not missed2[100:120, 100:110].any(), r4(m2))
+    p1 = np.random.default_rng(0).random((256, 256, 4)).astype(np.float32)
+    p2 = np.random.default_rng(1).random((256, 256, 4)).astype(np.float32)
+    merged, take = fill_missed(p1, p2, alpha >= 0.5, alpha2 >= 0.5)
+    hit = np.zeros((20, 20), bool)
+    hit[:, 2:8] = hit[:, 14:16] = True                  # pass 1 hit; columns 10-12 pass 2 filled, 13 neither
+    tk = np.zeros_like(hit)
+    tk[:, 10:13] = True
+    kp = np.zeros_like(hit)
+    kp[:, 13] = True
+    pm = np.zeros((20, 20, 4), np.float32)
+    pm[hit], pm[tk] = 0.3, 0.6
+    fm, wr = fill_margin(pm, hit | tk, tk, kp, 2)
+    ok("fill_margin: only margin nearer a filled texel than a hit one takes its value; hit, neither and pass 1's "
+       "margin keep theirs", wr.sum() == 20 and wr[:, 9].all() and (fm[:, 9] == 0.6).all()
+       and (fm[~wr] == pm[~wr]).all(), int(wr.sum()))
+    ok("fill_missed: pass 2 only where pass 1 missed and pass 2 hit; every texel pass 1 hit keeps its value",
+       take.sum() == 200 and (merged[take] == p2[take]).all() and (merged[~take] == p1[~take]).all()
+       and (merged[alpha >= 0.5] == p1[alpha >= 0.5]).all(), int(take.sum()))
 
     # lost_tips: a path 0-1-2-3 and a pair 5-6; vertex 4 alone
     d = np.array([0.02, 0.05, 0.03, 0.001, 0.009, 0.004, 0.008])
@@ -1548,6 +1725,13 @@ def selftest():
        tips == [(0.05, 1, 3), (0.009, 4, 1), (0.008, 6, 2)], tips)
     ok("lost_tips: nothing past the limit reads no tip", lost_tips(d, E, 0.003, 0.06) == [] and
        lost_tips(np.zeros(7), E, 0.003, 0.006) == [])
+    sp = prereview_spec("Runner")
+    ok("prereview spec: S5, the four views and bake_miss in order, paths relative, the report required",
+       [i["label"] for i in sp["items"]] == ["front", "three_quarter", "side", "back", "bake_miss"]
+       and [i["image"] for i in sp["items"]] == ["views/front.png", "views/three_quarter.png", "views/side.png",
+                                                  "views/back.png", "Runner_bake_miss.png"]
+       and sp["stage"] == "S5" and sp["subject"] == "Runner_game.glb" and sp["require"] == ["game_mesh.json"]
+       and "schema" not in sp and isinstance(sp["cols"], int) and isinstance(sp["cell"], int))
     ok("gate: a range reads its margin", gate("game.tris", 7600, [4000, 8000], "range")["margin"] == 0.2)
     gs = [gate("game.tris", 7600, [4000, 8000], "range"), gate("game.uv_overlap", 0.0, UV_OVERLAP_MAX, "<="),
           gate("game.silhouette_iou_min", 0.97, IOU_MIN, ">=")]
@@ -1583,7 +1767,6 @@ def _figure(path, inner_shell=True, spike=None, skirt=None):
     inside it and never touch it."""
     import bpy
     import bmesh
-    np = _np()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     parts = []
 
@@ -1622,6 +1805,27 @@ def _figure(path, inner_shell=True, spike=None, skirt=None):
     fig.data.remesh_voxel_size = 0.012
     bpy.ops.object.voxel_remesh()
     fig.name = "Figure"
+    _texture(fig)
+    if inner_shell:
+        bm = bmesh.new()
+        bm.from_mesh(fig.data)
+        bm.normal_update()
+        dup = bmesh.ops.duplicate(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:])
+        verts = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMVert)]
+        faces = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMFace)]
+        for v in verts:
+            v.co -= v.normal * 0.0015
+        bmesh.ops.reverse_faces(bm, faces=faces)
+        bm.to_mesh(fig.data)
+        bm.free()
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=False)
+
+
+def _texture(obj):
+    """Smart UV Project and a striped image texture on the Base Color."""
+    import bpy
+    np = _np()
+    only(obj, active=obj)
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.01)
@@ -1640,19 +1844,34 @@ def _figure(path, inner_shell=True, spike=None, skirt=None):
     t = nt.nodes.new("ShaderNodeTexImage")
     t.image = img
     nt.links.new(t.outputs["Color"], bsdf.inputs["Base Color"])
-    fig.data.materials.append(mat)
-    if inner_shell:
-        bm = bmesh.new()
-        bm.from_mesh(fig.data)
-        bm.normal_update()
-        dup = bmesh.ops.duplicate(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:])
-        verts = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMVert)]
-        faces = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMFace)]
-        for v in verts:
-            v.co -= v.normal * 0.0015
-        bmesh.ops.reverse_faces(bm, faces=faces)
-        bm.to_mesh(fig.data)
-        bm.free()
+    obj.data.materials.append(mat)
+
+
+def _hem(path, gap):
+    """A leg inside a trouser leg closed at the top, gap off the leg and open at the hem, the leg stopping
+    inside: the wider close floors the gap at the hem, and that floor's normal rays run up the trouser leg
+    past max_ray_distance (a closed hem floor)."""
+    import bpy
+    import bmesh
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=0.07, depth=0.7, location=(0, 0, 0.35))
+    leg = bpy.context.object
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=0.09 + gap, depth=0.5, location=(0, 0, 0.55),
+                                        end_fill_type='NGON')
+    tube = bpy.context.object
+    bm = bmesh.new()
+    bm.from_mesh(tube.data)
+    bmesh.ops.delete(bm, geom=[min(bm.faces, key=lambda f: f.calc_center_median().z)], context='FACES_ONLY')
+    bm.to_mesh(tube.data)
+    bm.free()
+    tube.modifiers.new("wall", "SOLIDIFY").thickness = 0.02
+    only(tube, active=tube)
+    bpy.ops.object.modifier_apply(modifier="wall")
+    only(leg, tube, active=leg)
+    bpy.ops.object.join()
+    leg.data.remesh_voxel_size = 0.006
+    bpy.ops.object.voxel_remesh()
+    _texture(leg)
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=False)
 
 
@@ -1665,7 +1884,9 @@ def _stub(path, body):
 
 def selftest_blender():
     """The whole route on a synthetic figure, a finger the budget rounds off and the pull back, legs apart
-    inside a skirt and the wider close, a planted bake fault, and AutoRemesher's failures."""
+    inside a skirt and the wider close, a planted bake fault, a closed hem floor bake pass 2 recovers, and
+    AutoRemesher's failures."""
+    np = _np()
     failed = []
 
     def ok(name, cond, value=None):
@@ -1696,6 +1917,20 @@ def selftest_blender():
         ok("figure: GLB, blend, three maps and the sheet written",
            all(os.path.isfile(p) for p in [outs.get("glb", ""), outs.get("blend", ""), outs.get("sheet", "")]
                + list(outs.get("maps", {}).values())) and len(outs.get("maps", {})) == 3)
+        base = os.path.join(tmp, "base")
+        try:
+            with open(os.path.join(base, "prereview.spec.json"), encoding="utf-8") as handle:
+                spec = json.load(handle)
+        except (OSError, ValueError):
+            spec = {}
+        imgs = [i.get("image", "") for i in spec.get("items", [])]
+        ok("figure: the four view pictures and the S5 pre-review spec, its paths relative and on disk",
+           [i.get("label") for i in spec.get("items", [])] == ["front", "three_quarter", "side", "back", "bake_miss"]
+           and all(os.path.isfile(os.path.join(base, "views", f"{v}.png"))
+                   for v in ("front", "three_quarter", "side", "back"))
+           and all(i and not os.path.isabs(i) and os.path.isfile(os.path.join(base, i)) for i in imgs)
+           and spec.get("stage") == "S5" and spec.get("subject") == "figure_game.glb"
+           and spec.get("require") == ["game_mesh.json"] and os.path.isfile(os.path.join(base, "game_mesh.json")), imgs)
         ok("figure: every numeric gate carries a margin",
            all("margin" in x for x in doc["gates"] if isinstance(x.get("value"), (int, float))))
         contract_sample("game_mesh", "figure", doc)
@@ -1782,6 +2017,31 @@ def selftest_blender():
         ok("planted: a cage and ray too short to reach the showcase fail bake_miss and bake_delta, exit 2",
            code == 2 and not g["game.bake_miss"]["pass"] and not g["game.bake_delta"]["pass"],
            (g["game.bake_miss"]["value"], g["game.bake_delta"]["value"]))
+
+        hem = os.path.join(tmp, "hem.glb")
+        _hem(hem, 0.03)
+        code, doc = run(parser().parse_args([hem, "--out", os.path.join(tmp, "hem"), "--target-tris", "3000",
+                                             "--tex-px", "512", "--ao-samples", "4", "--voxel", "0.006"]))
+        g = {x["name"]: x for x in doc["gates"]}
+        b, outs = doc.get("bake", {}), doc.get("outputs", {})
+        first, miss, texels = b.get("first_pass_miss"), g["game.bake_miss"]["value"], g["game.bake_miss"]["texels"]
+        ok("hem floor: pass 1 misses it (over the bake_miss limit), pass 2 reaches most of it (under the limit), "
+           "every texel pass 1 hit unchanged in every map, the margin round the recovered texels refilled",
+           first is not None and first > BAKE_MISS_MAX >= miss and b.get("recovered_texels", 0) >= 0.5 * first * texels
+           and b.get("first_pass_hit_changed") == {"BaseColor": 0, "Normal": 0, "Occlusion": 0}
+           and b.get("recovered_margin_texels", 0) > 0,
+           (first, miss, b.get("recovered_texels"), b.get("recovered_margin_texels"), b.get("first_pass_hit_changed")))
+        pic = {}
+        for key, path in (("miss", outs.get("bake_miss")), ("bc", outs.get("maps", {}).get("BaseColor")),
+                          ("nm", outs.get("maps", {}).get("Normal"))):
+            im = bpy.data.images.load(path)
+            pic[key] = image_pixels(im)[..., :3]
+            bpy.data.images.remove(im)
+        taken = (pic["miss"][..., 2] > 0.9) & (pic["miss"][..., 0] < 0.3)       # blue: pass 2 only
+        ok("hem floor: the texels pass 2 reached take the showcase's colour (not the black of a miss) and a flat "
+           "normal", taken.any() and pic["bc"][taken].mean() > 0.2
+           and np.abs(pic["nm"][taken] - [0.5, 0.5, 1.0]).max() < 0.01,
+           (int(taken.sum()), r4(pic["bc"][taken].mean()) if taken.any() else None))
 
         if os.name == "posix":
             for case, body, want in (

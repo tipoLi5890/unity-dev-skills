@@ -39,7 +39,11 @@ with its node's world transform and keeps its own base colour). The tier is reco
   python3 concept_match.py --selftest
 
 Writes DIR/renders/<view>.png, DIR/views/<view>.png (the concept on the same canvas),
-DIR/compare.png (concept | render | outlines), DIR/pairs.json and DIR/concept_match.json.
+DIR/compare.png (concept | render | outlines), DIR/pairs.json and DIR/concept_match.json, and
+DIR/pairs/<view>.png (concept | render, on grey) with DIR/prereview.spec.json for codex-visual
+`prereview.py new --spec DIR/prereview.spec.json --out review/NAME`: stage S3b (the colours, collage,
+baked light, outline and lost detail it asks about), one cell per view labelled with the view,
+subject the GLB, no require (this report is report-only); paths relative to DIR.
 
 Exit codes: 0 report written (whatever the numbers), 1 usage error (a bad flag, an unreadable
 GLB, sims file or concept view, a view with no figure), 2 selftest failed.
@@ -445,7 +449,6 @@ def compare_sheet(rows, path, tile=192):
     """concept | render | outlines (white both, red concept only, cyan render only), one row per view."""
     sheet = Image.new("RGB", (3 * tile, len(rows) * (tile + 16)), (24, 24, 24))
     d = ImageDraw.Draw(sheet)
-    grey = np.full((1, 1, 3), 128.0)
     for j, (name, concept, rend) in enumerate(rows):
         y = j * (tile + 16)
         d.text((4, y + 2), name, fill=(255, 255, 255))
@@ -455,11 +458,44 @@ def compare_sheet(rows, path, tile=192):
         diff[cm & ~rm] = (230, 60, 60)
         diff[rm & ~cm] = (60, 220, 230)
         for i, im in enumerate((concept, rend)):
-            al = im[..., 3:4] / 255.0
-            comp = (im[..., :3] * al + grey * (1 - al)).astype(np.uint8)
-            sheet.paste(Image.fromarray(comp).resize((tile, tile), Image.LANCZOS), (i * tile, y + 16))
+            sheet.paste(Image.fromarray(on_grey(im)).resize((tile, tile), Image.LANCZOS), (i * tile, y + 16))
         sheet.paste(Image.fromarray(diff).resize((tile, tile), Image.NEAREST), (2 * tile, y + 16))
     sheet.save(path)
+
+
+GREY = 128           # the backdrop of compare.png and the pair pictures: a dark or a light outline both show
+
+
+def on_grey(rgba):
+    al = rgba[..., 3:4] / 255.0
+    return (rgba[..., :3] * al + GREY * (1 - al)).astype(np.uint8)
+
+
+def rel_to(path: Path, base: Path) -> str:
+    """path relative to base, forward slashes; absolute when there is none (another drive)."""
+    try:
+        return Path(os.path.relpath(Path(path).resolve(), Path(base).resolve())).as_posix()
+    except ValueError:
+        return Path(path).resolve().as_posix()
+
+
+def pair_pictures(rows, out: Path, glb: Path, size: int) -> Path:
+    """DIR/pairs/<view>.png, the aligned concept beside the render (a 4 px dark gap), and DIR/prereview.spec.json,
+    the contact_sheet spec of those pictures with stage S3b, subject the GLB and no require."""
+    (out / "pairs").mkdir(exist_ok=True)
+    items, gap = [], 4
+    for name, concept, rend in rows:
+        pic = Image.new("RGB", (2 * size + gap, size), (24, 24, 24))
+        pic.paste(Image.fromarray(on_grey(concept)), (0, 0))
+        pic.paste(Image.fromarray(on_grey(rend)), (size + gap, 0))
+        pic.save(out / "pairs" / f"{name}.png")
+        items.append({"image": f"pairs/{name}.png", "label": name})
+    cell = min(size, 384)
+    spec = {"title": f"{Path(glb).stem}: concept | render", "cols": 2, "cell": [2 * cell + gap + 16, cell],
+            "items": items, "stage": "S3b", "subject": rel_to(glb, out), "require": []}
+    path = out / "prereview.spec.json"
+    path.write_text(json.dumps(spec, indent=1))
+    return path
 
 
 def run(a) -> dict:
@@ -508,6 +544,7 @@ def run(a) -> dict:
         rows.append((name, warped, rend))
     (out / "pairs.json").write_text(json.dumps({"pairs": pairs}, indent=1))
     compare_sheet(rows, out / "compare.png")
+    pair_pictures(rows, out, a.glb, size)
     names = [n for n, _ in a.views]
     sims, source, engine, reason = embeddings(a, out, names)
     for n in names:
@@ -733,6 +770,15 @@ def selftest() -> int:
         pj = json.loads((td / "m_same" / "pairs.json").read_text()) if code == 0 else {"pairs": []}
         check("pairs_relative_to_dir", [p["id"] for p in pj["pairs"]] == list(same)
               and pj["pairs"][0] == {"id": "front", "a": "renders/front.png", "b": "views/front.png"})
+        sp = json.loads((td / "m_same" / "prereview.spec.json").read_text()) if code == 0 else {}
+        sp_paths = [i["image"] for i in sp.get("items", [])] + [sp.get("subject") or "/"]
+        pic = Image.open(td / "m_same" / "pairs" / "front.png") if code == 0 else None
+        check("prereview_spec_s3b", sp.get("stage") == "S3b" and sp.get("require") == []
+              and [i["label"] for i in sp["items"]] == list(same) and sp["subject"] == "../cube.glb"
+              and sp["items"][0]["image"] == "pairs/front.png"
+              and all(not os.path.isabs(x) and (td / "m_same" / x).is_file() for x in sp_paths)
+              and pic.size == (2 * size + 4, size)
+              and pic.getpixel((2, 2)) == (GREY,) * 3 and pic.getpixel((size + 1, 2)) == (24, 24, 24))
         tq = rep.get("views", {}).get("three_quarter", {})
         check("three_quarter_camera_found", tq.get("pitch") == 20.0 and tq.get("yaw") == 315.0 and tq.get("silhouette_iou", 0) >= 0.95,
               f"yaw {tq.get('yaw')} pitch {tq.get('pitch')} iou {tq.get('silhouette_iou')}")

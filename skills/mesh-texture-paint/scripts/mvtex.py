@@ -464,6 +464,10 @@ def edge_distance(mask, depth, depth_jump):
 
 # ----------------------------------------------------------------------------- accumulate
 
+# Accumulator.seen flags (report only): which cameras saw a texel and why a used one gave it no weight
+SEEN_USED, SEEN_REJECTED, SEEN_BAND, SEEN_EDGE, SEEN_OUTSIDE = 1, 2, 4, 8, 16
+CAUSES = ("never_seen", "rejected_only", "outside_drawing", "outline_band", "edge_ramp", "other")
+
 class Accumulator:
     def __init__(self, mesh: Mesh, res=2048):
         self.mesh, self.res = mesh, res
@@ -475,6 +479,8 @@ class Accumulator:
         self.owner = np.full(n, -1, np.int32)  # view that gave the best weight
         self.seeable = np.zeros(n, bool)
         self.views = 0
+        self.seen = np.zeros(n, np.uint8)     # SEEN_* flags: why a seeable texel stayed unpainted
+        self.seen_whole = True                # False when resumed from a state saved without seen
 
     def visibility(self, cam: Camera, tri=None, dep=None, max_angle=75.0):
         if tri is None:
@@ -499,7 +505,7 @@ class Accumulator:
 
     def add_view(self, cam: Camera, painted: np.ndarray, paint_mask: np.ndarray, view_weight=1.0,
                  tri=None, dep=None, edge_lo=2.0, edge_hi=8.0, power=4.0, refine=1.5, match=True,
-                 thin_edge=(0.5, 2.0)):
+                 thin_edge=(0.5, 2.0), why=None):
         """Back-project one painted view.
 
         Edge falloff: weight 0 within edge_lo px of the silhouette or a depth step, 1 from edge_hi.
@@ -509,7 +515,9 @@ class Accumulator:
         refine: a texel that is already painted only takes this view when the view's weight beats
         the best earlier weight by this factor (None blends every view). match: fit a per-channel
         gain/offset from this view's colours to the texture on texels both already cover, so a
-        view painted a shade off does not leave a seam.
+        view painted a shade off does not leave a seam. why: optional screen masks {"band", "outside"}
+        of pixels paint_mask left out (the outline-disagreement band, outside the drawn figure), only
+        to record in `seen` why a visible texel took no paint (unpainted_causes).
         """
         if tri is None:
             tri, dep, _ = render_buffers(self.mesh, cam)
@@ -527,6 +535,13 @@ class Accumulator:
             narrow = np.clip((e - lo) / (hi - lo), 0, 1)
             we = narrow if self.mesh.thin else np.where(had, we, narrow)
         w = np.where(ok, view_weight * np.clip(cos, 0, 1) ** power * we, 0.0)
+        self.seen[vis] |= SEEN_USED
+        self.seen[ok & (we <= 0)] |= SEEN_EDGE
+        if why:
+            off = vis & ~ok
+            for key, flag in (("band", SEEN_BAND), ("outside", SEEN_OUTSIDE)):
+                if why.get(key) is not None:
+                    self.seen[off & why[key][yi, xi]] |= flag
         rep = {}
         if match:
             pair = np.nonzero(had & (w > 0) & (cos > 0.5))[0]
@@ -553,6 +568,39 @@ class Accumulator:
         self.views += 1
         rep.update({"texels": int(idx.size), "new_texels": int((~had[idx]).sum())})
         return rep
+
+    def note_rejected(self, cam: Camera, tri=None, dep=None):
+        """Record the texels a camera whose paint was rejected sees (unpainted_causes)."""
+        vis, _, _, _ = self.visibility(cam, tri, dep)
+        self.seen[vis] |= SEEN_REJECTED
+
+    def unpainted_causes(self, subset=None):
+        """Seeable texels left unpainted, as shares of the seeable texels (of subset when given), by
+        the first cause that holds: never_seen (no used or rejected camera sees it), rejected_only
+        (only cameras whose paint was rejected), outside_drawing (a used view saw it where the model's
+        drawing does not cover the render), outline_band (inside the drawing but within the band around
+        the outlines' disagreement; the band contains the outside pixels, so outside goes first),
+        edge_ramp (on a silhouette or depth-step pixel, where the edge ramp is 0), other. Report only:
+        the shares sum to 1 - coverage over the set. causes is null after resuming a state saved
+        without these records."""
+        s = self.seeable if self.seeable.any() else np.ones(self.pos.shape[0], bool)
+        if subset is not None:
+            s = s & subset
+        need = s & (self.wsum <= 0)
+        f = self.seen[need]
+        used = (f & SEEN_USED) > 0
+        rej = (f & SEEN_REJECTED) > 0
+        outside = used & ((f & SEEN_OUTSIDE) > 0)
+        band = used & ~outside & ((f & SEEN_BAND) > 0)
+        edge = used & ~outside & ~band & ((f & SEEN_EDGE) > 0)
+        parts = {"never_seen": ~used & ~rej, "rejected_only": ~used & rej, "outline_band": band,
+                 "edge_ramp": edge, "outside_drawing": outside, "other": used & ~band & ~edge & ~outside}
+        tot = max(1, int(s.sum()))
+        out = {"seeable_texels": int(s.sum()), "unpainted": round(float(need.sum() / tot), 4),
+               "causes": {k: round(float(parts[k].sum() / tot), 4) for k in CAUSES}}
+        if not self.seen_whole:    # resumed from a state saved without seen: every cause would read never_seen
+            out["causes"], out["why_no_causes"] = None, "resumed from a state saved without seen"
+        return out
 
     def painted_texmask(self):
         """(res, res) float mask of painted texels with a gutter, for context renders."""
@@ -581,12 +629,14 @@ class Accumulator:
 
     def save(self, path):
         np.savez_compressed(path, wsum=self.wsum, csum=self.csum.astype(np.float32), best=self.best,
-                            owner=self.owner, seeable=self.seeable, views=self.views)
+                            owner=self.owner, seeable=self.seeable, views=self.views, seen=self.seen)
 
     def load(self, path):
         d = np.load(path)
         self.wsum, self.csum, self.best = d["wsum"], d["csum"].astype(np.float64), d["best"]
         self.owner, self.seeable, self.views = d["owner"], d["seeable"], int(d["views"])
+        self.seen_whole = "seen" in d.files   # a state from before seen: the causes cannot be told
+        self.seen = d["seen"] if self.seen_whole else np.zeros(self.pos.shape[0], np.uint8)
 
     def coverage(self):
         painted = self.wsum > 0
@@ -1200,6 +1250,41 @@ def selftest():
     check("nbv_ignores_specks", specks is None and raw is not None and face is not None
           and yaw_pitch_to_dir(face["yaw"], face["pitch"])[0] > 0.5,
           {"unpainted_share": round(float((sp.wsum <= 0).mean()), 3)})
+
+    # 8. unpainted causes: the front painted with a band cut out of its paint mask and the drawing missing
+    # the band's middle (inside the band, as paint_loop's masks are), the back seen only by a rejected
+    # camera; the shares sum to 1 - coverage
+    ua = Accumulator(mesh, res)
+    ua.mark_seeable(cams)
+    band = np.zeros_like(m)
+    outside = np.zeros_like(m)
+    ys, xs = np.nonzero(m)
+    mid = (xs.min() + xs.max()) // 2
+    band[:, mid - 6:mid + 6] = True
+    outside[:, mid - 2:mid + 2] = True
+    band &= m
+    outside &= m
+    ua.add_view(front, img, m & ~band, why={"band": band, "outside": outside})
+    ua.note_rejected(Camera.orbit(mesh.center, 0.87, 180, 0, size=256))
+    uc = ua.unpainted_causes()
+    c = uc["causes"]
+    top = ua.nrm[:, 1] > 0.9
+    check("unpainted_causes", c["outline_band"] > 0.005 and c["outside_drawing"] > 0.001 and c["edge_ramp"] > 0 and c["rejected_only"] > 0.1
+          and c["never_seen"] > 0.3 and abs(sum(c.values()) - uc["unpainted"]) < 1e-3
+          and abs(uc["unpainted"] - (1 - ua.coverage())) < 1e-3
+          and ua.unpainted_causes(top)["causes"]["never_seen"] > 0.9, uc)
+    # a state saved before `seen` existed: resuming it reads no causes instead of all never_seen
+    with tempfile.TemporaryDirectory() as td:
+        st = f"{td}/state.npz"
+        ua.save(st)
+        d = dict(np.load(st))
+        d.pop("seen")
+        np.savez_compressed(st, **d)
+        ub = Accumulator(mesh, res)
+        ub.load(st)
+        ur = ub.unpainted_causes()
+    check("unpainted_causes_old_state", ur["causes"] is None and "why_no_causes" in ur
+          and abs(ur["unpainted"] - uc["unpainted"]) < 1e-6, ur)
 
     passed = all(v if isinstance(v, bool) else v["pass"] for v in results.values())
     print(json.dumps({"checks": results, "seconds": round(time.time() - t0, 1), "pass": passed}))

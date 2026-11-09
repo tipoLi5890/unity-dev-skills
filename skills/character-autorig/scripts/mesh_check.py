@@ -31,7 +31,7 @@ Gates (each failing one makes exit 2):
   legs_separated   in the leg band (fractions of H; default 0.12-0.38, below any crotch, above the
                    feet), the share of cuts with a part wholly left of the midline, a part wholly
                    right of it, and no part across it. >= --leg-min-ratio (0.9). Fails: both legs
-                   in one tube, a long skirt, a robe.
+                   in one tube, a long skirt, a robe, a cape behind the legs.
   arms_separated   in the arm band (default 0.50-0.74 H, between the hands of a 30-60 degree A-pose
                    and the armpit), the longest run of consecutive cuts in which a part lies wholly
                    outside the torso part on BOTH sides. >= --arm-min-span (0.05) x H. Fails: an arm
@@ -47,10 +47,11 @@ Gates (each failing one makes exit 2):
                    generators always write, a cloth flap, an ear), is reported as `inner_shell`
                    and not gated: the deformation gate measures the outward-facing side only.
 
---body skirt (a long coat, a skirt, a robe: one part across the midline from a hem down to the knees
-or below, the legs apart under it). The hem is the lowest cut from which a part crosses the midline
-in every cut up to 0.6 H (the crotch of a body in trousers). legs_separated is read from the leg
-band's foot up to 0.02 H under the hem, and a second gate stands beside it:
+--body skirt (a long coat, a skirt, a robe, a cape or cloak bridging the legs from behind: one part
+across the midline from a hem down to the knees or below, the legs apart under it). The hem is the
+lowest cut from which a part crosses the midline in every cut up to 0.6 H (the crotch of a body in
+trousers). legs_separated is read from the leg band's foot up to 0.02 H under the hem, and a second
+gate stands beside it:
   skirt_hem        a hem was found and the legs show under it for >= 0.08 x H (SKIRT_MIN_LEGS) of
                    the leg band. Fails: a floor-length robe (no legs to measure: the hand-built
                    route), both legs in one tube.
@@ -58,7 +59,10 @@ band's foot up to 0.02 H under the hem, and a second gate stands beside it:
                    share is reported as skirt.layer: a coat over trousers is two sheets there by design.
 The report gains skirt {hem_h, legs_band, hem_width_over_legs, layer}. With the default body, a hem
 signature (legs apart under a part that crosses the midline from 0.22-0.42 H up, at least 1.15 x
-their span) is reported as skirt_hint: rerun with --body skirt.
+their span) is reported as skirt_hint: rerun with --body skirt. A narrower part that crosses the
+midline only behind the legs' centre in every cut from its hem up 0.04 H (CAPE_RISE; a pelvis crosses
+in front too) is a cape or cloak bridging the legs from behind: skirt_hint with behind: true. The hint
+is advice, never a gate.
 
 --body chibi (a big head, about a third of H or more, on a short body with short limbs; chosen at G0, never
 to rescue a body that failed the default bands). The bands follow the body type, the limits do not change:
@@ -69,8 +73,8 @@ degree A-pose on short arms hang near 0.35-0.45 H, the armpit near 0.55 H). Both
 
 Report: {tool, file, body, height, triangles, vertices, midline_x, crotch_h, legs{band, cuts, separated,
 ratio, first_fused_h}, arms{band, cuts, run_h, armpit_h, left, right}, double_shell{ratio, inner_shell,
-samples, gap}, skirt?, skirt_hint?, gates[{name, value, limit, pass, margin?}], schema, pass}: a gate/1 report
-(schemas/gate-1.json). legs_separated, arms_separated (>=) and double_shell (<=) carry `margin`, the signed
+samples, gap}, skirt?, skirt_hint?{hem_h, legs_below, hem_width_over_legs, behind?, why}, gates[{name, value,
+limit, pass, margin?}], schema, pass}: a gate/1 report (schemas/gate-1.json). legs_separated, arms_separated (>=) and double_shell (<=) carry `margin`, the signed
 distance to the limit (gate_margin: + safe, - failing); skirt_hem carries none. Heights ending in `_h` are
 fractions of H.
 
@@ -97,6 +101,7 @@ SKIRT_MIN_LEGS = 0.08     # x H of leg band that must show under a hem
 SKIRT_TOP = 0.55          # the skirt zone runs from the hem up to here (x H)
 HEM_CLEAR = 0.02          # the legs are read up to this far under the hem (x H)
 HINT_WIDTH = 1.15         # skirt_hint: the hem at least this much wider than the legs under it
+CAPE_RISE, CAPE_CUTS = 0.04, 3   # skirt_hint, a narrow hem: only behind the legs this far up (x H), over this many cuts
 CHIBI_CROTCH_FROM = 0.10  # --body chibi: the crotch is searched from here up (x H; short legs part low)
 CHIBI_LEG_FROM = 0.06     # --body chibi: the leg band's foot (x H), over the shoe soles
 CHIBI_ARM_BAND = (0.35, 0.65)   # --body chibi: hands near 0.35-0.45 H, armpit near 0.55 H
@@ -548,20 +553,61 @@ def extent(parts: list[dict]) -> float:
     return max(p["x"][1] for p in parts) - min(p["x"][0] for p in parts) if parts else 0.0
 
 
-def skirt_hint(prof: dict, crotch_h: float | None, leg_band, min_ratio: float) -> dict | None:
+def skirt_hint(prof: dict, crotch_h: float | None, leg_band, min_ratio: float, v=None, f=None) -> dict | None:
     """A hem signature on the default body: the legs apart under a part that crosses the midline from
-    0.22-0.42 H up (a long coat or a skirt), so the crotch read there is a hem."""
+    0.22-0.42 H up (a long coat or a skirt), so the crotch read there is a hem. The part is at least
+    HINT_WIDTH x the legs' span, or (given the mesh v, f) it crosses the midline only behind the legs
+    over CAPE_RISE x H from the hem: a cape or cloak bridging the legs from behind."""
     if crotch_h is None or not 0.22 <= crotch_h < 0.42:
         return None
     below = legs(prof, (leg_band[0], crotch_h - HEM_CLEAR))
     if below["cuts"] < 4 or below["ratio"] < min_ratio:
         return None
     wide = hem_width(prof, crotch_h)
-    if wide is None or wide < HINT_WIDTH:      # a pelvis as wide as the legs under it: a low crotch, no hem
+    if wide is not None and wide >= HINT_WIDTH:
+        return {"hem_h": crotch_h, "legs_below": round(below["ratio"], 4), "hem_width_over_legs": round(wide, 4),
+                "why": f"a part crosses the midline from {crotch_h:.3f} H up with the legs apart under it: a hem, not "
+                       "a crotch. A long coat, a skirt or a robe: rerun with --body skirt"}
+    # as narrow as the legs: a low crotch (a pelvis crosses the midline in front and behind), or a cape
+    if v is None or f is None or not cape_behind(v, f, prof, crotch_h):
         return None
-    return {"hem_h": crotch_h, "legs_below": round(below["ratio"], 4), "hem_width_over_legs": round(wide, 4),
-            "why": f"a part crosses the midline from {crotch_h:.3f} H up with the legs apart under it: a hem, not "
-                   "a crotch. A long coat, a skirt or a robe: rerun with --body skirt"}
+    return {"hem_h": crotch_h, "legs_below": round(below["ratio"], 4),
+            "hem_width_over_legs": None if wide is None else round(wide, 4), "behind": True,
+            "why": f"a part crosses the midline only behind the legs from {crotch_h:.3f} H up, with the legs apart "
+                   "under it: a cape's hem, not a crotch. A cape or cloak bridging the legs from behind: rerun with "
+                   "--body skirt"}
+
+
+def midline_y(v: np.ndarray, f: np.ndarray, z: float, x: float) -> np.ndarray:
+    """Where the cut at Z = z crosses the line X = x: the Y of every crossing."""
+    seg = section_segments(v, f, z)
+    if not len(seg):
+        return np.zeros(0)
+    a, b = seg[:, 0], seg[:, 1]
+    hit = (a[:, 0] >= x) != (b[:, 0] >= x)        # an end on the line counts as just right of it
+    a, b = a[hit], b[hit]
+    return a[:, 1] + (x - a[:, 0]) / (b[:, 0] - a[:, 0]) * (b[:, 1] - a[:, 1])
+
+
+def cape_behind(v: np.ndarray, f: np.ndarray, prof: dict, hem: float) -> bool:
+    """In every cut from the hem up CAPE_RISE x H (at least CAPE_CUTS of them), the surface crosses the
+    midline and only behind (+Y; the character faces -Y) the centre of the legs just under the hem. A
+    pelvis crosses in front too; the gluteal join alone over a crotch does not last CAPE_RISE."""
+    mid = prof["midline_x"]
+    under = min((c for c in prof["cuts"] if c["h"] <= hem - HEM_CLEAR), key=lambda c: abs(c["h"] - (hem - HEM_CLEAR)),
+                default=None)
+    if not under or not under["parts"]:
+        return False
+    area = sum(p["area"] for p in under["parts"])
+    legs_y = sum(p["cy"] * p["area"] for p in under["parts"]) / area
+    window = [c for c in prof["cuts"] if hem <= c["h"] <= hem + CAPE_RISE]
+    if len(window) < CAPE_CUTS:
+        return False
+    for c in window:
+        ys = midline_y(v, f, c["z"], mid)
+        if not len(ys) or ys.min() <= legs_y:
+            return False
+    return True
 
 
 def hem_width(prof: dict, hem: float) -> float | None:
@@ -635,7 +681,7 @@ def check(v: np.ndarray, f: np.ndarray, args) -> dict:
     elif chibi:
         rep["chibi"] = chibi
     else:
-        hint = skirt_hint(prof, crotch_h, args.leg_band, args.leg_min_ratio)
+        hint = skirt_hint(prof, crotch_h, args.leg_band, args.leg_min_ratio, v, f)
         if hint:
             rep["skirt_hint"] = hint
     return rep
@@ -673,7 +719,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--shell-max", type=float, default=0.25)
     p.add_argument("--shell-samples", type=int, default=6000)
     p.add_argument("--body", choices=("human", "skirt", "chibi"), default="human",
-                   help="skirt: a long coat, skirt or robe; the legs are read under its hem. chibi: a big head "
+                   help="skirt: a long coat, skirt, robe, or a cape or cloak bridging the legs from behind; the "
+                        "legs are read under its hem. chibi: a big head "
                         "on short limbs; the bands follow the body type")
     p.add_argument("--selftest", action="store_true")
     return p
@@ -757,11 +804,14 @@ def open_tube(a, b, rx, ry, n=32, rings=12):
     return v, f[:2 * n * (rings - 1)]
 
 
-def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip=True, skirt=None, open_skirt=False):
+def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip=True, skirt=None, open_skirt=False,
+         cape=None, cape_y=0.14):
     """A 1.7 m body of tubes: A-pose by default, facing -Y. `inner` adds an inner twin shell that
     far inside, facing inward (back to back with the skin) or, with inner_flip False, outward.
     `skirt` (a fraction of 1.7 m): a skirt from the waist down to that hem around both legs, solid
-    (a closed tube) or with open_skirt a sheet open at the hem with the legs inside it."""
+    (a closed tube) or with open_skirt a sheet open at the hem with the legs inside it. `cape` (a
+    fraction of 1.7 m): a flat sheet at Y cape_y (+ behind the legs, - in front) from the hips down
+    to that hem, as wide as the legs (under 1.15 x their span)."""
     s45 = math.sqrt(0.5)
     parts = [((0, 0, 0.86), (0, 0, 1.42), dict(r=0.15, rx=0.15, ry=0.10)),
              ((0, 0, 1.40), (0, 0, 1.52), dict(r=0.05)),
@@ -785,6 +835,8 @@ def body(fused_legs=False, fused_arms=False, t_pose=False, inner=0.0, inner_flip
         hem = skirt * 1.7
         pieces.append(open_tube((0, 0, hem), (0, 0, 1.0), 0.21, 0.14) if open_skirt else
                       tube((0, 0, hem), (0, 0, 1.0), 0.21, rx=0.21, ry=0.14))
+    if cape is not None:            # its top inside the skirt zone (under 0.55 H), over the torso's foot
+        pieces.append(tube((0, cape_y, cape * 1.7), (0, cape_y, 0.92), 0.17, rx=0.17, ry=0.012))
     if inner:
         for a, b, kw in parts:
             kw2 = {k: max(0.005, v - inner) for k, v in kw.items()}
@@ -910,6 +962,24 @@ def selftest() -> int:
         code, rep = run([str(d / "robe.obj"), "--body", "skirt"])
         ok("floor-length robe, --body skirt: skirt_hem fails (too little leg shows)", code == 2
            and not gate(rep, "skirt_hem")["pass"] and "floor-length" in rep["skirt"]["why"])
+        # a cape behind the legs, as wide as they are: no width signature, but it crosses the midline only
+        # behind them; the same sheet in front (an apron) gets no hint
+        for name, sv in (("cape", body(cape=0.30)), ("apron", body(cape=0.30, cape_y=-0.14))):
+            write_obj(d / f"{name}.obj", *sv)
+        code, rep = run([str(d / "cape.obj")])
+        hint = rep.get("skirt_hint") or {}
+        ok("back-only cape, default body: legs_separated fails with a cape skirt_hint at the hem", code == 2
+           and not gate(rep, "legs_separated")["pass"] and hint.get("behind") is True
+           and abs(hint["hem_h"] - 0.30) < 0.03 and hint["hem_width_over_legs"] < HINT_WIDTH and "cape" in hint["why"])
+        code, rep = run([str(d / "cape.obj"), "--body", "skirt"])
+        ok("back-only cape, --body skirt: exit 0, hem near 0.30, legs read under it", code == 0
+           and abs(rep["skirt"]["hem_h"] - 0.30) < 0.03 and gate(rep, "skirt_hem")["pass"]
+           and gate(rep, "legs_separated")["pass"] and gate(rep, "double_shell")["pass"])
+        code, rep = run([str(d / "apron.obj")])
+        ok("front-only apron, default body: legs_separated fails, no skirt_hint", code == 2
+           and not gate(rep, "legs_separated")["pass"] and "skirt_hint" not in rep)
+        ok("separated body, skirt and robe: no cape hint", "skirt_hint" not in reports["good"][1]
+           and "behind" not in (run([str(d / "skirt.obj")])[1].get("skirt_hint") or {}))
         ok("good body, --body skirt: still passes (the hem is its crotch)", run([str(d / "good.obj"), "--body", "skirt"])[0] == 0)
         # a chibi: the default bands miss its short legs and arms; --body chibi reads them in its own bands
         write_obj(d / "chibi.obj", *chibi_body())

@@ -35,8 +35,9 @@ folder outside the repository: a reference case holds a real character's mesh.
 ## The cast
 
 `rig_exam_blender.py` builds each body from metaballs around a known skeleton: an A-pose facing −Y,
-with the soles on Z 0. Each body is one mesh of about 40k triangles. `--seed` jitters the proportions
-by up to 2 %, so a seed always gives the same cast.
+with the soles on Z 0. Each body is one mesh of about 40k triangles (a held body: the body and its board). `--seed` jitters the proportions
+by up to 2 %, so a seed always gives the same cast. A held prop (`held_prop`, `held_both`) is a
+closed board added as its own piece after the truth is read, so no landmark lands on it.
 
 | Body | What it tests | Expected |
 |---|---|---|
@@ -49,6 +50,8 @@ by up to 2 %, so a seed always gives the same cast.
 | `spiky_hair` | hair that raises the top of the mesh | the windows read the hair as height |
 | `skirt` | a solid skirt over the crotch, hem at 0.40 of 1.7 m; run with `--body skirt` | without it, the crotch read at the hem; with it, the crotch hidden and the hip placed from the knee |
 | `asym` | arms a few degrees apart, one knee and shoulder a few mm higher | within the symmetry gate |
+| `held_prop` | the standard body with a flat board (a shield) beside the left arm, from over the shoulder to under the hand | `arp_markers` refuses it with reason `held_prop` (`expect_fail` `refused.held_prop`) |
+| `held_both` | a board beside each arm | refused without a reason code (`expect_fail` `refused`): the reason code's negative control |
 
 **Truth** (`NAME.truth.json`, `exam/1`, kind `truth`, in the GLB's frame with Z up):
 
@@ -71,6 +74,12 @@ truth the same way. When a run stops before the markers, the exam measures the m
 anyway with `--no-window-gate` (`rig/NAME.markers_only.json`). Those landmarks are scored, but the
 case can never count as a pass.
 
+A step that refuses its input stops the run with exit 1 and says why in its report's `error`. The
+step the run stopped on reads as the gate `refused.<reason>` when the refusal carries a reason code
+(`arp_markers`' `held_prop`), else `refused`, and is scored against `expect_fail` like any gate; a
+step that stopped with no report (a crash) adds no gate. `run` lists a case whose truth expects
+a refusal and that stopped on one under `expected_refusals`, not `errors`.
+
 Each landmark's error is its distance from the truth divided by H, the markers' height. The exam
 scores the markers file and also the exported skeleton (UpperArm head against the shoulder, LowerArm
 against the elbow, and so on), in four groups:
@@ -91,8 +100,8 @@ what the stages did:
 | `false_fail` | correct, but a gate failed that the case does not expect |
 | `expected_fail` | failed only the gates the case expects (`expect_fail` in its truth) |
 | `true_fail` | a joint out of tolerance, and a gate failed |
-| `false_pass` | a joint out of tolerance, and every gate passed: the worst outcome |
-| `stopped` | the pipeline stopped for a reason the case does not expect |
+| `false_pass` | a joint out of tolerance, and every gate passed: the worst outcome; also a case built to be refused (`expect_fail` `refused…`) that every stage passed |
+| `stopped` | the pipeline stopped for a reason the case does not expect (`held_prop` refused without its reason, `held_both` refused as `held_prop`) |
 
 **Fingers found:** `detected` counts as 4, `ai` as its own count, and `fixed` as 0. The count is
 compared with the truth's apart fingers.

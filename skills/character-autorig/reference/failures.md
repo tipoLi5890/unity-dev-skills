@@ -5,7 +5,7 @@ measures and its limit: `reference/gates.md`.
 
 | What failed | Fix |
 |---|---|
-| `legs_separated` (mesh_check) | the legs are one tube: regenerate the views with a gap between the legs, or the mesh; no marker helps. A long coat, skirt or robe (the report's `skirt_hint`): the skirt route, `autorig.py all --body skirt` (`reference/gates.md`) |
+| `legs_separated` (mesh_check) | the legs are one tube: regenerate the views with a gap between the legs, or the mesh; no marker helps. A long coat, skirt or robe, or a cape or cloak bridging the legs from behind (the report's `skirt_hint`): the skirt route, `autorig.py all --body skirt` (`reference/gates.md`) |
 | `skirt_hem` (`--body skirt`) | no hem, or under 0.08 H of leg shows below it (a floor-length robe): the hand-built route, or views with the legs showing |
 | `markers.windows` hip at a hem (`crotch_h` 0.25–0.40, a coat or skirt in the pictures) | the hem read as the crotch: `--body skirt`, never `--adjust` the hip to pass |
 | `held_prop` (arp_markers refuses, exit 1) | a prop held beside one arm: separate it and attach it after the rig (`blender-character-rig` → `reference/prop-on-bone.md`), or regenerate the character empty-handed |

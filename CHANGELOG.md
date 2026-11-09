@@ -2,6 +2,109 @@
 
 Versions are the plugin's, in `.claude-plugin/plugin.json`.
 
+## 0.50.0
+
+The rig exam tests the held-prop refusal, a cape takes the skirt route, the pre-review sheets come
+out of the tools with one command, and the game mesh bakes what one pass misses. No gate limit
+changed.
+
+- **The rig exam has two bodies built to be refused** (`rig_exam_blender.py`, `rig_exam.py`).
+  - `held_prop`: a flat board beside the left arm, from over the shoulder to under the hand. It
+    must be refused at the markers with reason `held_prop`.
+  - `held_both`: a board beside each arm. It must get the plain refusal with no reason: the
+    reason code's negative control.
+  - The board is its own closed mesh, joined after the truth is read, so no landmark lands on it.
+    The nine other bodies build byte for byte as before.
+  - A refusal scores as the gate `refused.<reason>` (or `refused`), read from the step the run
+    stopped on with exit 1 and its report's error. A step that stopped with no report (a crash)
+    adds no gate and counts as an error.
+  - `run` lists an expected refusal under `expected_refusals` instead of counting it as an error.
+  - A body built to be refused that passes every stage scores `false_pass`.
+- **A cape takes the skirt route** (`mesh_check.py`, `routes.md`, `start-gate.md`, `gates.md`,
+  `failures.md`).
+  - On the default body, `skirt_hint` now also fires for a cape or cloak that bridges the legs
+    from behind but is no wider than them (`behind: true`): a part that crosses the midline only
+    behind the legs over its hem.
+  - The docs say a cape or cloak takes `--body skirt`, like a long coat, skirt or robe. The human
+    route would put the hip at the cape's hem and has no `skirt_tear` check.
+  - The hint is advice only. Reports on 26 meshes and three bodies are unchanged.
+- **Pre-review in one command** (`codex-visual`, `character-autorig`, `mesh-texture-paint`,
+  `blender-character-rig`).
+  - The tools that render pictures write `prereview.spec.json` beside them: a contact-sheet spec
+    with `stage`, `subject` and `require`, paths relative to its folder.
+  - `prereview.py new --spec DIR/prereview.spec.json --out review/NAME` takes stage, subject and
+    require from the spec. Flags given still win.
+  - `autorig.py` (S6): the marker pictures, then each pose front and `<pose>_side` from the deform
+    report the run kept (`repair/aN/` or `secondary/`). The subject is the result's FBX; it
+    requires that report. A run that rebuilds the rig without writing a spec removes the old one.
+  - `concept_match.py` (S3b): `pairs/<view>.png`, concept beside render, one cell per view.
+  - `game_mesh.py` (S5): `views/{front,three_quarter,side,back}.png`, showcase beside game,
+    textured over clay, and the bake-miss map. It requires `game_mesh.json`.
+  - The S5 sheet description and `s5.face` no longer name a game camera.
+- **`game_mesh.py` bakes in two passes.**
+  - Pass 1 is the bake as before. Where it missed, pass 2 bakes base colour and AO again through
+    an aimed cage: each face lying more than `CAGE_AIM` (0.002 H) off the showcase aims its rays
+    at the nearest showcase point. A closed hem floor is such a face; along its normal, the ray
+    ran up the leg opening past the ray distance.
+  - Pass 2 writes only the texels pass 1 missed, and the margin round them (pass 1 grew it from
+    black, a dark seam along UV edges). Every texel pass 1 hit keeps its value. Recovered texels
+    take a flat normal: pass 2's normals there are a wall's.
+  - `game.bake_miss` counts the texels neither pass reached; its limit is unchanged.
+    `bake.first_pass_miss`, `aimed_faces`, `recovered_texels`, `recovered_margin_texels` and
+    `first_pass_hit_changed` are report-only. The miss map is blue where only pass 2 reached.
+  - A pass 2 roughly doubles the bake time.
+- **A flat prop paints its back first** (`mesh-texture-paint/reference/troubleshooting.md`).
+  - After the first view every view is a context render, and the model keeps what the prior
+    shows. A shield painted front first kept its generated blue planks on the back.
+  - `--anchors 180:0,0:0,…` with `--no-zoom` paints the back first, as a clay render, from the
+    back drawing.
+  - `--prior ''` does not help: the nearest painted texels lie through the slab, so it showed the
+    front's emblem.
+- **`paint_loop.py` says why texels stay unpainted.**
+  - `report.json` gains `unpainted`: the seeable unpainted share split by the first cause that
+    holds (`never_seen`, `rejected_only`, `outside_drawing`, `outline_band`, `edge_ramp`, `other`).
+    Its causes are null after `--resume` of an older state.
+  - `--coverage-plane POINT NORMAL` adds `coverage_plane`, the same numbers on one side of a
+    plane. `hand_views.py` passes the hand's wrist plane, so the forearm stub the sleeve hides
+    does not count.
+  - Both are report only.
+- **Regression.**
+  - **Rig exam:** 11 bodies right. 8 pass, `held_prop` and `held_both` are refused as expected,
+    and `spiky_hair` fails as it should. 31 planted faults caught, 4 controls passing.
+  - **Characters:** runner, gatekeeper, mascot and guard2 pass every stage with `--repeat 3`. The
+    old fused guard is refused `held_prop`.
+  - **Compare against 0.49.0** flags two of guard2's margins: `skirt_tear` in the chosen run
+    (0 → 0.00021, margin 1.0 → 0.895) and the worst-of-three `self_intersection_p95` (0.0625 →
+    0.0684, margin 0.219 → 0.145).
+    - The rig path is unchanged: `autorig.py` only gained the spec writer.
+    - The arm markers of all six runs agree within 0.5 mm. The finger markers of the worst run
+      differ by up to 24 mm from the other two: the AI's finger read.
+    - `skirt_tear` stays inside the 0–0.0003 seen in 0.49. The runner's worst-of-three
+      self-intersection margin, flagged last release, went back up (0.35 → 0.45).
+  - **`game_mesh.py` at 8,000 triangles** now passes every gate on all four characters.
+    `game.bake_miss` goes 0.0016 → 0.0008 (runner), 0.0045 → 0.0024 (gatekeeper),
+    0.0088 → 0.0012 (mascot, failing before) and 0.0021 → 0.0012 (guard). `bake_delta` and
+    silhouette IoU are unchanged within 0.01. No texel pass 1 hit changed, in any map.
+  - **Pre-review:** on the four characters S3b, S5 and S6 each built with one command. Every
+    sheet flagged items for the person. The most common was the head-top marker on the hair or a
+    hat on all four.
+  - **The guard's shield:** its back repainted from the drawing; back palette ΔE against the
+    drawing 7.9 → 0.2. It mounts on guard2's left forearm with every gate green.
+  - **Hand paint, measured on one hand:** coverage 0.81 (0.79 past the wrist). Most of what stays
+    unpainted is never seen by any camera (0.13). None of the changes tried gained enough to keep:
+    ±30° pitch anchors (0.81 → 0.79), more views (the loop stops on no view first), a smaller
+    speck (+0.007) and a surface-following fill (ΔE within 0.02).
+- **Still open.**
+  - `head_top` is the highest vertex, so it lands on hair or a hat. The person moves it with
+    `--adjust`; reading the skull top is open.
+  - A recovered hem floor takes the colour of the nearer wall (leg skin on the mascot, where the
+    showcase is dark), with blocky edges between faces.
+  - Hand paint: unseen surface between the fingers. The right hand did not pass generation in
+    three tries.
+  - The S6 marker cells and the S5 face are small on the sheet, and S5 has no wireframe for
+    `s5.joints`.
+  - The undersides of the shield's straps keep a little of the generated blue.
+
 ## 0.49.0
 
 A held prop is its own asset. A character generated holding a shield or a weapon is now stopped at

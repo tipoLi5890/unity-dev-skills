@@ -200,7 +200,9 @@ python3 scripts/part_views.py generate ArtDirection/parts/courier/courier.parts.
   loop takes the colour back from the redrawn views. The bake's own texture is not the context: it
   streaks the forearm grey and tints the palm olive, the model continues both, and with it a steep
   view comes back as another hand; the nearest painted colour reads cleanly. The palm carries the
-  back's paint (the hidden view is a mirror).
+  back's paint (the hidden view is a mirror). The hand's wrist plane, carried into the GLB's frame by
+  the passing gate's registration, goes in as `--coverage-plane`: `report.json`'s `coverage_plane`
+  reads the hand without the forearm stub the sleeve hides (report only).
 - **Budget.** Each hand job keeps its preset's grid and texture but decimates to `--hand-ratio`
   (0.2) × the anchor's triangles (node 186), before it unwraps and bakes: a hand at Template's face
   count outweighs the body, and a collapse in Blender afterwards needs the mesh welded first, or it

@@ -20,7 +20,10 @@ the guide's silhouette box, after a try that failed IoU or the outline; an unzoo
 45 degrees of the back and 15 of level starts with the back view and falls back to the sheet. --detail-tries seeds per
 head detail pass, alternating between the front concept view and that view cut to the head (a
 --detail-ref is used as given). report.json lists every try with its gate values and the gates it
-failed.
+failed, and `unpainted`: the seeable texels left unpainted by cause (never seen by a used or rejected
+camera, seen only by rejected ones, outside the drawn figure, inside the 6 px outline band, on a zero
+edge ramp; report only). --coverage-plane adds `coverage_plane`, the same numbers on one side of a
+plane (a hand without its forearm stub).
 
 Writes <out>/basecolor.png, <out>/<glb-stem>_painted.glb (the input GLB with only the base
 colour image replaced), <out>/coverage.png, <out>/turntable.png, <out>/report.json,
@@ -399,6 +402,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--min-coverage", type=coverage_floor, default=None,
                     help="the paint.coverage floor in gates.json (coverage_seeable, a share in (0, 1]); default "
                          "from --coverage-for")
+    ap.add_argument("--coverage-plane", type=float, nargs=6, default=None, metavar=("X", "Y", "Z", "NX", "NY", "NZ"),
+                    help="a point and normal in the GLB's own frame: report.json coverage_plane counts only the "
+                         "seeable texels on the side away from the normal (a hand past its wrist plane; the "
+                         "forearm stub inside the sleeve left out). Reported only")
     ap.add_argument("--seed", type=int, default=42, help="first seed: try t of view i paints with seed + 1000 t + i")
     ap.add_argument("--res", type=int, default=2048)
     ap.add_argument("--size", type=int, default=1024)
@@ -425,6 +432,12 @@ def kind_defaults(a):
     if a.min_coverage is None:
         a.min_coverage = COVERAGE_FLOOR[a.coverage_for]
     return a
+
+
+def plane_side(pos, plane):
+    """Points on the side of plane (x, y, z, nx, ny, nz) away from its normal."""
+    p, n = np.asarray(plane[:3], float), np.asarray(plane[3:], float)
+    return ((pos - p) @ n) < 0
 
 
 def report_gate(name, value):
@@ -672,14 +685,14 @@ def main(argv=None) -> int:
                 Image.fromarray(np.where(offm[..., None], M.MARK, warped)).save(raw.with_name(raw.stem + "_offpal.png"))
             key = (cand["ok"], al["iou_after"] * filled * (1.0 - offpal))
             if best is None or key > best[0]:
-                best = (key, cand, warped, pm)
+                best = (key, cand, warped, pm, {"band": rmask & near_miss, "outside": rmask & ~wm})
             if cand["ok"]:
                 break
         if best is None:
             ok = False
             rec["status"] = "failed: no output"
         else:
-            _, cand, warped, pm = best
+            _, cand, warped, pm, why = best
             ok = cand.pop("ok")
             if not cand["fails"]:
                 cand.pop("fails")
@@ -698,13 +711,14 @@ def main(argv=None) -> int:
             # closer cameras put more pixels on each texel: weight them up so they win the refine test
             vw = min(3.0, radius / plan["radius"])
             rec.update(acc.add_view(cam, warped, pm, vw, tri, dep, refine=a.refine if a.refine > 0 else None,
-                                    match=not a.no_match))
+                                    match=not a.no_match, why=why))
             rec["status"] = "used"
             rec["coverage"] = round(acc.coverage(), 4)
             rec["gain"] = round(rec["coverage"] - cov0, 4)
             stale = 0
         else:
             rec["status"] = "rejected"
+            acc.note_rejected(cam, tri, dep)
             acc.views += 1  # counts against the budget
             # only next-best views end the loop by rejections: the anchors are a fixed list, and a
             # rejected anchor leaves the next anchor and the next-best views their turn
@@ -737,8 +751,14 @@ def main(argv=None) -> int:
            "seam_delta": round(acc.seam_delta(), 2),
            "views_used": sum(v.get("status") == "used" for v in log),
            "rejected": sum(v.get("status") in ("rejected", "failed: no output") for v in log),
+           "unpainted": acc.unpainted_causes(),
            "stop": stop, "minutes": round((time.time() - t_start) / 60, 1), "sheet": sheet_src,
            "settings": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items()}, "views": log}
+    if a.coverage_plane:   # a part: the texels on the kept side of the plane (a hand past its wrist)
+        side = plane_side(acc.pos, a.coverage_plane)
+        u = acc.unpainted_causes(side)
+        rep["coverage_plane"] = {"plane": a.coverage_plane, "coverage_seeable": round(1.0 - u["unpainted"], 4)
+                                 if u["seeable_texels"] else None, "unpainted": u}
     (out / "report.json").write_text(json.dumps(rep, indent=1))
     gdoc = gates_doc(rep, a, out, log, models)
     (out / "gates.json").write_text(json.dumps(gdoc, indent=1))
@@ -883,7 +903,7 @@ def selftest() -> int:
             # an unzoomed next-best-view camera is not labelled or named as a close-up
             n0 = len(calls)
             main(base + ["--out", str(td / "nz"), "--anchors", "0:0", "--max-views", "3", "--no-zoom",
-                         "--coverage-for", "part"])
+                         "--coverage-for", "part", "--coverage-plane", "0", "0", "0", "0", "1", "0"])
             nz = [v for v in json.loads((td / "nz" / "report.json").read_text())["views"] if v["source"] == "nbv"]
             checks["no_zoom_label"] = (len(nz) > 0 and not any(v["zoom"] or v["name"].endswith("z") for v in nz)
                                        and not any("close-up" in c["prompt"] for c in calls[n0:]))
@@ -892,6 +912,16 @@ def selftest() -> int:
             checks["part_coverage_reported"] = (pg["pass"] is True and pg["gates"][0]["report_only"] is True
                                                 and pg["gates"][0]["limit"] is None and "margin" not in pg["gates"][0])
             contract_sample("part_reported", pg)
+            # the unpainted texels by cause add up to 1 - coverage; a plane keeps the lower half only
+            nzr = json.loads((td / "nz" / "report.json").read_text())
+            up, cp = nzr["unpainted"], nzr.get("coverage_plane") or {}
+            checks["unpainted_causes"] = (
+                set(up["causes"]) == set(M.CAUSES) and abs(sum(up["causes"].values()) - up["unpainted"]) < 2e-3
+                and abs(up["unpainted"] - (1 - nzr["coverage_seeable"])) < 2e-3
+                and abs(sum(rep["unpainted"]["causes"].values()) - rep["unpainted"]["unpainted"]) < 2e-3
+                and cp.get("plane") == [0, 0, 0, 0, 1, 0]
+                and 0 < cp["unpainted"]["seeable_texels"] < up["seeable_texels"]
+                and cp["coverage_seeable"] == round(1 - cp["unpainted"]["unpainted"], 4))
             # a painter that paints the parcel navy: every view is off the palette and rejected
             tint[0] = np.array([30.0, 34.0, 90.0])
             err = io.StringIO()

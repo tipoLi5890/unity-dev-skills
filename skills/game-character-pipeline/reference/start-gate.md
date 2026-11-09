@@ -23,8 +23,9 @@ table, and what each route hands Unity: `reference/routes.md`. In short:
 
 - **A standard adult humanoid** (the default): rigged locally onto the humanoid contract by
   `character-autorig`, clips from `humanoid-motion` or a pack retarget.
-- **A long coat, skirt or robe** over a standard body: the skirt route (`autorig.py all --body
-  skirt`), the legs still apart and showing under the hem in S1.
+- **A long coat, skirt or robe** over a standard body, or a cape or cloak bridging the legs from
+  behind: the skirt route (`autorig.py all --body skirt`), the legs still apart and showing under
+  the hem in S1.
 - **A chibi** (a big head about a third of the height, short thick limbs, mitten hands): the chibi
   route (`autorig.py all --body chibi`), arms clear of the big head and legs apart in S1.
 - **A custom body** (ears, a tail, proportions no route's windows fit):

@@ -47,6 +47,17 @@ python3 <skill>/scripts/prereview.py check ArtDirection/review/runner_r03_s3.rev
 python3 <skill>/scripts/prereview.py --selftest
 ```
 
+**One command from a producer's folder.** `autorig.py` (S6, `OUT/`), `concept_match.py` (S3b,
+`DIR/`) and `game_mesh.py` (S5, `DIR/`) write `prereview.spec.json` beside their pictures whenever
+they rendered any: a `contact_sheet.py` `items` spec plus `stage`, `subject` and `require`, every
+path relative to the spec's folder. `new` reads those three keys when the flags are left out; a
+flag given wins, and a given `--require` replaces the spec's list:
+
+```bash
+python3 <skill>/scripts/prereview.py new --spec out/runner/prereview.spec.json \
+    --out ArtDirection/review/runner_s6
+```
+
 1. **`new`** reads a `contact_sheet.py` spec with `items` (one sheet; a `sheets` spec is refused:
    pre-review each sheet from its own spec). It writes `NAME.a.png` in the spec's order,
    `NAME.b.png` with `contact_sheet.py --order` (the seed is taken from the subject's sha256, so
@@ -116,10 +127,10 @@ checklists live only in the script.
 |---|---|---|
 | S1 | the three-quarter image and FRONT, LEFT, BACK, RIGHT | `front`, `left`, `back`, `right` |
 | S3 | the 8-view mesh QA sheet (`reference/review-sheets.md`) | `front`, `left`, `back`, `right`, `top`, `clay`, `occlusion`, `uv_atlas` |
-| S3b | `turntable.png` from `mesh-texture-paint` | the yaws |
+| S3b | `turntable.png` from `mesh-texture-paint`, or `concept_match.py`'s concept\|render pairs | the yaws; `front`, `left`, `back`, `right`, `three_quarter` |
 | S3c | `compare.png` from `blender-character-rig` part assembly | the four columns |
-| S5 | the game-mesh side-by-side, clay and textured | front, side, back, game camera |
-| S6 | `markers_front.png`, `markers_side.png`, then the `deform_gate.py --render` poses | `markers_front`, `markers_side`, the pose names |
+| S5 | `game_mesh.py`'s showcase\|game pairs at azimuth 0, 45, 90, 180, and its bake-miss map | `front`, `three_quarter`, `side`, `back`, `bake_miss` |
+| S6 | `markers_front.png`, `markers_side.png`, then the `deform_gate.py --render` poses | `markers_front`, `markers_side`, each pose's name (front) and `<pose>_side` |
 | S8 | one clip's rest and wrist stills, beside the source | `rest`, the frames |
 | S12 | the Unity screenshot under the game camera | — |
 | A2 | a 2D clip's frames in order, after the approved still (`codex-visual` PHASE 3A; run `audit_identity.py` first) | `still`, `first`, `last`, the frame labels |

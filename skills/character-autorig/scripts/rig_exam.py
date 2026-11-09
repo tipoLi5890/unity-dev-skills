@@ -18,13 +18,16 @@ The cast (rig_exam_blender.py): metaball bodies built around a known skeleton, s
 standard, chibi (a big head on short limbs and mittens, run with --body chibi), heavy, thin (arms 55 deg), long_limbs (arms
 30 deg), mitten (fingers fused), spiky_hair (hair raising the top), skirt (a solid skirt over the crotch, run with
 --body skirt), asym (a
-few degrees and millimetres apart). Each truth file (exam/1, kind truth) holds the joints the body was built from.
+few degrees and millimetres apart), held_prop (a flat board beside the left arm from over the shoulder to under the
+hand: expect_fail refused.held_prop), held_both (one beside each arm: expect_fail refused, the reason code's negative
+control). Each truth file (exam/1, kind truth) holds the joints the body was built from.
 
 run: `autorig.py all EXAM/runs/NAME EXAM/cast/NAME.glb --name NAME --height H --no-smart` (H the body's own height, so
 the prep only grounds and centres it); a run that stops before the markers has them measured apart
 (--no-window-gate, rig/NAME.markers_only.json) so its landmarks are still scored. --smart drops --no-smart: Auto-Rig Pro's AI runs, and its agreement with
 the slices (the markers' smart_agreement) is recorded as a second opinion. It is never truth, never a label and
-never used to set a limit. A reference case runs the same way, and its accepted rig is gated again with the
+never used to set a limit. A run whose truth expects a refusal and that stopped on one (exit 1) is listed under
+expected_refusals, not errors. A reference case runs the same way, and its accepted rig is gated again with the
 current deform_gate.py (EXAM/refs/NAME/accepted.deform.json).
 
 faults, on a copy of the base rig (the markers file moved with arp_markers.py --adjust, then arp, contract, deform
@@ -51,7 +54,10 @@ only where the body's fingers are apart), thumb (always the fixed shape). A rig 
 within --tol x H. Each case's outcome: true_pass (correct, every stage passed), false_fail (correct, a gate failed
 that the case does not expect), expected_fail (failed only gates the case expects: its truth's expect_fail),
 true_fail (a joint out of --tol and a gate failed), false_pass (a joint out of --tol and every gate passed),
-stopped (the run stopped on a gate the case does not expect).
+stopped (the run stopped on a gate the case does not expect). The step a run stopped on with exit 1 and its
+report's error (a refused input) reads as the gate refused.<reason>, or refused when the refusal carries no reason
+code; a step that stopped with no report (a crash) adds none; a case whose truth expects a refusal and that passed
+every stage is a false_pass.
 Fingers found: `detected` 4, `ai` its count, `fixed` 0, against the truth's apart fingers. The deform metrics are
 read from the pre-repair report and the final one. The volume check sets the good rigs' largest elbow/knee/spine
 loss beside the volume faults' smallest: the limit separates them when it lies between; the elbow_shift readings are
@@ -306,6 +312,18 @@ def match(gate: str, patterns) -> bool:
     return any(gate == p or (p.endswith(".*") and gate.startswith(p[:-1])) for p in patterns)
 
 
+def expects_refusal(expect_fail) -> bool:
+    """A case built to be refused: its truth expects `refused` or `refused.<reason>`."""
+    return any(p == "refused" or str(p).startswith("refused.") for p in expect_fail or [])
+
+
+def refused_gate(step: dict) -> str:
+    """The pseudo gate of the step a run stopped on with exit 1 and its report's error (a refused input):
+    refused.<reason> when the refusal carries a code (arp_markers' held_prop), else refused."""
+    r = step.get("reason")
+    return f"refused.{r}" if isinstance(r, str) and r else "refused"
+
+
 def deform_summary(rep: dict | None) -> dict | None:
     if not rep or "volume_loss_max" not in rep:
         return None
@@ -375,6 +393,8 @@ def score_case(case: dict, tol: float) -> dict:
         out["markers_only"] = True
         if out["outcome"] == "true_pass":       # the pipeline itself stopped before the markers
             out["outcome"] = "stopped"
+    elif out["outcome"] == "true_pass" and expects_refusal(truth.get("expect_fail")):
+        out["outcome"] = "false_pass"           # built to be refused, and every stage passed
     if markers.get("smart_agreement"):
         out["smart_second_opinion"] = markers["smart_agreement"]   # recorded only: never truth, never a limit
     if case.get("accepted_deform"):
@@ -524,7 +544,12 @@ def glb_frame(glb: Path):
 def run_files(run_dir: Path, name: str) -> dict:
     rig = run_dir / "rig"
     summary = read_json(run_dir / "autorig.all.json") or {}
-    steps = [{"name": s.get("name"), "failed_gates": s.get("failed_gates") or []} for s in summary.get("steps", [])]
+    raw = [s for s in summary.get("steps", []) if isinstance(s, dict)]
+    # a refusal is a step that exited 1 with its report's error; one with none (a crash, a kill) is not refused
+    stop = raw[-1] if raw and summary.get("exit_code") == 1 and raw[-1].get("exit_code") == 1 \
+        and isinstance(raw[-1].get("error"), str) and raw[-1]["error"] else None
+    steps = [{"name": s.get("name"), "failed_gates": list(s.get("failed_gates") or [])
+              + ([refused_gate(s)] if s is stop else [])} for s in raw]
     repair = summary.get("repair") or {}
     final_path = kept_deform(repair)
     final = read_json(final_path) if final_path else None
@@ -583,7 +608,7 @@ def cmd_score(a) -> tuple[int, dict]:
     sheet_cells = []
     for (case, V), s in zip(cells, scored):
         if "landmarks" not in s:
-            sheet_cells.append({"title": f"{s['name']}: no run", "truth": {}, "found": {}, "V": V})
+            sheet_cells.append({"title": f"{s['name']}: {s['outcome']}", "truth": {}, "found": {}, "V": V})
             continue
         truth = to_run_frame(case["truth"], *((0.0, 0.0), 0.0) if case["truth"].get("frame") == "prepared"
                              else (case["centre_xy"], case["ground_z"]), 1.0)
@@ -1041,7 +1066,7 @@ def cmd_build(a) -> tuple[int, dict]:
 
 def cmd_run(a) -> tuple[int, dict]:
     exam = Path(a.exam)
-    done = {}
+    done, refused = {}, []
     cases = [(n, exam / "cast", exam / "runs") for n in names(a, exam / "cast")] if not a.refs else []
     if a.refs or not a.only:
         cases += [(p.parent.name, p.parent, exam / "refruns") for p in sorted((exam / "refs").glob("*/*.truth.json"))
@@ -1060,6 +1085,9 @@ def cmd_run(a) -> tuple[int, dict]:
             cmd.append("--no-smart")
         code = sh(cmd, exam / "logs" / f"run_{name}.log")
         done[name] = code
+        if code == 1 and expects_refusal(truth.get("expect_fail")) and any(
+                g.startswith("refused") for st in run_files(out, name)["steps"] for g in st["failed_gates"]):
+            refused.append(name)        # built to be refused, and refused: scored, not an error
         if not (out / "rig" / f"{name}.markers.json").exists() and (out / f"{name}.blend").exists():
             # stopped before the markers (a body off its route's bands): measure them anyway, to score them
             sh(blender(a, MARKERS, "--mesh", name, "--no-window-gate", "--out", out / "rig" / f"{name}.markers_only.json",
@@ -1071,8 +1099,9 @@ def cmd_run(a) -> tuple[int, dict]:
             done[name + ":accepted"] = sh(blender(a, DEFORM, "--fbx", ref / rig["fbx"], "--map", ref / rig["contract"],
                                                   *poses, "--out", ref / "accepted.deform.json"),
                                           exam / "logs" / f"accepted_{name}.log")
-    bad = [n for n, c in done.items() if c == 1]
-    return (2 if bad else 0), {"tool": "rig_exam", "op": "run", "exit_codes": done, "errors": bad}
+    bad = [n for n, c in done.items() if c == 1 and n not in refused]
+    return (2 if bad else 0), {"tool": "rig_exam", "op": "run", "exit_codes": done, "errors": bad,
+                               "expected_refusals": refused}
 
 
 def fault_poses(markers: dict | None, reference: bool = False) -> list:
@@ -1579,6 +1608,62 @@ def selftest_repair(ok, tmp: Path) -> None:
        and kept_deform(None) is None)
 
 
+def selftest_refused(ok) -> None:
+    """A body built to be refused (held_prop, held_both): the step the run stopped on with exit 1 reads as the pseudo
+    gate refused.<reason> (refused with no reason), scored against the truth's expect_fail like any gate."""
+    def refused(name, expect, gates, markers=None):
+        return score_case({"name": name, "truth": {"height": 1.7, "expect_fail": expect},
+                           "markers": markers, "steps": [{"name": "markers", "failed_gates": gates}]}, 0.04)
+    ok("held_prop refused with reason held_prop: expected_fail",
+       refused("held_prop", ["refused.held_prop"], ["refused.held_prop"],
+               {"error": "a prop held beside the L arm", "reason": "held_prop"})["outcome"] == "expected_fail")
+    ok("held_prop refused without the reason: stopped, not a good outcome",
+       refused("held_prop", ["refused.held_prop"], ["refused"])["outcome"] not in GOOD_OUTCOMES)
+    ok("held_both refused without a reason: expected_fail; with reason held_prop: stopped",
+       refused("held_both", ["refused"], ["refused"])["outcome"] == "expected_fail"
+       and refused("held_both", ["refused"], ["refused.held_prop"])["outcome"] == "stopped")
+    ok("held_prop that every stage passed: false_pass, not true_pass",
+       score_case(planted(expect_fail=["refused.held_prop"]), 0.04)["outcome"] == "false_pass"
+       and score_case(planted(), 0.04)["outcome"] == "true_pass")
+    ok("expects_refusal: refused and refused.<reason>, not other gates",
+       expects_refusal(["refused"]) and expects_refusal(["refused.held_prop"])
+       and not expects_refusal(["markers.windows", "refusedx"]) and not expects_refusal(None))
+    with tempfile.TemporaryDirectory() as d:
+        def steps_of(summary):
+            write_json(Path(d) / "autorig.all.json", summary)
+            return [st["failed_gates"] for st in run_files(Path(d), "x")["steps"]]
+        ok("run_files: the step stopped on with exit 1 gets refused.<reason>; an earlier exit 1 (smart) does not",
+           steps_of({"exit_code": 1, "steps": [
+               {"name": "smart", "exit_code": 1, "failed_gates": []},
+               {"name": "check", "exit_code": 0, "failed_gates": []},
+               {"name": "markers", "exit_code": 1, "reason": "held_prop", "error": "a prop held", "failed_gates": []}]})
+           == [[], [], ["refused.held_prop"]])
+        ok("run_files: no reason gives refused; exit 2, a run that went on, or a step that stopped without a "
+           "report's error (a crash) gives none",
+           steps_of({"exit_code": 1, "steps": [{"name": "markers", "exit_code": 1, "error": "both arms",
+                                                 "failed_gates": []}]}) == [["refused"]]
+           and steps_of({"exit_code": 1, "steps": [{"name": "prep", "exit_code": 1, "error": None,
+                                                     "failed_gates": []}]}) == [[]]
+           and steps_of({"exit_code": 1, "steps": [{"name": "markers", "exit_code": 1, "failed_gates": []}]})
+           == [[]]
+           and steps_of({"exit_code": 2, "steps": [{"name": "markers", "exit_code": 2,
+                                                     "failed_gates": ["markers.windows"]}]}) == [["markers.windows"]]
+           and steps_of({"exit_code": 0, "steps": [{"name": "smart", "exit_code": 1, "failed_gates": []},
+                                                    {"name": "markers", "exit_code": 0, "failed_gates": []}]})
+           == [[], []])
+    exam = lambda outcomes: {"exam": {"outcomes": outcomes, "false_pass": outcomes.get("false_pass", []),
+                                      "faults_slipped": [], "control_fail": [], "faults_caught": []}, "real": []}
+    base = exam({"true_pass": ["standard"]})
+    good = exam({"true_pass": ["standard"], "expected_fail": ["held_prop", "held_both"]})
+    lost = exam({"true_pass": ["standard"], "stopped": ["held_prop"], "expected_fail": ["held_both"]})
+    through = exam({"true_pass": ["standard"], "false_pass": ["held_prop"], "expected_fail": ["held_both"]})
+    ok("compare: held_prop and held_both new to the bench are no regression; expected_fail -> stopped and a new "
+       "false pass are", not compare(base, good)["regressions"]
+       and [(r["what"], r.get("case")) for r in compare(good, lost)["regressions"]] == [("outcome", "held_prop")]
+       and {(r["what"], r.get("case")) for r in compare(good, through)["regressions"]}
+       == {("false_pass", "held_prop"), ("outcome", "held_prop")})
+
+
 def selftest() -> int:
     checks, failed = 0, []
 
@@ -1611,6 +1696,7 @@ def selftest() -> int:
     ok("a mitten read as four fingers: wrong, finger landmarks not scored",
        not s5["fingers"]["right"] and not any(group_of(k) == "fingers" for k in s5["landmarks"]))
     ok("no markers: no_run", score_case({"name": "x", "truth": {"height": 1.7}}, 0.04)["outcome"] == "no_run")
+    selftest_refused(ok)
     # a reference case is already in the run frame
     ref = planted()
     ref["truth"] = dict(ref["truth"], frame="prepared",

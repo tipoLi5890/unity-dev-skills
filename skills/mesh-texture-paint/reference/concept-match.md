@@ -110,7 +110,23 @@ never install packages into someone's ComfyUI venv. When the engine is missing, 
 `concept_match.py` exits 0 whenever it writes a report (with `--embed` and no engine too: a WARN,
 the gates null), 1 on a usage error, 2 when `--selftest` fails.
 
-## 5. When to run it
+## 5. The pre-review sheet
+
+Each run also writes `DIR/pairs/<view>.png` (the aligned concept beside the render, on grey) and
+`DIR/prereview.spec.json`. That file is a `contact_sheet.py` spec with stage `S3b`, the GLB as
+subject and no `require`, so one command drafts the S3b pre-review:
+
+```bash
+python3 <repo>/skills/codex-visual/scripts/prereview.py new --spec match/runner_s3b/prereview.spec.json \
+  --out ArtDirection/review/runner_s3b
+```
+
+The cells are labelled with the views given (`front`, `left`, `back`, `right`, `three_quarter`).
+They answer S3b's questions about colours, collage, baked light, outline, washed-out areas and lost
+detail. They cannot answer S3's inner shell, clay surface or UV atlas questions, so the stage is
+S3b whichever mesh was measured.
+
+## 6. When to run it
 
 | Stage | GLB | Tier |
 |---|---|---|

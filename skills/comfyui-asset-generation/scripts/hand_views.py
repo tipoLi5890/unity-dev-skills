@@ -40,7 +40,9 @@ hand_parts.py gate (the registration and finger gates, blender-character-rig); o
 seed moved (up to --hand-seeds jobs): a gate is never loosened. --paint then runs mesh-texture-paint's
 paint_loop.py on the passing GLB (--kind object, --prior '': the bake's own texture streaks and tints the
 context; --max-off-palette 0.03 for every part, head too) into paint/<hand>/, so the glove keeps the concept's
-colour (the multi-view bake darkens it) and a navy palm or a silver arm is refused.
+colour (the multi-view bake darkens it) and a navy palm or a silver arm is refused; --coverage-plane is the
+wrist plane carried into the GLB's frame by the passing gate's registration, so report.json's coverage_plane
+reads the hand without the forearm stub the sleeve hides (reported only).
 A part whose every paint try failed a gate keeps its generated texture (a warning, not a failure; the plan
 records generated.paint {status "unpainted", reason}).
 
@@ -474,6 +476,28 @@ def generate_part(a, plan, part, i_last, base):
     return code
 
 
+def wrist_plane(root, part):
+    """The hand's wrist plane in the generated GLB's own frame, as paint_loop --coverage-plane takes it
+    (point, normal; the hand on the side away from the normal), from the passing gate report's
+    registration (anchor = s R p + t). None when there is no wrist or no passing gate report."""
+    np = _np()
+    att = [x for x in (part.get("generated") or {}).get("attempts", []) if x.get("gate_exit") == 0]
+    gp = root / "gen" / part["name"] / f"gate_{att[-1]['attempt']}.json" if att else None
+    if "wrist" not in part or gp is None or not gp.is_file():
+        return None
+    try:
+        M = np.array(json.loads(gp.read_text())["register"]["matrix"], float)
+    except (OSError, ValueError, KeyError):
+        return None
+    A = M[:3, :3]
+    s = float(np.cbrt(abs(np.linalg.det(A))))
+    R = A / s
+    rim, n = np.array(part["wrist"]["rim"], float), np.array(part["wrist"]["normal"], float)
+    p = R.T @ (rim - M[:3, 3]) / s
+    q = R.T @ n
+    return [round(float(x), 6) for x in (*p, *(q / np.linalg.norm(q)))]
+
+
 def paint_part(a, plan, part, base):
     """mesh-texture-paint on one generated part (hands: --kind object) into paint/<name>/."""
     P = pv()
@@ -490,6 +514,9 @@ def paint_part(a, plan, part, base):
            "--max-off-palette", str(MAX_OFF_PALETTE), "--coverage-for", "part"]
     if hand:     # the hand job's own bake streaks the forearm grey and tints the palm olive; shown as context the
         cmd += ["--prior", ""]       # model continues them and redraws steep views: the nearest painted colour
+        plane = wrist_plane(root, part)
+        if plane:    # report.json coverage_plane: the hand alone, without the stub the sleeve hides
+            cmd += ["--coverage-plane", *map(str, plane)]
     if a.server or base:
         cmd += ["--server", a.server or base]
     P.wait_idle(base, a.wait_idle)
@@ -631,8 +658,22 @@ def selftest() -> int:
         # paint_part: the palette gate is passed; every try refused keeps the generated texture, recorded
         import types
         seen, real_run, real_wait = [], subprocess.run, P.wait_idle
+        np = _np()
+        th = math.radians(90)          # the registration: s 2, 90 degrees about Y, a shift
+        Rm = np.array([[math.cos(th), 0, math.sin(th)], [0, 1, 0], [-math.sin(th), 0, math.cos(th)]])
+        Mx = np.eye(4)
+        Mx[:3, :3], Mx[:3, 3] = 2.0 * Rm, [0.1, 0.2, 0.3]
+        (Path(td) / "gen" / "hand_r").mkdir(parents=True, exist_ok=True)
+        (Path(td) / "gen" / "hand_r" / "gate_1.json").write_text(json.dumps({"register": {"matrix": Mx.tolist()}}))
         pp = {"name": "hand_r", "region": next(iter(SIDE)), "views": {"dir": "views/hand_r"},
-              "generated": {"glb": "gen/hand_r.glb", "painted": "paint/hand_r/old_painted.glb"}}
+              "wrist": {"rim": [0.5, 0.4, 0.3], "normal": [0.0, 0.6, 0.8]},
+              "generated": {"glb": "gen/hand_r.glb", "painted": "paint/hand_r/old_painted.glb",
+                            "attempts": [{"attempt": 0, "gate_exit": 2}, {"attempt": 1, "gate_exit": 0}]}}
+        wp = wrist_plane(Path(td), pp)
+        back = None if wp is None else (Mx[:3, :3] @ np.array(wp[:3]) + Mx[:3, 3], Rm @ np.array(wp[3:]))
+        checks["wrist_plane"] = (back is not None and np.allclose(back[0], [0.5, 0.4, 0.3], atol=1e-5)
+                                 and np.allclose(back[1], [0.0, 0.6, 0.8], atol=1e-5)
+                                 and wrist_plane(Path(td), {**pp, "generated": {"attempts": [{"attempt": 0, "gate_exit": 2}]}}) is None)
         args = types.SimpleNamespace(plan=Path(td) / "plan.json", server=None, wait_idle=0)
         try:
             P.wait_idle = lambda *_a, **_k: None
@@ -643,6 +684,7 @@ def selftest() -> int:
             subprocess.run, P.wait_idle = real_run, real_wait
         checks["paint_part_gate_and_unpainted"] = not PAINT_LOOP.is_file() or (
             code == 0 and seen and seen[0][seen[0].index("--max-off-palette") + 1] == str(MAX_OFF_PALETTE)
+            and seen[0][seen[0].index("--coverage-plane") + 1:][:6] == [str(x) for x in wp]
             and "painted" not in pp["generated"] and pp["generated"]["paint"]["status"] == "unpainted")
         rep = P.report(gates, part="hand_r")
         P.contract_out("hand_views__views.gate.json", rep)

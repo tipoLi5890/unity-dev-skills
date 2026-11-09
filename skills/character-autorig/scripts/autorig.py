@@ -112,6 +112,11 @@ on a script error, and it is killed after its timeout plus margins); prep, marke
 Blender-side work of prep, arp and repair runs this file inside Blender (`-P autorig.py -- _inside ...`).
 Children run with PYTHONIOENCODING=utf-8. Prints one JSON summary (each step's exit code, seconds, log, report,
 failed gates; the repair attempts; the files to take on) and writes it to OUT/autorig.<stage>.json.
+When a deform gate rendered its poses (not --no-render), OUT/prereview.spec.json is written for codex-visual
+`prereview.py new --spec OUT/prereview.spec.json --out review/NAME` (stage S6; the summary's prereview_spec): the
+markers' pictures (markers_front, markers_side), then each pose of the result's deform report front (labelled
+with the pose) and side (<pose>_side), subject the result's FBX, require that deform report; paths relative to
+OUT. A run that rebuilt the rig without writing one removes an older one.
 Exit codes: 0 every gate passed (after a repair that passed, too), 2 a gate failed, 1 refused input or an error.
 """
 from __future__ import annotations
@@ -1143,11 +1148,59 @@ def finish(c: Ctx, a, stages: list, out: dict) -> int:
             files.update(blend=c.f["sec_blend"], fbx=c.f["sec_fbx"], contract=c.f["sec_contract"],
                          deform=c.f["sec_deform"])
     out["result"] = {k: str(v) for k, v in files.items() if Path(v).exists()}
+    spec = None
+    if not a.no_render and (c.deform_ran or c.chains is not None):     # a deform gate read (and rendered) this run
+        spec = prereview_spec(c.out, out["result"].get("deform"), c.f["markers"],
+                              out["result"].get("fbx") or out["result"].get("blend"), c.name)
+    if spec:
+        out["prereview_spec"] = str(spec)
+    elif set(stages) & RIG_STAGES and (c.out / PREREVIEW_SPEC).exists():
+        (c.out / PREREVIEW_SPEC).unlink()      # it shows a rig this run replaced, or poses it did not render
     hint = (read_json(c.f["mesh"]) or {}).get("skirt_hint") if "check" in stages else None
     if hint:
         out["skirt_hint"] = hint
     out.update({"exit_code": rc, "ok": rc == 0})
     return rc
+
+
+PREREVIEW_SPEC = "prereview.spec.json"
+RIG_STAGES = {"prep", "markers", "arp", "contract", "deform", "secondary"}   # an older spec no longer shows their rig
+
+
+def _rel(path, base: Path) -> str:
+    """path relative to base, forward slashes; absolute when there is none (another drive)."""
+    try:
+        return Path(os.path.relpath(os.path.abspath(path), os.path.abspath(base))).as_posix()
+    except ValueError:
+        return Path(os.path.abspath(path)).as_posix()
+
+
+def prereview_spec(out: Path, deform, markers, subject, name: str):
+    """OUT/prereview.spec.json for codex-visual prereview.py S6 (a contact_sheet items spec plus stage, subject,
+    require; paths relative to OUT): markers_front and markers_side from the markers report's previews, then each
+    pose of the deform report's renders, front (labelled with the pose) and side (<pose>_side). Only files that
+    are there; None and nothing written without the deform report or any pose render."""
+    rep = read_json(deform) if deform else None
+    if not rep or not subject or not Path(subject).exists():
+        return None
+    items = []
+    for view, pic in ((read_json(markers) or {}).get("previews") or {}).items():
+        if view in ("front", "side") and isinstance(pic, str) and Path(pic).is_file():
+            items.append({"image": _rel(pic, out), "label": f"markers_{view}"})
+    poses = 0
+    for pose, pics in (rep.get("renders") or {}).items():
+        for view in ("front", "side"):
+            pic = (pics or {}).get(view) if isinstance(pics, dict) else None
+            if isinstance(pic, str) and Path(pic).is_file():
+                items.append({"image": _rel(pic, out), "label": pose if view == "front" else f"{pose}_side"})
+                poses += 1
+    if not poses:
+        return None
+    spec = {"title": f"{name} S6: markers, then each pose front and side", "cols": 4, "cell": [288, 448],
+            "items": items, "stage": "S6", "subject": _rel(subject, out), "require": [_rel(deform, out)]}
+    path = out / PREREVIEW_SPEC
+    path.write_text(json.dumps(spec, indent=1), encoding="utf-8")
+    return path
 
 
 # --- all --repeat N: the stages that vary between runs, N times; their stability; the median run kept ------------
@@ -1905,6 +1958,10 @@ elif script == "arp_markers.py":
                           "wrist.L": [0.538, 0.04, 0.868], "wrist.R": [-0.538, 0.04, 0.868],
                           "hip.L": [0.1, 0.07, 0.86], "hip.R": [-0.1, 0.07, 0.86],
                           "ankle.L": [0.2, 0.1, 0.09], "ankle.R": [-0.2, 0.1, 0.09]})
+    if opt("--preview-dir"):
+        rep["previews"] = {v: os.path.join(opt("--preview-dir"), f"markers_{v}.png") for v in ("front", "side")}
+        for pic in rep["previews"].values():
+            touch(pic)
     if os.environ.get("FAKE_HELD_PROP"):
         rep, code = {"tool": "arp_markers", "error": "a prop held beside the L arm: separate it",
                      "reason": "held_prop"}, 1
@@ -1954,6 +2011,13 @@ elif script == "deform_gate.py":
            "volume_loss_max": {"value": v, "joint": joint}, "self_intersection": {"p95": si}, "gates": gates,
            "skin": {"cross_side": {"band_m": 0.06, "R": {"bones": {b: 1.0 for b in (cross[0] if cross else [])}}}},
            "pass": ok}
+    if opt("--render"):
+        names = (opt("--poses") or "deep_squat,elbow_120,fist").split(",")
+        rep["renders"] = {p: {v: os.path.join(opt("--render"), f"pose_{p}_{v}.png") for v in ("front", "side")}
+                          for p in names}
+        for pics in rep["renders"].values():
+            for pic in pics.values():
+                touch(pic)
     code = 0 if rep["pass"] else 2
 if script in ("mesh_check.py", "contract_map.py", "arp_markers.py", "deform_gate.py"):
     if not os.environ.get("FAKE_NO_OUT") == script:
@@ -2085,6 +2149,14 @@ def selftest_repeat(check, go, real, td: Path, glb: Path) -> None:
     check("--min-margin 0.2: run r1's margin 0.1429 is under it, stable fails, exit 2 (every gate still passed)",
           code == 2 and st.get("pass") is False and r["repeat"]["stable"] is False
           and all(x["pass"] for x in st["gates"] if x["name"] != "stable"), code=code)
+    sp = read_json(rd / PREREVIEW_SPEC) or {}
+    paths = [i["image"] for i in sp.get("items", [])] + sp.get("require", []) + [sp.get("subject") or "/"]
+    check("--repeat 3: OUT's prereview spec reads the chosen run's pictures where they were drawn (repeat/r3/), "
+          "subject OUT's FBX, every path relative to OUT and there",
+          sp.get("subject") == "export/Runner.fbx" and sp.get("require") == ["rig/Runner.deform.json"]
+          and sp["items"][0]["image"] == "repeat/r3/rig/markers/markers_front.png"
+          and sp["items"][2]["image"] == "repeat/r3/rig/poses/pose_deep_squat_front.png"
+          and all(not os.path.isabs(x) and (rd / x).is_file() for x in paths), spec=sp)
     plan_f = dict(plan3, **{"r2:a0": ["LowerArm.R", 0.53, 0.04], "r2:a1": ["LowerArm.R", 0.41, 0.05]})
     code, r, err, ran = real(["all", str(rd), str(glb), "--name", "Runner", "--no-smart", "--repeat", "3",
                               "--no-secondary"], FAKE_DEFORM=plan_f)
@@ -2596,6 +2668,26 @@ def selftest() -> int:
               and att[0]["regions"]["elbow"]["below"] == [0.004, 0.019, 0.089, 0.119]
               and att[0]["volume_loss_max"]["value"] == 0.3492 and att[0]["self_intersection_p95"] == 0.05
               and r["repair"]["files"]["fbx"].endswith(os.path.join("repair", "a1", "Runner.fbx")), att=att)
+
+        def spec_of(d):
+            """OUT/prereview.spec.json, and whether every path in it is relative and there."""
+            p = d / PREREVIEW_SPEC
+            sp = read_json(p) if p.exists() else None
+            paths = [i["image"] for i in (sp or {}).get("items", [])] + (sp or {}).get("require", []) + \
+                [(sp or {}).get("subject") or "/"]
+            return sp, bool(sp) and all(not os.path.isabs(x) and (d / x).is_file() for x in paths)
+        sp, ok = spec_of(run_dir)
+        check("all: OUT/prereview.spec.json for prereview S6: markers first, each pose front and side from the "
+              "result's deform report (secondary/), subject its FBX, require that report, paths relative to OUT",
+              ok and sp["stage"] == "S6" and [i["label"] for i in sp["items"]] == [
+                  "markers_front", "markers_side", "deep_squat", "deep_squat_side", "elbow_120", "elbow_120_side",
+                  "fist", "fist_side"] and sp["items"][2]["image"] == "secondary/poses/pose_deep_squat_front.png"
+              and sp["subject"] == "secondary/Runner.fbx" and sp["require"] == ["secondary/Runner.deform.json"]
+              and r.get("prereview_spec") == str(run_dir / PREREVIEW_SPEC), spec=sp)
+        code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-render"],
+                                 FAKE_DEFORM={"a1": ["LowerArm.R", 0.3492, 0.05]})
+        check("--no-render: no spec, and the older one is gone", code == 0 and spec_of(run_dir)[0] is None
+              and "prereview_spec" not in r, code=code)
         code, r, err, ran = real(["all", str(run_dir), str(glb), "--name", "Runner", "--no-secondary"],
                                  FAKE_DEFORM={"a0": ["LowerArm.R", 0.2, 0.04, ["foot.l", "toes_01.l"]],
                                               "a1": ["LowerArm.R", 0.2, 0.04]})
@@ -2603,6 +2695,8 @@ def selftest() -> int:
         att = (r.get("repair") or {}).get("attempts") or []
         check("all: a sole on the other foot's bones alone, attempt 1 moves them to the twins (no hinge) and passes",
               code == 0 and ran == chain + ["inside_repair", "deform_gate.py"] and rx
+              and spec_of(run_dir)[1] and read_json(run_dir / PREREVIEW_SPEC)["subject"] == "repair/a1/Runner.fbx"
+              and read_json(run_dir / PREREVIEW_SPEC)["items"][-1]["image"] == "repair/a1/poses/pose_fist_side.png"
               and rx[rx.index("--cross-side") + 1] == "R:foot.l,toes_01.l" and rx[rx.index("--hinges") + 1] == ""
               and rx[rx.index("--cross-band") + 1] == "0.06"
               and att and att[0]["cross_side"] == {"L": [], "R": ["foot.l", "toes_01.l"]}

@@ -14,6 +14,7 @@ usage:
     prereview.py list [--stage S3] [--json]
     prereview.py new --stage S3 --spec sheet.json --subject FILE --out review/NAME
                      [--require FILE ...] [--reviewer claude] [--model NAME] [--force]
+    prereview.py new --spec OUT/prereview.spec.json --out review/NAME   # stage, subject, require from the spec
     prereview.py answer review/NAME.review.json --pass a --id s3.hole --answer defect
                      --view left --note "a gap under the left arm"
     prereview.py answer review/NAME.review.json --pass b --from answers_b.json
@@ -26,6 +27,10 @@ new     composes NAME.a.png (the spec's order) and NAME.b.png (contact_sheet.py
         NAME.review.json, a review/1 draft: the checklist copied in, no answers.
         The spec is contact_sheet.py's, with `items` (one sheet). --require is
         contact_sheet's: every file must pass, or nothing is written.
+        A spec may also carry `stage`, `subject` and `require` (paths relative to
+        the spec's folder), as the sidecar prereview.spec.json the producers write
+        (autorig.py S6, concept_match.py S3b, game_mesh.py S5): --stage, --subject
+        and --require, when given, win (a given --require replaces the spec's list).
 answer  records answers into the draft, one item (--id --answer [--view] [--note])
         or a whole pass (--from FILE, or - for stdin: {id: {answer, view, note}}).
         An answer is defect, clear or unsure; a view is a cell label or omitted.
@@ -42,7 +47,8 @@ Exit codes: list 0. new 0 written; 2 refused by --require; 3 the spec, an image
 or the subject cannot be read, or a review is already there (--force replaces it).
 answer 0 recorded; 3 the review is malformed. check 0 clear; 2 flagged (a person
 looks at those items); 3 malformed, incomplete, or a sheet or the subject changed.
-1 usage (an unknown flag, an id not on the checklist, an answer not in the list).
+1 usage (an unknown flag, an id not on the checklist, an answer not in the list, no stage or
+subject in the flags or the spec, a stage not on the list).
 --selftest 0 pass, 2 fail. Pillow only (through contact_sheet.py).
 """
 from __future__ import annotations
@@ -69,9 +75,11 @@ SUFFIX = ".review.json"
 SHEETS = {
     "S1": "the approved three-quarter image and FRONT, LEFT, BACK, RIGHT from the turnaround sheet",
     "S3": "the 8-view mesh QA sheet: front, left, back, right, top, clay, occlusion, uv_atlas",
-    "S3b": "paint_loop.py's turntable.png: eight yaws of the painted GLB (a before row with --compare)",
+    "S3b": "paint_loop.py's turntable.png: eight yaws of the painted GLB (a before row with --compare); or "
+           "concept_match.py's concept|render pairs: front, left, back, right, three_quarter",
     "S3c": "assemble_parts.py's compare.png: anchor and assembly, clay and textured, four columns",
-    "S5": "the side-by-side: showcase and game mesh, clay and textured, front, side, back, game camera",
+    "S5": "game_mesh.py's showcase|game pairs at azimuth 0, 45, 90, 180 (front, three_quarter, side, back) "
+          "and its bake_miss map (UV space: blue where only the second pass reached, red where neither did)",
     "S6": "markers_front.png and markers_side.png, then deform_gate.py --render's pose pictures",
     "S8": "one clip's rest and wrist stills, beside the source",
     "S12": "the Unity screenshot under the game camera",
@@ -173,7 +181,7 @@ CHECKLISTS: dict[str, list[dict[str, Any]]] = {
         {"id": "s5.joints", "question": "Are the elbows, knees, shoulders or hips too coarse to bend (a few "
          "edges, a sharp corner)?"},
         {"id": "s5.face", "question": "Has the face lost its features, or does it read as another character "
-         "at the game camera?"},
+         "in the front or three-quarter pair?", "views": ["front", "three_quarter"]},
         {"id": "s5.hole", "question": "Is there a hole, a gap or a missing part on the game mesh?"},
     ],
     "S6": [
@@ -328,11 +336,37 @@ def cmd_list(stage: str | None, as_json: bool) -> int:
 # -------------------------------------------------------------------------------------- new
 
 
-def cmd_new(stage: str, spec: Path, subject: Path, out: Path, require: list[Path], reviewer: str,
-            model: str | None, force: bool) -> tuple[int, dict[str, Any]]:
+def from_spec(doc: dict[str, Any], base: Path, stage: str | None, subject: Path | None,
+              require: list[Path] | None) -> tuple[str, Path, list[Path]]:
+    """stage, subject and require: each flag given wins, else the spec's key (paths relative to the spec's
+    folder). Raises Usage when a stage or a subject is in neither, or the stage is not on the list; ValueError
+    when the spec's key is not text (a list of text for require)."""
+    if stage is None:
+        stage = doc.get("stage")
+        if stage is None:
+            raise Usage("no stage: give --stage, or a spec with \"stage\"")
+        if not isinstance(stage, str):
+            raise ValueError("the spec's stage must be text")
+    if stage not in STAGES:
+        raise Usage(f"stage {stage!r} is not one of {', '.join(STAGES)}")
+    if subject is None:
+        given = doc.get("subject")
+        if given is None:
+            raise Usage("no subject: give --subject, or a spec with \"subject\"")
+        if not isinstance(given, str) or not given:
+            raise ValueError("the spec's subject must be a path")
+        subject = base / given
+    if require is None:
+        given = doc.get("require", [])
+        if not isinstance(given, list) or not all(isinstance(r, str) and r for r in given):
+            raise ValueError("the spec's require must be a list of paths")
+        require = [base / r for r in given]
+    return stage, subject, require
+
+
+def cmd_new(stage: str | None, spec: Path, subject: Path | None, out: Path, require: list[Path] | None,
+            reviewer: str, model: str | None, force: bool) -> tuple[int, dict[str, Any]]:
     path_a, path_b, path_review = review_paths(out)
-    if path_review.exists() and not force:
-        return 3, {"error": f"{path_review} is already there; --force replaces it and its answers"}
     try:
         doc = json.loads(spec.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -340,6 +374,12 @@ def cmd_new(stage: str, spec: Path, subject: Path, out: Path, require: list[Path
     if not isinstance(doc, dict) or not isinstance(doc.get("items"), list) or "sheets" in doc:
         return 3, {"error": "the spec needs `items` (one sheet); a `sheets` spec makes several pairs, "
                             "so pre-review each sheet from its own spec"}
+    try:
+        stage, subject, require = from_spec(doc, spec.resolve().parent, stage, subject, require)
+    except ValueError as exc:
+        return 3, {"error": f"the spec {spec}: {exc}"}
+    if path_review.exists() and not force:
+        return 3, {"error": f"{path_review} is already there; --force replaces it and its answers"}
     labels = [item.get("label", "") if isinstance(item, dict) else "" for item in doc["items"]]
     if not subject.is_file():
         return 3, {"error": f"the subject {subject} is not a file"}
@@ -731,6 +771,44 @@ def selftest() -> int:
         code, _ = cmd_new("S3", t / "sheets.json", t / "runner.glb", t / "review" / "multi", [], "claude", None, False)
         checks.append(("sheets spec -> 3", code == 3))
 
+        # the sidecar a producer writes: stage, subject and require in the spec, relative to its folder
+        side = t / "rig"
+        side.mkdir()
+        (side / "gate.json").write_text(json.dumps({"schema": "gate/1", "pass": True, "gates": []}))
+        (side / "red.json").write_text(json.dumps({"schema": "gate/1", "pass": False, "gates": []}))
+        sidecar = dict(spec, items=[dict(i, image=f"../{i['image']}") for i in spec["items"]],
+                       stage="S3", subject="../runner.glb", require=["gate.json"])
+        (side / "prereview.spec.json").write_text(json.dumps(sidecar))
+        code = quiet(main, ["new", "--spec", str(side / "prereview.spec.json"), "--out", str(t / "review" / "side")])
+        sd = json.loads((t / "review" / "side.review.json").read_text()) if code == 0 else {}
+        checks.append(("spec alone: stage, subject, require from the spec", code == 0 and sd.get("stage") == "S3"
+                       and sd["subject"]["path"] == "../runner.glb" and sd["labels"] == views
+                       and (t / "review" / "side.a.png").is_file() and (t / "review" / "side.b.png").is_file()))
+        code = quiet(main, ["new", "--spec", str(side / "prereview.spec.json"), "--out", str(t / "review" / "side2"),
+                            "--stage", "S3b", "--subject", str(t / "sheet.json"), "--require", str(t / "green.gate.json")])
+        sd = json.loads((t / "review" / "side2.review.json").read_text()) if code == 0 else {}
+        checks.append(("flags win over the spec", code == 0 and sd.get("stage") == "S3b"
+                       and sd["subject"]["path"] == "../sheet.json" and sd["checklist"] == CHECKLISTS["S3b"]))
+        (side / "prereview.spec.json").write_text(json.dumps(dict(sidecar, require=["red.json"])))
+        code = quiet(main, ["new", "--spec", str(side / "prereview.spec.json"), "--out", str(t / "review" / "side3")])
+        checks.append(("the spec's failing require -> 2", code == 2 and not (t / "review" / "side3.a.png").exists()))
+        code = quiet(main, ["new", "--spec", str(side / "prereview.spec.json"), "--out", str(t / "review" / "side3"),
+                            "--require", str(t / "green.gate.json")])
+        checks.append(("--require replaces the spec's", code == 0))
+        bare = {k: v for k, v in sidecar.items() if k != "stage"}
+        (side / "bare.json").write_text(json.dumps(bare))
+        for name, doc_, extra in (("no stage anywhere -> 1", bare, []),
+                                  ("a stage not on the list -> 1", dict(sidecar, stage="S4"), []),
+                                  ("no subject anywhere -> 1", {k: v for k, v in sidecar.items() if k != "subject"},
+                                   ["--stage", "S3"])):
+            (side / "bad.json").write_text(json.dumps(doc_))
+            with contextlib.redirect_stderr(io.StringIO()):
+                code = quiet(main, ["new", "--spec", str(side / "bad.json"), "--out", str(t / "review" / "bad"), *extra])
+            checks.append((name, code == 1 and not (t / "review" / "bad.review.json").exists()))
+        (side / "bad.json").write_text(json.dumps(dict(sidecar, require="gate.json")))
+        code = quiet(main, ["new", "--spec", str(side / "bad.json"), "--out", str(t / "review" / "bad")])
+        checks.append(("a require that is not a list -> 3", code == 3))
+
     failed = [name for name, ok in checks if not ok]
     print(json.dumps({"selftest": "pass" if not failed else "fail", "checks": len(checks), "failed": failed}))
     return 0 if not failed else 2
@@ -747,12 +825,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--stage", choices=STAGES)
     p.add_argument("--json", action="store_true", help="as JSON")
     p = sub.add_parser("new", help="compose sheets a and b and write the review/1 draft")
-    p.add_argument("--stage", choices=STAGES, required=True)
+    p.add_argument("--stage", choices=STAGES, help="the checklist (default: the spec's stage)")
     p.add_argument("--spec", type=Path, required=True, help="contact_sheet.py's spec, with items")
-    p.add_argument("--subject", type=Path, required=True, help="the file the sheet shows (pinned by sha256)")
+    p.add_argument("--subject", type=Path, help="the file the sheet shows, pinned by sha256 (default: the spec's)")
     p.add_argument("--out", type=Path, required=True, help="review/NAME: writes NAME.a.png, NAME.b.png, NAME.review.json")
-    p.add_argument("--require", nargs="+", action="extend", type=Path, default=[], metavar="FILE",
-                   help="as on contact_sheet.py: every file must pass, or nothing is written")
+    p.add_argument("--require", nargs="+", action="extend", type=Path, default=None, metavar="FILE",
+                   help="as on contact_sheet.py: every file must pass, or nothing is written (default: the spec's)")
     p.add_argument("--reviewer", default="claude", help="who answers (default claude)")
     p.add_argument("--model", help="the reviewer's model, when known")
     p.add_argument("--force", action="store_true", help="replace an existing review and its answers")

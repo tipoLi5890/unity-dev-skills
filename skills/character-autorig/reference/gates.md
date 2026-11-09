@@ -42,10 +42,13 @@ skin between the arm and the ribs stretches with every arm swing. Go back to the
 30–60° down and clear, a gap between the legs) or to the 3D generation. A long garment is not a
 fused limb: when the report carries `skirt_hint`, rig it on the skirt route.
 
-**The skirt route (`--body skirt`)** — a long coat, a skirt, a robe: one part across the midline
-from a hem at 0.22–0.42 H up, the legs apart under it. Chosen by a person (`autorig.py all
---body skirt`); the default body reports `skirt_hint` (the hem's height, the hem at least 1.15 x
-the legs' span) instead of reading the hem as a crotch.
+**The skirt route (`--body skirt`)** — a long coat, a skirt, a robe, or a cape or cloak bridging
+the legs from behind: one part across the midline from a hem at 0.22–0.42 H up, the legs apart
+under it. Chosen by a person (`autorig.py all --body skirt`); the default body reports
+`skirt_hint` (the hem's height, the hem at least 1.15 x the legs' span, or `behind: true` when a
+narrower part crosses the midline only behind the legs for 0.04 H over its hem: a cape) instead of
+reading the hem as a crotch. The human route never takes a cape: its hip would sit at the hem, and
+nothing gates the cape's tear (`deform.skirt_tear` is the skirt route's).
 
 | Gate | Measures | Default | Fails on |
 |---|---|---|---|

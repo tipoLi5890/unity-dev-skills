@@ -88,6 +88,8 @@ reads. At the end it gains the totals:
 | `views_used`, `rejected` | views projected; views rejected or failed |
 | `stop` | why the main loop ended (`projection.md` §6) |
 | `sheet` | picture 2's sheet: `given` (`--sheet`), `composed` (from the concept views, `painting.md` §3) or null |
+| `unpainted` | report only: `seeable_texels`, `unpainted` (1 − `coverage_seeable`) and `causes`, the unpainted share split by the first cause that holds: `never_seen` (no used or rejected camera saw it), `rejected_only`, `outside_drawing` (a used view saw it outside the model's drawing), `outline_band` (§3), `edge_ramp` (on a silhouette or depth-step pixel), `other`; `causes` is null after `--resume` of a state saved before these records |
+| `coverage_plane` | `--coverage-plane` only, report only: `plane`, `coverage_seeable` and `unpainted` counted on the kept side of the plane (a hand past its wrist) |
 | `minutes` | wall time of this run |
 | `settings` | every flag as run |
 | `views[]` | one record per camera, in order |
